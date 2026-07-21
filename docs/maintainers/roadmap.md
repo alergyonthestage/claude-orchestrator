@@ -220,7 +220,13 @@ escalation test (the only v3 probe that fails **open** if the fix is wrong); **V
 **§7 / E6B-04** the pack-rename fan-out gate, still never executed and now unblocked by S1; and the
 **D-M6 Linux write-path check-in**, promoted from follow-up to **hard gate** — macOS `fakeowner`
 makes the fail-closed pre-validation unfalsifiable (V3-02), so criterion F cannot be signed off from
-a macOS run. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s6.md`.
+a macOS run. ⚠ **S2b widened what that gate covers**: every guard it added is a `chmod`-driven
+unwritable-bucket test, so the same `fakeowner` caveat applies to all of them — they pass in the
+Linux container, and a macOS run proves nothing about them. S2b also adds one gate of its own: the
+host-only verbs it touched (`join`, `init`, `forget`, `project import`, `resolve --scan`,
+`path set`, `migrate`) now die where they used to continue, so each deserves one live happy-path run
+after `cco build` — the hermetic suite covers the failure arms, but the success arms are what a user
+hits daily. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s7.md`.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 

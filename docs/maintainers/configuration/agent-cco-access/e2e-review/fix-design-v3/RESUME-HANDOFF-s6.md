@@ -1,5 +1,9 @@
 # Resume Handoff — cycle-1.1, from S6 onward
 
+> ## ⛔ SUPERSEDED by [`RESUME-HANDOFF-s7.md`](RESUME-HANDOFF-s7.md) — do not resume from this file.
+> S6 (§3) and S2b (§4's first row) both landed on 2026-07-21. Kept as history: §2's five
+> "things to understand" and its two S5 process lessons are carried forward verbatim into `-s7`.
+
 > **Written 2026-07-21** for a fresh session (post-`/clear`). Self-contained: read this, check the
 > prerequisites, review what landed, then continue.
 > Supersedes [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) (whose §5/§6 are now history) and

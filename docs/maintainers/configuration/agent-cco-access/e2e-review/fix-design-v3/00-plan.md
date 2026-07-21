@@ -6,9 +6,9 @@
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
 > **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 · S6 · S2b landed** (2026-07-20/21),
 > suite **1447/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S7**.
-> Resume pointer: [`RESUME-HANDOFF-s6.md`](RESUME-HANDOFF-s6.md) — current.
-> [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) and [`-s4`](RESUME-HANDOFF-s4.md) are superseded
-> (kept as history: -s5 §4 carries the reasoning that promoted **S2b-P** ahead of S5).
+> Resume pointer: [`RESUME-HANDOFF-s7.md`](RESUME-HANDOFF-s7.md) — current.
+> [`-s6`](RESUME-HANDOFF-s6.md), [`-s5`](RESUME-HANDOFF-s5.md) and [`-s4`](RESUME-HANDOFF-s4.md) are
+> superseded (kept as history: -s5 §4 carries the reasoning that promoted **S2b-P** ahead of S5).
 
 Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
 mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
