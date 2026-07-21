@@ -161,11 +161,13 @@ plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b
 ✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
 ✅ `987e38b` · **S7** config-editor announces every drop + the extra_mounts decision (b)
 ✅ `097ef61` · **S8** minor + doc debt ✅ `8843680`+`221d8fb`+`16a129b`+`535a99b`+`a1e4c5e` ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep ✅ `fcfe058`. Suite **1463/9** (the 9
-= the pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep ✅ `fcfe058`+`55dee32`+`a06f953`+`ad8f68d`.
+Suite **1463/9** (the 9 = the pre-existing host-only artifacts, unchanged set — names verified
+identical to baseline, and re-confirmed on the final tree after every S9 commit).
 
-**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Everything that remains is either a host
-gate (§10 of the plan, below) or the three `.claude`-payload patches no session can apply.
+**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Branch tip **`ad8f68d`**, nothing pushed.
+Everything that remains is either a host gate (§10 of the plan, below) or the three
+`.claude`-payload patches no session can apply.
 
 **S8** closed the five minor findings; its lesson is S7's inverted. `cco repo rename`'s ambiguity
 refusal was unreachable at the WORKDIR root — but the *reason* generalises past the bare form:

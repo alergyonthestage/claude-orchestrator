@@ -1,6 +1,6 @@
 # Resume Handoff — cycle-1.1, S9 (the last stage)
 
-> ## ✅ CONSUMED 2026-07-21 — S9 landed (`fcfe058` + `55dee32`). Cycle-1.1 implementation is CLOSED.
+> ## ✅ CONSUMED 2026-07-21 — S9 landed (`fcfe058` `55dee32` `a06f953` `ad8f68d`). Cycle-1.1 implementation is CLOSED.
 >
 > **There is no S10 and no successor handoff**, because nothing that remains can be done from a
 > session. Read the sections below for the cycle's history and its do-not-re-litigate list — but for
@@ -22,7 +22,9 @@
 > into every session recommends the refused verb. That is S8's false-remedy lesson one document out,
 > and it is why patches 1 and 2 must land as a single edit.
 >
-> Suite at close: **1463 passed / 9 failed**, baseline names identical. Nothing pushed.
+> Suite at close: **1463 passed / 9 failed**, run twice (prereq baseline + final tree), same count
+> and same names both times. Branch tip `ad8f68d`. **Nothing pushed.** Working tree clean apart from
+> the maintainer's `.cco/project.yml` port edit and the two untracked notes — §1 below still applies.
 
 > **Written 2026-07-21** for a fresh session (post-`/clear`). Self-contained: read this, check the
 > prerequisites, review what landed, then continue.

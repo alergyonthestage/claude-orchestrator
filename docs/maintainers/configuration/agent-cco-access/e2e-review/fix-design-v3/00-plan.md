@@ -64,7 +64,7 @@ flowchart TD
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ✅ `987e38b` + `INV-ENV` |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ✅ `097ef61` (decision (b) ratified; V5-05's prescribed site was dead code — §8) |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ✅ `8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e` (V3-P had shipped in S2) |
-| **S9** | — | release hygiene | — | ✅ `fcfe058` — ⚠ 3 host-only `.claude` patches left (§6.-1) |
+| **S9** | — | release hygiene | — | ✅ `fcfe058` `55dee32` `a06f953` `ad8f68d` — ⚠ 3 host-only `.claude` patches left (§6.-1) |
 
 **What landed, in one line each.** **S1** — STATE crosses via a `state/cco/shared/` directory bind
 instead of file binds; migration `017`; `INV-STATE` pins the allow-list and the shape; also fixed a
@@ -712,11 +712,12 @@ results are independent of R1 and were verified clean against the host oracle.
 
 ---
 
-## 11. Release hygiene (S9) ✅ `fcfe058`
+## 11. Release hygiene (S9) ✅ `fcfe058` `55dee32` `a06f953` `ad8f68d`
 
-> **Landed 2026-07-21.** All four parts done in-session; the only residue is the three host-only
-> `.claude`-payload patches in §6.-1, which no session can apply (FI-25). Suite unchanged at
-> **1463/9**, baseline names verified identical. Two things worth carrying forward:
+> **Landed 2026-07-21 — cycle-1.1 implementation is CLOSED.** All four parts done in-session; the
+> only residue is the three host-only `.claude`-payload patches in §6.-1, which no session can
+> apply (FI-25). Suite **1463/9**, run twice — as the prereq baseline and again on the final tree
+> after every S9 commit — same count and same names both times. Three things worth carrying forward:
 >
 > **The doc sweep found more than it was given.** §11 listed five living docs. Three needed
 > nothing (`03-*` §3.9 and both `cli.md` remote/`project show` surfaces had already been written
@@ -734,6 +735,15 @@ results are independent of R1 and were verified clean against the host oracle.
 > merely omit a refusal, it recommends the refused verb. Under-reporting is a gap; prescribing an
 > unreachable remedy is the false-remedy class (S8's lesson, one document out), and it is why
 > patches 1 and 2 must land as one edit.
+>
+> **A changelog describes shipped strings, not design intent** (`ad8f68d`, self-caught). Entry 47's
+> item 11 was first written from this plan's notes and was wrong twice over: it claimed the message
+> *names* the repo directory (the shipped string says *"cd into the `<kind>` you want to rename and
+> run it there"*), and it called what V3-03 replaced an "unrelated error" when it was a **wrong
+> diagnosis that also advised `<old> <new>`, a form which fails at the same root** — which is the
+> entire point of the fix. The design doc says what was intended; only the code says what a user
+> will see. Read the string. The same habit caught the parser risk: entry 47 was verified through
+> `_read_changelog_entries` itself rather than by eye.
 
 - **`changelog.yml`** — next id **47**. Cycle 1 grouped its entry as id 46 (D-M10/Q-C2); follow that
   shape for 1.1. ✅ Verified through `_read_changelog_entries` itself — the parser is line-based
