@@ -558,13 +558,25 @@ test_invariant_state_mount_allowlist() {
 # left project.yml re-keyed against an unchanged index (v3 V3-01). Explicit status
 # propagation is therefore the only available mechanism, and it has to be enforced.
 #
-# Scope: the modules that write the index AND are reachable from an in-container
-# session — today `cmd-repo.sh` (repo/extra-mount rename, "the first in-container
-# index writers", bin/cco:410) and its `rename.sh` helpers. Host-only writers (init,
-# join, resolve, forget, export/import, migrate) run where the bucket parent is
-# always writable; they carry the same latent fragility and are tracked as follow-up
-# rather than silently included here. WHEN A VERB BECOMES CONTAINER-RUNNABLE, ADD ITS
-# MODULE TO `scoped` — that is the whole point of this guard.
+# Scope: the modules whose index writes are status-checked. It started at the
+# container-reachable ones — `cmd-repo.sh` (repo/extra-mount rename, "the first
+# in-container index writers", bin/cco:410) and its `rename.sh` helpers — and GROWS
+# as S2b closes the host-only writers, so the lint tracks the work instead of
+# documenting a permanent exemption (00-plan.md §3b item 4).
+#
+# `cmd-join.sh` and `cmd-init.sh` joined it in S2b item 2. Probability is genuinely
+# lower on the host (the bucket parent is normally writable, so it takes a STATE tree
+# left root-owned by an earlier `sudo cco …`, ENOSPC, or a quota) — but probability is
+# the wrong sole criterion. On these two the CONSEQUENCE is higher than the container
+# bug while detectability is equally nil: `cco init` prints "registered it in the
+# index (1 repo)", a sentence asserting the very write that failed; `cco join` tells
+# the user to commit and push a project.yml declaring a member no index binds, so the
+# damage leaves the machine and reaches teammates on pull.
+#
+# STILL OUT (S2b item 3, tracked): cmd-resolve.sh ×5, cmd-forget.sh,
+# cmd-project-export-import.sh, cmd-project-add.sh, local-paths.sh, migrate.sh. ADD A
+# MODULE HERE AS ITS SITES ARE CLOSED — and when all seven are in, drop this
+# paragraph along with the exemption it records.
 #
 # Form: a bare call — the writer is the first token of the STATEMENT and the
 # statement carries no `||`/`&&` — is a violation. `if ! _index_… ; then` does not
@@ -586,7 +598,7 @@ _idx_join_continuations() {
 }
 
 test_invariant_index_writes_status_checked() {
-    local scoped="cmd-repo.sh rename.sh"
+    local scoped="cmd-repo.sh rename.sh cmd-join.sh cmd-init.sh"
     local writers='_index_(rename_path|set_path|set_project_repos|pp_set|pp_remove|set_unscoped|remove_path|remove_project|ensure_file)'
     local m f hits=""
     for m in $scoped; do
@@ -597,7 +609,7 @@ test_invariant_index_writes_status_checked() {
         h=$(_idx_join_continuations "$f" | grep -E "^[0-9]+:[[:space:]]*${writers}\b" | grep -vE '\|\||&&' || true)
         [[ -n "$h" ]] && hits="${hits}${m}: ${h}"$'\n'
     done
-    [[ -z "$hits" ]] || fail "INV-IDX: unchecked index write in a container-reachable module — errexit is disabled by bin/cco's \`|| _cco_rc=\$?\` dispatch, so the failure would be silent (v3 R2):"$'\n'"$hits"
+    [[ -z "$hits" ]] || fail "INV-IDX: unchecked index write in a module this guard covers — errexit is disabled by bin/cco's \`|| _cco_rc=\$?\` dispatch, so the failure would be silent (v3 R2):"$'\n'"$hits"
 
     # Discrimination: a static guard must prove it catches the shape it forbids.
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT

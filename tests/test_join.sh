@@ -141,3 +141,45 @@ test_join_without_origin_warns_but_joins() {
     assert_output_contains "no 'origin' remote"
     assert_file_contains "$tmpdir/repos/repo-a/.cco/project.yml" "name: joiner"
 }
+
+# ── S2b item 2: the index write is the one the commit/push advice rests on ──
+# The two index writes were called bare, so a failed one left `cco join` printing
+# "✓ Joined" and then instructing the user to COMMIT AND PUSH a project.yml that
+# declares a member no index binds. That is the reason this site could not stay a
+# comment: v3's V3-01 damaged one session, this damages a versioned, distributed
+# artifact — teammates inherit it on pull. errexit cannot cover it: bin/cco
+# dispatches command bodies in a `|| _cco_rc=$?` context.
+# ⚠ FAILS on pre-fix: rc=0, the tick prints, and so does the push instruction.
+test_join_unwritable_index_fails_loud_and_withholds_push_advice() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _seed_synced_project "$tmpdir" myproj repo-a repo-b
+    local joiner="$tmpdir/repos/joiner"
+    _mk_git_repo "$joiner" "git@example.com:org/joiner.git"
+
+    chmod 555 "$(state_shared)"
+    # ONE run, rc and output captured together — a second invocation would see the
+    # project.yml the first one already edited and take the "already a member" path.
+    local out rc=0
+    out=$(cd "$joiner" && \
+          CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" join myproj --name joiner 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    # (a) non-zero — the membership binding could not be written
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    # (b) no success tick over a write that did not land
+    [[ "$out" != *"✓ Joined"* ]] \
+        || { fail "no success tick on a failed index write: $out"; return 1; }
+    # (c) the advice that makes the damage ESCAPE THE MACHINE must be withheld
+    [[ "$out" != *"Commit + push"* ]] \
+        || { fail "a failed join must not tell the user to commit + push: $out"; return 1; }
+    # (d) it must name the index as the store that failed, and a remedy
+    [[ "$out" == *"index"* && "$out" == *"cco resolve"* ]] \
+        || { fail "the failure must name the index and a remedy: $out"; return 1; }
+    return 0
+}

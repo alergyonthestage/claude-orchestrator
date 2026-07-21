@@ -387,8 +387,18 @@ _cco_init_scaffold_repo() {
     # Register in the STATE index: this repo hosts the project and is its own
     # (sole) member, keyed by the repo's LOGICAL name (same shape as migrate/join;
     # repo_name defaults to — but may diverge from — the project name).
-    _index_set_path "$name" "$repo_name" "$target"
-    _index_set_project_repos "$name" "$repo_name"
+    #
+    # S2b: called bare, these are the writes the success message below ASSERTS
+    # ("registered it in the index (1 repo)") — so a silent failure makes the tool
+    # contradict itself one command later: `cco start <name>` answers "is not
+    # resolvable yet". errexit cannot catch it (bin/cco dispatches command bodies in
+    # a `|| _cco_rc=$?` context, which disables it for the whole call tree), so
+    # propagate explicitly. This is a report, not a rollback: the scaffold IS on
+    # disk, so name what landed and the one command that repairs the missing half.
+    if ! _index_set_path "$name" "$repo_name" "$target" \
+       || ! _index_set_project_repos "$name" "$repo_name"; then
+        die "Scaffolded project '$name' in $ccodir/, but it could not be registered in the machine-local index — 'cco start $name' will not resolve it yet. Run 'cco resolve --scan $target' to bind it."
+    fi
 
     # Born at the latest schema (decentralized projects are scaffolded in final
     # form) + seed the 3-way-merge base, so `cco update` runs zero migrations and

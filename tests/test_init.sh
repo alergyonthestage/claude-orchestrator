@@ -392,3 +392,38 @@ test_init_repo_name_prompt_not_swallowed() {
         || fail "B-DF2 regression: the init repo-name prompt read swallows stderr (2>/dev/null hides the prompt)"
     return 0
 }
+
+# ── S2b item 2: the index registration cco init ANNOUNCES ───────────────────
+# Both index writes were bare, while the success message asserts them verbatim —
+# "registered it in the index (1 repo)". So a failed write made the tool contradict
+# itself one command later: `cco start <name>` answers "is not resolvable yet".
+# The scaffold IS on disk, so the fix is a truthful report plus the repair command,
+# not a rollback. errexit cannot cover it (bin/cco's `|| _cco_rc=$?` dispatch).
+# ⚠ FAILS on pre-fix: rc=0 and the "registered it in the index" claim prints.
+test_init_unwritable_index_does_not_claim_registration() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+
+    mkdir -p "$(state_shared)"
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(cd "$repo" && \
+          CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" init --name myrepo --lang "English" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    # (a) non-zero — the registration could not be written
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    # (b) the claim that asserts the failed write must NOT be made
+    [[ "$out" != *"registered it in the index"* ]] \
+        || { fail "cco init must not claim an index registration that failed: $out"; return 1; }
+    # (c) the scaffold IS real, so say so, and name the repair — not a rollback
+    [[ "$out" == *"Scaffolded"* && "$out" == *"cco resolve --scan"* ]] \
+        || { fail "the failure must report the scaffold that landed and the repair command: $out"; return 1; }
+    return 0
+}
