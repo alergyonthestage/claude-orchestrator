@@ -75,6 +75,105 @@ _index_mktemp() {
     printf '%s\n' "$t"
 }
 
+# ── Read-path honesty (v3 R3 / S4) ────────────────────────────────────
+#
+# S2 gave the WRITE side its honesty (_index_mktemp). This is the read-side
+# sibling, closing the mirror-image defect: every reader below opens the index
+# behind a bare `[[ -f "$f" ]] || return 0` and feeds a process substitution, so
+# its status is discarded and a read that FAILED is indistinguishable from an
+# index that is legitimately EMPTY. Both rendered as a cheerful "the path index
+# is empty" at rc=0 (v3 V2-F01/F02) — the same false-success class as V3-01, one
+# direction over.
+#
+# Four states. `absent` is the only benign one and is NOT an error: a machine
+# with nothing registered yet has no index file at all.
+#
+#   ok         — opens, non-empty, live
+#   absent     — no file: nothing registered on this machine yet (benign)
+#   unreadable — open(2) fails, typically EACCES (the STATE bucket crossed the
+#                ADR-0047 boundary without the elevated identity)
+#   truncated  — exists but 0 bytes. A legitimately empty index is NEVER 0
+#                bytes — _index_ensure_file always writes the header, the
+#                version line and the four section keys — so 0 bytes means an
+#                interrupted or half-applied write, not "nothing registered"
+#   stale      — reads fine, but the inode has no directory entry left (nlink
+#                0): something replaced it via rename(2) while this process
+#                holds it through a MOUNT. That is v3 V2-F01 exactly — a
+#                file-shaped bind, the host writing mktemp+mv, the container
+#                reading a dead inode forever, reporting 0 rows at rc=0. S1
+#                removed the CAUSE (bind the directory, never the file); this is
+#                the detector for the day a file-shaped bind returns elsewhere.
+#
+# ⚠ Probe by OPENING, never with `test -r`: access(2) answers for the REAL uid,
+# a false answer under elevation — the same trap rename.sh:174 documents.
+# Usage: state=$(_index_read_state)
+_index_read_state() {
+    local f; f=$(_index_file)
+    [[ -e "$f" ]] || { printf 'absent'; return 0; }
+    { : < "$f"; } 2>/dev/null || { printf 'unreadable'; return 0; }
+    [[ -s "$f" ]] || { printf 'truncated'; return 0; }
+    [[ "$(_index_link_count "$f")" == "0" ]] && { printf 'stale'; return 0; }
+    printf 'ok'
+}
+
+# Hard-link count of <file>, or empty when neither stat dialect answers (in
+# which case the liveness arm simply does not fire — it must never invent a
+# failure). GNU first, BSD second: macOS is a first-class host (bash 3.2 rule).
+_index_link_count() {
+    stat -c '%h' "$1" 2>/dev/null || stat -f '%l' "$1" 2>/dev/null || printf ''
+}
+
+# The single sentence per non-benign read state — one vocabulary, so every
+# reader below fails with the same words (the R4 class: "one predicate, four
+# spellings, one of which drifted"). Names the real cause AND a remedy the
+# caller can actually run HERE: `cco resolve` is host-only in a session
+# (bin/cco's operator gate refuses it), so an in-container remedy that says
+# "run cco resolve" is advice the shim will reject — the retired-vocabulary half
+# of R3.
+# Usage: _index_unreadable_sentence <unreadable|truncated|stale> <file>
+_index_unreadable_sentence() {
+    local state="$1" f="$2" cause remedy
+    case "$state" in
+        unreadable) cause="it cannot be opened (permission denied)" ;;
+        truncated)  cause="it is 0 bytes — an interrupted or half-applied write left it truncated" ;;
+        stale)      cause="its backing file was replaced while this session was running, so this session holds a dead inode" ;;
+        *)          cause="it cannot be read" ;;
+    esac
+    if _cco_container_operator; then
+        remedy="Run cco on your host to inspect or rebuild it."
+    else
+        remedy="Rebuild it with 'cco resolve --scan <dir>'."
+    fi
+    printf "the cco index at %s cannot be read: %s. No entries were listed — this is NOT an empty index. %s" \
+        "$f" "$cause" "$remedy"
+}
+
+# Fail-closed entry guard for every verb that ENUMERATES the index. Dies (exit 1,
+# D8: a missing/broken dependency is an error, not a policy refusal) on any
+# non-benign state; returns 0 for `ok` and for the benign `absent`, which the
+# caller then reports with _index_empty_sentence.
+#
+# ⚠ Call it at verb ENTRY, before the read loop. Checking after the loop would
+# report "empty" first and contradict itself.
+_index_assert_readable() {
+    local st; st=$(_index_read_state)
+    case "$st" in
+        ok|absent) return 0 ;;
+        *) die "$(_index_unreadable_sentence "$st" "$(_index_file)")" ;;
+    esac
+}
+
+# The benign counterpart: what to say when the index really IS empty. Host and
+# container differ because `cco resolve` is host-only — the in-container arm is
+# the string R3 flagged, and it must never come back.
+_index_empty_sentence() {
+    if _cco_container_operator; then
+        printf "the path index is empty — nothing is registered on this machine yet. Run cco on your host to populate it."
+    else
+        printf "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'."
+    fi
+}
+
 # Echo the on-disk schema version (integer). Absent/unreadable → 1 (the pre-v2
 # global-flat schema, so a legacy or scaffold-less index reads as transitional).
 _index_version() {

@@ -791,6 +791,13 @@ EOF
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
+            # Read-path honesty (v3 R3 / S4): classify the index BEFORE the read
+            # loop. The dumps below feed a process substitution, which discards
+            # their status, so an unreadable / truncated / stale index would
+            # otherwise fall through to the count==0 branch and be reported as an
+            # empty one at rc=0. Dies (exit 1) naming the real cause; `absent` is
+            # benign and flows on to the honest-empty message.
+            _index_assert_readable
             local proj name path norm count=0 malformed=0 hidden=0 _vis label _owner
             # Output scoping (ADR-0043 §4 / ADR-0046 §7, RC-4): the path index is
             # the raw machine-local name→host-path map (repos/mounts). Each row's
@@ -866,7 +873,11 @@ EOF
             done < <(_index_pp_dump_all; _index_section_dump unscoped \
                 | awk '{ i=index($0,"="); if (i>0) printf "__unscoped__\t%s\t%s\n", substr($0,1,i-1), substr($0,i+1) }')
             if [[ $count -eq 0 && $hidden -eq 0 ]]; then
-                info "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'"
+                # Reached only for a genuinely empty index — _index_assert_readable
+                # above has already ruled out "the read failed". The sentence is
+                # shared and context-aware: in a session it must NOT say "run cco
+                # resolve", a verb the operator gate refuses there (R3).
+                info "$(_index_empty_sentence)"
             elif [[ $malformed -gt 0 ]]; then
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi

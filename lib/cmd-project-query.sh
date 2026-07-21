@@ -15,13 +15,20 @@ EOF
         return 0
     fi
 
+    # Read-path honesty (v3 R3 / S4). This verb degraded even more quietly than
+    # `path list`: _index_list_projects feeds a process substitution, so an
+    # unreadable / truncated / stale index printed a BARE HEADER and exited 0 —
+    # no message at all. Classify before the header, die (exit 1) naming the
+    # real cause; `absent` is benign and reported honestly below.
+    _index_assert_readable
+
     echo -e "${BOLD}NAME              REPOS    STATUS${NC}"
 
     # Enumerate via the STATE index (the sole name→path map; the central
     # $PROJECTS_DIR layout is gone, P5/AD3). Each project's committed config
     # lives in its host repo's <repo>/.cco/; degrade gracefully when the repo
     # is unresolved on this machine (still list the project, repo_count "-").
-    local name unit_dir project_yml repo_count status project_name _yn
+    local name unit_dir project_yml repo_count status project_name _yn shown=0
     while IFS='=' read -r name _; do
         [[ -z "$name" ]] && continue
         [[ "$name" == "_template" ]] && continue
@@ -52,7 +59,13 @@ EOF
         status=$(_cco_session_status_display "$project_name")
 
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
+        shown=$((shown + 1))
     done < <(_index_list_projects)
+    # An honestly empty listing says so. Reached only when the index is readable
+    # and genuinely holds no project — the failure shapes died above. Suppressed
+    # when rows were merely scope-hidden: _env_flush_hidden_notice speaks for
+    # that case, and printing both would contradict it (INV-E, one vocabulary).
+    if [[ $shown -eq 0 ]] && ! _env_has_hidden; then info "$(_index_empty_sentence)"; fi
     _env_flush_hidden_notice
 }
 

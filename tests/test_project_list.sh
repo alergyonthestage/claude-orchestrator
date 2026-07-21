@@ -111,3 +111,52 @@ test_project_list_header_always_present() {
     run_cco list project
     assert_output_contains "NAME"
 }
+
+# ── Read-path honesty: empty ≠ unreadable (v3 R3 / S4) ────────────────
+#
+# This verb degraded even more quietly than `path list`: _index_list_projects
+# feeds a process substitution, so an unreadable index printed a BARE HEADER and
+# exited 0 — a well-formed, entirely false "you have no projects". The header
+# made it worse, since the output looks like a successful listing rather than a
+# blank.
+# ⚠ FAILS on pre-fix code: rc=0, header only, no message.
+test_project_list_unreadable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "alpha" "$(minimal_project_yml alpha)"
+
+    local idx; idx=$(cco_index_file)
+    chmod 000 "$idx"
+    local rc=0
+    run_cco list project || rc=$?
+    chmod 644 "$idx"
+
+    assert_rc 1 "$rc" "list project on an unreadable index" || return 1
+    [[ "$CCO_OUTPUT" == *"cannot be read"* ]] \
+        || { fail "the failure must name the real cause: $CCO_OUTPUT"; return 1; }
+    # And it must not have listed a plausible-looking nothing.
+    [[ "$CCO_OUTPUT" != *"alpha"* ]] \
+        || { fail "no rows may be printed over a failed read: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# The benign half: a readable index with no projects is announced, not silently
+# rendered as a bare header (the pre-fix behaviour on THIS path).
+test_project_list_empty_index_says_so() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_no_containers "$mock_bin"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+
+    run_cco list project || return 1
+    assert_output_contains "NAME" || return 1
+    assert_output_contains "empty" || return 1
+}

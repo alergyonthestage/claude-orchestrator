@@ -558,3 +558,162 @@ test_index_rename_path_leaves_same_path_alias_alone() {
     [[ "$(_index_get_path app-a api)" == "/shared/tree" ]]    || fail "app-a re-keyed"
     [[ "$(_index_get_path app-b common)" == "/shared/tree" ]] || fail "app-b's own label for the same path must be untouched"
 }
+
+# ── Read-path honesty: empty ≠ unreadable (v3 R3 / S4) ────────────────
+#
+# _index_read_state is the read-side sibling of _index_mktemp. S2 made a failed
+# index WRITE loud; these pin the mirror-image defect on the read side: every
+# reader opens the index behind a bare `[[ -f ]] || return 0` and feeds a process
+# substitution, so its status is discarded and "the read failed" was reported as
+# "the index is empty" at rc=0 (v3 V2-F01/F02).
+#
+# The discriminating case is `truncated`: a legitimately empty index is NEVER 0
+# bytes, because _index_ensure_file always writes a header, a version line and
+# the four section keys. A classifier that only tested `-s` as "no content" would
+# pass the ok/absent arms and still mis-report exactly the state that ships.
+
+test_index_read_state_absent_is_benign() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    [[ "$(_index_read_state)" == "absent" ]] \
+        || fail "no index file yet must classify as absent, got: $(_index_read_state)"
+    # Benign: a machine with nothing registered is not an error. If this ever
+    # dies, every first-run `cco list` starts failing.
+    ( _index_assert_readable ) || fail "an absent index must not be an error"
+}
+
+test_index_read_state_ok_on_a_real_index() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_path p repo1 /Users/me/dev/repo1
+    [[ "$(_index_read_state)" == "ok" ]] \
+        || fail "a written index must classify as ok, got: $(_index_read_state)"
+    ( _index_assert_readable ) || fail "a healthy index must not be an error"
+}
+
+test_index_read_state_detects_a_truncated_index() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # A scaffolded index is non-empty even with zero bindings — that is what makes
+    # 0 bytes diagnostic of an interrupted write rather than of "nothing here".
+    _index_set_path p repo1 /Users/me/dev/repo1
+    [[ -s "$(_index_file)" ]] || fail "precondition: a real index is never 0 bytes"
+
+    : > "$(_index_file)"
+    [[ "$(_index_read_state)" == "truncated" ]] \
+        || fail "a 0-byte index must classify as truncated, got: $(_index_read_state)"
+
+    local rc=0; ( _index_assert_readable ) 2>/dev/null || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a truncated index must be an error (exit 1), got rc=$rc"
+}
+
+test_index_read_state_detects_an_unreadable_index() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_path p repo1 /Users/me/dev/repo1
+    chmod 000 "$(_index_file)"
+    local st; st=$(_index_read_state)
+    local rc=0; ( _index_assert_readable ) 2>/dev/null || rc=$?
+    chmod 644 "$(_index_file)"
+
+    # Probed by OPENING, not with `test -r`: access(2) answers for the REAL uid,
+    # which is a false answer under elevation (the rename.sh:174 trap).
+    [[ "$st" == "unreadable" ]] \
+        || fail "a mode-000 index must classify as unreadable, got: $st"
+    [[ "$rc" -eq 1 ]] || fail "an unreadable index must be an error (exit 1), got rc=$rc"
+}
+
+# The vocabulary half of R3. `cco resolve` is HOST-ONLY in a session (bin/cco's
+# operator gate refuses it), so an in-container remedy naming it is advice the
+# shim will reject — the exact string RC-2 retired, re-emitted from a path cycle
+# 1 never audited. On the HOST the same string is the correct remedy, so this is
+# a context rule, not a ban: both arms are asserted, or a "fix" that simply
+# deleted the phrase everywhere would pass.
+test_index_empty_sentence_never_says_cco_resolve_in_a_session() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    local host_msg; host_msg=$(_index_empty_sentence)
+    [[ "$host_msg" == *"cco resolve"* ]] \
+        || fail "on the host 'cco resolve --scan' IS the remedy; got: $host_msg"
+
+    # A REAL operator context, not a stubbed predicate: _cco_container_operator
+    # needs the explicit flag AND all three absolute bucket paths (a stub could
+    # not regress-test the predicate — tests/helpers.sh, lane note (a)).
+    local sess_msg
+    sess_msg=$(CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 \
+        CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
+        _index_empty_sentence)
+    [[ "$sess_msg" != *"cco resolve"* ]] \
+        || fail "in a session the remedy must not name the host-only 'cco resolve': $sess_msg"
+    [[ "$sess_msg" == *"host"* ]] \
+        || fail "the session remedy must point at the host: $sess_msg"
+}
+
+# The `stale` arm — V2-F03's detector. This is the state that produced v3's
+# 🔴 V2-F01: the index was bind-mounted as a FILE, the host replaced it with
+# mktemp+mv, and the container went on reading the old inode — which rename(2)
+# had left with NO directory entry (nlink 0) — reporting 0 rows at rc=0 forever.
+# S1 removed the cause by binding a DIRECTORY; this arm is the detector for the
+# day a file-shaped bind returns somewhere else.
+#
+# nlink 0 cannot be synthesized without a mount, so `stat` is mocked on PATH (the
+# tests/mocks.sh convention). Everything below the syscall is the real code path:
+# _index_link_count really runs, _index_read_state really classifies, and the
+# shared sentence really renders. The kernel side is covered out-of-session by
+# the V2 re-run (plan §10).
+test_index_read_state_detects_a_stale_deleted_inode() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /Users/me/dev/repo1
+
+    # Healthy first — a detector that fires on a LIVE index is worse than none.
+    [[ "$(_index_read_state)" == "ok" ]] \
+        || fail "precondition: a live index must classify ok, got: $(_index_read_state)"
+
+    mkdir -p "$tmp/mockbin"
+    cat > "$tmp/mockbin/stat" <<'MOCK'
+#!/usr/bin/env bash
+# Mock: an inode whose last directory entry was removed by rename(2).
+echo 0
+MOCK
+    chmod +x "$tmp/mockbin/stat"
+
+    local st; st=$(PATH="$tmp/mockbin:$PATH" _index_read_state)
+    [[ "$st" == "stale" ]] || fail "nlink 0 must classify as stale, got: $st"
+
+    local rc=0; ( PATH="$tmp/mockbin:$PATH" _index_assert_readable ) 2>/dev/null || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a stale index must be an error (exit 1), got rc=$rc"
+
+    # It must say WHAT is wrong — "replaced while this session was running" is the
+    # one phrasing that tells a user their view is dead rather than empty.
+    local msg; msg=$(_index_unreadable_sentence stale "$(_index_file)")
+    [[ "$msg" == *"replaced"* ]] || fail "the stale sentence must name the cause: $msg"
+    # It must not CLAIM emptiness — that is the false-success string itself. (The
+    # sentence does contain the word, in the "this is NOT an empty index"
+    # disclaimer, so the assertion is on the claim, not on the token.)
+    [[ "$msg" != *"index is empty"* ]] \
+        || fail "a stale index must never be reported as an empty one: $msg"
+}
+
+# The liveness arm must FAIL SAFE where stat answers neither dialect: no link
+# count means no evidence, and no evidence must never be read as failure.
+test_index_read_state_stale_arm_fails_safe_without_stat() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /Users/me/dev/repo1
+
+    mkdir -p "$tmp/mockbin"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$tmp/mockbin/stat"
+    chmod +x "$tmp/mockbin/stat"
+
+    local st; st=$(PATH="$tmp/mockbin:$PATH" _index_read_state)
+    [[ "$st" == "ok" ]] \
+        || fail "an unanswerable link count must not invent a failure, got: $st"
+}

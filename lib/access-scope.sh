@@ -592,6 +592,13 @@ _env_note_hidden() {
     _ENV_HIDDEN_ANY=1
 }
 
+# True when at least one resource was hidden by scope in this invocation, i.e.
+# _env_flush_hidden_notice is going to speak. Lets a caller whose listing came
+# out EMPTY tell "empty because everything is out of scope" (the notice covers
+# it) from "empty because there is nothing" (the caller's own sentence), without
+# reading the layer's private counters — INV-E keeps the policy in the layer.
+_env_has_hidden() { [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; }
+
 # Emit the standardized scope notices to stderr (INV-B/C). Count-only — never
 # leaks names. Idempotent + no-op when nothing was noted. Two independent notices,
 # each gated on its own flag so a caller that noted ONLY unmounted members still

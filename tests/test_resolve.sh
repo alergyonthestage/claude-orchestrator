@@ -645,3 +645,81 @@ test_path_set_strips_surrounding_double_quotes() {
     run_cco path set myrepo "\"$d\"" || fail "path set failed: $CCO_OUTPUT" || return 1
     assert_output_contains "-> $d" || return 1
 }
+
+# ── Read-path honesty: empty ≠ unreadable (v3 R3 / S4) ────────────────
+#
+# T-R3, the behavioural guard for the read half of the R1 symptom set. The verb
+# reads the index through `done < <(_index_pp_dump_all; …)`, and a process
+# substitution DISCARDS its status — so a permission-denied, truncated or
+# stranded index fell through to the count==0 branch and was announced as an
+# empty index at rc=0 (v3 V2-F02). The user is told the opposite of the truth on
+# the one question they asked.
+#
+# Assertions (b) and (c) are what make this a guard rather than a smoke test: a
+# fix that returned non-zero while still printing "the path index is empty", or
+# that went quiet without naming a cause, still fails here.
+# ⚠ FAILS on pre-fix code: rc=0 with "the path index is empty".
+test_path_list_unreadable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    local idx; idx=$(_rsv_index_file)
+    chmod 000 "$idx"
+    local rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    chmod 644 "$idx"
+
+    # (a) an ERROR (exit 1, D8 — a broken dependency, not a policy refusal), and
+    #     above all never rc=0
+    assert_rc 1 "$rc" "path list on an unreadable index" || return 1
+    # (b) it must NOT claim the index is empty — the false-success class itself
+    [[ "$CCO_OUTPUT" != *"index is empty"* ]] \
+        || { fail "an unreadable index must not be reported as an empty one: $CCO_OUTPUT"; return 1; }
+    # (c) the message names the real cause, so the user can act on it
+    [[ "$CCO_OUTPUT" == *"cannot be read"* ]] \
+        || { fail "the failure must name the real cause: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# The vocabulary half of R3, at the verb. In a session `cco resolve` is HOST-ONLY
+# (bin/cco's operator gate refuses it), so pointing the agent at it is advice the
+# shim rejects — the string RC-2 retired, still live on this path because cycle 1
+# never audited it. Asserted on BOTH surfaces the stage touches, since the
+# failure and the honest-empty arms carry separate sentences and a fix to one
+# does not imply the other.
+test_path_list_operator_never_emits_the_retired_resolve_hint() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-all
+
+    # (1) the honest-EMPTY arm: a readable index holding nothing.
+    local idx; idx=$(_rsv_index_file)
+    mkdir -p "$(dirname "$idx")"
+    printf 'version: 2\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$idx"
+    local rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    assert_rc 0 "$rc" "path list on a genuinely empty index" || return 1
+    [[ "$CCO_OUTPUT" == *"empty"* ]] \
+        || { fail "an empty index must still be announced as empty: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || { fail "in a session the empty-index remedy must not name host-only 'cco resolve': $CCO_OUTPUT"; return 1; }
+
+    # (2) the FAILURE arm: same rule, different sentence.
+    chmod 000 "$idx"
+    rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    chmod 644 "$idx"
+    assert_rc 1 "$rc" "path list on an unreadable index (operator)" || return 1
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || { fail "in a session the failure remedy must not name host-only 'cco resolve': $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"host"* ]] \
+        || { fail "the session remedy must point at the host: $CCO_OUTPUT"; return 1; }
+    return 0
+}

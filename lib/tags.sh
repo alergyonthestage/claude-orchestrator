@@ -411,6 +411,15 @@ EOF
     fi
 
     # Compact unified index (default, or whenever --tag/--sort/--reverse/scoped-with-filter).
+    #
+    # Read-path honesty (v3 R3 / S4). The unified index is the worst place for this
+    # class to hide: an unreadable index drops every project row while
+    # packs/templates/remotes still list, so the output looks plausible rather than
+    # empty. Guard HERE and not inside _list_collect — that runs in the process
+    # substitution below, where `die` would exit only the subshell and the loop
+    # would carry on at rc=0, which is the very shape this stage closes.
+    if [[ -z "$kind" || "$kind" == project ]]; then _index_assert_readable; fi
+
     [[ -z "$sort_by" ]] && sort_by="kind"
     local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do

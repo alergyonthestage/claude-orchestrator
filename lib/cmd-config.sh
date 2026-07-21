@@ -219,6 +219,11 @@ _cv_scan_dirs() {
 # Populate _CV_RECS with every detected orphan across the four buckets.
 _cv_detect() {
     _CV_RECS=()
+    # Read-path honesty (v3 R3 / S4). `config validate` is the verb a user runs to
+    # ASK whether the store is healthy, so an unreadable index returning "no
+    # orphans" is the most damaging instance of the class — a false clean bill of
+    # health on exactly the question asked. Fail loud instead (exit 1).
+    _index_assert_readable
     local state shared data cache
     state=$(_cco_state_dir); data=$(_cco_data_dir); cache=$(_cco_cache_dir)
     # The pack/template sidecars live in the shareable sub-bucket, not the STATE
