@@ -124,7 +124,7 @@ main); `git push` + `develop → main` only after v3 ACCEPTED. Resume pointer: m
 > FF-merged into `develop` and the image rebuilt from it (launch rule 0 satisfied), so this section
 > is closed as *shipped-to-develop*, not as *accepted*. `develop → main` is now gated on cycle 1.1.
 
-#### B2 e2e-review **v3** acceptance → **cycle-1.1 fix** (⏳ IN PROGRESS, 2026-07-21)
+#### B2 e2e-review **v3** acceptance → **cycle-1.1 fix** (✅ IMPL COMPLETE S1…S9, ⏳ GATED on the host, 2026-07-21)
 
 The v3 acceptance re-review ran on the rebuilt image (5 sessions V1…V5 + the §7 scratch procedure,
 2026-07-20) and returned **NOT ACCEPTED**. Verdict + findings→root map:
@@ -160,9 +160,39 @@ S5**: S5's item 2 drops the STATE probe over a host write path whose primitive c
 plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
 ✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
 ✅ `987e38b` · **S7** config-editor announces every drop + the extra_mounts decision (b)
-✅ `097ef61` · **S8** minor + doc debt ⏳ **next** ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep. Suite **1451/9** (the 9 = the
-pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
+✅ `097ef61` · **S8** minor + doc debt ✅ `8843680`+`221d8fb`+`16a129b`+`535a99b`+`a1e4c5e` ·
+**S9** changelog 47 + ADR forward-annotation + living-doc sweep ✅ `fcfe058`. Suite **1463/9** (the 9
+= the pre-existing host-only artifacts, unchanged set — names verified identical to baseline).
+
+**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Everything that remains is either a host
+gate (§10 of the plan, below) or the three `.claude`-payload patches no session can apply.
+
+**S8** closed the five minor findings; its lesson is S7's inverted. `cco repo rename`'s ambiguity
+refusal was unreachable at the WORKDIR root — but the *reason* generalises past the bare form:
+`$unit` comes from a cwd walk, and a project's config lives in exactly one repo, so the
+**fully-specified** 2-arg form also dies there, advising the user to pass `<old> <new>` — which
+they just did. **A remedy pointing at an action that cannot succeed from where the message prints
+is a fix that reads correct and strands the reader.** The new message deliberately does not advise
+that form, and a guard pins it. The residue is **FI-26**.
+
+**S9** did the release hygiene and found the given file list was a lower bound. Three of the five
+named living docs needed nothing (already written by S5/S7/S8 — checked, not assumed); three
+surfaces the list did not name did: `cli.md`'s config-editor paragraph (S7's decision (b) had never
+reached a user-facing doc), **ADR-0045** (correctly called *unaffected*, but its "the mountpoint
+auto-creates under the root" line is true only *because* `running/` is a **directory** bind — the
+same claim that was false for the file-bound siblings), and a **second** stale spot in the managed
+rule. That last one is the sharpest: §6.-1 knew the rule under-reported the host-only set, but the
+same file's "editing config" bullet actively **prescribes** `cco remote remove`, so the rule
+injected into every session recommends a verb D-V3-1 now refuses. Under-reporting is a gap;
+prescribing an unreachable remedy is the false-remedy class one document out — which is why the two
+patches must land as one edit. ⚠ **Three host-only `.claude`-payload patches are the only
+in-repo work left** (plan §6.-1, blocked by **FI-25**): two in
+`defaults/managed/.claude/rules/cco-config-interaction.md`, one in
+`internal/config-editor/.claude/CLAUDE.md`. `defaults/global/.claude/` and
+`templates/project/base/.claude/` were swept and need nothing. Migration checklist re-verified:
+**017 is the only one owed** — no `*_FILE_POLICIES` change, no `templates/` change (the STATE
+layout is machine-local, so a migration that moves it needs no template counterpart), and S8's
+`Dockerfile` edit is image-level (`cco build`, not a migration).
 
 **S7** ratified decision **(b)**: config-editor never mounts a target's `extra_mounts` (it authors
 config; they are reference material, and mounting them widens the built-in's blast radius for no
@@ -236,7 +266,24 @@ Linux container, and a macOS run proves nothing about them. S2b also adds one ga
 host-only verbs it touched (`join`, `init`, `forget`, `project import`, `resolve --scan`,
 `path set`, `migrate`) now die where they used to continue, so each deserves one live happy-path run
 after `cco build` — the hermetic suite covers the failure arms, but the success arms are what a user
-hits daily. Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s8.md`.
+hits daily.
+
+⚠ **Do the provenance check FIRST, before the V3/V5 re-runs** (S8/V1-F3): `cco whoami` now reports
+`image built from: <branch>@<sha>`, and it must read the cycle-1.1 branch and tip **and match what
+you actually built**. The hermetic suite can only pin the row and its `unknown` fallback; the value
+is the exact thing that was wrong in v2's cycle-0, and it is what makes every later result
+attributable. Two more surfaces to exercise while there: **S7** — `cco start config-editor --all` on
+the real 8-project store, confirming every index-known project is either mounted **or** announced
+with the *right* remedy (`cco init` vs `cco resolve`), and that a target with `extra_mounts:`
+announces them and mounts none; **S8/V1-F2** — `cco project show <a project with extra_mounts>`,
+including the `[unresolved]` arm, since that is the surface the S7 announcement now points people
+at. And **S9's residue**: the three `.claude`-payload patches in plan §6.-1 (two in the managed
+rule, one in the config-editor built-in) must be applied on the host or from a
+`--claude-access all` self-dev session — FI-25 — **before** `cco build`, or the rebuilt image bakes
+a managed rule that still prescribes a verb D-V3-1 refuses.
+
+Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s9.md` (`-s8` and earlier
+are retired).
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 

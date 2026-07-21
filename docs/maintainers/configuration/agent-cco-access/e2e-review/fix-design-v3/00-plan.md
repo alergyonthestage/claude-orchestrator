@@ -63,8 +63,8 @@ flowchart TD
 | **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ✅ `987e38b` + `INV-ENV` |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ✅ `097ef61` (decision (b) ratified; V5-05's prescribed site was dead code — §8) |
-| **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
-| **S9** | — | release hygiene | — | ⏳ |
+| **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ✅ `8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e` (V3-P had shipped in S2) |
+| **S9** | — | release hygiene | — | ✅ `fcfe058` — ⚠ 3 host-only `.claude` patches left (§6.-1) |
 
 **What landed, in one line each.** **S1** — STATE crosses via a `state/cco/shared/` directory bind
 instead of file binds; migration `017`; `INV-STATE` pins the allow-list and the shape; also fixed a
@@ -377,7 +377,17 @@ permission-denied or stranded index all render as success.
 
 ## 6. S5 — D-V3-1: remote verbs host-only, and a truthful store refusal
 
-### 6.-1 ⚠ ONE WORK ITEM IS BLOCKED IN-SESSION — must be applied on the host
+### 6.-1 ⚠ WORK ITEMS BLOCKED IN-SESSION — must be applied on the host
+
+> **S9 completed the sweep this section asked for (2026-07-21).** It found **two more**
+> `.claude`-payload edits this cycle owes, listed as patches **2** and **3** below. All three are
+> blocked by the same `:ro` clamp (re-verified this session: `defaults/managed/.claude/rules/`
+> `cco-config-interaction.md` and `internal/config-editor/.claude/CLAUDE.md` are both
+> non-writable while their non-`.claude` siblings are writable). `defaults/global/.claude/` and
+> `templates/project/base/.claude/` were checked and need **nothing** — grepped for the verbs and
+> surfaces this cycle changed; the only `extra_mounts` hits are in
+> `defaults/managed/.claude/skills/init-workspace/SKILL.md`, which is about `project.yml`
+> descriptions, not about what config-editor mounts.
 
 S5's four code items landed, but the **managed rule** `defaults/managed/.claude/rules/`
 `cco-config-interaction.md` §"Host-only verbs (any level)" still lists only
@@ -397,7 +407,8 @@ not authoring trees. So this is an unrecorded side-effect of ADR-0049 on the sel
 not a policy decision about this file. **Workaround for a self-dev session that needs it:**
 `--claude-access all` (FI-25 option (d)).
 
-Patch to apply on the host, in that file's host-only paragraph:
+**Patch 1** — `defaults/managed/.claude/rules/cco-config-interaction.md`, §"Host-only verbs (any
+level)". Replace `cco remote set-token|remove-token` in that paragraph with:
 
 ```
 `cco remote set-token|remove-token|remove|rename` (D-V3-1: the last two cascade
@@ -405,6 +416,38 @@ into the 0600 token store, which never crosses into a session — unmounted, cco
 cannot tell "no token" from "token invisible", so both would silently orphan the
 token; `cco remote add` stays available, it writes only the url registry).
 ```
+
+**Patch 2** — *the same file, a second stale spot S9 found.* Its §"Editing config" bullet
+*"Mutate framework-internal state only via `cco`"* ends by prescribing
+`` `cco tag …`, `cco remote add|remove`, `cco pack|template|llms …` ``. After D-V3-1
+`remote remove` is host-only, so that line now tells every future agent to reach for a verb the
+session will refuse — the **false-remedy** class `INV-ENV` exists to prevent, in the document that
+teaches the model what to reach for. Narrow it to the verb that still runs in-session:
+
+```
+`cco tag …`, `cco remote add`, `cco pack|template|llms …` instead (`cco remote
+remove|rename` are host-only — see below).
+```
+
+⚠ Patches 1 and 2 are **one edit to one file** and should land together: patch 1 alone leaves the
+rule self-contradictory (host-only in one paragraph, prescribed in another), which is worse than
+the under-reporting it fixes.
+
+**Patch 3** — `internal/config-editor/.claude/CLAUDE.md`, the **project mode** bullet. S7's
+decision **(b)** is the built-in's own mount contract and is currently documented only in the
+design doc and (as of S9) `cli.md`; the file that tells the config-editor agent what it has does
+not state it. Append to that bullet:
+
+```
+A target's `extra_mounts:` are **never** mounted here (config-editor authors
+config; they are reference material) — `cco start` announces each one instead.
+Do not treat an announced extra_mount as reachable: `cco path list` prints its
+host path, but nothing is bound at it in this session.
+```
+
+The last sentence is the load-bearing one: the announcement exists *because* `path list` makes
+those bindings look live, so the agent reading this rule is exactly the reader who would otherwise
+be misled.
 
 ### 6.0 ⚠ Amended 2026-07-21 — S2b's token primitives must land FIRST
 
@@ -669,20 +712,67 @@ results are independent of R1 and were verified clean against the host oracle.
 
 ---
 
-## 11. Release hygiene (S9)
+## 11. Release hygiene (S9) ✅ `fcfe058`
+
+> **Landed 2026-07-21.** All four parts done in-session; the only residue is the three host-only
+> `.claude`-payload patches in §6.-1, which no session can apply (FI-25). Suite unchanged at
+> **1463/9**, baseline names verified identical. Two things worth carrying forward:
+>
+> **The doc sweep found more than it was given.** §11 listed five living docs. Three needed
+> nothing (`03-*` §3.9 and both `cli.md` remote/`project show` surfaces had already been written
+> by S7/S5/S8 — checked before editing, not assumed), and three needed something the list did not
+> name: `cli.md`'s config-editor paragraph (S7's decision (b) had never reached a user-facing
+> doc), **ADR-0045** (called "unaffected", and behaviourally it is — but its *"the mountpoint
+> auto-creates under the root"* line is true only because `running/` is a **directory** bind,
+> which is the same sentence that was false for the file-bound siblings), and the two extra
+> `.claude`-payload patches in §6.-1. **A doc sweep given a file list should treat it as a lower
+> bound**: the list names where the last cycle's authors expected drift, not where it happened.
+>
+> **The second managed-rule spot is the sharper of the two.** §6.-1 knew the rule under-reported
+> the host-only set. What it did not know is that the *same file's* "editing config" bullet
+> actively prescribes `cco remote remove` — so the rule injected into every session does not
+> merely omit a refusal, it recommends the refused verb. Under-reporting is a gap; prescribing an
+> unreachable remedy is the false-remedy class (S8's lesson, one document out), and it is why
+> patches 1 and 2 must land as one edit.
 
 - **`changelog.yml`** — next id **47**. Cycle 1 grouped its entry as id 46 (D-M10/Q-C2); follow that
-  shape for 1.1.
+  shape for 1.1. ✅ Verified through `_read_changelog_entries` itself — the parser is line-based
+  and a continuation line that looks like a key silently truncates the description.
 - **Migration** — `migrations/global/017_state_shared_subbucket.sh` (next sequential id; current max
   is 016). Idempotent, tolerant of a missing source, bumps the global schema version. Per
   `.claude/rules/update-system.md` this is a **breaking/structural** change: base template and
   non-base native templates need review too.
+  ✅ **017 is the only migration owed, and the template review came back empty — checked, not
+  assumed.** No `*_FILE_POLICIES` change (`lib/update.sh` is untouched across the whole branch) and
+  no `templates/` change, which is correct rather than an omission: the STATE layout is
+  **machine-local**, so it never appears in project config, and a migration that moved it needs no
+  template counterpart. `_latest_schema_version` derives from the migrations directory, so there is
+  no constant to bump. The only other non-doc, non-`lib` change on the branch is S8's `Dockerfile`
+  edit (`/opt/cco/BUILD`), which is **image-level** — it needs `cco build`, not a migration.
+  S2/S2b/S2b-P/S3/S4/S5/S6/S7 are code-only: no schema, no layout, no persisted state.
 - **ADR forward-annotation** (append-only, per `documentation-lifecycle.md`): **ADR-0047** gains the
   STATE allow-list refinement (S1) and **D-V3-1** (S5); **ADR-0045** is unaffected (`running/` keeps
   its own `:ro` directory bind).
+  ✅ ADR-0047 annotated with all three (the allow-list refinement, D-V3-1, **INV-S3b**), including
+  the point the original left unstated and the e2e run turned into a blocker: **the shape of the
+  crossing is load-bearing**, and the allow-list-vs-deny-list property — not the specific secrets —
+  is why `state/cco` was not bound whole. ⚠ **ADR-0045 was *qualified*, not left alone.**
+  Behaviourally unaffected, as predicted — but its *"the mountpoint auto-creates under the root"*
+  line holds **because** `running/` is a directory bind, i.e. it is the same claim that was false
+  for the file-bound siblings. Annotated so nobody converts it to per-marker file binds; INV-STATE
+  pins the `{shared, running}` allow-list either way.
 - **Living docs** — `design-docker.md` §1.2.2 (the bucket-ownership invariant this defect is the
   first real instance of), `02-mount-generation.md`, `05-store-write-path.md`,
   `03-config-editor-repos.md` §3.9 (S7's decision), `cli.md` (remote verbs now host-only).
+  ✅ Done, with the list treated as a lower bound (see the banner above). New:
+  `design-docker.md` **§1.2.2.1** — the XDG-base hazard one layer deeper, inside the ADR-0047 root,
+  where the process that gets `EACCES` is `cco-svc`; its two rules are stated **separately**
+  because bind-as-directory and own-the-parent each leave a live failure mode if applied alone.
+  `02-*` §5 item 6 annotated in place (still true *of RC-1*; that branch is no longer untouched).
+  `05-*` **§3.9** — the three amendments the e2e run forced, plus the fact that §1.2's swallow
+  turned out to be systemic (INV-IDX; residue FI-24). `cli.md` gained S7's decision (b), which
+  until now existed only in a maintainer design doc. Needed nothing: `03-*` §3.9 (S7 wrote it) and
+  `cli.md`'s remote paragraphs (S5) / `project show` flow (S8) — verified before editing.
 - **Git** — atomic commits per stage on `fix/config-access/e2e-v3-cycle1.1`; merge to `develop` only
   after the §10 gates. `develop → main` stays gated on a v3.1 acceptance pass.
 
