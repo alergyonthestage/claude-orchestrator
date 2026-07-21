@@ -613,11 +613,11 @@ test_store_refusal_names_mount_gap_not_scope() {
     run_cco remote add acme https://github.com/acme/config.git || rc=$?
     chmod 755 "$CCO_DATA_HOME"
 
-    # (a) exit 1, NOT 2: INV-S3 (store.sh header) pins a store write that cannot
-    #     complete as an ERROR, and `_store_apply` dies at 1 for the same condition
-    #     caught one step later. R5 is a MESSAGE defect; the code stays 1.
-    [[ "$rc" -eq 1 ]] \
-        || { fail "an unwritable store bucket must exit 1 (INV-S3), got rc=$rc: $CCO_OUTPUT"; return 1; }
+    # (a) exit 2 — INV-S3b: an in-session PRE-FLIGHT refusal is a session-SHAPE fact
+    #     (the bucket is not bound here), not an error. A write that STARTED and
+    #     failed still exits 1 everywhere; on the host this same probe exits 1 too.
+    [[ "$rc" -eq 2 ]] \
+        || { fail "an in-session pre-flight refusal must exit 2 (INV-S3b), got rc=$rc: $CCO_OUTPUT"; return 1; }
     # (b) the DISCRIMINATING assertion: the old wording blamed access scope, which
     #     is what made it false at edit-all. It must not come back.
     [[ "$CCO_OUTPUT" != *"not writable in this session"* ]] \

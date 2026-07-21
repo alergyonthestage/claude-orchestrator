@@ -125,7 +125,7 @@ test_store_pack_remove_fails_loud_when_data_unwritable() {
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco pack remove p -y || rc=$?
     chmod 755 "$CCO_DATA_HOME"
-    assert_rc 1 "$rc" "pack remove with unwritable DATA must fail loud" || return 1
+    assert_rc 2 "$rc" "pack remove with unwritable DATA must refuse (in-session pre-flight, INV-S3b)" || return 1
     [[ "$CCO_OUTPUT" != *"Pack 'p' removed"* ]] \
         || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
     assert_dir_exists "$CCO_PACKS_DIR/p" || return 1   # fail-closed: CONFIG untouched
@@ -161,7 +161,7 @@ test_store_pack_rename_plan_blocks_before_store_mv() {
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco pack rename p q -y || rc=$?
     chmod 755 "$CCO_DATA_HOME"
-    assert_rc 1 "$rc" "pack rename with unwritable DATA must refuse before the store mv" || return 1
+    assert_rc 2 "$rc" "pack rename with unwritable DATA must refuse before the store mv (in-session pre-flight, INV-S3b)" || return 1
     assert_dir_exists "$CCO_PACKS_DIR/p" || return 1
     assert_dir_not_exists "$CCO_PACKS_DIR/q" || return 1
     return 0
@@ -226,7 +226,7 @@ test_store_template_remove_fails_loud_when_state_unwritable() {
     chmod 555 "$(state_shared)"
     local rc=0; run_cco template remove t -y || rc=$?
     chmod 755 "$(state_shared)"
-    assert_rc 1 "$rc" "template remove with unwritable STATE must fail loud" || return 1
+    assert_rc 2 "$rc" "template remove with unwritable STATE must refuse (in-session pre-flight, INV-S3b)" || return 1
     [[ "$CCO_OUTPUT" != *"Template 't' removed"* ]] \
         || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/t" || return 1
@@ -244,7 +244,7 @@ test_store_template_rename_plan_blocks() {
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco template rename t u -y || rc=$?
     chmod 755 "$CCO_DATA_HOME"
-    assert_rc 1 "$rc" "template rename with unwritable DATA must refuse before the store mv" || return 1
+    assert_rc 2 "$rc" "template rename with unwritable DATA must refuse before the store mv (in-session pre-flight, INV-S3b)" || return 1
     assert_dir_exists "$CCO_TEMPLATES_DIR/project/t" || return 1
     assert_dir_not_exists "$CCO_TEMPLATES_DIR/project/u" || return 1
     return 0
@@ -330,7 +330,7 @@ test_store_remote_add_fails_loud_when_registry_unwritable() {
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco remote add r1 https://example.com/r1.git || rc=$?
     chmod 755 "$CCO_DATA_HOME"
-    assert_rc 1 "$rc" "remote add with unwritable registry must fail loud" || return 1
+    assert_rc 2 "$rc" "remote add with unwritable registry must refuse (in-session pre-flight, INV-S3b)" || return 1
     [[ "$CCO_OUTPUT" != *"Added remote"* ]] \
         || { fail "no success tick on a failed store write: $CCO_OUTPUT"; return 1; }
     return 0
@@ -351,7 +351,7 @@ test_store_pack_remove_prints_no_success_tick_on_failure() {
     chmod 555 "$CCO_DATA_HOME"
     local rc=0; run_cco pack remove p -y || rc=$?
     chmod 755 "$CCO_DATA_HOME"
-    assert_rc 1 "$rc" "a failed store write must exit 1, never 0" || return 1
+    assert_rc 2 "$rc" "an in-session pre-flight refusal must exit 2, never 0 (INV-S3b)" || return 1
     [[ "$CCO_OUTPUT" != *"Pack 'p' removed"* ]] \
         || { fail "the success tick must not print on a failed store write: $CCO_OUTPUT"; return 1; }
     [[ "$CCO_OUTPUT" == *store* ]] \

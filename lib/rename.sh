@@ -171,9 +171,16 @@ _rename_yaml_write_owned() {
 # Usage: _rename_assert_writable <dir> <what>
 _rename_assert_writable() {
     local dir="$1" what="$2" t
-    t=$(_rename_deelevated mktemp "$dir/.cco-wtest.XXXXXX" 2>/dev/null) \
-        || refuse "Cannot write $what in this session ($dir is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
-    _rename_deelevated rm -f "$t" 2>/dev/null || true
+    t=$(_rename_deelevated mktemp "$dir/.cco-wtest.XXXXXX" 2>/dev/null) && {
+        _rename_deelevated rm -f "$t" 2>/dev/null || true
+        return 0
+    }
+    # INV-S3b (store.sh header): in a session this is a shape refusal (2) with a host
+    # remedy; on the host there is no session shape, so an unwritable tree is a
+    # genuine error (1) and "run it on your host" would be nonsense.
+    _cco_container_operator \
+        && refuse "Cannot write $what in this session ($dir is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
+    die "Cannot write $what — $dir is not writable. Check its permissions; nothing was changed."
 }
 
 # §3.5's OTHER half: assert the machine-local index bucket is writable too.
@@ -192,18 +199,25 @@ _rename_assert_writable() {
 # a cco-svc-owned bucket and refuse every legitimate rename; elevating the other
 # would pass on a tree the real write cannot touch. Same rule, mirrored.
 #
-# Exit code follows its sibling (refuse = 2) so one precondition speaks with one
-# voice. If S5 settles the store-refusal taxonomy on 1 for "bucket not writable",
-# both halves move together — do not split them.
+# Exit code: **INV-S3b** (store.sh header, settled 2026-07-21 by S5/plan §6.3). Both
+# halves of this precondition speak with one voice — in a session a pre-flight
+# refusal is a session-SHAPE fact → 2; on the host the same probe failing is a
+# genuine error → 1. That is the resolution of the note this comment used to carry
+# ("if S5 settles the taxonomy on 1, both halves move together"): the answer turned
+# out to depend on session-vs-host, not on which store is probed.
 # Usage: _rename_assert_index_writable <what>
 _rename_assert_index_writable() {
     local what="$1" d t
     d=$(_cco_state_shared_dir)
-    [[ -d "$d" ]] \
-        || refuse "Cannot write $what in this session — the machine-local index is not mounted in this session. Run '$what' on your host — nothing was changed."
-    t=$(mktemp "$d/.cco-wtest.XXXXXX" 2>/dev/null) \
-        || refuse "Cannot write $what in this session (the machine-local index bucket $d is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
-    rm -f "$t" 2>/dev/null || true
+    if [[ ! -d "$d" ]]; then
+        _cco_container_operator \
+            && refuse "Cannot write $what in this session — the machine-local index is not mounted in this session. Run '$what' on your host — nothing was changed."
+        die "Cannot write $what — the machine-local index bucket $d does not exist. Run 'cco resolve --scan' to rebuild it; nothing was changed."
+    fi
+    t=$(mktemp "$d/.cco-wtest.XXXXXX" 2>/dev/null) && { rm -f "$t" 2>/dev/null || true; return 0; }
+    _cco_container_operator \
+        && refuse "Cannot write $what in this session (the machine-local index bucket $d is not writable by the cco store helper). Run '$what' on your host — nothing was changed."
+    die "Cannot write $what — the machine-local index bucket $d is not writable. Check its permissions; nothing was changed."
 }
 
 # ── project.yml re-key (current project) ─────────────────────────────

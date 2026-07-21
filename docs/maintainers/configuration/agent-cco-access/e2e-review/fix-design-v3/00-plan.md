@@ -58,7 +58,7 @@ flowchart TD
 | **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
-| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` (⚠ 2 follow-ups — §6.-1, §6.3) |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
@@ -357,6 +357,14 @@ Until it is applied, the rule injected into every future session under-reports t
 The same constraint applies to anything else this cycle needs in `defaults/managed/.claude/` or
 `defaults/global/.claude/` — fold the check into **S9**'s doc sweep, and run that part on the Mac.
 
+**Why it is blocked is itself a finding**, recorded as **FI-25** in `roadmap-backlog.md`: the clamp
+is the nested-`.claude` sweep (`_find_nested_config_dirs`, `cmd-start.sh:507`), which is correct for
+a normal project's authoring trees but also catches cco's OWN shipped `.claude` payload —
+`defaults/managed/`, `defaults/global/`, `templates/project/base/`, `internal/*/` are tool SOURCE,
+not authoring trees. So this is an unrecorded side-effect of ADR-0049 on the self-development case,
+not a policy decision about this file. **Workaround for a self-dev session that needs it:**
+`--claude-access all` (FI-25 option (d)).
+
 Patch to apply on the host, in that file's host-only paragraph:
 
 ```
@@ -425,31 +433,35 @@ the renamed remote's auth without a diagnostic.
      session"* vocabulary + a host remedy. This is the state `project validate` already speaks
      correctly; reuse that string, do not write a fourth spelling.
 
-### 6.3 ⚠ Deferred by S5 — the two "cannot write the store" guards now disagree on exit code
+### 6.3 ✅ SETTLED 2026-07-21 — INV-S3b: the exit code follows the FAILURE'S NATURE
 
-Item 4 settled on **exit 1** (INV-S3, see the commit). `rename.sh:203`'s
-`_rename_assert_index_writable` — landed by S3 one day earlier — uses `refuse` (**exit 2**) for its
-own *"the machine-local index is not mounted in this session"*. Both are pre-flight refusals over an
-unwritable/unmounted internal store, and they now answer differently.
+S5 first shipped item 4 at exit **2** (applying D8, *session-shape → refuse 2*), which the full
+suite refuted: `lib/store.sh`'s **INV-S3** pins exit **1**, with 8 guards in `test_store_writes.sh`.
+The fix was reverted to 1 inside S5 — and that, on review with the maintainer, was **also** only
+half right. Both readings were partial:
 
-This is the conditional §6 anticipated (*"if item 4 lands on exit 1 … move `_rename_assert_index_
-writable` and its sibling onto the same convention together"*). It **fires**. It was not done inside
-S5 because it changes the shipped exit code of a guard landed the previous day, which deserves its
-own commit and its own revert-check, not a footnote in a four-item stage.
+- **D8 alone** ("session shape → 2") ignores that a write which *started and failed* is a real error.
+- **INV-S3 alone** ("store failure → 1") ignores that a **pre-flight** refusal is a session-shape
+  fact, knowable before any mutation, whose remedy is "run it on the host".
 
-**The decision to make** (recommendation: (a)):
+**The discriminator is `pre-flight` vs `write`, crossed with `session` vs `host`** — not which
+module or which store. Ratified:
 
-- **(a) unify on 1** — INV-S3 governs the internal store as a whole; `_store_apply` already dies at
-  1, so the store surface answers with one code. Cost: `rename.sh`'s guard changes code, and D8's
-  general "session-shape → 2" reading gets a documented exception for this module.
-- **(b) unify on 2** — follow D8 everywhere. Cost: contradicts INV-S3, splits the pre-flight from
-  `_store_apply`'s 1, and rewrites eight `test_store_writes.sh` guards. Rejected in S5 for exactly
-  these reasons.
-- **(c) leave both** — defensible only if the two are genuinely different classes (index-mount vs
-  store-bucket). They are not: S3's own design frames its probe as the store pre-flight's sibling.
+| Condition | Code |
+|---|---|
+| in-session **pre-flight** refusal (the bucket is not bound into this container) | **2** |
+| host **pre-flight** refusal (no session shape in play — a genuinely unwritable bucket) | **1** |
+| a write that **started and failed** (`_store_apply`), anywhere | **1** |
 
-Whichever lands, record it in `store.sh`'s header next to INV-S3 so the next reader does not
-re-derive it from D8 — which is precisely the mistake S5 made and the suite caught.
+This governs `store.sh`'s `_store_unwritable_refuse` **and** `rename.sh`'s two pre-flight probes
+(`_rename_assert_writable`, `_rename_assert_index_writable`), so `repo rename` answers with one
+voice whichever half refuses — resolving S3's *"both halves move together"* note. The answer turned
+out to depend on session-vs-host, not on which store is probed, which is why neither half of the
+old framing could reach it.
+
+Recorded as **INV-S3b** in `lib/store.sh`'s header, with an explicit warning not to re-derive it
+from D8 or INV-S3 alone. Cost paid: 6 in-session write-arm assertions in `test_store_writes.sh`
+moved 1 → 2. The reach-arm (opaque 000) and host-arm cases keep 1 and were not touched.
 
 ---
 

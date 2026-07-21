@@ -786,3 +786,54 @@ whether `git merge-file` can exit 0 with a truncated output on a full `/tmp`, an
 statement cannot return non-zero) plus per-cluster fixes. **Effort**: Med–High (three clusters).
 **Not gating** the e2e review or cycle 1.1 — but cluster 1 overlaps workstream **F** (the `cco
 update` responsibility refactor), so scope them together.
+
+## FI-25: the nested-`.claude` `:ro` clamp catches cco's OWN shipped `.claude` payload (self-dev)
+
+**Status**: 📝 Note — to analyze (hit live 2026-07-21 while landing cycle-1.1 S5, which needed a
+one-line edit to a managed rule and could not make it from inside a cco session).
+
+**Context**: `_find_nested_config_dirs` (`lib/cmd-start.sh:507`) sweeps `find -type d -name .claude`
+to maxdepth 6 under every repo, and each hit gets a `:ro` overlay when `claude_access` does not
+grant rw (the ADR-0049 default). **For a normal project this is exactly right** — a monorepo's
+`packages/x/.claude` *is* an authoring tree Claude Code discovers natively, so a root-only overlay
+would leak; the function's own comment argues this well.
+
+**But cco's own repo ships `.claude` directories as PRODUCT PAYLOAD, not authoring trees.** Measured
+in a live session (`/proc/self/mountinfo`), the repo is `rw` while these are all `:ro`:
+
+| Path | What it actually is |
+|---|---|
+| `defaults/managed/.claude/` | rules baked into the image at `/etc/claude-code/` — tool source |
+| `defaults/global/.claude/` | the defaults copied to `~/.cco/.claude/` on `cco init` — tool source |
+| `templates/project/base/.claude/` | a template's payload |
+| `internal/{tutorial,config-editor}/.claude/` | built-in preset payload |
+
+A name-based sweep cannot tell "an authoring tree this session will load" from "a directory of files
+this tool ships to users". In cco's repo the two have the same shape and opposite roles — and
+`defaults/` is classified as **tracked tool code** by the root `CLAUDE.md`.
+
+**Consequence**: cco cannot self-develop its own managed rules, global defaults, or template payload
+from inside a cco session — which contradicts the self-development model `/workspace/.claude/
+CLAUDE.md` explicitly adopts. It is not hypothetical: S5 had to hand the maintainer a patch to apply
+on the host (plan §6.-1), and the same will recur on every future change to `defaults/` or
+`templates/`. Note the failure is at least **loud** (`EROFS`), not silent.
+
+**Direction to evaluate** — options, not exclusive:
+- **(a)** exclude the tool's own payload roots from the sweep when the repo IS the cco source repo
+  (detectable: `defaults/managed/` + `bin/cco` present). Narrow, but a special case keyed on
+  self-identification.
+- **(b)** exclude by position rather than identity: never clamp a `.claude` under a directory that
+  is itself template/preset payload (`defaults/`, `templates/`, `internal/`). Generalises to any
+  project that *ships* config trees, not just cco.
+- **(c)** accept it and make it legible — document that self-dev of `defaults/**/.claude` is
+  host-side, and have `cco start` say so when it clamps a path under `defaults/`/`templates/`.
+- **(d)** let `--claude-access all` cover it (it already would) and document that as the self-dev
+  workflow. Cheapest; cost is that self-dev then runs with every authoring tree writable, which is
+  broader than the need.
+
+⚠ **Do not "fix" this by narrowing the sweep generally** — the monorepo case it exists for is real,
+and the clamp is fail-safe. Whatever lands must keep an unrecognised `.claude` clamped by default.
+
+**Type & tracking**: access-model UX + self-development workflow; no schema change. Interacts with
+FI-20 (the same "a `:ro` overlay is correct but its consequences are unwritten" shape). **Effort**:
+Low–Med. **Not gating** cycle-1.1 — but it makes S9's doc sweep partly host-side, so note it there.

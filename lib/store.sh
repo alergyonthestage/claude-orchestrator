@@ -12,6 +12,23 @@
 # is knowable, then applies a named whole-cascade op. A store write that cannot
 # complete is an ERROR (exit 1), never a false ✓ (INV-S3).
 #
+# INV-S3b — WHICH code, decided by the FAILURE'S NATURE, not by the module (settled
+# 2026-07-21, cycle-1.1 S5; plan §6.3). One principle, no per-module exception:
+#
+#   in-session PRE-FLIGHT refusal → 2   the bucket is not bound into this container.
+#                                        A session-SHAPE fact, knowable before any
+#                                        mutation; the remedy is "run it on the host".
+#   host PRE-FLIGHT refusal       → 1   no session shape is in play — an unwritable
+#                                        bucket on the host is a genuine error.
+#   a write that STARTED + failed → 1   everywhere (`_store_apply`). INV-S3's core:
+#                                        never a false ✓.
+#
+# It also governs `rename.sh`'s two pre-flight probes, so `repo rename` answers with
+# one voice whichever half refuses. ⚠ Do NOT re-derive this from D8 alone ("session
+# shape → 2") NOR from INV-S3 alone ("store failure → 1"): each is half the rule, and
+# S5 shipped the wrong code once by applying only the first. The discriminator is
+# pre-flight-vs-write, crossed with session-vs-host.
+#
 # Two crossings, each all-or-nothing:
 #   _store_check <op> args…   — crossing #1, READ ONLY: dies (exit 1) on an
 #                               unreachable/unwritable store BEFORE any mutation; exposes
@@ -245,19 +262,15 @@ _store_plan() {
 # refused it at exit 2, naming the axis ("needs G=rw … current cco_access=…"). So in
 # a container the only surviving condition is that the bucket is not bound here.
 #
-# ⚠ EXIT CODE IS 1, NOT 2 — this is R5's message fix, NOT an exit-code change.
-# D8's general convention ("session shape → refuse 2") would suggest 2, and the
-# neighbouring `_env_unavailable` / `rename.sh` index guard do use it. But this
-# module carries a NARROWER, explicit contract that wins here: **INV-S3** (header,
-# and `_store_apply`'s own `die`) — *a store write that cannot complete is an ERROR
-# (exit 1), never a false ✓*. Eight guards in `tests/test_store_writes.sh` pin it.
-# Moving the pre-flight to 2 while `_store_apply` stayed at 1 would also split one
-# failure mode across two codes depending on whether the probe or the write caught
-# it. Callers distinguish these by MESSAGE, which is exactly what R5 asked for.
+# EXIT CODE — see INV-S3b in this file's header. A pre-flight refusal in a SESSION
+# is a session-SHAPE condition (the bucket is not bound here), knowable in advance
+# → `refuse`, exit 2. On the HOST no session shape is in play, so the same probe
+# failing is a genuine error → `die`, exit 1. A write that STARTED and failed stays
+# exit 1 everywhere (`_store_apply`) — that is INV-S3's core.
 _store_unwritable_refuse() {
     local op="$1"
     if _cco_container_operator; then
-        die "Cannot update the internal store for '$op' — the store bucket it writes is not mounted in this session. It exists on this machine, but is not bound into this container. Run the command on your host; nothing was changed."
+        refuse "Cannot update the internal store for '$op' — the store bucket it writes is not mounted in this session. It exists on this machine, but is not bound into this container. Run the command on your host; nothing was changed."
     fi
     die "Cannot update the internal store for '$op' — the store bucket it writes is not writable. Check its permissions and free space; nothing was changed."
 }
