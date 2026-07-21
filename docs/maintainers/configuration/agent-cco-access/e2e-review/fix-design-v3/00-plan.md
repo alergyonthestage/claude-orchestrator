@@ -4,8 +4,8 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P landed** (2026-07-20/21), suite
-> **1431/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S5**.
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 landed** (2026-07-20/21), suite
+> **1434/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S6**.
 > Resume pointer: [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) — **read its §4 before S5**: the
 > stage order below is amended (**S2b-P**, the two token primitives, now precedes S5).
 > [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md) is superseded.
@@ -58,7 +58,7 @@ flowchart TD
 | **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
-| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ⏳ after S2b-P |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` (⚠ 2 follow-ups — §6.-1, §6.3) |
 | **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ⏳ |
 | **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ⏳ |
 | **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ⏳ (V3-P done in S2) |
@@ -75,8 +75,10 @@ side can now tell a failed read from an empty index, and says so at exit 1 in on
 vocabulary. **S2b-P** — the two token primitives can now fail: `_remote_token_remove` gains a
 three-valued contract (0 removed / 1 absent / **2 failed**) so a failed revocation is never
 rendered as "No token found", and the three `|| true`s that swallowed the new signal are closed —
-including `cmd-config.sh:303`, which the plan did not list. Every guard was adversarially
-revert-checked against pre-fix code.
+including `cmd-config.sh:303`, which the plan did not list. **S5** — `remote remove|rename` are
+host-only (D-V3-1); the STATE-root probe is gone from `remote-drop/rekey`; the dup-check and the
+store refusal both name conditions that are true and remedies that are reachable. Every guard was
+adversarially revert-checked against pre-fix code.
 
 ---
 
@@ -422,6 +424,32 @@ the renamed remote's auth without a diagnostic.
    - **not bound in this container** — the bucket is not mounted → D-M2's *"not mounted in this
      session"* vocabulary + a host remedy. This is the state `project validate` already speaks
      correctly; reuse that string, do not write a fourth spelling.
+
+### 6.3 ⚠ Deferred by S5 — the two "cannot write the store" guards now disagree on exit code
+
+Item 4 settled on **exit 1** (INV-S3, see the commit). `rename.sh:203`'s
+`_rename_assert_index_writable` — landed by S3 one day earlier — uses `refuse` (**exit 2**) for its
+own *"the machine-local index is not mounted in this session"*. Both are pre-flight refusals over an
+unwritable/unmounted internal store, and they now answer differently.
+
+This is the conditional §6 anticipated (*"if item 4 lands on exit 1 … move `_rename_assert_index_
+writable` and its sibling onto the same convention together"*). It **fires**. It was not done inside
+S5 because it changes the shipped exit code of a guard landed the previous day, which deserves its
+own commit and its own revert-check, not a footnote in a four-item stage.
+
+**The decision to make** (recommendation: (a)):
+
+- **(a) unify on 1** — INV-S3 governs the internal store as a whole; `_store_apply` already dies at
+  1, so the store surface answers with one code. Cost: `rename.sh`'s guard changes code, and D8's
+  general "session-shape → 2" reading gets a documented exception for this module.
+- **(b) unify on 2** — follow D8 everywhere. Cost: contradicts INV-S3, splits the pre-flight from
+  `_store_apply`'s 1, and rewrites eight `test_store_writes.sh` guards. Rejected in S5 for exactly
+  these reasons.
+- **(c) leave both** — defensible only if the two are genuinely different classes (index-mount vs
+  store-bucket). They are not: S3's own design frames its probe as the store pre-flight's sibling.
+
+Whichever lands, record it in `store.sh`'s header next to INV-S3 so the next reader does not
+re-derive it from D8 — which is precisely the mistake S5 made and the suite caught.
 
 ---
 
