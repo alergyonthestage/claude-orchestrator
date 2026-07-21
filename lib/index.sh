@@ -814,18 +814,28 @@ _index_remove_project() { _index_section_remove projects "$1"; }
 # its per-project path block (project_paths:, ADR-0051 — keyed by project name).
 # The identity re-key primitive for `cco project rename` (ADR-0031 D2). No-op-safe:
 # an absent <old> just creates <new> with empty members — callers validate <old>
-# exists and <new> is free first. Usage: _index_rename_project <old> <new>
+# exists and <new> is free first.
+#
+# Returns non-zero if ANY sub-write fails (S2b item 3), exactly as its sibling
+# _index_rename_path does. It checked none of them, so a partial identity re-key —
+# <new> created but <old> not removed, or the path block half re-homed — reported
+# success and left the index describing a project that half-exists under each name.
+# errexit cannot cover it: bin/cco runs command bodies in a `||` context, which
+# disables it for the whole call tree. Usage: _index_rename_project <old> <new>
 _index_rename_project() {
     local old="$1" new="$2" members name path
     members=$(_index_get_project_repos "$old")
-    _index_set_project_repos "$new" $members
-    _index_remove_project "$old"
-    # Re-home the project_paths block (v2). No-op under v1 (dump is empty).
+    _index_set_project_repos "$new" $members || return 1
+    _index_remove_project "$old" || return 1
+    # Re-home the project_paths block (v2). No-op under v1 (dump is empty). The
+    # loop body runs in THIS shell (only the dump is a process substitution), so a
+    # `return` here does leave the function.
     while IFS='=' read -r name path; do
         [[ -z "$name" ]] && continue
-        _index_pp_set "$new" "$name" "$path"
+        _index_pp_set "$new" "$name" "$path" || return 1
     done < <(_index_pp_dump_project "$old")
-    _index_pp_remove_project "$old"
+    _index_pp_remove_project "$old" || return 1
+    return 0
 }
 
 # Re-key a repo/extra_mount NAME within ONE project from <old> to <new>: its

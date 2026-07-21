@@ -497,7 +497,13 @@ _resolve_entry_index() {
     resolved=$(_prompt_for_path "$name" "$url" "$suggested" "$label") || rc=$?
 
     if [[ $rc -eq 0 && -n "$resolved" ]]; then
-        _index_set_path "$proj" "$name" "$resolved"
+        # S2b: the caller treats 0 as "bound, here is the path". A silently failed
+        # write returned that same 0, so the interactive prompt's answer was
+        # accepted and then lost — and the user is never asked again.
+        _index_set_path "$proj" "$name" "$resolved" || {
+            warn "Could not bind '$name' -> $resolved in the machine-local index."
+            return 1
+        }
         echo "$resolved"
         return 0
     elif [[ $rc -eq 2 ]]; then

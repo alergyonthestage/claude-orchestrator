@@ -199,9 +199,14 @@ EOF
     # Remove this project's membership AND its entire per-project path block
     # (ADR-0051 D5). Other projects' bindings — even to the same paths — are their
     # own independent labels and are never touched.
+    # S2b: checked BEFORE the irreversible rm -rf below. Called bare, a failed index
+    # removal left the project still listed in the index while its STATE/DATA/CACHE
+    # were already gone — half-forgotten, and the half that survives is the one
+    # `cco start` reads. Dying first keeps the operation re-runnable.
     if [[ -n "$member_repos" ]]; then
-        _index_remove_project "$name"
-        _index_pp_remove_project "$name"
+        if ! _index_remove_project "$name" || ! _index_pp_remove_project "$name"; then
+            die "Could not remove '$name' from the machine-local index — nothing was deleted. Check the index bucket's permissions and free space, then re-run."
+        fi
     fi
     rm -rf "$state_dir" "$data_dir" "$cache_dir"
     _tags_forget projects "$name"

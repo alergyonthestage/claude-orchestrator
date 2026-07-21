@@ -723,3 +723,57 @@ test_path_list_operator_never_emits_the_retired_resolve_hint() {
         || { fail "the session remedy must point at the host: $CCO_OUTPUT"; return 1; }
     return 0
 }
+
+# ── S2b item 3: `cco path set` is the repair command — it must not lie ─────────
+# The index write IS this verb; nothing else lands. Called bare, a failed write made
+# it a complete no-op that printed "✓ path set". It matters more than its size
+# suggests: several other S2b failure messages point the user HERE to repair a
+# missing binding, so a silent no-op would strand them in a loop.
+# ⚠ FAILS on pre-fix: rc=0 and the ✓ prints over an unwritten index.
+test_path_set_unwritable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/somewhere" "$(state_shared)"
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" path set thing "$tmp/somewhere" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    [[ "$out" != *"path set:"* ]] \
+        || { fail "no '✓ path set' over a binding that was never written: $out"; return 1; }
+    return 0
+}
+
+# A partial `--scan` must not exit 0: the summary line ("N binding(s) upserted") is
+# the number the user reads to decide the sweep worked, and a swallowed failure both
+# deflates it and hides that the index is now incomplete. The scan still sweeps every
+# unit — it counts failures rather than abandoning the rest on the first one.
+# ⚠ FAILS on pre-fix: rc=0 with a clean-looking summary.
+test_resolve_scan_partial_failure_is_not_success() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/dev/alpha/.cco" "$(state_shared)"
+    printf 'name: alpha\nrepos:\n  - name: alpha\n' > "$tmp/dev/alpha/.cco/project.yml"
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" resolve --scan "$tmp/dev" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "a scan whose index writes failed must not exit 0: $out"; return 1; }
+    [[ "$out" == *"incomplete"* ]] \
+        || { fail "the summary must say the sweep is incomplete: $out"; return 1; }
+    return 0
+}

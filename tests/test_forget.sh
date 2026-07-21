@@ -169,3 +169,38 @@ test_forget_purge_non_tty_without_flag_skips_deletion() {
         [[ "$n" -eq 0 ]] || fail "no backup should be written when purge is skipped"
     }
 }
+
+# ── S2b item 3: the index removal is checked BEFORE the irreversible delete ──
+# `cco forget` removed the project from the index and then rm -rf'd its
+# STATE/DATA/CACHE. The index calls were bare, so a failed removal left the project
+# HALF-forgotten — still listed in the index, its state already deleted — and the
+# half that survives is the one `cco start` reads. Ordering the check first makes
+# the verb re-runnable instead of leaving a state only a hand-edit can repair.
+# ⚠ FAILS on pre-fix: rc=0 and the STATE dir is gone despite the index write failing.
+test_forget_unwritable_index_deletes_nothing() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "doomed" "$(minimal_project_yml doomed)"
+    _forget_seed_state "doomed"
+    assert_dir_exists "$CCO_STATE_HOME/projects/doomed" || return 1
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" forget doomed -y 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    [[ "$out" != *"Forgot project"* ]] \
+        || { fail "no success message over a failed deregistration: $out"; return 1; }
+    # The whole point: the irreversible half must NOT have run.
+    assert_dir_exists "$CCO_STATE_HOME/projects/doomed" \
+        || { fail "the STATE dir was deleted despite the index write failing"; return 1; }
+    [[ "$out" == *"nothing was deleted"* ]] \
+        || { fail "the message must say nothing was deleted, so the user can just re-run: $out"; return 1; }
+    return 0
+}

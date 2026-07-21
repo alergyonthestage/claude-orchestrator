@@ -354,8 +354,12 @@ _resolve_unit() {
     fi
 
     # Record project -> member repos membership (index projects: section).
+    # S2b: the ok/warn below reports the resolve as done; a silent membership-write
+    # failure would leave the project with bindings but no member list, which every
+    # loop over its members then reads as empty.
     if [[ -n "$proj_name" && ${#member_repos[@]} -gt 0 ]]; then
-        _index_set_project_repos "$proj_name" "${member_repos[@]}"
+        _index_set_project_repos "$proj_name" "${member_repos[@]}" \
+            || die "Resolved '$proj_name', but its membership could not be written to the machine-local index. Check the index bucket's permissions and free space, then re-run."
     fi
 
     if [[ $unresolved -eq 0 ]]; then
@@ -542,7 +546,7 @@ _resolve_scan() {
     [[ -d "$dir" ]] || die "Scan directory not found: $dir"
     dir="$(cd "$dir" && pwd -P)"
 
-    local found=0 bound=0 kept=0
+    local found=0 bound=0 kept=0 failed=0
     local project_yml cco_dir repo_dir proj_name this_name existing
     local _ln name
     local -a names=() scanned_projects=()
@@ -561,9 +565,17 @@ _resolve_scan() {
             name="${_ln%%$'\t'*}"
             [[ -n "$name" ]] && names+=("$name")
         done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
+        # S2b: a scan is a best-effort sweep over many units, so a failed write does
+        # NOT abandon the rest — it is counted and reported in the summary, and the
+        # verb exits non-zero. Silently folding it in would inflate "N binding(s)
+        # upserted", the one number the user reads to decide the scan worked.
         if [[ -n "$proj_name" && ${#names[@]} -gt 0 ]]; then
-            _index_set_project_repos "$proj_name" "${names[@]}"
-            scanned_projects+=("$proj_name")
+            if _index_set_project_repos "$proj_name" "${names[@]}"; then
+                scanned_projects+=("$proj_name")
+            else
+                warn "scan: could not write '$proj_name' membership to the index"
+                failed=$((failed + 1))
+            fi
         fi
 
         # Bind THIS repo dir to its logical name (AD5 keep-existing on conflict).
@@ -573,9 +585,11 @@ _resolve_scan() {
             existing=$(_index_get_path "$proj_name" "$this_name")
             warn "scan: '$this_name' already bound in '$proj_name' to $existing — keeping existing (AD5′); ignoring $repo_dir"
             kept=$((kept + 1))
-        else
-            _index_set_path "$proj_name" "$this_name" "$repo_dir"
+        elif _index_set_path "$proj_name" "$this_name" "$repo_dir"; then
             bound=$((bound + 1))
+        else
+            warn "scan: could not bind '$this_name' in '$proj_name' to $repo_dir"
+            failed=$((failed + 1))
         fi
     done < <(find "$dir" -type f -path '*/.cco/project.yml' 2>/dev/null)
 
@@ -594,12 +608,21 @@ _resolve_scan() {
             mpath=$(_index_get_path_any "$name")
             [[ -z "$mpath" ]] && continue
             case "$mpath" in "$dir"/*|"$dir") ;; *) continue ;; esac
-            _index_set_path "$sp" "$name" "$mpath"
-            bound=$((bound + 1))
+            if _index_set_path "$sp" "$name" "$mpath"; then
+                bound=$((bound + 1))
+            else
+                warn "scan: could not bind shared member '$name' under '$sp'"
+                failed=$((failed + 1))
+            fi
         done < <(_index_get_project_repos "$sp" | tr ' ' '\n')
     done
 
     info "scan: $found unit(s) found, $bound binding(s) upserted, $kept conflict(s) kept"
+    # S2b: never let a partial scan exit 0 — the summary above would otherwise read
+    # as a clean sweep. Exit 1 (a write that started and failed — INV-S3b).
+    if [[ $failed -gt 0 ]]; then
+        die "scan: $failed index write(s) failed — the sweep is incomplete. Check the index bucket's permissions and free space, then re-run."
+    fi
 }
 
 # Resolve every project recorded in the index (best-effort; skips projects with
@@ -772,11 +795,17 @@ EOF
             if _pset_dir=$(_resolve_find_unit_dir 2>/dev/null); then
                 _pset_proj=$(yml_get "$_pset_dir/.cco/project.yml" name 2>/dev/null)
             fi
+            # S2b: `cco path set` IS the write — the ok below asserts nothing else,
+            # so a silent failure makes the verb a complete no-op reporting success.
+            # This is the repair command several other S2b messages point users to,
+            # which is exactly why it must not lie.
             if [[ -n "$_pset_proj" ]]; then
-                _index_set_path "$_pset_proj" "$name" "$abs"
+                _index_set_path "$_pset_proj" "$name" "$abs" \
+                    || die "Could not bind '$name' -> $abs in project '$_pset_proj'. Check the index bucket's permissions and free space."
                 ok "path set: [$_pset_proj] $name -> $abs"
             else
-                _index_set_unscoped "$name" "$abs"
+                _index_set_unscoped "$name" "$abs" \
+                    || die "Could not bind '$name' -> $abs (unscoped). Check the index bucket's permissions and free space."
                 ok "path set: $name -> $abs (unscoped — not inside a project)"
             fi
             _path_exists "$abs" || warn "note: '$abs' does not exist on this machine yet"

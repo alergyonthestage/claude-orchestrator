@@ -1042,12 +1042,19 @@ _cco_migrate_project() {
         if _index_path_conflicts "$mig_name" "$rname" "$rpath"; then
             warn "Name '$rname' is already bound in '$mig_name' to $(_index_get_path "$mig_name" "$rname") — keeping the existing binding (AD5′). Run 'cco resolve' to rebind."
         else
-            _index_set_path "$mig_name" "$rname" "$rpath"
+            # S2b: the .cco/ tree has already been moved into the repo (the atomic
+            # mv above), so an unregistered project is the worst outcome here — the
+            # legacy source is gone and nothing binds the new home.
+            _index_set_path "$mig_name" "$rname" "$rpath" \
+                || die "Migrated .cco/ into $target, but '$rname' could not be bound in the machine-local index. Run 'cco resolve --scan $target' to complete the registration."
         fi
         [[ "$rkind" == "mount" ]] && continue
         repo_names+=("$rname")
     done < "$idx"
-    [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"
+    if [[ ${#repo_names[@]} -gt 0 ]]; then
+        _index_set_project_repos "$mig_name" "${repo_names[@]}" \
+            || die "Migrated .cco/ into $target, but '$mig_name' membership could not be written to the machine-local index. Run 'cco resolve --scan $target' to complete the registration."
+    fi
 
     # Memory → STATE, AFTER index registration (M5): copying it before the index left
     # a window where an interrupted migrate produced a STATE memory dir with NO index

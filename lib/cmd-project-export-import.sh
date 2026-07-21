@@ -213,8 +213,13 @@ EOF
     fi
     rm -rf "$tmpdir"
 
-    _index_set_path "$proj_name" "$proj_name" "$target_repo"
-    _index_set_project_repos "$proj_name" "$proj_name"
+    # S2b: the import itself has landed (the .cco/ tree is extracted into the repo),
+    # so this is a report, not a rollback — but without the binding `cco start
+    # $proj_name` will not resolve it, and the ok below would have implied otherwise.
+    if ! _index_set_path "$proj_name" "$proj_name" "$target_repo" \
+       || ! _index_set_project_repos "$proj_name" "$proj_name"; then
+        die "Imported project '$proj_name' into $target_cco, but it could not be registered in the machine-local index — 'cco start $proj_name' will not resolve it yet. Run 'cco resolve --scan $target_repo' to bind it."
+    fi
 
     ok "Imported project '$proj_name' into $target_cco"
     info "Re-create secrets from .cco/secrets.env.example if the project needs them."

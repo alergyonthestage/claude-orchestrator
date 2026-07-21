@@ -207,7 +207,11 @@ EOF
     if [[ -n "$path" ]]; then
         local abs; abs=$(_resolve_to_abs "$path")
         local _proj; _proj=$(yml_get "$manifest" name 2>/dev/null)
-        _index_set_path "$_proj" "$name" "$abs"
+        # S2b: the ok below asserts this write, and project.yml has already been
+        # appended above — so report what landed rather than claiming a binding
+        # that does not exist.
+        _index_set_path "$_proj" "$name" "$abs" \
+            || die "Added '$name' to project.yml, but it could not be bound in the machine-local index. Run 'cco path set $name $abs' once the cause is resolved."
         ok "bound $name -> $abs (index)"
     fi
     ok "added $restype '$name' to $(basename "$unit_dir")/.cco/project.yml"
