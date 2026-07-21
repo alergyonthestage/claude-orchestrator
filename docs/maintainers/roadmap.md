@@ -165,9 +165,10 @@ plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b
 Suite **1463/9** (the 9 = the pre-existing host-only artifacts, unchanged set — names verified
 identical to baseline, and re-confirmed on the final tree after every S9 commit).
 
-**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Branch tip **`ad8f68d`**, nothing pushed.
-Everything that remains is either a host gate (§10 of the plan, below) or the three
-`.claude`-payload patches no session can apply.
+**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Nothing pushed — the branch tip is the last
+commit on `fix/config-access/e2e-v3-cycle1.1` (`git log -1`; a hash written here can only ever name
+the commit *before* the one writing it). Everything that remains is either a host gate (§10 of the
+plan, below) or the three `.claude`-payload patches no session can apply.
 
 **S8** closed the five minor findings; its lesson is S7's inverted. `cco repo rename`'s ambiguity
 refusal was unreachable at the WORKDIR root — but the *reason* generalises past the bare form:

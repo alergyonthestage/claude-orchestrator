@@ -23,8 +23,9 @@
 > and it is why patches 1 and 2 must land as a single edit.
 >
 > Suite at close: **1463 passed / 9 failed**, run twice (prereq baseline + final tree), same count
-> and same names both times. Branch tip `ad8f68d`. **Nothing pushed.** Working tree clean apart from
-> the maintainer's `.cco/project.yml` port edit and the two untracked notes — §1 below still applies.
+> and same names both times. **Nothing pushed** — take the branch tip from `git log -1`, not from a
+> hash written here. Working tree clean apart from the maintainer's `.cco/project.yml` port edit and
+> the two untracked notes — §1 below still applies.
 
 > **Written 2026-07-21** for a fresh session (post-`/clear`). Self-contained: read this, check the
 > prerequisites, review what landed, then continue.
