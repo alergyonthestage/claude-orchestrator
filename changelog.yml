@@ -918,7 +918,9 @@ entries:
       build it is running before you trust what it tells you. (10) The "hidden by
       access scope" notice no longer offers `read-global` when everything it hid
       was a project — `read-global` reveals no project; it offers `read-all`. A
-      mixed set still offers both. (11) Bare `cco repo rename <new>` at the
-      `/workspace` root is now refused as ambiguous with a message that names the
-      repo directory to run it from, instead of failing earlier with an unrelated
-      error. Requires `cco build`.
+      mixed set still offers both. (11) Bare `cco repo rename <new>` /
+      `cco extra-mount rename <new>` at the `/workspace` root is now refused for
+      the right reason — it cannot tell WHICH member you mean — and tells you to
+      cd into the one you want. It used to answer as if no project were in scope
+      and suggest passing `<old> <new>`, which fails there too. Requires
+      `cco build`.
