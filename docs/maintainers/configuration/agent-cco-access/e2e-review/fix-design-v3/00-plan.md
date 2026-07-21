@@ -4,8 +4,8 @@
 > verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
 > **Gate**: closing R1–R7 unblocks `develop → main`.
 > **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
-> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 landed** (2026-07-20/21), suite
-> **1428/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S5**.
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P landed** (2026-07-20/21), suite
+> **1431/9** — the 9 are the pre-existing host-only artifacts, unchanged set. Next: **S5**.
 > Resume pointer: [`RESUME-HANDOFF-s5.md`](RESUME-HANDOFF-s5.md) — **read its §4 before S5**: the
 > stage order below is amended (**S2b-P**, the two token primitives, now precedes S5).
 > [`RESUME-HANDOFF-s4.md`](RESUME-HANDOFF-s4.md) is superseded.
@@ -54,7 +54,7 @@ flowchart TD
 |---|---|---|---|---|
 | **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
 | **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
-| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ✅ `PENDING` |
+| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ✅ `2177858` |
 | **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ⏳ designed, §3b (rest, after S6) |
 | **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
 | **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
@@ -72,7 +72,11 @@ lints bare writes, `T-R2` guards the behaviour; V3-P's restart note shipped here
 `_rename_assert_index_writable` probes the second store at its own (elevated) identity, so the
 rename refuses *before* Phase 1. **S4** — `_index_read_state`/`_index_assert_readable`: the read
 side can now tell a failed read from an empty index, and says so at exit 1 in one shared
-vocabulary. Every guard was adversarially revert-checked against pre-fix code.
+vocabulary. **S2b-P** — the two token primitives can now fail: `_remote_token_remove` gains a
+three-valued contract (0 removed / 1 absent / **2 failed**) so a failed revocation is never
+rendered as "No token found", and the three `|| true`s that swallowed the new signal are closed —
+including `cmd-config.sh:303`, which the plan did not list. Every guard was adversarially
+revert-checked against pre-fix code.
 
 ---
 
