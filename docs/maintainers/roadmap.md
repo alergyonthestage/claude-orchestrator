@@ -415,7 +415,7 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 
 ## What's next
 
-### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE
+### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE (S1 ✅ landed + reviewed; S2 next)
 
 **Branch**: `feat/index/integrity-hardening` (from `develop`). **Decision**:
 [ADR-0052](../configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
@@ -428,9 +428,11 @@ and `q`/Exit not aborting start (N3). **Single delivery of the whole cluster bef
 
 **Delivery shape**: 4 consecutive implementation sessions. **Every session follows the same ritual**
 — (1) **design micro-pass + verify against ADR-0052 and the cited ADRs + a correctness review of the
-current tree** *before* touching code; (2) implement; (3) tests green (baseline **1463/9** in-container
-+ the session's new tests); (4) atomic commit(s) + flip the WS row in `00-plan.md`. Never auto-advance
-between sessions — each is launched explicitly.
+current tree** *before* touching code; (2) implement; (3) tests green (baseline **1465/7** in-container
+— the earlier "1463/9" was stale, same 1472 total — + the session's new tests); (4) atomic commit(s) +
+flip the WS row in `00-plan.md`. Never auto-advance between sessions — each is launched explicitly.
+**S1 done**: WS-1 fail-loud gate landed `93b3354`, reviewed + hardened `8811108` (fail-honestly on
+unreadable/malformed state; F1/F2 critical). Suite **1481/7**.
 
 ```mermaid
 flowchart LR
@@ -452,9 +454,10 @@ flowchart LR
 - S2 → *"…Sessione 2 (WS-2+3, ADR-0052 §2/§3)…"* · S3 → *"…Sessione 3 (WS-4+5, ADR-0052 §4/§5)…"* · S4 → *"…Sessione 4 (WS-6+7, ADR-0052 §6/§7)…"*
 
 **Out-of-session / host gates after S4** (from the Mac): `cco build` + live dogfood (0.5.2→develop
-reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run for a clean
-**1463/0** (no FI-19 boundary skips on the host); push both branches + merge → develop (host-only per
-FI-20). Only then resume the e2e-review v3.1 host runbook.
+reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run for a **clean
+0-failure** pass (no FI-19 boundary skips on the host); push both branches + merge → develop (host-only per
+FI-20). Only then resume the e2e-review v3.1 host runbook. (Host suite is clean/0 — the 7 in-container
+FI-19 failures all pass on the host, which has no privilege-boundary skips.)
 
 ### Pre-merge review cycle (gate to v1)
 

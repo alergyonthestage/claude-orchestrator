@@ -7,7 +7,7 @@ e2e-review v3.1. Large scope → may span sessions; commit atomically per workst
 **Suite baseline**: 1465/7 in-container (the 7 are host-only privilege-boundary artifacts —
 FI-19: 6 in `test_access_scope`, 1 `test_paths_symlink_safe_tool_root`). The earlier "1463/9"
 note was stale — 2 of those host-only tests were fixed upstream; the total (1472) is unchanged.
-Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1: **1475/7** (+10).
+Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (incl. review hardening): **1481/7** (+16).
 
 > ⚠ Self-dev caveats (project CLAUDE.md + memory): changes to `entrypoint.sh`/`hooks/`/`Dockerfile`
 > and **store-touching verbs run the image-baked cco** — `lib/` edits are invisible in-session until
@@ -19,7 +19,7 @@ Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1: 
 | WS | Title | Status | Commit |
 |----|-------|--------|--------|
 | 0  | ADR-0052 + this plan | ✅ written | — |
-| 1  | Fail-loud version gate + `CCO_INDEX_VERSION` + `_cco_in_container` ==0 | ✅ | `93b3354` |
+| 1  | Fail-loud version gate + `CCO_INDEX_VERSION` + `_cco_in_container` ==0 | ✅ | `93b3354` + review `8811108` |
 | 2  | Non-destructive reconcile (first_run + 017) | ⏳ | — |
 | 3  | In-index residue absorption | ⏳ | — |
 | 4  | extra_mount re-home (FI-23) | ⏳ | — |
@@ -84,6 +84,16 @@ project in hand); the global + index bounds stop the session before any mutation
 
 **Tests**: new `tests/test_version_gate.sh` — disk index `version: 3` → any command dies; global meta
 `schema_version` > latest → dies; equal/less → passes. `CCO_IN_CONTAINER=0` forces host mode.
+
+**Review outcome (S1, `8811108`)**: the gate must never TRUST a version it could not cleanly read.
+Two lenient readers (`_read_cco_meta`, `_index_version`) became universally reachable once the gate ran
+on every host command: an unreadable `.cco/meta` crashed the process raw through `_read_cco_meta`'s
+trailing `awk` under `set -e` (F1), and an unreadable index was silently coerced to v1 and sailed past
+(F2). The gate now probes readability by OPENING each artifact (never `test -r` — access(2) lies under
+elevation), reuses `_index_read_state` for the index, strict-parses versions as clean non-negative
+integers, and dies HONESTLY on unreadable/truncated/malformed state. Also: `_index_migrate_v1_to_v2`
+reverted to a LITERAL `version: 2` (it produces the v2 *shape*, not "latest" — F3); `_index_ensure_file`
+keeps the constant (latest scaffold). +6 tests. Suite 1481/7.
 
 ## WS-2 — Non-destructive reconcile (N1 + N2)
 
