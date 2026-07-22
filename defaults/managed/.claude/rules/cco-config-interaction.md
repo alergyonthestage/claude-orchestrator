@@ -58,10 +58,7 @@ Only when `cco_access` is an edit level may you modify cco config. Then:
   (`secrets.env`, `*.env` / `*.key` / `*.pem`) are filtered out of every mount —
   you only ever see and edit the committed `*.example` skeletons. `secrets.env`
   is host-edited; remote tokens stay host-only.
-- **Mutate framework-internal state only via `cco`.** The machine-local index,
-  the tags registry, the remotes registry, and install `source` records live in
-  hidden XDG dirs and are corruption-prone — never hand-edit them. Use
-  `cco tag …`, `cco remote add|remove`, `cco pack|template|llms …` instead.
+- **Mutate framework-internal state only via `cco`.** The machine-local index, the tags registry, the remotes registry, and install `source` records live in hidden XDG dirs and are corruption-prone — never hand-edit them. Use `cco tag …`, `cco remote add`, `cco pack|template|llms …` instead (`cco remote remove|rename` are host-only — see below).
 - **config-editor: introspect the TARGET, not `PROJECT_NAME`.** In a config-editor
   session `PROJECT_NAME` is always `config-editor`; the projects you may edit are
   named in `CCO_CONFIG_TARGETS` (set by `cco start config-editor --project <name>`)
@@ -71,10 +68,4 @@ Only when `cco_access` is an edit level may you modify cco config. Then:
 
 ## Host-only verbs (any level)
 
-Container-spawning, path-resolving, and network/credential verbs are refused
-in-session with a hint: `cco start|stop|build|new`, `cco resolve|sync|init|join|
-forget|update|clean`, `cco project rename`, `cco config push|pull`, and
-`cco remote set-token|remove-token`. When one is needed, hand the user the exact
-command to run on their **host** terminal (use the session path map for the host
-path when `show_host_paths` is on). Never paste host paths into commits, PRs, or
-external calls — committed config stays machine-agnostic.
+Container-spawning, path-resolving, and network/credential verbs are refused in-session with a hint: `cco start|stop|build|new`, `cco resolve|sync|init|join|forget|update|clean`, `cco project rename`, `cco config push|pull`, and `cco remote set-token|remove-token|remove|rename`. (D-V3-1: the last two cascade into the 0600 token store, which never crosses into a session — unmounted, cco cannot tell "no token" from "token invisible", so both would silently orphan the token; `cco remote add` stays available, it writes only the url registry). When one is needed, hand the user the exact command to run on their **host** terminal (use the session path map for the host path when `show_host_paths` is on). Never paste host paths into commits, PRs, or external calls — committed config stays machine-agnostic.

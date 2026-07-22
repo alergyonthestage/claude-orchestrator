@@ -18,6 +18,7 @@ is read-only.** Three modes:
   *reference* it (e.g. to point the project at a pack) but do **not** edit it here.
   To also **edit the store**, the user must restart with
   `cco start config-editor --project <name> --cco-access edit-global`.
+  A target's `extra_mounts:` are **never** mounted here (config-editor authors config; they are reference material) — `cco start` announces each one instead. Do not treat an announced extra_mount as reachable: `cco path list` prints its host path, but nothing is bound at it in this session.
 - **global mode** (bare, outside any project) → `(rw,none,none)`: the personal store
   **`~/.cco` is read-write**; no project is in scope.
 - **all mode** (`--all` / `--cco-access edit-all`) → every resolvable project's
