@@ -43,6 +43,21 @@ WS-1 first (it defines `CCO_INDEX_VERSION`, which WS-2/3 consume). WS-2 and WS-3
 `lib/index.sh` migration path — land WS-2 then WS-3 to avoid churn. WS-6 is independent of the index
 logic (env plumbing) and can run in parallel. WS-7 last.
 
+## Session grouping (tracked in roadmap.md → "Index-integrity hardening")
+
+Delivered across **4 consecutive implementation sessions**; each session's ritual is
+**design + verify against ADR-0052 and the cited ADRs + correctness review of the current tree →
+implement → tests green (1463/9 + new) → atomic commit(s) → flip the WS row above**.
+
+| Session | WS | Verify against |
+|---|---|---|
+| **S1 — Version-gate foundations** | WS-1 | ADR-0052 §1; FI-16 mutation-order; ADR-0051 D6 |
+| **S2 — Reconcile + residue** | WS-2, WS-3 | ADR-0052 §2/§3; ADR-0051 D6; ADR-0017 D2; ADR-0047 |
+| **S3 — Scoping + doctor** | WS-4, WS-5 | ADR-0052 §4/§5; ADR-0051 D2; ADR-0021 Dec.5 |
+| **S4 — Dev-sandbox + docs cutover** | WS-6, WS-7 (+ N3) | ADR-0052 §6/§7; `paths.sh` XDG; update-system + documentation-lifecycle rules |
+
+N3 (`q`/Exit abort) is small and independent — it rides S4 unless pulled earlier for convenience.
+
 ---
 
 ## WS-1 — Fail-loud version gate

@@ -415,6 +415,47 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 
 ## What's next
 
+### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE
+
+**Branch**: `feat/index/integrity-hardening` (from `develop`). **Decision**:
+[ADR-0052](../configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
+**Plan detail** (WS-1..7, file anchors, tests):
+[`index-integrity/00-plan.md`](../configuration/decentralized-config/index-integrity/00-plan.md).
+**Why**: the host e2e-review v3.1 §10.6 incident — the path index moved location + schema and the two
+transitions were conflated, causing data loss (N1: migration 017 "new wins" `rm -f`s the legacy
+index), no hot-path reconcile (N2), silent version divergence (FI-16), extra_mount residue (FI-23),
+and `q`/Exit not aborting start (N3). **Single delivery of the whole cluster before resuming e2e v3.1.**
+
+**Delivery shape**: 4 consecutive implementation sessions. **Every session follows the same ritual**
+— (1) **design micro-pass + verify against ADR-0052 and the cited ADRs + a correctness review of the
+current tree** *before* touching code; (2) implement; (3) tests green (baseline **1463/9** in-container
++ the session's new tests); (4) atomic commit(s) + flip the WS row in `00-plan.md`. Never auto-advance
+between sessions — each is launched explicitly.
+
+```mermaid
+flowchart LR
+  S1["S1 · WS-1<br/>version gate + const"] --> S2["S2 · WS-2+3<br/>reconcile + residue"]
+  S1 --> S4["S4 · WS-6+7<br/>dev-sandbox + docs"]
+  S2 --> S3["S3 · WS-4+5<br/>extra_mount re-home + doctor"]
+  S3 --> S4
+```
+
+| Session | WS | Scope | Verify against | Depends on |
+|---|---|---|---|---|
+| **S1 — Version-gate foundations** | WS-1 | `CCO_INDEX_VERSION` single source + `_latest_index_version`; `_cco_version_gate` in `_cco_first_run` (after `_cco_bootstrap_roots`, before flatten/backup) `disk>supported → die` on **all** verbs; `_cco_in_container`==0 fix. Tests: `test_version_gate.sh`. | ADR-0052 §1; FI-16 mutation-order; ADR-0051 D6 (index self-upgrade, not `migrations/`) | — |
+| **S2 — Reconcile + residue** | WS-2, WS-3 | `_index_reconcile_legacy_location` non-destructive **merge** (TTY prompt on path conflict; no-TTY → keep both + warn, never delete), wired into `_cco_first_run` **and** migration 017 (replaces its `rm -f`); residue absorption in `_index_migrate_if_needed` (v2 file with stray `paths:`). Tests: `test_index_reconcile.sh` + `test_index.sh`; confirm `test_migrate*` drops any "new wins" destruction assertion. | ADR-0052 §2/§3; ADR-0051 D6 losslessness; ADR-0017 D2 (non-destructive / no-prune); ADR-0047 (host-only) | S1 |
+| **S3 — Scoping + doctor** | WS-4, WS-5 | extra_mount re-home under the declaring project (via `yml_get_mount_coords`) in the migration + `config validate --fix` (`_cv_detect_fi23_residue`); index-focused doctor: malformed records reported **separately** (`_CV_MALFORMED`), **never pruned**, orphan prune keeps the two-phase sync-class confirm. Tests: `test_resolve.sh`/`test_migrate_completeness.sh`/`test_config_validate.sh`. | ADR-0052 §4/§5; ADR-0051 D2 (no global-default layer); ADR-0021 Dec.5 (sync-class two-phase) | S2 |
+| **S4 — Dev-sandbox + docs cutover** | WS-6, WS-7 | `CCO_DEV_SANDBOX` toggle redirecting `CCO_STATE/CACHE/DATA_HOME` to an isolated root + optional seed-copy + `cco whoami` indicator (off by default, no behaviour change); N3 `q`/Exit abort; changelog; **flip FI-16/22/23 to landed + record N1/N2/N3**; living-doc sweep (root `CLAUDE.md` STATE bucket, `design.md`, `cli.md`). Tests: `test_dev_sandbox.sh`. | ADR-0052 §6/§7; `paths.sh` XDG resolution; `.claude/rules/update-system.md` + `documentation-lifecycle.md` | S1, S3 |
+
+**Launch pointers** (paste to start each session in turn):
+- S1 → *"Esegui Sessione 1 del piano index-integrity (roadmap §Index-integrity; ADR-0052 §1; 00-plan WS-1): design+verifica-ADR/correttezza → implementa → test."*
+- S2 → *"…Sessione 2 (WS-2+3, ADR-0052 §2/§3)…"* · S3 → *"…Sessione 3 (WS-4+5, ADR-0052 §4/§5)…"* · S4 → *"…Sessione 4 (WS-6+7, ADR-0052 §6/§7)…"*
+
+**Out-of-session / host gates after S4** (from the Mac): `cco build` + live dogfood (0.5.2→develop
+reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run for a clean
+**1463/0** (no FI-19 boundary skips on the host); push both branches + merge → develop (host-only per
+FI-20). Only then resume the e2e-review v3.1 host runbook.
+
 ### Pre-merge review cycle (gate to v1)
 
 ```mermaid
