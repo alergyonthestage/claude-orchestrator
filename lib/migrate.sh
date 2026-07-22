@@ -231,41 +231,74 @@ _cco_flatten_global_claude() {
 # cco may have upgraded the global schema or the index; an older binary cannot
 # read the newer layout safely — it MISPARSES and prints wrong output (the "path
 # index is empty" mislead FI-16 exists to kill), so a warn-and-read would be a
-# weaker fail-loud. die on EVERY verb, not just writers (no verb classification):
-# reading is exactly where the silent corruption happens. The cost — a developer
-# running an older gated binary against newer state — is removed at the source by
-# the developer sandbox (ADR-0052 §7), not papered over by a warn.
+# weaker fail-loud. die on EVERY (host) verb, not just writers (no verb
+# classification): reading is exactly where the silent corruption happens. The
+# cost — a developer running an older gated binary against newer state — is removed
+# at the source by the developer sandbox (ADR-0052 §7), not papered over by a warn.
 #
-# Host-side only (it self-guards): inside a session the buckets are bind-mounted
-# and never bootstrapped here. Two versioned artifacts, two bounds:
+# Host-only in TWO senses: it self-guards with _cco_host_side_ok, AND it is only
+# reached from _cco_first_run, which the container-operator dispatch branch bypasses
+# entirely — so "every verb" means every HOST verb (a session's whitelisted cco
+# never runs it). Two versioned artifacts, two bounds:
+#   • the index version: vs _latest_index_version (the CCO_INDEX_VERSION constant,
+#     always available — no scan — so this arm is always reliable).
 #   • global .cco/meta schema_version vs _latest_schema_version global (scans
 #     migrations/global/, self-maintaining). Skipped when the latest cannot be
 #     determined (>0 guard) so a mis-resolved FRAMEWORK_ROOT can never brick cco.
-#   • the index version: vs _latest_index_version (the CCO_INDEX_VERSION constant,
-#     always available — no scan — so this arm is always reliable).
-# Per-project .cco/meta is deferred (first_run holds no project in hand); the
-# global + index bounds already stop the session before any self-heal mutates it.
+# Per-project .cco/meta is deferred (first_run holds no project in hand).
+#
+# Never TRUST a version we could not cleanly read. An artifact that EXISTS but is
+# unreadable/truncated/malformed cannot be proven older, so the gate dies HONESTLY
+# rather than (a) crash raw through a lenient reader's trailing awk under set -e
+# (review F1) or (b) silently coerce it to a benign default and sail past — the very
+# FI-16 misread it exists to catch (review F2). Probes read by OPENING, never with
+# `test -r` (access(2) answers for the real uid — a false answer under elevation,
+# the rename.sh:174 trap).
 _cco_version_gate() {
     _cco_host_side_ok || return 0
 
-    # Index bound — the constant is always available (no directory scan). A newer
-    # index schema means a newer cco already re-homed the machine-local paths.
-    local disk_idx latest_idx idxf
-    disk_idx=$(_index_version); disk_idx=${disk_idx//[^0-9]/}; disk_idx=${disk_idx:-1}
-    latest_idx=$(_latest_index_version); latest_idx=${latest_idx//[^0-9]/}; latest_idx=${latest_idx:-$CCO_INDEX_VERSION}
-    if [[ "$disk_idx" -gt "$latest_idx" ]]; then
-        idxf=$(_index_file)
-        die "the cco path index at $idxf is schema version $disk_idx, newer than this cco supports (max $latest_idx). It was written by a newer cco; this older binary would misread it and lose registered paths. Use the cco that wrote it (or a newer one) — a downgrade cannot read it safely."
-    fi
+    # ── Index bound ──────────────────────────────────────────────────
+    # _index_read_state probes by opening (no raw awk error can leak) and tells the
+    # benign `absent` apart from unreadable/truncated/stale — reuse it instead of
+    # trusting _index_version's transitional default of 1 (review F2).
+    local idxf idx_state disk_idx latest_idx
+    idxf=$(_index_file)
+    idx_state=$(_index_read_state)
+    case "$idx_state" in
+        absent) ;;   # nothing registered on this machine — cannot be "newer"
+        ok)
+            disk_idx=$(_index_version)
+            [[ "$disk_idx" =~ ^[0-9]+$ ]] \
+                || die "the cco path index at $idxf has an unreadable version line ('$disk_idx'). Refusing to run rather than risk misreading it — rebuild it with 'cco resolve --scan <dir>', or run cco on the host that wrote it."
+            latest_idx=$(_latest_index_version)
+            if [[ "$disk_idx" -gt "$latest_idx" ]]; then
+                die "the cco path index at $idxf is schema version $disk_idx, newer than this cco supports (max $latest_idx). It was written by a newer cco; this older binary would misread it and lose registered paths. Use the cco that wrote it (or a newer one) — a downgrade cannot read it safely."
+            fi
+            ;;
+        *)  # unreadable | truncated | stale — cannot verify the version safely.
+            die "$(_index_unreadable_sentence "$idx_state" "$idxf")"
+            ;;
+    esac
 
-    # Global schema bound — skip if the latest cannot be determined (never brick a
-    # working install on an indeterminate bound; the index arm still protects).
-    local metaf disk_meta latest_meta
+    # ── Global schema bound ──────────────────────────────────────────
+    local latest_meta metaf disk_meta
+    latest_meta=$(_latest_schema_version global)
+    [[ "$latest_meta" =~ ^[0-9]+$ ]] || latest_meta=0
     metaf=$(_cco_global_meta)
-    disk_meta=$(_read_cco_meta "$metaf"); disk_meta=${disk_meta//[^0-9]/}; disk_meta=${disk_meta:-0}
-    latest_meta=$(_latest_schema_version global); latest_meta=${latest_meta//[^0-9]/}; latest_meta=${latest_meta:-0}
-    if [[ "$latest_meta" -gt 0 && "$disk_meta" -gt "$latest_meta" ]]; then
-        die "the cco global config at $metaf is schema version $disk_meta, newer than this cco supports (max $latest_meta). It was written by a newer cco; run that newer cco, or its 'cco update', to work with your state — this older binary would misread it."
+    if [[ "$latest_meta" -gt 0 && -e "$metaf" ]]; then
+        # An existing-but-unreadable meta must die honestly, NOT crash raw inside
+        # _read_cco_meta's trailing awk under set -e (review F1) — probe by opening.
+        { : < "$metaf"; } 2>/dev/null \
+            || die "the cco global config at $metaf cannot be read (permission denied). Refusing to run rather than risk misreading your config — fix its permissions, or run cco on the host that owns it."
+        disk_meta=$(_read_cco_meta "$metaf")   # only reached on a confirmed-readable file
+        # Empty ⇒ a present meta with no schema_version line (pre-schema) — benign.
+        if [[ -n "$disk_meta" ]]; then
+            [[ "$disk_meta" =~ ^[0-9]+$ ]] \
+                || die "the cco global config at $metaf has a malformed schema_version ('$disk_meta'). Refusing to run rather than risk misreading it — repair the file, or run cco on the host that wrote it."
+            if [[ "$disk_meta" -gt "$latest_meta" ]]; then
+                die "the cco global config at $metaf is schema version $disk_meta, newer than this cco supports (max $latest_meta). It was written by a newer cco; run that newer cco, or its 'cco update', to work with your state — this older binary would misread it."
+            fi
+        fi
     fi
 }
 

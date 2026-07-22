@@ -246,7 +246,9 @@ _index_migrate_v1_to_v2() {
     {
         echo "# cco machine-local index — per-project logical name → absolute path + membership."
         echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
-        echo "version: $CCO_INDEX_VERSION"   # this rewrite targets the latest supported shape
+        echo "version: 2"   # a LITERAL: this rewrite always produces the v2 SHAPE, not the
+                            # "latest supported" constant (review F3 — a future bump to
+                            # CCO_INDEX_VERSION must not relabel a v2-shaped file as newer)
         echo "projects:"
         local proj mem
         while IFS='=' read -r proj mem; do

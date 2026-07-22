@@ -175,3 +175,102 @@ test_gate_blocks_a_real_command() {
     [[ "$out" == *"newer than this cco supports"* ]] \
         || fail "the blocked command must print the gate's message, got: $out"
 }
+
+# ── Never trust a version we could not cleanly read (review F1/F2/F5b) ─
+
+# F2: an unreadable index must die HONESTLY, not silently coerce to version 1 and
+# sail past (which would give the gate zero protection — the FI-16 misread class).
+test_gate_dies_on_an_unreadable_index() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    _vg_write_index_version "$(_latest_index_version)"   # current, not newer
+    chmod 000 "$(_index_file)"
+    local rc=0 out
+    out=$( ( _cco_version_gate ) 2>&1 ) || rc=$?
+    chmod 644 "$(_index_file)"
+    [[ "$rc" -eq 1 ]] || fail "an unreadable index must die cleanly (exit 1), got rc=$rc"
+    [[ "$out" == *"cannot be read"* ]] || fail "the die must name the read failure, got: $out"
+}
+
+# F2/F5b: a readable index whose version line is not an integer must die, not pass
+# by coercion (the old `${v//[^0-9]/}` would have silently mangled it).
+test_gate_dies_on_a_malformed_index_version() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    printf 'version: abc\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$f"
+    local rc=0 out
+    out=$( ( _cco_version_gate ) 2>&1 ) || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a malformed index version must die (exit 1), got rc=$rc"
+    [[ "$out" == *"unreadable version line"* ]] || fail "must name the malformation, got: $out"
+}
+
+# F1 (unit): an unreadable global meta must die honestly — the readability probe
+# fires before _read_cco_meta, so its trailing awk never runs on the bad file.
+test_gate_dies_on_an_unreadable_meta() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    _vg_write_meta_schema "$(_latest_schema_version global)"   # current, not newer
+    chmod 000 "$(_cco_global_meta)"
+    local rc=0 out
+    out=$( ( _cco_version_gate ) 2>&1 ) || rc=$?
+    chmod 644 "$(_cco_global_meta)"
+    [[ "$rc" -eq 1 ]] || fail "an unreadable meta must die cleanly (exit 1), got rc=$rc"
+    [[ "$out" == *"cannot be read"* ]] || fail "the die must name the read failure, got: $out"
+}
+
+test_gate_dies_on_a_malformed_meta_schema() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    _vg_write_meta_schema "abc"   # readable but non-integer
+    local rc=0 out
+    out=$( ( _cco_version_gate ) 2>&1 ) || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a malformed schema_version must die (exit 1), got rc=$rc"
+    [[ "$out" == *"malformed schema_version"* ]] || fail "must name the malformation, got: $out"
+}
+
+# F1 (regression, the real crash): through the dispatcher (bin/cco has set -euo
+# pipefail), an unreadable meta must die CLEANLY (exit 1 + message), NOT crash raw
+# through _read_cco_meta's trailing awk — which surfaced as the generic
+# "exited unexpectedly" (exit 2) trap, the non-actionable UX this cluster kills.
+test_gate_unreadable_meta_dies_cleanly_via_cco() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    _vg_write_meta_schema "$(_latest_schema_version global)"
+    chmod 000 "$(_cco_global_meta)"
+    local rc=0 out
+    out=$(CCO_IN_CONTAINER=0 HOME="$HOME" \
+          CCO_STATE_HOME="$CCO_STATE_HOME" CCO_DATA_HOME="$CCO_DATA_HOME" \
+          CCO_CACHE_HOME="$CCO_CACHE_HOME" CCO_SKIP_BUILD=1 \
+          bash "$REPO_ROOT/bin/cco" help 2>&1) || rc=$?
+    chmod 644 "$(_cco_global_meta)"
+    [[ "$rc" -eq 1 ]] || fail "unreadable meta must die cleanly (exit 1), got rc=$rc"
+    [[ "$out" == *"cannot be read"* ]] || fail "must name the read failure, got: $out"
+    [[ "$out" != *"exited unexpectedly"* ]] || fail "must NOT crash raw, got: $out"
+}
+
+# F4: when the latest schema is indeterminate (mis-resolved FRAMEWORK_ROOT →
+# _latest_schema_version 0), the >0 guard must SKIP the schema arm rather than
+# brick a working install on an undeterminable bound (the index arm still protects).
+test_gate_skips_schema_when_latest_indeterminate() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _vg_env "$tmp"
+
+    export FRAMEWORK_ROOT="$tmp/no-framework"; mkdir -p "$FRAMEWORK_ROOT"
+    [[ "$(_latest_schema_version global)" == "0" ]] \
+        || fail "precondition: latest schema must be indeterminate (0) with no migrations dir"
+    _vg_write_meta_schema "999"   # far newer than anything — must NOT trigger a die
+    # Index absent → index arm skips; the schema arm must be skipped by the >0 guard.
+    ( _cco_version_gate ) || fail "an indeterminate latest must skip the schema gate, not brick"
+}
