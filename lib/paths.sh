@@ -293,6 +293,12 @@ _cco_pack_install_tmp() {
 # is daemon-injected, not part of the image, so it cannot be stripped.
 _cco_in_container() {
     [[ "${CCO_IN_CONTAINER:-}" == "1" ]] && return 0
+    # An explicit ==0 forces HOST semantics deterministically, short-circuiting the
+    # /.dockerenv sniff (ADR-0052 §1): the override honoured only the ==1 direction,
+    # so host code paths (e.g. the first-run version gate) could not be exercised on
+    # a machine where /.dockerenv happens to exist — such as cco's own self-dev
+    # container. Both directions of the override now win over the marker.
+    [[ "${CCO_IN_CONTAINER:-}" == "0" ]] && return 1
     [[ -f /.dockerenv ]] && return 0
     return 1
 }

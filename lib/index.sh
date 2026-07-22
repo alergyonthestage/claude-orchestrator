@@ -44,6 +44,14 @@
 # Dependencies: colors.sh, paths.sh (_cco_state_shared_dir/_cco_project_id),
 #   sync-meta.sh (_sync_is_divergent) — both resolved at call time.
 
+# The index schema version this binary writes and supports (ADR-0052 §1). The
+# SINGLE source for the number: the scaffold writer and the v1→v2 rewrite stamp
+# it, _latest_index_version() echoes it as the fail-loud version gate's upper
+# bound. It is the "latest supported" bound — NOT the same as the `>= 2` reads
+# scattered below, which are the "has the project_paths schema" feature gate (a
+# fixed 2, tied to the ADR-0051 D6 layout) and must NOT move when this is bumped.
+CCO_INDEX_VERSION=2
+
 # Absolute path to the index file (STATE/shared; host-side guard applies via
 # resolver). It lives in the shareable sub-bucket because every writer below
 # replaces it atomically via a SIBLING temp file (mktemp "$f.XXXXXX" + mv), which
@@ -183,6 +191,14 @@ _index_version() {
     printf '%s\n' "${v:-1}"
 }
 
+# Echo the newest index schema version this binary supports — the CCO_INDEX_VERSION
+# constant. Mirrors _latest_schema_version (which scans migrations/) so the gate
+# has a uniform "latest" reader on both bounds; the index is an in-index
+# self-upgrade (ADR-0051 D6), not a migrations/ script, so its bound is a declared
+# constant, not a directory scan (ADR-0052 Alternatives B). The fail-loud version
+# gate (_cco_version_gate) compares the on-disk _index_version against this.
+_latest_index_version() { printf '%s\n' "$CCO_INDEX_VERSION"; }
+
 # Create the v2 index scaffold if missing (all flat sections always present, so
 # the section upsert/remove logic never has to create a section); otherwise
 # upgrade a still-v1 index in place before any write (transitional migration).
@@ -196,7 +212,7 @@ _index_ensure_file() {
         {
             echo "# cco machine-local index — per-project logical name → absolute path + membership."
             echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
-            echo "version: 2"
+            echo "version: $CCO_INDEX_VERSION"
             echo "projects:"
             echo "project_paths:"
             echo "llms:"
@@ -230,7 +246,7 @@ _index_migrate_v1_to_v2() {
     {
         echo "# cco machine-local index — per-project logical name → absolute path + membership."
         echo "# Regenerable via 'cco resolve --scan'; never committed, never synced."
-        echo "version: 2"
+        echo "version: $CCO_INDEX_VERSION"   # this rewrite targets the latest supported shape
         echo "projects:"
         local proj mem
         while IFS='=' read -r proj mem; do

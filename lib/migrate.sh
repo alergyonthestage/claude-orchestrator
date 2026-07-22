@@ -226,6 +226,49 @@ _cco_flatten_global_claude() {
     return 1
 }
 
+# ── Fail-loud version gate (ADR-0052 §1) ─────────────────────────────
+# Refuse to run when on-disk state is NEWER than this binary understands. A newer
+# cco may have upgraded the global schema or the index; an older binary cannot
+# read the newer layout safely — it MISPARSES and prints wrong output (the "path
+# index is empty" mislead FI-16 exists to kill), so a warn-and-read would be a
+# weaker fail-loud. die on EVERY verb, not just writers (no verb classification):
+# reading is exactly where the silent corruption happens. The cost — a developer
+# running an older gated binary against newer state — is removed at the source by
+# the developer sandbox (ADR-0052 §7), not papered over by a warn.
+#
+# Host-side only (it self-guards): inside a session the buckets are bind-mounted
+# and never bootstrapped here. Two versioned artifacts, two bounds:
+#   • global .cco/meta schema_version vs _latest_schema_version global (scans
+#     migrations/global/, self-maintaining). Skipped when the latest cannot be
+#     determined (>0 guard) so a mis-resolved FRAMEWORK_ROOT can never brick cco.
+#   • the index version: vs _latest_index_version (the CCO_INDEX_VERSION constant,
+#     always available — no scan — so this arm is always reliable).
+# Per-project .cco/meta is deferred (first_run holds no project in hand); the
+# global + index bounds already stop the session before any self-heal mutates it.
+_cco_version_gate() {
+    _cco_host_side_ok || return 0
+
+    # Index bound — the constant is always available (no directory scan). A newer
+    # index schema means a newer cco already re-homed the machine-local paths.
+    local disk_idx latest_idx idxf
+    disk_idx=$(_index_version); disk_idx=${disk_idx//[^0-9]/}; disk_idx=${disk_idx:-1}
+    latest_idx=$(_latest_index_version); latest_idx=${latest_idx//[^0-9]/}; latest_idx=${latest_idx:-$CCO_INDEX_VERSION}
+    if [[ "$disk_idx" -gt "$latest_idx" ]]; then
+        idxf=$(_index_file)
+        die "the cco path index at $idxf is schema version $disk_idx, newer than this cco supports (max $latest_idx). It was written by a newer cco; this older binary would misread it and lose registered paths. Use the cco that wrote it (or a newer one) — a downgrade cannot read it safely."
+    fi
+
+    # Global schema bound — skip if the latest cannot be determined (never brick a
+    # working install on an indeterminate bound; the index arm still protects).
+    local metaf disk_meta latest_meta
+    metaf=$(_cco_global_meta)
+    disk_meta=$(_read_cco_meta "$metaf"); disk_meta=${disk_meta//[^0-9]/}; disk_meta=${disk_meta:-0}
+    latest_meta=$(_latest_schema_version global); latest_meta=${latest_meta//[^0-9]/}; latest_meta=${latest_meta:-0}
+    if [[ "$latest_meta" -gt 0 && "$disk_meta" -gt "$latest_meta" ]]; then
+        die "the cco global config at $metaf is schema version $disk_meta, newer than this cco supports (max $latest_meta). It was written by a newer cco; run that newer cco, or its 'cco update', to work with your state — this older binary would misread it."
+    fi
+}
+
 # ── Dispatch-time orchestrator ───────────────────────────────────────
 # Run before every command (bin/cco). Bootstrap is universal; the backup net is
 # skipped only for `help` (prints usage, reads no config). Ordering (M8): roots
@@ -234,6 +277,12 @@ _cco_flatten_global_claude() {
 _cco_first_run() {
     local cmd="$1"
     _cco_bootstrap_roots
+    # Fail loud BEFORE any state-mutating self-heal (flatten/backup/reconcile) if
+    # on-disk state is newer than this binary understands (ADR-0052 §1). Placed
+    # after _cco_bootstrap_roots (STATE must exist) and before the self-heals so a
+    # newer schema can never be half-migrated by an older binary. Self-guards to
+    # host-side; dies on any disk>supported.
+    _cco_version_gate
     # Self-heal a pre-flatten layout (ADR-0028) on ANY command, before check_global
     # and any global-config reader run. Host-side only; idempotent no-op otherwise.
     _cco_host_side_ok && { _cco_flatten_global_claude || true; }
