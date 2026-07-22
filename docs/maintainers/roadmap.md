@@ -432,7 +432,8 @@ current tree** *before* touching code; (2) implement; (3) tests green (baseline 
 — the earlier "1463/9" was stale, same 1472 total — + the session's new tests); (4) atomic commit(s) +
 flip the WS row in `00-plan.md`. Never auto-advance between sessions — each is launched explicitly.
 **S1 done**: WS-1 fail-loud gate landed `93b3354`, reviewed + hardened `8811108` (fail-honestly on
-unreadable/malformed state; F1/F2 critical). Suite **1481/7**.
+unreadable/malformed state; F1/F2 critical). Suite **1481/7**. **S2 start → [`index-integrity/S2-handoff.md`](../configuration/decentralized-config/index-integrity/S2-handoff.md)**
+(reconcile WS-2 + residue WS-3).
 
 ```mermaid
 flowchart LR

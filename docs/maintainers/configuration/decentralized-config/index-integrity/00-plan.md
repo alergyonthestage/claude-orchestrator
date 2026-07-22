@@ -27,6 +27,10 @@ Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (
 | 6  | Developer sandbox (isolated XDG) | ⏳ | — |
 | 7  | Docs: changelog + backlog flip + living-doc sweep | ⏳ | — |
 
+**▶ Next session (S2): start from [`S2-handoff.md`](./S2-handoff.md)** — reconcile (WS-2) + residue
+(WS-3). It carries the S1-derived guidance (esp. "never trust a file you could not cleanly read", applied
+to the legacy+new index the reconcile merges) that this plan predates.
+
 ## Sequencing
 
 ```mermaid
