@@ -4,8 +4,10 @@
 **Decision**: [ADR-0052](../decisions/0052-index-integrity-version-gate-and-reconcile.md).
 **Delivery**: single delivery of the whole cluster (WS-1..6 + docs) **before** resuming the host
 e2e-review v3.1. Large scope → may span sessions; commit atomically per workstream.
-**Suite baseline**: 1463/9 in-container (the 9 are host-only privilege-boundary artifacts — FI-19).
-Run `bin/test` (or the suite runner) after each WS; keep the count at 1463/9 + new tests.
+**Suite baseline**: 1465/7 in-container (the 7 are host-only privilege-boundary artifacts —
+FI-19: 6 in `test_access_scope`, 1 `test_paths_symlink_safe_tool_root`). The earlier "1463/9"
+note was stale — 2 of those host-only tests were fixed upstream; the total (1472) is unchanged.
+Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1: **1475/7** (+10).
 
 > ⚠ Self-dev caveats (project CLAUDE.md + memory): changes to `entrypoint.sh`/`hooks/`/`Dockerfile`
 > and **store-touching verbs run the image-baked cco** — `lib/` edits are invisible in-session until
@@ -17,7 +19,7 @@ Run `bin/test` (or the suite runner) after each WS; keep the count at 1463/9 + n
 | WS | Title | Status | Commit |
 |----|-------|--------|--------|
 | 0  | ADR-0052 + this plan | ✅ written | — |
-| 1  | Fail-loud version gate + `CCO_INDEX_VERSION` + `_cco_in_container` ==0 | ⏳ | — |
+| 1  | Fail-loud version gate + `CCO_INDEX_VERSION` + `_cco_in_container` ==0 | ✅ | `93b3354` |
 | 2  | Non-destructive reconcile (first_run + 017) | ⏳ | — |
 | 3  | In-index residue absorption | ⏳ | — |
 | 4  | extra_mount re-home (FI-23) | ⏳ | — |
