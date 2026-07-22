@@ -830,6 +830,20 @@ on the host (plan §6.-1), and the same will recur on every future change to `de
 - **(d)** let `--claude-access all` cover it (it already would) and document that as the self-dev
   workflow. Cheapest; cost is that self-dev then runs with every authoring tree writable, which is
   broader than the need.
+- **(e)** **explicit per-path override in config** (maintainer proposal, 2026-07-22). A declared
+  list in `project.yml → access.claude.exclude: [<path>, …]` (paths freed from the default clamp),
+  or the richer `access.claude.overrides: {<path>: <policy>}` (assign a per-path claude policy, e.g.
+  `rw`). Unlike (a)/(b), the author *states* which nested `.claude` trees are shipped payload rather
+  than the tool inferring it from self-identification or position — so it generalises to ANY project
+  that ships config trees, not only cco, and composes with an equivalent map in `~/.cco/access.yml`
+  for a cross-project default. **Fail-safe is preserved**: only listed paths are freed, an unlisted
+  `.claude` stays clamped by default — satisfying the ⚠ below. Cost: a new (additive) `project.yml`
+  schema surface + a lookup the B1 overlay loop (`cmd-start.sh:1807`) consults before emitting the
+  `:ro` overlay for a swept path (`_find_nested_config_dirs` stays a pure finder; the override is
+  applied at the mount-decision site). This is the only option that is a **user-facing feature**
+  rather than an internal special-case — (a)/(b)/(c)/(d) remain valid as its zero-config default
+  behaviour. In cco's own repo the list would be `defaults/`, `templates/`, `internal/` (the
+  payload roots of the table above).
 
 ⚠ **Do not "fix" this by narrowing the sweep generally** — the monorepo case it exists for is real,
 and the clamp is fail-safe. Whatever lands must keep an unrecognised `.claude` clamped by default.
