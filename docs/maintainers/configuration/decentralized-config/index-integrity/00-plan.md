@@ -7,7 +7,7 @@ e2e-review v3.1. Large scope → may span sessions; commit atomically per workst
 **Suite baseline**: 1465/7 in-container (the 7 are host-only privilege-boundary artifacts —
 FI-19: 6 in `test_access_scope`, 1 `test_paths_symlink_safe_tool_root`). The earlier "1463/9"
 note was stale — 2 of those host-only tests were fixed upstream; the total (1472) is unchanged.
-Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (incl. review hardening): **1481/7** (+16).
+Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (incl. review hardening): **1481/7** (+16). After WS-2/WS-3: **1493/7** (+12).
 
 > ⚠ Self-dev caveats (project CLAUDE.md + memory): changes to `entrypoint.sh`/`hooks/`/`Dockerfile`
 > and **store-touching verbs run the image-baked cco** — `lib/` edits are invisible in-session until
@@ -20,16 +20,18 @@ Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (
 |----|-------|--------|--------|
 | 0  | ADR-0052 + this plan | ✅ written | — |
 | 1  | Fail-loud version gate + `CCO_INDEX_VERSION` + `_cco_in_container` ==0 | ✅ | `93b3354` + review `8811108` |
-| 2  | Non-destructive reconcile (first_run + 017) | ⏳ | — |
-| 3  | In-index residue absorption | ⏳ | — |
+| 2  | Non-destructive reconcile (first_run + 017) | ✅ | `5e43863` |
+| 3  | In-index residue absorption | ✅ | `5e43863` |
 | 4  | extra_mount re-home (FI-23) | ⏳ | — |
 | 5  | Index-focused doctor (FI-22) | ⏳ | — |
 | 6  | Developer sandbox (isolated XDG) | ⏳ | — |
 | 7  | Docs: changelog + backlog flip + living-doc sweep | ⏳ | — |
 
-**▶ Next session (S2): start from [`S2-handoff.md`](./S2-handoff.md)** — reconcile (WS-2) + residue
-(WS-3). It carries the S1-derived guidance (esp. "never trust a file you could not cleanly read", applied
-to the legacy+new index the reconcile merges) that this plan predates.
+**▶ Next session (S3): start from [`S3-handoff.md`](./S3-handoff.md)** — extra_mount re-home (WS-4) +
+index-focused doctor (WS-5). It carries the S2-derived guidance the plan predates (the shared
+`_index_rehome_dump` classifier WS-4 should extend, the working-tree hygiene, the post-S2 baseline).
+
+_(S1→S2 handoff [`S2-handoff.md`](./S2-handoff.md) is retired — S2 landed at `5e43863`.)_
 
 ## Sequencing
 
