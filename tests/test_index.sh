@@ -824,3 +824,117 @@ IDX
     grep -q '^paths:' "$f" && fail "paths: must be dropped despite the unrecoverable entry"
     return 0
 }
+
+# ── WS-4 — v1→v2 extra_mount re-home (ADR-0052 §4, FI-23) ────────────
+#
+# The pure _index_rehome_dump classifier keys off repos-membership, so a v1→v2
+# rewrite correctly drops every extra_mount into unscoped: (a mount is never a
+# membership token). The host-only _index_rehome_extra_mounts enrichment then moves
+# a DECLARED extra_mount under its project (ADR-0051 D2 — no global-default layer),
+# while a genuine project-less pin stays unscoped. It needs the operator-aware
+# resolver + the yaml parser (the bare _index_test_env sources neither) and a
+# project.yml on disk.
+_rehome_env() {
+    _index_test_env "$1"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+}
+
+# A repo with a project.yml declaring one extra_mount. $1=dir $2=project $3=repo $4=mount
+_rehome_mk_repo() {
+    mkdir -p "$1/.cco"
+    cat > "$1/.cco/project.yml" <<YML
+name: $2
+repos:
+  - name: $3
+extra_mounts:
+  - name: $4
+    target: /workspace/$4
+YML
+}
+
+test_index_v1v2_rehomes_declared_extra_mount() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/backend" app backend assets
+    mkdir -p "$tmp/assets-dir"
+    # v1 flat index: repo `backend` (a member) + extra_mount `assets` (NOT a member)
+    # + a genuine project-less pin `loose` (declared by no project.yml).
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  backend: "$tmp/backend"
+  assets: "$tmp/assets-dir"
+  loose: "/abs/loose-pin"
+projects:
+  app: "backend"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    [[ "$(_index_version)" == 2 ]] || fail "index must be v2 after migrate"
+    [[ "$(_index_pp_get app backend)" == "$tmp/backend" ]] || fail "repo 'backend' not re-homed under app"
+    # The declared extra_mount is re-homed under its project and cleared from unscoped.
+    [[ "$(_index_pp_get app assets)" == "$tmp/assets-dir" ]] || fail "declared extra_mount not re-homed under app, got: $(_index_pp_get app assets)"
+    [[ -z "$(_index_section_get unscoped assets)" ]] || fail "re-homed extra_mount must be cleared from unscoped"
+    # A genuine project-less pin stays unscoped (FI-23 must not over-reach).
+    [[ "$(_index_section_get unscoped loose)" == "/abs/loose-pin" ]] || fail "a genuine project-less pin must stay unscoped, got: $(_index_section_get unscoped loose)"
+}
+
+# An extra_mount name declared by MORE THAN ONE project re-homes under EACH (v1
+# names are globally unique → one path, fanned across every declaring project,
+# mirroring how a shared repo re-homes), then is cleared from unscoped once.
+test_index_v1v2_rehomes_shared_extra_mount_under_each() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/a" app-a repoA shared
+    _rehome_mk_repo "$tmp/b" app-b repoB shared
+    mkdir -p "$tmp/shared-dir"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  repoA: "$tmp/a"
+  repoB: "$tmp/b"
+  shared: "$tmp/shared-dir"
+projects:
+  app-a: "repoA"
+  app-b: "repoB"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    [[ "$(_index_pp_get app-a shared)" == "$tmp/shared-dir" ]] || fail "'shared' not re-homed under app-a, got: $(_index_pp_get app-a shared)"
+    [[ "$(_index_pp_get app-b shared)" == "$tmp/shared-dir" ]] || fail "'shared' not re-homed under app-b, got: $(_index_pp_get app-b shared)"
+    [[ -z "$(_index_section_get unscoped shared)" ]] || fail "'shared' must be cleared from unscoped after both re-homes"
+}
+
+# The enrichment is host-only: in operator mode (a session) it is a no-op — a
+# session never mounts the legacy/global index, and the re-home is a host repair
+# (ADR-0047). The extra_mount stays unscoped (still resolves via the fallback).
+test_index_v1v2_rehome_skipped_in_operator_mode() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/backend" app backend assets
+    mkdir -p "$tmp/assets-dir"
+    # Force operator mode (the predicate needs the flag + three absolute buckets).
+    export CCO_CONTAINER_OPERATOR=1 CCO_IN_CONTAINER=1
+    export CCO_DATA_HOME="$tmp/data" CCO_CACHE_HOME="$tmp/cache"
+    mkdir -p "$CCO_DATA_HOME" "$CCO_CACHE_HOME" "$tmp/state/shared"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  backend: "$tmp/backend"
+  assets: "$tmp/assets-dir"
+projects:
+  app: "backend"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+    unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER
+
+    # v1→v2 still happened (that is not operator-gated), but the extra_mount was NOT
+    # re-homed — it stays in unscoped, its resolution fallback intact.
+    [[ "$(_index_version)" == 2 ]] || fail "index must be v2 after migrate"
+    [[ -z "$(_index_pp_get app assets)" ]] || fail "operator mode must NOT re-home the extra_mount, got: $(_index_pp_get app assets)"
+    [[ "$(_index_section_get unscoped assets)" == "$tmp/assets-dir" ]] || fail "the extra_mount must remain unscoped in operator mode, got: $(_index_section_get unscoped assets)"
+}

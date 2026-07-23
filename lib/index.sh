@@ -246,7 +246,8 @@ _index_migrate_if_needed() {
     [[ -n "${_CCO_INDEX_MIGRATING:-}" ]] && return 0
     local _CCO_INDEX_MIGRATING=1
     if [[ "$(_index_version)" -lt 2 ]]; then
-        _index_migrate_v1_to_v2
+        _index_migrate_v1_to_v2 || return 1
+        _index_rehome_extra_mounts   # WS-4/FI-23: re-home declared extra_mounts (host-only, additive)
         return
     fi
     _index_absorb_residue
@@ -324,6 +325,65 @@ _index_migrate_v1_to_v2() {
             printf '  %s: "%s"\n' "$a" "$b"
         done <<< "$rehomed"
     } > "$tmpf" && mv "$tmpf" "$f"
+}
+
+# Re-home declared extra_mounts from the unscoped bucket under their DECLARING
+# project (ADR-0052 §4, FI-23 — restores ADR-0051 D2: no global-default layer for
+# generic labels). The shared _index_rehome_dump classifier is PURE and keys off
+# repos-MEMBERSHIP (projects:), but an extra_mount is never a membership token, so
+# a v1→v2 rewrite correctly drops every extra_mount into unscoped:. This host-only
+# enrichment layers ON TOP, additive to that pure classifier: for each recorded
+# project it reads the extra_mounts its project.yml declares (yml_get_mount_coords)
+# and, for each such name still parked in unscoped:, re-homes it under the project
+# (_index_pp_set) and drops it from unscoped: (_index_section_remove). A name
+# declared by several projects re-homes under EACH (the path is copied, mirroring
+# how the pure classifier fans a shared repo across its members); the unscoped
+# entry is cleared once, after every project has bound it — and only if NO
+# declaring project failed to bind (a mount left unscoped still resolves via
+# _index_get_path's fallback, so a partial failure keeps the fallback alive).
+#
+# Host-only (needs project.yml on disk; a session never mounts the legacy/global
+# index anyway — ADR-0047) AND resolver-dependent: _resolve_project_yml
+# (cmd-resolve.sh — the operator-aware dispatcher; INV-F.3 forbids calling the raw
+# host resolver from here) and yml_get_mount_coords (yaml.sh) are sourced by bin/cco
+# in every real host run, but NOT when a unit test sources index.sh in isolation —
+# so a `command -v` guard makes this a clean no-op there rather than a "command not
+# found". Best-effort: it never hard-fails the migration write that drives it.
+_index_rehome_extra_mounts() {
+    ! _cco_container_operator || return 0
+    command -v _resolve_project_yml >/dev/null 2>&1 || return 0
+    command -v yml_get_mount_coords >/dev/null 2>&1 || return 0
+
+    local project members yml mname rest upath ppath consumed=" " failed=" "
+    while IFS='=' read -r project members; do
+        [[ -z "$project" ]] && continue
+        yml=$(_resolve_project_yml "$project" 2>/dev/null) || continue
+        [[ -f "$yml" ]] || continue
+        while IFS=$'\t' read -r mname rest; do
+            [[ -z "$mname" ]] && continue
+            upath=$(_index_section_get unscoped "$mname")
+            [[ -z "$upath" ]] && continue           # not an unscoped orphan (already scoped, or a genuine project-less pin)
+            ppath=$(_index_pp_get "$project" "$mname")
+            if [[ -z "$ppath" ]]; then
+                if ! _index_pp_set "$project" "$mname" "$upath"; then
+                    warn "index: could not re-home extra_mount '$mname' under '$project' — left it unscoped (still resolves)"
+                    failed="${failed}${mname} "
+                    continue
+                fi
+            fi
+            consumed="${consumed}${mname} "
+        done < <(yml_get_mount_coords "$yml")
+    done < <(_index_section_dump projects)
+
+    # Clear each re-homed name from unscoped: — once, after every project bound it.
+    # Skip a name any declaring project failed to bind, so its fallback survives.
+    local nm
+    for nm in $consumed; do
+        case "$failed" in *" $nm "*) continue ;; esac
+        _index_section_remove unscoped "$nm" \
+            || warn "index: re-homed extra_mount '$nm' but could not clear its stale unscoped entry"
+    done
+    return 0
 }
 
 # Absorb a stray v1 `paths:` residue left in an otherwise-v2 file (ADR-0052 §3).

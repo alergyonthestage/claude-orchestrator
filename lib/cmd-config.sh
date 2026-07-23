@@ -196,6 +196,17 @@ _cv_type_resolves() {
 # class = local (STATE/CACHE) | data (synced); op = idx_path|idx_proj|rmdir|token|tag.
 _cv_add() { _CV_RECS+=( "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5" ); }
 
+# Append a MALFORMED index record (ADR-0052 §5, WS-5): reported in its own lane,
+# NEVER pruned — format repair is the user's call. Carries a label only.
+_cv_mal() { _CV_MALFORMED+=( "$1" ); }
+
+# Append a mis-scoped extra_mount to RE-HOME (ADR-0052 §4, WS-4 / FI-23): its own
+# lane, but stored in the 5-field _cv_add shape so _cv_prune_record executes it via
+# the fi23_rehome arm. a=name, b=project; the path is re-derived from unscoped at
+# apply time so it never goes stale between detect and --fix. class = local (the
+# STATE index is machine-local, rebuildable). Usage: _cv_rehome_add <name> <project> <label>
+_cv_rehome_add() { _CV_REHOME+=( "local"$'\t'"fi23_rehome"$'\t'"$1"$'\t'"$2"$'\t'"$3" ); }
+
 # Flag each per-id dir under <parent> whose <rtype> resource no longer resolves.
 _cv_scan_dirs() {
     local parent="$1" rtype="$2" class="$3" blabel="$4" d nm note
@@ -219,6 +230,8 @@ _cv_scan_dirs() {
 # Populate _CV_RECS with every detected orphan across the four buckets.
 _cv_detect() {
     _CV_RECS=()
+    _CV_MALFORMED=()   # WS-5: malformed index records (reported, never pruned)
+    _CV_REHOME=()      # WS-4/FI-23: mis-scoped extra_mounts to re-home
     # Read-path honesty (v3 R3 / S4). `config validate` is the verb a user runs to
     # ASK whether the store is healthy, so an unreadable index returning "no
     # orphans" is the most damaging instance of the class — a false clean bill of
@@ -230,17 +243,30 @@ _cv_detect() {
     # root (v3 R1) — scanning the root here would silently find no sidecar orphan.
     shared=$(_cco_state_shared_dir)
 
-    # STATE index — per-project path entries whose target dir is gone. The record
+    # STATE index — per-project path entries. A non-absolute value is MALFORMED
+    # (a stale ~/@local spelling or a hand-edit), not an orphan: it goes to a
+    # separate lane and is NEVER pruned (format repair is the user's call — ADR-0052
+    # §5, generalising the `cco path list` precedent at cmd-resolve.sh:895), so
+    # --fix can never delete a binding a `cco resolve --scan` could recover. An
+    # absolute value whose target dir is gone is a genuine orphan; the record
     # carries the OWNING project (field b) so the prune re-keys the right scope
-    # (ADR-0051); an empty project = the unscoped bucket.
+    # (ADR-0051), an empty project = the unscoped bucket.
     local pproj name path
     while IFS=$'\t' read -r pproj name path; do
         [[ -z "$name" ]] && continue
-        [[ -d "$path" ]] || _cv_add local idx_path "$name" "$pproj" "index path '[$pproj] $name' -> $path (missing)"
+        if ! _index_normalize_path "$path" >/dev/null 2>&1; then
+            _cv_mal "index path '[$pproj] $name' -> $path (non-absolute)"
+        elif [[ ! -d "$path" ]]; then
+            _cv_add local idx_path "$name" "$pproj" "index path '[$pproj] $name' -> $path (missing)"
+        fi
     done < <(_index_pp_dump_all)
     while IFS='=' read -r name path; do
         [[ -z "$name" ]] && continue
-        [[ -d "$path" ]] || _cv_add local idx_path "$name" "" "index path '$name' (unscoped) -> $path (missing)"
+        if ! _index_normalize_path "$path" >/dev/null 2>&1; then
+            _cv_mal "index path '$name' (unscoped) -> $path (non-absolute)"
+        elif [[ ! -d "$path" ]]; then
+            _cv_add local idx_path "$name" "" "index path '$name' (unscoped) -> $path (missing)"
+        fi
     done < <(_index_section_dump unscoped)
 
     # STATE index — project memberships with no resolvable member.
@@ -254,6 +280,11 @@ _cv_detect() {
         done
         $any || _cv_add local idx_proj "$proj" "" "index project '$proj' (no resolvable member)"
     done < <(_index_list_projects)
+
+    # STATE index — extra_mounts a project declares but the index still parks in
+    # unscoped: (a legacy v1→v2 migration that predates the WS-4 re-home). Its own
+    # lane (_CV_REHOME): re-homing MOVES the binding, it never deletes.
+    _cv_detect_fi23_residue
 
     # STATE per-id dirs (update meta/base, session, memory).
     _cv_scan_dirs "$state/projects"   project  local "STATE"
@@ -288,6 +319,32 @@ _cv_detect() {
     _cv_scan_dirs "$data/projects"  project  data "DATA source"
 }
 
+# FI-23 residue detection (ADR-0052 §4, WS-4). An extra_mount a project.yml
+# declares but the index still binds in the unscoped bucket is a mis-scoped
+# residue from a pre-WS-4 v1→v2 migration. Re-homing it under the declaring
+# project restores ADR-0051 D2 (no global-default layer for generic labels).
+# Host-only + resolver-dependent (needs project.yml on disk), same guard shape as
+# the index-side enrichment — a clean no-op in a session or an isolated unit env.
+# Record args: a=name, b=project; the path is re-derived from unscoped at apply
+# time so it never goes stale between detect and --fix.
+_cv_detect_fi23_residue() {
+    ! _cco_container_operator || return 0
+    command -v _resolve_project_yml >/dev/null 2>&1 || return 0
+    command -v yml_get_mount_coords >/dev/null 2>&1 || return 0
+    local project members yml mname rest
+    while IFS='=' read -r project members; do
+        [[ -z "$project" ]] && continue
+        yml=$(_resolve_project_yml "$project" 2>/dev/null) || continue
+        [[ -f "$yml" ]] || continue
+        while IFS=$'\t' read -r mname rest; do
+            [[ -z "$mname" ]] && continue
+            [[ -n "$(_index_section_get unscoped "$mname")" ]] || continue   # not parked unscoped
+            [[ -n "$(_index_pp_get "$project" "$mname")" ]] && continue       # already project-scoped
+            _cv_rehome_add "$mname" "$project" "extra_mount '$mname' -> [$project] (currently unscoped)"
+        done < <(yml_get_mount_coords "$yml")
+    done < <(_index_list_projects)
+}
+
 # Execute one orphan record's prune.
 _cv_prune_record() {
     local class op a b label
@@ -303,6 +360,15 @@ _cv_prune_record() {
     case "$op" in
         idx_path) _index_remove_path "$b" "$a" ;;   # b = owning project ("" = unscoped)
         idx_proj) _index_remove_project "$a" ;;
+        # Re-home a mis-scoped extra_mount under its declaring project (b),
+        # re-deriving the path from unscoped (a=name). A data-preserving MOVE: bind
+        # under the project, then drop the stale unscoped entry. The tail `&&`
+        # propagates a failed sub-write as this record's status (S2b-P).
+        fi23_rehome)
+            local _rp; _rp=$(_index_section_get unscoped "$a")
+            [[ -n "$_rp" ]] || return 0             # already re-homed / gone
+            _index_pp_set "$b" "$a" "$_rp" && _index_section_remove unscoped "$a"
+            ;;
         rmdir)    rm -rf "$a" ;;
         # rc 1 = already gone, which for a PRUNE is the desired end state; rc ≥2 =
         # the token store could not be written and the orphan survives. `|| true`
@@ -323,14 +389,19 @@ _config_validate() {
                 cat <<'EOF'
 Usage: cco config validate [--dry-run | --fix [-y]]
 
-Detect (and optionally prune) orphaned internal bookkeeping — index/tags/source/
-STATE/CACHE/token entries with no resolvable backing resource. Read-only by
-default; never automatic.
+Detect (and optionally repair) internal bookkeeping — index/tags/source/STATE/
+CACHE/token entries with no resolvable backing resource. Read-only by default;
+never automatic. Three lanes:
+  • orphans    — no backing resource; pruned under --fix (preview + confirm)
+  • re-home    — an extra_mount the index parks in the unscoped bucket though a
+                 project declares it; --fix MOVES it under that project (FI-23)
+  • malformed  — a non-absolute index path; REPORTED, never pruned (fix by hand
+                 or 'cco resolve --scan')
 
 Options:
-  --dry-run    Report orphans without changing anything (the default)
-  --fix        Prune orphans, preview-first and with confirmation
-  -y, --yes    With --fix: confirm non-interactively (covers both phases)
+  --dry-run    Report findings without changing anything (the default)
+  --fix        Apply prunes + re-homes, preview-first and with confirmation
+  -y, --yes    With --fix: confirm non-interactively (covers every phase)
 
 STATE/CACHE orphans are machine-local and rebuildable via 'cco resolve --scan';
 DATA orphans (tags/source) are synced across your machines, so pruning them
@@ -343,36 +414,56 @@ EOF
         esac
     done
 
-    local -a _CV_RECS=()
+    local -a _CV_RECS=() _CV_MALFORMED=() _CV_REHOME=()
     _cv_detect
 
-    if [[ ${#_CV_RECS[@]} -eq 0 ]]; then
+    if [[ ${#_CV_RECS[@]} -eq 0 && ${#_CV_MALFORMED[@]} -eq 0 && ${#_CV_REHOME[@]} -eq 0 ]]; then
         ok "No orphaned internal state — bookkeeping is clean."
         return 0
     fi
 
-    # Split by bucket sync-class for the report and the staged prune.
-    local rec class
+    # Split the prunable orphans by bucket sync-class for the report and the staged
+    # prune (guarded: _CV_RECS may be empty while another lane is not).
+    local rec label class
     local -a local_recs=() data_recs=()
-    for rec in "${_CV_RECS[@]}"; do
-        class="${rec%%$'\t'*}"
-        if [[ "$class" == data ]]; then data_recs+=("$rec"); else local_recs+=("$rec"); fi
-    done
-
-    local label
-    warn "Found ${#_CV_RECS[@]} orphaned internal entr$([[ ${#_CV_RECS[@]} -eq 1 ]] && echo y || echo ies):"
-    if [[ ${#local_recs[@]} -gt 0 ]]; then
-        info "  Machine-local (STATE/CACHE — rebuildable via 'cco resolve --scan'):"
-        for rec in "${local_recs[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+    if [[ ${#_CV_RECS[@]} -gt 0 ]]; then
+        for rec in "${_CV_RECS[@]}"; do
+            class="${rec%%$'\t'*}"
+            if [[ "$class" == data ]]; then data_recs+=("$rec"); else local_recs+=("$rec"); fi
+        done
+        warn "Found ${#_CV_RECS[@]} orphaned internal entr$([[ ${#_CV_RECS[@]} -eq 1 ]] && echo y || echo ies):"
+        if [[ ${#local_recs[@]} -gt 0 ]]; then
+            info "  Machine-local (STATE/CACHE — rebuildable via 'cco resolve --scan'):"
+            for rec in "${local_recs[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+        fi
+        if [[ ${#data_recs[@]} -gt 0 ]]; then
+            info "  Synced (DATA — pruning propagates across your machines; a resource may"
+            info "  live on another machine rather than be deleted):"
+            for rec in "${data_recs[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+        fi
     fi
-    if [[ ${#data_recs[@]} -gt 0 ]]; then
-        info "  Synced (DATA — pruning propagates across your machines; a resource may"
-        info "  live on another machine rather than be deleted):"
-        for rec in "${data_recs[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+
+    # Mis-scoped extra_mounts to re-home (WS-4/FI-23): its own lane. A re-home MOVES
+    # the binding under its declaring project — data-preserving, distinct from an
+    # orphan prune — so it gets its own heading and its own confirmation.
+    if [[ ${#_CV_REHOME[@]} -gt 0 ]]; then
+        info "Found ${#_CV_REHOME[@]} mis-scoped extra_mount binding$([[ ${#_CV_REHOME[@]} -eq 1 ]] && echo '' || echo s) (re-home under declaring project):"
+        for rec in "${_CV_REHOME[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+    fi
+
+    # Malformed index records (WS-5): reported, NEVER pruned — shown in both report
+    # and --fix modes, so the user knows the format needs a hand-fix or a scan.
+    if [[ ${#_CV_MALFORMED[@]} -gt 0 ]]; then
+        warn "Found ${#_CV_MALFORMED[@]} malformed index record$([[ ${#_CV_MALFORMED[@]} -eq 1 ]] && echo '' || echo s) — reported, never pruned:"
+        for label in "${_CV_MALFORMED[@]}"; do info "    • $label"; done
+        info "  A non-absolute path is a stale spelling or a hand-edit. Fix it by hand, or"
+        info "  rebuild the binding with 'cco resolve --scan <dir>'; --fix will not touch these."
     fi
 
     if [[ "$mode" != fix ]]; then
-        info "Run 'cco config validate --fix' to prune (preview-first, with confirmation)."
+        if [[ ${#_CV_RECS[@]} -gt 0 || ${#_CV_REHOME[@]} -gt 0 ]]; then
+            info "Run 'cco config validate --fix' to apply (preview-first, with confirmation)."
+        fi
         return 0
     fi
 
@@ -406,6 +497,23 @@ EOF
             fi
         else
             info "Skipped synced (DATA) orphans."
+        fi
+    fi
+    # Re-home mis-scoped extra_mounts (WS-4/FI-23) — its own confirmation because a
+    # re-home MOVES the binding rather than deleting it. Machine-local (STATE index),
+    # executed via _cv_prune_record's fi23_rehome arm.
+    if [[ ${#_CV_REHOME[@]} -gt 0 ]]; then
+        if _confirm_destructive "$force" "Re-home ${#_CV_REHOME[@]} mis-scoped binding(s) under their declaring project?"; then
+            _failed=0
+            for rec in "${_CV_REHOME[@]}"; do _cv_prune_record "$rec" || _failed=$((_failed + 1)); done
+            if [[ $_failed -gt 0 ]]; then
+                warn "Re-homed $(( ${#_CV_REHOME[@]} - _failed )) of ${#_CV_REHOME[@]} binding(s) — $_failed could not be written (the index is not writable). Re-run once it is writable."
+                _rc=1
+            else
+                ok "Re-homed ${#_CV_REHOME[@]} extra_mount binding(s) under their declaring project."
+            fi
+        else
+            info "Skipped extra_mount re-homing."
         fi
     fi
     return $_rc
