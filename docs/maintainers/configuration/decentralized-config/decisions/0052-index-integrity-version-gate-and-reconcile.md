@@ -1,6 +1,7 @@
 # ADR 0052 — Index integrity: fail-loud version gate + non-destructive reconcile
 
-**Status**: Proposed (2026-07-22) — design phase, `feat/index/integrity-hardening`.
+**Status**: Accepted (2026-07-22) — implementing on `feat/index/integrity-hardening`; per-workstream
+status tracked in [`index-integrity/00-plan.md`](../index-integrity/00-plan.md).
 **Deciders**: maintainer + design session (4-way code recon)
 **Context docs**: `../../../roadmap-backlog.md` (FI-16, FI-22, FI-23), the host e2e-review v3.1
 §10.6 incident report (2026-07-22)

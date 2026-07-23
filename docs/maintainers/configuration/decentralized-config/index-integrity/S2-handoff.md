@@ -1,7 +1,7 @@
 # S2 handoff — Reconcile + residue (WS-2 + WS-3)
 
 > **RETIRED — S2 landed at `5e43863` (2026-07-23).** Kept for its reference value; the live
-> starting point is now [`S3-handoff.md`](./S3-handoff.md).
+> starting point is now [`S4-handoff.md`](./S4-handoff.md) (S3 also retired — see [`S3-handoff.md`](./S3-handoff.md)).
 
 **Read this first, then `00-plan.md` §WS-2/§WS-3 for the full spec.** This handoff carries the
 *starting context* + the *S1-derived guidance* that the original plan could not know. Retire it once
