@@ -808,6 +808,41 @@ test_resolve_unit_propagates_user_quit_rc2() {
         || fail "a user Exit must propagate as rc=2 from _resolve_unit, got: $rc"
 }
 
+# The crux of N3 (per the 2026-07-22 incident): Exit at a SUBSEQUENT unresolved
+# member, AFTER an earlier one was resolved (e.g. via [p]ath), must still abort —
+# not just Exit at the very first prompt. The old `2) return 0` swallowed it, so the
+# loop fell through to the membership write + success and the start booted. Here the
+# first member resolves (rc=0) and the SECOND is quit (rc=2): rc=2 must propagate.
+_RSV_N3_TWO_YML='name: demo
+repos:
+  - name: repoA
+    url: https://example.com/a.git
+  - name: repoB
+    url: https://example.com/b.git'
+
+test_resolve_unit_propagates_quit_at_subsequent_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_TWO_YML"       # repoA + repoB both unresolved
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 0; }
+        # 1st member → resolved ([p]ath, rc=0); 2nd member → Exit ([q], rc=2).
+        _N3_ROUND=0
+        _resolve_entry_index() {
+            _N3_ROUND=$((_N3_ROUND + 1))
+            [[ $_N3_ROUND -ge 2 ]] && return 2 || return 0
+        }
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "Exit at a SUBSEQUENT member (after an earlier resolve) must propagate rc=2, got: $rc"
+}
+
 # A SKIP (rc=1) is not an abort — _resolve_unit stays best-effort (counts the
 # unresolved member, returns 0). This guards against over-propagating.
 test_resolve_unit_skip_is_not_an_abort() {
