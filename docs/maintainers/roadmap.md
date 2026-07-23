@@ -415,7 +415,7 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 
 ## What's next
 
-### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE (S1 + S2 ✅ landed; S3 next)
+### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE (S1 + S2 + S3 ✅ landed; S4 next)
 
 **Branch**: `feat/index/integrity-hardening` (from `develop`). **Decision**:
 [ADR-0052](../configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
@@ -434,8 +434,10 @@ flip the WS row in `00-plan.md`. Never auto-advance between sessions — each is
 **S1 done**: WS-1 fail-loud gate landed `93b3354`, reviewed + hardened `8811108` (fail-honestly on
 unreadable/malformed state; F1/F2 critical). Suite **1481/7**. **S2 done**: WS-2 non-destructive reconcile
 + WS-3 residue absorption + the shared `_index_rehome_dump` classifier landed `5e43863`, docs `2ab5edf`.
-Suite **1493/7** (+12). **S3 start → [`index-integrity/S3-handoff.md`](../configuration/decentralized-config/index-integrity/S3-handoff.md)**
-(extra_mount re-home WS-4 + index-focused doctor WS-5).
+Suite **1493/7** (+12). **S3 done**: WS-4 extra_mount re-home (host-only `_index_rehome_extra_mounts`
+enrichment + `config validate --fix` re-home lane) + WS-5 malformed-lane doctor landed `564040e`, docs
+`8dde097`. Suite **1498/7** (+5). **S4 start → [`index-integrity/S4-handoff.md`](../configuration/decentralized-config/index-integrity/S4-handoff.md)**
+(dev-sandbox WS-6 + N3 `q`/Exit abort + docs cutover WS-7 — the cluster's single changelog + FI flips).
 
 ```mermaid
 flowchart LR
@@ -449,7 +451,7 @@ flowchart LR
 |---|---|---|---|---|
 | **S1 — Version-gate foundations** | WS-1 | `CCO_INDEX_VERSION` single source + `_latest_index_version`; `_cco_version_gate` in `_cco_first_run` (after `_cco_bootstrap_roots`, before flatten/backup) `disk>supported → die` on **all** verbs; `_cco_in_container`==0 fix. Tests: `test_version_gate.sh`. | ADR-0052 §1; FI-16 mutation-order; ADR-0051 D6 (index self-upgrade, not `migrations/`) | — |
 | **S2 — Reconcile + residue** ✅ **DONE (2026-07-23, `5e43863`)** | WS-2, WS-3 | `_index_reconcile_legacy_location` non-destructive **merge**, wired into `_cco_first_run` (NON-interactive N2 backstop — a prompt would block any command) **and** migration 017 (INTERACTIVE, replaces its `rm -f` = N1; conflict prompts only on a TTY, else keep both + warn, never delete); residue absorption in `_index_migrate_if_needed` (v2 file with stray `paths:`, re-entrancy-guarded). Shared **PURE** `_index_rehome_dump` classifier now drives the rewrite + reconcile + residue. Tests: `test_index_reconcile.sh` (8) + `test_index.sh` (+4) → suite **1493/7**; no `test_migrate*` "new wins" assertion existed to drop. | ADR-0052 §2/§3; ADR-0051 D6 losslessness; ADR-0017 D2 (non-destructive / no-prune); ADR-0047 (host-only) | S1 |
-| **S3 — Scoping + doctor** | WS-4, WS-5 | extra_mount re-home under the declaring project (via `yml_get_mount_coords`) in the migration + `config validate --fix` (`_cv_detect_fi23_residue`); index-focused doctor: malformed records reported **separately** (`_CV_MALFORMED`), **never pruned**, orphan prune keeps the two-phase sync-class confirm. Tests: `test_resolve.sh`/`test_migrate_completeness.sh`/`test_config_validate.sh`. | ADR-0052 §4/§5; ADR-0051 D2 (no global-default layer); ADR-0021 Dec.5 (sync-class two-phase) | S2 |
+| **S3 — Scoping + doctor** ✅ **DONE (2026-07-23, `564040e`)** | WS-4, WS-5 | extra_mount re-home under the declaring project: host-only `_index_rehome_extra_mounts` enrichment (additive to the PURE `_index_rehome_dump`, keyed off `yml_get_mount_coords`) in the v1→v2 migration + `config validate --fix` re-home lane (`_cv_detect_fi23_residue` → `_cv_prune_record` fi23_rehome arm, its OWN confirm — a re-home MOVES, it never deletes); index-focused doctor: malformed (non-absolute) index values reported **separately** (`_CV_MALFORMED`), **never pruned**, orphan prune keeps the two-phase sync-class confirm. Both re-home sites use the operator-aware `_resolve_project_yml` (INV-F.3). Tests landed in `test_index.sh` (+3) + `test_config_validate.sh` (+2) → suite **1498/7**. | ADR-0052 §4/§5; ADR-0051 D2 (no global-default layer); ADR-0021 Dec.5 (sync-class two-phase) | S2 |
 | **S4 — Dev-sandbox + docs cutover** | WS-6, WS-7 | `CCO_DEV_SANDBOX` toggle redirecting `CCO_STATE/CACHE/DATA_HOME` to an isolated root + optional seed-copy + `cco whoami` indicator (off by default, no behaviour change); N3 `q`/Exit abort; changelog; **flip FI-16/22/23 to landed + record N1/N2/N3**; living-doc sweep (root `CLAUDE.md` STATE bucket, `design.md`, `cli.md`). Tests: `test_dev_sandbox.sh`. | ADR-0052 §6/§7; `paths.sh` XDG resolution; `.claude/rules/update-system.md` + `documentation-lifecycle.md` | S1, S3 |
 
 **Launch pointers** (paste to start each session in turn):
