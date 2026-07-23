@@ -777,3 +777,99 @@ test_resolve_scan_partial_failure_is_not_success() {
         || { fail "the summary must say the sweep is incomplete: $out"; return 1; }
     return 0
 }
+
+# ── N3: q/Exit honours the exit (ADR-0052 §6) ────────────────────────
+# A user Exit ([q]) at a heal prompt surfaces rc=2 from the per-entry healers.
+# _resolve_unit must PROPAGATE it (return 2, not the old swallow-to-0), so
+# `cco start` aborts before booting and `cco resolve[/--all]` stop cleanly.
+
+_RSV_N3_YML='name: demo
+repos:
+  - name: repo1
+    url: https://example.com/repo1.git'
+
+# The heal loop reaches _resolve_entry_index only for an UNRESOLVED member; a stub
+# returning 2 stands in for the user pressing [q] at the clone/path prompt.
+test_resolve_unit_propagates_user_quit_rc2() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"          # repo1 has no index binding → unresolved
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty()        { return 0; }
+        _resolve_entry_index() { return 2; }         # user pressed [q]
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "a user Exit must propagate as rc=2 from _resolve_unit, got: $rc"
+}
+
+# A SKIP (rc=1) is not an abort — _resolve_unit stays best-effort (counts the
+# unresolved member, returns 0). This guards against over-propagating.
+test_resolve_unit_skip_is_not_an_abort() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty()        { return 0; }
+        _resolve_entry_index() { return 1; }         # user chose [s]kip
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 0 ]] \
+        || fail "a skip must NOT abort — _resolve_unit should return 0, got: $rc"
+}
+
+# cmd_resolve maps rc=2 to a clean exit (0) and skips the post-heal status render.
+test_cmd_resolve_honours_user_quit() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"
+    local out rc=0
+    out=$(
+        {
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_find_unit_dir()   { printf '%s\n' "$tmp/myrepo"; }
+        _resolve_unit()            { return 2; }             # user Exit
+        _resolve_render_status()   { echo "STATUS-RENDERED"; }
+        cmd_resolve
+        } 2>&1
+    ) || rc=$?
+    [[ $rc -eq 0 ]] \
+        || fail "cco resolve must exit cleanly (0) on a user Exit, got: $rc"
+    [[ "$out" == *"stopped at your request"* ]] \
+        || fail "cco resolve must acknowledge the Exit, got: $out"
+    [[ "$out" != *"STATUS-RENDERED"* ]] \
+        || fail "cco resolve must NOT render the status after an Exit, got: $out"
+}
+
+# _start_resolve_paths turns a resolve Exit into a start ABORT (return 2), which
+# cmd_start maps to a clean no-boot exit. Here we assert the propagation.
+test_start_resolve_paths_aborts_on_user_quit() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo/.cco"
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/access-scope.sh"; source "$REPO_ROOT/lib/cmd-start.sh"
+        is_internal=false
+        project_dir="$tmp/myrepo/.cco"
+        _resolve_unit() { return 2; }                # user Exit at a mount prompt
+        _start_resolve_paths
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "_start_resolve_paths must propagate a user Exit as rc=2 (start abort), got: $rc"
+}

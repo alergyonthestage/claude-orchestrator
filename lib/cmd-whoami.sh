@@ -49,6 +49,20 @@ EOF
     # On the host there is no session envelope — cco runs unrestricted.
     if ! _cco_container_operator; then
         info "Not in a cco session (host context) — cco runs unrestricted here."
+        # Developer sandbox indicator (ADR-0052 §7): when engaged, the internal
+        # buckets are isolated so a dev binary never collides with the published
+        # one. Surfaced HERE (host branch) because the sandbox is a host-developer
+        # tool — a real session never runs it. Report the resolved bucket paths so a
+        # sandbox session is never mistaken for the real one.
+        if _cco_dev_sandbox_active; then
+            echo ""
+            printf '%bDeveloper sandbox%b  internal state isolated (ADR-0052 §7)\n' "$BOLD" "$NC"
+            printf '  sandbox root:  %s\n' "${CCO_DEV_SANDBOX_ROOT:-$(_cco_dev_sandbox_root)}"
+            printf '  STATE:         %s\n' "$(_cco_state_dir)"
+            printf '  DATA:          %s\n' "$(_cco_data_dir)"
+            printf '  CACHE:         %s\n' "$(_cco_cache_dir)"
+            printf '  CONFIG:        %s  (shared — not sandboxed)\n' "$(_cco_config_dir)"
+        fi
         return 0
     fi
 

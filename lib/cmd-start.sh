@@ -1319,7 +1319,12 @@ _start_resolve_paths() {
     # SAME resolve surface as `cco resolve` — interactive heal of every referenced
     # repo/mount/llms/pack, never blocking (P14) — instead of a parallel inlined
     # loop. _resolve_unit takes the repo dir (parent of the .cco config dir).
-    _resolve_unit "$(dirname "$project_dir")"
+    # N3 (ADR-0052 §6): a user Exit ([q]) at a heal prompt propagates rc=2 — signal
+    # it up (return 2) so cmd_start aborts the launch BEFORE the container boots,
+    # rather than the old "skip-and-boot" that ignored the return.
+    local _ru_rc=0
+    _resolve_unit "$(dirname "$project_dir")" || _ru_rc=$?
+    [[ $_ru_rc -eq 2 ]] && return 2
     # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_unit offered
     # [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already warned each
     # member it could not resolve (skip / non-TTY). Here we only COUNT the residue
@@ -2337,7 +2342,19 @@ EOF
     _start_generate_integrations
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_integrations done" >&2
 
-    _start_resolve_paths
+    # N3 (ADR-0052 §6): _start_resolve_paths returns 2 when the user chose Exit ([q])
+    # at a mount/resolve prompt. Honour it — abort the launch cleanly (exit 0, no
+    # container) instead of booting anyway. Bindings written before the quit stay
+    # valid; re-run `cco start` (or `cco resolve`) to finish. `|| _sr_rc=$?` keeps
+    # set -e from aborting on the non-zero return.
+    local _sr_rc=0
+    _start_resolve_paths || _sr_rc=$?
+    if [[ $_sr_rc -eq 2 ]]; then
+        info "start aborted — you chose Exit at a resolve prompt; no session was launched."
+        return 0
+    elif [[ $_sr_rc -ne 0 ]]; then
+        return $_sr_rc
+    fi
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
 
     # Source transparency + passive ⚠ badge (design §4.4 / ADR-0019 D2 layer-e /

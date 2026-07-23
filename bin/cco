@@ -120,6 +120,29 @@ if _cco_in_container && [[ -n "${CCO_SESSION_CONTEXT:-}" ]] && ! _cco_container_
     refuse "cco is not available at this access level (cco_access=none). Start a session with --cco-access read-project (the default) or higher to use cco, or run cco on your host."
 fi
 
+# ── Developer sandbox toggle (ADR-0052 §7) ───────────────────────────
+# Consume a leading/global `--dev-sandbox[-seed]` flag anywhere in the args
+# (equivalently the CCO_DEV_SANDBOX / CCO_DEV_SANDBOX_SEED env) and redirect the
+# internal XDG buckets to an isolated root, so a dev binary never shares STATE/DATA/
+# CACHE with the published one — the multi-version scenario §1's version gate is
+# calibrated for. MUST run before the store resolvers below (PACKS/LLMS) and the
+# first-run gate so every bucket read is already sandboxed. Strip the flag so the
+# command parser never sees it; the env form needs no stripping. Host-only + never
+# clobbering an explicit CCO_*_HOME override is enforced in _cco_apply_dev_sandbox.
+if [[ $# -gt 0 ]]; then
+    _cco_kept=()
+    for _a in "$@"; do
+        case "$_a" in
+            --dev-sandbox)      export CCO_DEV_SANDBOX=1 ;;
+            --dev-sandbox-seed) export CCO_DEV_SANDBOX=1; export CCO_DEV_SANDBOX_SEED=1 ;;
+            *)                  _cco_kept+=("$_a") ;;
+        esac
+    done
+    set -- ${_cco_kept[@]+"${_cco_kept[@]}"}
+    unset _cco_kept _a
+fi
+_cco_apply_dev_sandbox
+
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
 # CACHE. CONFIG has no XDG override, so the plain $HOME form matches

@@ -228,6 +228,12 @@ _project_foreach() {
 # recording the project's repo membership. Reuses _resolve_entry_index (the
 # index-materialization primitive: lookup -> prompt/clone -> store). Non-TTY
 # unresolved entries are reported (warn), never block.
+# N3 (ADR-0052 §6): a user Exit ([q]) at any heal prompt surfaces rc=2 from
+# _resolve_entry_index / _resolve_{llms,pack}_entry. It PROPAGATES as `return 2`
+# (was swallowed as `return 0` → "skip-and-boot") so callers can honour the exit:
+# `cco start` aborts before the container boots, `cco resolve[/--all]` stop cleanly.
+# Bindings already written by earlier entries stay valid — the membership record and
+# the summary below are simply skipped for this aborted run; a re-run completes them.
 # Usage: _resolve_unit <unit_dir>
 _resolve_unit() {
     local unit_dir="$1"
@@ -260,7 +266,7 @@ _resolve_unit() {
         _resolve_entry_index "$unit_dir" "repos" "$name" "$url" >/dev/null || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                         # user quit
+            2) return 2 ;;                         # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;   # skipped
         esac
     done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
@@ -283,7 +289,7 @@ _resolve_unit() {
         _resolve_entry_index "$unit_dir" "extra_mounts" "$name" "$url" >/dev/null || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;
+            2) return 2 ;;                         # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;
         esac
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
@@ -308,7 +314,7 @@ _resolve_unit() {
         _resolve_llms_entry "$name" "$url" "$variant" || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                          # user quit
+            2) return 2 ;;                          # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;    # skipped
         esac
     done < <(yml_get_llms "$project_yml" 2>/dev/null)
@@ -334,7 +340,7 @@ _resolve_unit() {
         _resolve_pack_entry "$name" "$url" || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                          # user quit
+            2) return 2 ;;                          # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;    # skipped
         esac
     done < <(yml_get_pack_coords "$project_yml" 2>/dev/null)
@@ -628,7 +634,7 @@ _resolve_scan() {
 # Resolve every project recorded in the index (best-effort; skips projects with
 # no resolved member to read the manifest from).
 _resolve_all() {
-    local any=false line proj unit_dir
+    local any=false line proj unit_dir rc
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         proj="${line%%=*}"
@@ -639,7 +645,15 @@ _resolve_all() {
         }
         any=true
         info "resolving project '$proj'..."
-        _resolve_unit "$unit_dir"
+        # N3: a user Exit ([q]) mid-sweep stops the whole --all run cleanly rather
+        # than silently rolling on to the next project. Other failures (rc=1) stay
+        # best-effort — warn already emitted, continue.
+        rc=0
+        _resolve_unit "$unit_dir" || rc=$?
+        if [[ $rc -eq 2 ]]; then
+            info "resolve --all stopped at your request (q)."
+            return 0
+        fi
     done < <(_index_list_projects)
     $any || info "no projects in the index to resolve — try 'cco resolve --scan <dir>'"
 }
@@ -714,7 +728,14 @@ EOF
         unit_dir=$(_resolve_find_unit_dir) \
             || die "No .cco/project.yml found in the current directory or its parents. Run from a configured repo, name a project, or use 'cco resolve --scan <dir>'."
     fi
-    _resolve_unit "$unit_dir"
+    # N3: honour a user Exit ([q]) at a heal prompt — stop cleanly (exit 0) without
+    # printing the post-heal status, rather than the old swallow-and-continue.
+    local rc=0
+    _resolve_unit "$unit_dir" || rc=$?
+    if [[ $rc -eq 2 ]]; then
+        info "resolve stopped at your request (q)."
+        return 0
+    fi
     # Always show the post-heal status of every referenced resource (ADR-0033).
     _resolve_render_status "$unit_dir"
 }

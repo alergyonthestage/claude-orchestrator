@@ -547,3 +547,80 @@ _cco_cache_dir() {
     _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
+
+# ── Developer sandbox (ADR-0052 §7) ─────────────────────────────────
+# The fail-loud version gate (§1) dies whenever on-disk internal state is NEWER
+# than the running binary. The only realistic way a developer trips it is running a
+# dev `bin/cco` and the published one against the SAME machine — shared XDG state is
+# the root cause, not the reaction. This toggle redirects the three INTERNAL buckets
+# to an isolated root so the two binaries never touch each other's STATE/DATA/CACHE;
+# with it, §1's die-on-newer-state costs a developer nothing and still protects the
+# ordinary user completely.
+#
+# CONFIG (~/.cco) stays SHARED — this cycle's §7 call (recorded in the ADR
+# forward-annotation): it holds user-authored, git-versioned config (packs/
+# templates/.claude), NOT the versioned internal state the gate reads. All three
+# gate/reconcile inputs live in the redirected buckets — the index in STATE
+# (shared/index), the global schema_version in STATE (global/update/meta), the
+# registries/provenance in DATA — so isolating STATE/DATA/CACHE is sufficient;
+# forking CONFIG too would needlessly duplicate the developer's authored store.
+#
+# Host-only: a real session's operator buckets are the sacred mounts and are never
+# redirected. Never clobbers an explicit CCO_*_HOME override (tests, power users).
+
+# True (0) when the developer sandbox toggle is engaged (the CCO_DEV_SANDBOX env, or
+# the `--dev-sandbox` flag which bin/cco normalises onto that env before this runs).
+_cco_dev_sandbox_active() { [[ "${CCO_DEV_SANDBOX:-}" == "1" ]]; }
+
+# The sandbox root: an explicit absolute CCO_DEV_SANDBOX_ROOT wins, else
+# ~/.cco-devsandbox. Buckets nest as <root>/{state,data,cache}.
+_cco_dev_sandbox_root() {
+    _cco_first_abs "${CCO_DEV_SANDBOX_ROOT:-}" "$HOME/.cco-devsandbox"
+}
+
+# One-shot seed (opt-in, CCO_DEV_SANDBOX_SEED=1): copy the real STATE + DATA into a
+# fresh sandbox so a dev binary starts against realistic internal state (an existing
+# index + registries) rather than an empty machine. CACHE is deliberately NOT seeded
+# — it is re-fetchable and potentially large (claude-install, llms downloads); a
+# fresh dev cache is harmless. Runs ONLY when the sandbox STATE bucket does not yet
+# exist, so it never overwrites a sandbox already in use. Reads the REAL buckets —
+# so it MUST run BEFORE the CCO_*_HOME overrides are pointed at the sandbox. A copy
+# failure is non-fatal (warn, not die): a partial seed is a dev convenience, not a
+# correctness guarantee.
+_cco_dev_sandbox_seed() {
+    local root="$1"
+    [[ -d "$root/state" ]] && return 0          # already seeded / in use → no-op
+    local real_state real_data
+    real_state=$(_cco_state_dir)
+    real_data=$(_cco_data_dir)
+    _cco_ensure_dir "$root"
+    if [[ -d "$real_state" ]]; then
+        cp -a "$real_state" "$root/state" 2>/dev/null || warn "dev-sandbox: STATE seed was incomplete"
+    else
+        _cco_ensure_dir "$root/state"
+    fi
+    if [[ -d "$real_data" ]]; then
+        cp -a "$real_data" "$root/data" 2>/dev/null || warn "dev-sandbox: DATA seed was incomplete"
+    else
+        _cco_ensure_dir "$root/data"
+    fi
+    warn "dev-sandbox: seeded STATE+DATA from your real buckets into $root (one-shot)"
+}
+
+# Engage the sandbox: redirect the internal buckets and announce it. A strict no-op
+# when the toggle is off (the regression guard for every other path) or when running
+# in-container (operator buckets are the real mounts — host-only, per the section
+# note). Never clobbers an explicit CCO_*_HOME override. Exports the resolved root so
+# `cco whoami` and any child process see the same sandbox. Banner on stderr so it
+# never corrupts a machine-readable stdout (e.g. `cco path list`).
+_cco_apply_dev_sandbox() {
+    _cco_dev_sandbox_active || return 0
+    _cco_in_container && return 0               # host-only (covers operator + plain agent)
+    local root; root=$(_cco_dev_sandbox_root)
+    [[ "${CCO_DEV_SANDBOX_SEED:-}" == "1" ]] && _cco_dev_sandbox_seed "$root"
+    [[ "${CCO_DATA_HOME:-}"  == /* ]] || export CCO_DATA_HOME="$root/data"
+    [[ "${CCO_STATE_HOME:-}" == /* ]] || export CCO_STATE_HOME="$root/state"
+    [[ "${CCO_CACHE_HOME:-}" == /* ]] || export CCO_CACHE_HOME="$root/cache"
+    export CCO_DEV_SANDBOX_ROOT="$root"
+    warn "dev-sandbox active — internal state isolated under $root (NOT your real cco state)"
+}
