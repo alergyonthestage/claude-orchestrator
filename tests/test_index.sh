@@ -717,3 +717,110 @@ test_index_read_state_stale_arm_fails_safe_without_stat() {
     [[ "$st" == "ok" ]] \
         || fail "an unanswerable link count must not invent a failure, got: $st"
 }
+
+# ── WS-3 — in-index residue absorption (ADR-0052 §3) ─────────────────
+#
+# An older binary that misread a v2 file as empty may write v1-format records into
+# a stray `paths:` section. The next host-side write folds that residue into
+# project_paths:/unscoped: (re-homing via membership) and drops `paths:`. A clean
+# v2 file must be left byte-untouched (no spurious rewrite).
+
+# Seed a v2 index with a stray `paths:` residue directly on disk (bypassing the
+# writers). $1=state dir already set via _index_test_env by the caller.
+_seed_v2_with_residue() {
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+# cco machine-local index
+version: 2
+projects:
+  app: "web api"
+project_paths:
+  app:
+    web: "/abs/web"
+llms:
+unscoped:
+paths:
+  api: "/abs/api"
+  loose: "/abs/loose"
+IDX
+}
+
+test_index_residue_absorbed_on_next_write() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _seed_v2_with_residue
+    local f; f=$(_index_file)
+
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    # api was a member of app → re-homed under project_paths[app]; loose → unscoped.
+    [[ "$(_index_pp_get app api)" == "/abs/api" ]] || fail "residue member 'api' not re-homed under app, got: $(_index_pp_get app api)"
+    [[ "$(_index_pp_get app web)" == "/abs/web" ]] || fail "existing binding 'web' clobbered"
+    [[ "$(_index_section_get unscoped loose)" == "/abs/loose" ]] || fail "residue orphan 'loose' not moved to unscoped"
+    # The stray paths: section is gone; version stays 2.
+    grep -q '^paths:' "$f" && fail "the absorbed paths: residue section must be dropped"
+    grep -q '^version: 2$' "$f" || fail "version must remain 2 after absorption"
+    # No mktemp ghosts left behind.
+    local ghosts; ghosts=$(find "$(dirname "$f")" -name 'index.??????' | wc -l | tr -d ' ')
+    [[ "$ghosts" -eq 0 ]] || fail "absorption left $ghosts tempfile ghost(s)"
+}
+
+# A residue value that conflicts with an existing v2 binding: current wins, the
+# divergence is surfaced (not silently applied), and paths: is still dropped.
+test_index_residue_conflict_keeps_current() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+version: 2
+projects:
+  app: "web"
+project_paths:
+  app:
+    web: "/abs/web-current"
+llms:
+unscoped:
+paths:
+  web: "/abs/web-legacy"
+IDX
+    _index_migrate_if_needed 2>/dev/null || fail "migrate_if_needed returned non-zero"
+    [[ "$(_index_pp_get app web)" == "/abs/web-current" ]] || fail "conflicting residue must not overwrite the current binding, got: $(_index_pp_get app web)"
+    grep -q '^paths:' "$f" && fail "paths: must be dropped even when a residue entry conflicted"
+    return 0
+}
+
+# A clean v2 file (no paths: residue) is byte-identical after migrate_if_needed —
+# no spurious rewrite.
+test_index_clean_v2_not_spuriously_rewritten() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /abs/one     # produces a clean v2 file
+    local f before after; f=$(_index_file)
+    before=$(cat "$f")
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+    after=$(cat "$f")
+    [[ "$before" == "$after" ]] || fail "a clean v2 file must not be rewritten by migrate_if_needed"
+}
+
+# A non-absolute residue value is dropped (self-heals via scan — the 016
+# precedent), and its presence does not block dropping the paths: section.
+test_index_residue_non_absolute_dropped() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+version: 2
+projects:
+llms:
+project_paths:
+unscoped:
+paths:
+  bad: "relative/nope"
+  good: "/abs/good"
+IDX
+    _index_migrate_if_needed 2>/dev/null || fail "migrate_if_needed returned non-zero"
+    [[ "$(_index_section_get unscoped good)" == "/abs/good" ]] || fail "the absolute residue 'good' must be absorbed"
+    [[ -z "$(_index_section_get unscoped bad)" ]] || fail "the non-absolute residue 'bad' must be dropped"
+    grep -q '^paths:' "$f" && fail "paths: must be dropped despite the unrecoverable entry"
+    return 0
+}

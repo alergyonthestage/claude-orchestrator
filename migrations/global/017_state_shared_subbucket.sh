@@ -25,10 +25,15 @@
 # global/, internal/, sync-meta, backups.
 #
 # Idempotent: a machine already migrated has no legacy sources, so every branch is a
-# no-op. A missing source is fine (a fresh install has no index yet). If BOTH a legacy
-# and a new path exist — a partially-applied run, or a downgrade/upgrade bounce — the
-# NEW one wins and the legacy leftover is removed, because the new path is what every
-# reader resolves to after this release.
+# no-op. A missing source is fine (a fresh install has no index yet).
+#
+# The index arm is NON-DESTRUCTIVE (ADR-0052 §2): when both a legacy and a new index
+# exist — the 0.5.2→release upgrade where `cco start`/`cco resolve` ran before
+# `cco update` created an empty shared/index (N1) — it MERGES rather than deleting
+# the legacy, so no registered path is lost. See _index_reconcile_legacy_location.
+# The pack/template sidecar arms keep "new wins" per ENTRY: those are re-fetchable
+# update metadata (installed_commit + base), not machine-local identity, so a stale
+# leftover is safely superseded by the current install.
 
 MIGRATION_ID=17
 MIGRATION_DESC="Move index + pack/template sidecars into STATE/shared (container-shareable bucket)"
@@ -43,13 +48,15 @@ migrate() {
     mkdir -p "$shared" || return 1
 
     # ── the index (a file) ───────────────────────────────────────────
+    # Non-destructive reconcile (ADR-0052 §2, closes N1). The legacy is v1-schema
+    # AND old-location, so a correct move must relocate + v1→v2 re-home + MERGE
+    # atomically — never the old `rm -f "$state/index"` "new wins" that lost paths
+    # when the hot path had already created an empty shared/index (N1). Interactive:
+    # this is the explicit `cco update` path, so a genuine path conflict prompts on
+    # a TTY (else keeps both files). Absent legacy / legacy-only / both-present are
+    # all handled inside the reconcile.
     if [[ -f "$state/index" ]]; then
-        if [[ -f "$shared/index" ]]; then
-            # Both present: the new location is authoritative (see header).
-            rm -f "$state/index" || return 1
-        else
-            mv "$state/index" "$shared/index" || return 1
-        fi
+        _index_reconcile_legacy_location true || return 1
     fi
 
     # ── the pack / template sidecar trees (directories, keyed by name) ──

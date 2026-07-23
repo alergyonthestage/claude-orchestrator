@@ -58,6 +58,14 @@ CCO_INDEX_VERSION=2
 # needs a writable parent directory — the file itself being bind-mounted is not
 # enough, and `mv` onto a bound file is EBUSY (v3 R1). Never move it back up.
 _index_file() {
+    # An internal override lets the legacy-location reconcile (_index_reconcile_
+    # legacy_location) read a LEGACY index at another path through the ordinary
+    # section accessors. Set as a dynamic-scoped `local` in the reader helper so it
+    # auto-clears on return — never set by a command body. Reconcile-only.
+    if [[ -n "${_CCO_INDEX_FILE_OVERRIDE:-}" ]]; then
+        printf '%s\n' "$_CCO_INDEX_FILE_OVERRIDE"
+        return 0
+    fi
     printf '%s\n' "$(_cco_state_shared_dir)/index"
 }
 
@@ -114,9 +122,11 @@ _index_mktemp() {
 #
 # ⚠ Probe by OPENING, never with `test -r`: access(2) answers for the REAL uid,
 # a false answer under elevation — the same trap rename.sh:174 documents.
-# Usage: state=$(_index_read_state)
+# An optional file argument lets the reconcile probe an arbitrary index (the
+# legacy location, the new location) with the SAME classifier; it defaults to the
+# live index file. Usage: state=$(_index_read_state [<file>])
 _index_read_state() {
-    local f; f=$(_index_file)
+    local f="${1:-$(_index_file)}"
     [[ -e "$f" ]] || { printf 'absent'; return 0; }
     { : < "$f"; } 2>/dev/null || { printf 'unreadable'; return 0; }
     [[ -s "$f" ]] || { printf 'truncated'; return 0; }
@@ -223,24 +233,69 @@ _index_ensure_file() {
     _index_migrate_if_needed
 }
 
-# Upgrade a still-v1 (global-flat) index to v2 (per-project scoped) in place.
-# Idempotent: a no-op once version >= 2. Runs on the first host-side WRITE after
-# the new code is live (every write path funnels through _index_ensure_file).
+# Upgrade a still-v1 (global-flat) index to v2 (per-project scoped) in place, AND
+# absorb any stray v1 `paths:` residue left in an already-v2 file (ADR-0052 §3).
+# Runs on the first host-side WRITE after the new code is live (every write path
+# funnels through _index_ensure_file). Idempotent: a clean v2 file is a no-op.
+#
+# Re-entrancy guard: the residue-absorption branch writes through _index_pp_set /
+# _index_set_unscoped, which re-enter this function via _index_ensure_file. `local`
+# is DYNAMIC-scoped in bash — visible to those nested calls — so the re-entrant
+# call returns immediately; the flag auto-clears when this frame returns.
 _index_migrate_if_needed() {
-    [[ "$(_index_version)" -ge 2 ]] && return 0
-    _index_migrate_v1_to_v2
+    [[ -n "${_CCO_INDEX_MIGRATING:-}" ]] && return 0
+    local _CCO_INDEX_MIGRATING=1
+    if [[ "$(_index_version)" -lt 2 ]]; then
+        _index_migrate_v1_to_v2
+        return
+    fi
+    _index_absorb_residue
 }
 
-# The lossless v1 → v2 rewrite (ADR-0051 D6). Names are globally unique in v1, so
-# each global `paths: <name>` re-homes under EVERY project that lists <name> as a
-# member (a shared repo becomes an independent per-project binding with the same
-# path); a flat name in no project's membership → the unscoped: bucket (kept).
+# The shared v1→v2 re-homing classifier (ADR-0052 §2/§3) — the SINGLE source of
+# the re-homing logic, consumed by three sites: the in-index v1→v2 rewrite
+# (_index_migrate_v1_to_v2), the legacy-location reconcile
+# (_index_reconcile_legacy_location) and the v2 residue absorption
+# (_index_absorb_residue). Given a v1-flat `paths:` dump (name=path lines) and a
+# `projects:` membership dump (project=members lines), emit one normalized binding
+# per line. Names are globally unique in v1, so a name listed by ≥1 project
+# re-homes under EVERY such project (a shared repo becomes an independent
+# per-project binding with the same path); a name in no membership → the unscoped
+# bucket. Paths are copied VERBATIM — normalization happens where they are written
+# (_index_pp_set / _index_set_unscoped), never here.
+#   pp<TAB>project<TAB>name<TAB>path   — a project-scoped binding
+#   un<TAB>name<TAB>path               — a project-less (unscoped) orphan
+# Usage: _index_rehome_dump "<paths_dump>" "<projects_dump>"
+_index_rehome_dump() {
+    local paths_dump="$1" projects_dump="$2"
+    local consumed=" " proj mem m mp name path
+    while IFS='=' read -r proj mem; do
+        [[ -z "$proj" ]] && continue
+        for m in $mem; do
+            mp=$(printf '%s\n' "$paths_dump" | grep -m1 -E "^${m}=" 2>/dev/null) || mp=""
+            mp="${mp#*=}"
+            [[ -z "$mp" ]] && continue
+            printf 'pp\t%s\t%s\t%s\n' "$proj" "$m" "$mp"
+            consumed="${consumed}${m} "
+        done
+    done <<< "$projects_dump"
+    while IFS='=' read -r name path; do
+        [[ -z "$name" ]] && continue
+        case "$consumed" in *" $name "*) continue ;; esac
+        printf 'un\t%s\t%s\n' "$name" "$path"
+    done <<< "$paths_dump"
+}
+
+# The lossless v1 → v2 rewrite (ADR-0051 D6), driven by the shared re-homing
+# classifier. Single atomic rewrite (mktemp + mv) — never a per-entry cascade —
+# so a v1 file becomes a v2 file in one step.
 _index_migrate_v1_to_v2() {
     local f; f=$(_index_file)
     [[ -f "$f" ]] || return 0
-    local paths_dump projects_dump
+    local paths_dump projects_dump rehomed
     paths_dump=$(_index_section_dump paths)        # name=path lines (v1 flat)
     projects_dump=$(_index_section_dump projects)  # project=members lines
+    rehomed=$(_index_rehome_dump "$paths_dump" "$projects_dump")
 
     local tmpf; tmpf=$(_index_mktemp "$f") || return 1
     {
@@ -256,28 +311,87 @@ _index_migrate_v1_to_v2() {
             printf '  %s: "%s"\n' "$proj" "$mem"
         done <<< "$projects_dump"
         echo "project_paths:"
-        local consumed=" " m mp hdr
-        while IFS='=' read -r proj mem; do
-            [[ -z "$proj" ]] && continue
-            hdr=false
-            for m in $mem; do
-                mp=$(printf '%s\n' "$paths_dump" | grep -m1 -E "^${m}=" 2>/dev/null) || mp=""
-                mp="${mp#*=}"
-                [[ -z "$mp" ]] && continue
-                $hdr || { printf '  %s:\n' "$proj"; hdr=true; }
-                printf '    %s: "%s"\n' "$m" "$mp"
-                consumed="${consumed}${m} "
-            done
-        done <<< "$projects_dump"
+        local typ a b c cur_proj=""
+        while IFS=$'\t' read -r typ a b c; do
+            [[ "$typ" == pp ]] || continue
+            [[ "$a" != "$cur_proj" ]] && { printf '  %s:\n' "$a"; cur_proj="$a"; }
+            printf '    %s: "%s"\n' "$b" "$c"
+        done <<< "$rehomed"
         echo "llms:"
         echo "unscoped:"
-        local name path
-        while IFS='=' read -r name path; do
-            [[ -z "$name" ]] && continue
-            case "$consumed" in *" $name "*) continue ;; esac
-            printf '  %s: "%s"\n' "$name" "$path"
-        done <<< "$paths_dump"
+        while IFS=$'\t' read -r typ a b c; do
+            [[ "$typ" == un ]] || continue
+            printf '  %s: "%s"\n' "$a" "$b"
+        done <<< "$rehomed"
     } > "$tmpf" && mv "$tmpf" "$f"
+}
+
+# Absorb a stray v1 `paths:` residue left in an otherwise-v2 file (ADR-0052 §3).
+# An older binary that misread the v2 file as empty may have written v1-format
+# records into a `paths:` section. Fold them into project_paths:/unscoped: via the
+# shared re-homing, then drop `paths:`. NON-DESTRUCTIVE: an entry the file already
+# binds is skipped (existing wins); a genuine (key → different path) divergence is
+# WARNED and the existing binding kept; a non-absolute residue value is dropped
+# (self-heals via scan — the migration-016 precedent). `paths:` is dropped only
+# when every recoverable entry was absorbed, so a transient write failure
+# preserves the residue for the next run. A clean v2 file (no `paths:`) is left
+# byte-untouched — no spurious rewrite.
+_index_absorb_residue() {
+    local f; f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    grep -q '^paths:' "$f" 2>/dev/null || return 0     # fast path: no residue section
+    local residue projects_dump rehomed
+    residue=$(_index_section_dump paths)
+    [[ -z "$residue" ]] && { _index_drop_section paths; return; }   # empty `paths:` header → just drop it
+    projects_dump=$(_index_section_dump projects)
+    rehomed=$(_index_rehome_dump "$residue" "$projects_dump")
+
+    local absorbed_all=true typ a b c existing cn
+    while IFS=$'\t' read -r typ a b c; do
+        case "$typ" in
+            pp)
+                cn=$(_index_normalize_path "$c") || { warn "index: dropped non-absolute residue '[$a] $b'=\"$c\""; continue; }
+                existing=$(_index_pp_get "$a" "$b")
+                if [[ -z "$existing" ]]; then
+                    _index_pp_set "$a" "$b" "$cn" || { absorbed_all=false; continue; }
+                elif [[ "$existing" != "$cn" ]]; then
+                    warn "index: residue '[$a] $b'=\"$c\" differs from current \"$existing\" — kept current (run 'cco resolve --scan' to rebind)"
+                fi
+                ;;
+            un)
+                cn=$(_index_normalize_path "$b") || { warn "index: dropped non-absolute residue '$a'=\"$b\""; continue; }
+                existing=$(_index_section_get unscoped "$a")
+                if [[ -z "$existing" ]]; then
+                    _index_set_unscoped "$a" "$cn" || { absorbed_all=false; continue; }
+                elif [[ "$existing" != "$cn" ]]; then
+                    warn "index: residue '$a'=\"$b\" differs from current unscoped \"$existing\" — kept current"
+                fi
+                ;;
+        esac
+    done <<< "$rehomed"
+
+    [[ "$absorbed_all" == true ]] && { _index_drop_section paths || return 1; }
+    return 0
+}
+
+# Drop an entire top-level section (its header line + all indented children) from
+# the index, atomically. Removes the absorbed `paths:` residue (§3). No-op if the
+# section is absent. The section ends at the next top-level key (/^[^ #]/), which
+# is printed unchanged.
+# Usage: _index_drop_section <section>
+_index_drop_section() {
+    local section="$1" f; f=$(_index_file)
+    [[ -f "$f" ]] || return 0
+    local tmpf=""
+    # shellcheck disable=SC2064
+    trap 'rm -f ${tmpf:+"$tmpf"}' RETURN
+    tmpf=$(_index_mktemp "$f") || return 1
+    awk -v section="$section" '
+        $0 == section":" { in_sec = 1; next }        # drop the header
+        in_sec && /^[^ #]/ { in_sec = 0 }            # a new top-level key ends the section
+        in_sec && /^  / { next }                     # drop indented children
+        { print }
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
 }
 
 # ── Generic section accessors (paths: and projects: share the shape) ──
@@ -735,6 +849,153 @@ _index_set_unscoped() {
     local norm; norm=$(_index_normalize_path "$2") || return 1
     _index_ensure_file || return 1
     _index_section_set unscoped "$1" "$norm"
+}
+
+# ── Legacy-location reconcile (ADR-0052 §2, N1 + N2) ──────────────────
+
+# Emit a LEGACY index file's contents as a normalized binding stream, tolerant of
+# either schema (a 0.5.2 legacy is v1; a develop-era legacy that predates the 017
+# location move may already be v2). Read through the ordinary accessors via a
+# DYNAMIC-scoped _index_file override (a `local`, so it auto-clears on return and
+# is inherited by the process-substitution subshells below). Emits:
+#   mm<TAB>project<TAB>members       — a membership row (verbatim)
+#   pp<TAB>project<TAB>name<TAB>path — a project-scoped binding
+#   un<TAB>name<TAB>path             — an unscoped orphan
+# Usage: _index_extract_bindings <legacy-file>
+_index_extract_bindings() {
+    local _CCO_INDEX_FILE_OVERRIDE="$1"
+    local proj mem name path
+    while IFS='=' read -r proj mem; do
+        [[ -z "$proj" ]] && continue
+        printf 'mm\t%s\t%s\n' "$proj" "$mem"
+    done < <(_index_section_dump projects)
+    if [[ "$(_index_version)" -ge 2 ]]; then
+        while IFS=$'\t' read -r proj name path; do
+            [[ -z "$name" ]] && continue
+            printf 'pp\t%s\t%s\t%s\n' "$proj" "$name" "$path"
+        done < <(_index_pp_dump_all)
+        while IFS='=' read -r name path; do
+            [[ -z "$name" ]] && continue
+            printf 'un\t%s\t%s\n' "$name" "$path"
+        done < <(_index_section_dump unscoped)
+    else
+        _index_rehome_dump "$(_index_section_dump paths)" "$(_index_section_dump projects)"
+    fi
+}
+
+# Ask which side of a reconcile path CONFLICT to keep. Returns 0 to adopt the
+# LEGACY value, non-zero to keep the CURRENT one (the default). TTY-gating is the
+# caller's job — it only calls this when interactive AND stdin is a terminal.
+# Usage: _reconcile_conflict_prompt <key> <current> <legacy>
+_reconcile_conflict_prompt() {
+    local key="$1" cur="$2" leg="$3" reply
+    printf 'cco index conflict for %s:\n  (1) keep current: %s\n  (2) keep legacy:  %s\nChoose [1/2] (default 1): ' \
+        "$key" "$cur" "$leg" >&2
+    read -r reply
+    [[ "$reply" == 2 ]]
+}
+
+# Merge a legacy index at <state>/cco/index (the pre-017 location) into the v2
+# file at <state>/cco/shared/index, NEVER clobbering (ADR-0052 §2, closes N1+N2).
+# Host-only: under the ADR-0047 boundary the legacy path is not even mounted into a
+# session, so a container-operator invocation is a no-op. Two upgrade orderings
+# both land here:
+#   • _cco_first_run — the N2 backstop, on any host command, NON-interactive (a
+#     conflict keeps both files + warns rather than blocking an arbitrary command).
+#   • migration 017's index arm — the explicit `cco update`, INTERACTIVE (its
+#     former `rm -f` "new wins" was N1); prompts only on a real TTY.
+#
+# Cases (ADR-0052 §2): legacy absent → no-op; legacy present + new absent →
+# relocate (mv, with a defensive .bak); both present → per-(project,name) MERGE —
+# adopt what the new file lacks, skip when the paths agree, and on a genuine path
+# CONFLICT prompt (interactive + TTY) else keep BOTH files + warn. The legacy file
+# is removed only after a fully-resolved merge, with a `.bak` first.
+#
+# S1 lesson — never TRUST a file we could not cleanly read: both files are probed
+# by OPENING (_index_read_state), and a legacy/new that EXISTS but is
+# unreadable/truncated/stale → die HONESTLY rather than mis-treat it as empty and
+# lose it (N1 in a new spelling). Only `absent` is benign.
+# Usage: _index_reconcile_legacy_location [<interactive-bool>]
+_index_reconcile_legacy_location() {
+    local interactive="${1:-false}"
+    ! _cco_container_operator || return 0
+
+    local legacy new
+    legacy="$(_cco_state_dir)/index"
+    new="$(_index_file)"
+    [[ -e "$legacy" ]] || return 0                     # cheap no-op once merged/absent
+
+    local lst; lst=$(_index_read_state "$legacy")
+    case "$lst" in
+        absent) return 0 ;;
+        ok) ;;
+        *) die "the legacy cco path index at $legacy cannot be read ($lst) — refusing to reconcile rather than risk losing registered paths. Fix its permissions or remove it by hand, then re-run." ;;
+    esac
+
+    local nst; nst=$(_index_read_state "$new")
+    case "$nst" in
+        absent)
+            # Benign relocate: nothing at the new location yet. A later host-side
+            # write upgrades the v1 shape to v2 in place (_index_migrate_if_needed).
+            mkdir -p "$(dirname "$new")" || return 1
+            cp "$legacy" "$legacy.bak" 2>/dev/null || true
+            mv "$legacy" "$new" || return 1
+            return 0
+            ;;
+        ok) ;;   # both present → merge below
+        *) die "$(_index_unreadable_sentence "$nst" "$new")" ;;
+    esac
+
+    # ── both present → non-destructive merge ─────────────────────────
+    local stream; stream=$(_index_extract_bindings "$legacy")
+    local conflict=0 typ a b c existing cn
+    while IFS=$'\t' read -r typ a b c; do
+        case "$typ" in
+            mm)
+                # Adopt a membership the new file lacks; never overwrite a live one
+                # (membership is scan-rebuildable, not a path binding — a divergence
+                # here is not path data loss and must not block legacy removal).
+                [[ -z "$(_index_get_project_repos "$a")" && -n "$b" ]] && { _index_set_project_repos "$a" $b || return 1; }
+                ;;
+            pp)
+                cn=$(_index_normalize_path "$c") || { warn "index reconcile: dropped non-absolute legacy '[$a] $b'=\"$c\""; continue; }
+                existing=$(_index_pp_get "$a" "$b")
+                if [[ -z "$existing" ]]; then
+                    _index_pp_set "$a" "$b" "$cn" || return 1
+                elif [[ "$existing" != "$cn" ]]; then
+                    if [[ "$interactive" == true && -t 0 ]]; then
+                        _reconcile_conflict_prompt "[$a] $b" "$existing" "$cn" && { _index_pp_set "$a" "$b" "$cn" || return 1; }
+                    else
+                        conflict=1
+                        warn "index reconcile: [$a] $b — legacy \"$cn\" vs current \"$existing\" differ; kept both files, current binding unchanged. Run 'cco update' on a terminal to resolve."
+                    fi
+                fi
+                ;;
+            un)
+                cn=$(_index_normalize_path "$b") || { warn "index reconcile: dropped non-absolute legacy '$a'=\"$b\""; continue; }
+                existing=$(_index_section_get unscoped "$a")
+                if [[ -z "$existing" ]]; then
+                    _index_set_unscoped "$a" "$cn" || return 1
+                elif [[ "$existing" != "$cn" ]]; then
+                    if [[ "$interactive" == true && -t 0 ]]; then
+                        _reconcile_conflict_prompt "$a (unscoped)" "$existing" "$cn" && { _index_set_unscoped "$a" "$cn" || return 1; }
+                    else
+                        conflict=1
+                        warn "index reconcile: $a (unscoped) — legacy \"$cn\" vs current \"$existing\" differ; kept both files, current binding unchanged. Run 'cco update' on a terminal to resolve."
+                    fi
+                fi
+                ;;
+        esac
+    done <<< "$stream"
+
+    # Remove the legacy file ONLY after a fully-resolved merge (no unresolved
+    # conflict), with a defensive .bak first (ADR-0052 Alt-C — a safety net, not
+    # the contract). An unresolved conflict keeps BOTH files for the next run.
+    if [[ "$conflict" -eq 0 ]]; then
+        cp "$legacy" "$legacy.bak" 2>/dev/null || true
+        rm -f "$legacy" || return 1
+    fi
+    return 0
 }
 
 # List ALL bound names as "name=path" lines, project-flattened (v2: every

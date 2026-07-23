@@ -316,6 +316,13 @@ _cco_first_run() {
     # newer schema can never be half-migrated by an older binary. Self-guards to
     # host-side; dies on any disk>supported.
     _cco_version_gate
+    # Non-destructive reconcile of a legacy-location index (ADR-0052 §2, the N2
+    # backstop). After the gate (which proved the NEW file is not from a newer
+    # binary) and before the state-mutating self-heals. Host-side only, idempotent
+    # (legacy gone after the first merge → cheap no-op). NON-interactive here — a
+    # conflict keeps both files + warns rather than blocking an arbitrary command
+    # on a prompt; the interactive resolution lives in `cco update`'s 017 arm.
+    _cco_host_side_ok && { _index_reconcile_legacy_location false || true; }
     # Self-heal a pre-flatten layout (ADR-0028) on ANY command, before check_global
     # and any global-config reader run. Host-side only; idempotent no-op otherwise.
     _cco_host_side_ok && { _cco_flatten_global_claude || true; }
