@@ -924,3 +924,39 @@ entries:
       cd into the one you want. It used to answer as if no project were in scope
       and suggest passing `<old> <new>`, which fails there too. Requires
       `cco build`.
+
+  - id: 48
+    date: "2026-07-23"
+    type: additive
+    title: "Index integrity: data preservation on upgrade, version gate, dev sandbox"
+    description: >
+      The machine-local path index (logical name → absolute path) is now hardened
+      against version skew and never loses your registered paths on an upgrade.
+      (1) DATA PRESERVATION — upgrading from an older cco whose index lived at the
+      old location (`<state>/cco/index`) now MERGES it into the current one
+      (`<state>/cco/shared/index`) non-destructively: entries the new file lacks are
+      adopted, agreeing paths are deduped, and a genuine conflict (same name, two
+      paths) keeps BOTH files and warns rather than deleting either. The old
+      "new-wins `rm -f`" that could drop paths when you ran `cco start`/`cco resolve`
+      before `cco update` is gone. It heals automatically on any command (host-side),
+      so the natural start-before-update order is safe. A stray old-format residue
+      written back into a v2 file by an alternating older binary is re-absorbed on
+      the next write, never silently ignored. (2) FAIL-LOUD VERSION GATE — if your
+      on-disk index or global config is NEWER than the running cco understands, cco
+      now refuses to run with a clear message ("use the cco that wrote it, or run its
+      `cco update`") instead of silently misreading it and reporting an empty index.
+      (3) EXTRA-MOUNT RE-HOME — a legacy extra_mount is migrated UNDER the project
+      whose `project.yml` declares it, not into a global bucket; `cco config validate
+      --fix` re-homes any residue already on disk (a dedicated re-home lane, distinct
+      from orphan pruning). (4) SAFER `cco config validate` — malformed/unparseable
+      internal index records are now REPORTED under their own heading and NEVER
+      auto-pruned (you decide format repair); only genuine orphans are pruned, under
+      the existing two-phase confirm. (5) DEVELOPER SANDBOX — `cco --dev-sandbox`
+      (or `CCO_DEV_SANDBOX=1`) redirects cco's internal STATE/DATA/CACHE buckets to
+      an isolated root (`~/.cco-devsandbox`) so running a development build alongside
+      the published one never shares — or corrupts — your real state; `~/.cco` stays
+      shared. Add `--dev-sandbox-seed` (or `CCO_DEV_SANDBOX_SEED=1`) for a one-shot
+      copy of your real STATE+DATA into the sandbox. `cco whoami` reports when a
+      sandbox is active. (6) `q`/Exit at a `cco start` mount-resolve prompt now
+      ABORTS the launch (no session boots) instead of skipping and starting anyway;
+      standalone `cco resolve` exits cleanly. Requires `cco build`.

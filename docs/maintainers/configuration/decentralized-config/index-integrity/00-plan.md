@@ -24,16 +24,23 @@ Run `bin/test` after each WS; keep the count at 1465/7 + new tests. After WS-1 (
 | 3  | In-index residue absorption | ✅ | `5e43863` |
 | 4  | extra_mount re-home (FI-23) | ✅ | `564040e` |
 | 5  | Index-focused doctor (FI-22) | ✅ | `564040e` |
-| 6  | Developer sandbox (isolated XDG) | ⏳ | — |
-| 7  | Docs: changelog + backlog flip + living-doc sweep | ⏳ | — |
+| 6  | Developer sandbox (isolated XDG) | ✅ | S4 (this session) |
+| 7  | Docs: changelog + backlog flip + living-doc sweep | ✅ | S4 (this session) |
+| N3 | `q`/Exit aborts `cco start` (rc=2 propagation) | ✅ | S4 (this session) |
 
-**▶ Next session (S4): start from [`S4-handoff.md`](./S4-handoff.md)** — developer sandbox (WS-6),
-the docs cutover (WS-7 — the cluster's single `changelog.yml` entry + the FI-16/22/23 backlog flips +
-the living-doc sweep) and N3 (`q`/Exit abort). It carries the S3-derived guidance and the WS-7
-inventory the earlier sessions accrued.
+**▶ Cluster COMPLETE (S4 landed 2026-07-23).** WS-6 developer sandbox (`--dev-sandbox` →
+isolated STATE/DATA/CACHE; CONFIG shared; opt-in seed; whoami indicator), N3 (`_resolve_unit`
+propagates rc=2 → `cco start` aborts, `cco resolve[/--all]` exit cleanly), and WS-7 (changelog #48,
+FI-16/23 flipped to done + FI-22 partial, living-doc sweep of root `CLAUDE.md` / decentralized
+`design.md` §3 / `cli.md`, ADR-0051 D6 + ADR-0021 §5 + ADR-0052 §7 forward-annotations). Suite
+**1511/7** in-container (7 = pre-existing host-only FI-19 artifacts). No migration / no base-template
+change (additive; in-index self-upgrade — ADR-0052 §Classification). **Next = host gates below**
+(from the Mac): `cco build` + dogfood, host suite for a clean 0-fail, push + merge → develop, then
+resume e2e-review v3.1.
 
 _(S1→S2 handoff [`S2-handoff.md`](./S2-handoff.md) retired — S2 landed at `5e43863`. S2→S3 handoff
-[`S3-handoff.md`](./S3-handoff.md) retired — S3 landed at `564040e`.)_
+[`S3-handoff.md`](./S3-handoff.md) retired — S3 landed at `564040e`. S4 handoff `S4-handoff.md`
+retired — S4 landed this session.)_
 
 ## Sequencing
 

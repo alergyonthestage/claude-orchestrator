@@ -1515,16 +1515,26 @@ Examples:
 
 #### `cco config validate [--dry-run | --fix [-y]]`
 
-**Orphan-sanitization** of the global id-keyed internal state after a manual deletion: detect
-and report orphaned entries (index paths/memberships, tags, install provenance, STATE/CACHE
-per-id dirs, remote tokens) whose backing resource no longer resolves; with `--fix`, prune them
-(preview-first / confirmed). Warn, never hide; never automatic. STATE/CACHE are freely
-rebuildable (`cco resolve --scan`) and pruned under the main confirmation; synced DATA
-(tags/source) is pruned under a **second** confirmation, since a wrong prune propagates across
-your machines — a non-resolving DATA resource may simply live on another machine. The read-only
-report exits 0 (reminder-style). With `--fix`, the summary counts what was **actually** pruned:
-if a store write could not complete, the affected orphans are reported as surviving and the
-command exits non-zero, rather than asserting the requested total.
+**Internal-state sanitization** of the global id-keyed state after a manual deletion or an
+upgrade. The report has **three distinct lanes**, each handled differently (ADR-0052 §4/§5):
+
+1. **Orphans** (the original lane) — index paths/memberships, tags, install provenance,
+   STATE/CACHE per-id dirs, remote tokens whose backing resource no longer resolves. With
+   `--fix`, these are **pruned** (preview-first / confirmed). STATE/CACHE are freely rebuildable
+   (`cco resolve --scan`) and pruned under the main confirmation; synced DATA (tags/source) is
+   pruned under a **second** confirmation, since a wrong prune propagates across your machines.
+2. **Re-home** — a legacy `extra_mount` bound in the project-less `unscoped:` bucket that a
+   project's `project.yml` actually declares. With `--fix`, it is **MOVED** under its declaring
+   project (its own confirmation), never pruned — restoring per-project scoping (FI-23). This is
+   a distinct lane from orphan pruning: it relocates a valid binding, it does not delete one.
+3. **Malformed** — unparseable/non-absolute internal index records. These are **REPORTED** under
+   their own heading with remediation advice and are **NEVER auto-pruned**: format repair is your
+   call (`cco update` normalizes the index, or `cco resolve --scan <dir>` rebuilds it). FI-22.
+
+Warn, never hide; never automatic. The read-only report exits 0 (reminder-style). With `--fix`,
+the summary counts what was **actually** pruned/re-homed: if a store write could not complete, the
+affected records are reported as surviving and the command exits non-zero, rather than asserting
+the requested total.
 
 ```
 Usage: cco config validate [--dry-run | --fix [-y]]
@@ -2098,6 +2108,34 @@ Usage: cco docs [<topic>]
 - The same `docs/users/` tree is published to the project's GitHub Pages site
   (which tracks latest-on-`main`); `cco docs` shows the version you have
   installed — web is for discovery, local is version-accurate.
+
+---
+
+### 3.34 Developer sandbox (`--dev-sandbox`)
+
+A **global flag** (not a subcommand) for the rare case of running a development build of
+cco alongside the published one on the **same machine**. cco refuses to run when its on-disk
+state is newer than the binary understands (the version gate, ADR-0052) — the only realistic
+way to hit that is two cco versions sharing one machine's internal buckets. The sandbox removes
+the collision at the source: it redirects cco's **internal** buckets (STATE/DATA/CACHE) to an
+isolated root so the two binaries never touch — or corrupt — each other's state.
+
+```
+cco --dev-sandbox <command>        # redirect STATE/DATA/CACHE to ~/.cco-devsandbox/{state,data,cache}
+cco --dev-sandbox-seed <command>   # same, plus a one-shot copy of your real STATE+DATA into the sandbox
+```
+
+- Equivalent env toggles: `CCO_DEV_SANDBOX=1` and `CCO_DEV_SANDBOX_SEED=1`. The sandbox root is
+  `~/.cco-devsandbox` by default, overridable with `CCO_DEV_SANDBOX_ROOT=<abs-path>`.
+- **`~/.cco` (your personal config store) stays SHARED** — the gate's inputs (the index, the
+  schema version, the registries) all live in STATE/DATA/CACHE, so only those are isolated; your
+  authored packs/templates/`.claude` are not duplicated.
+- Never clobbers an explicit `CCO_STATE_HOME`/`CCO_DATA_HOME`/`CCO_CACHE_HOME` override; **host-only**
+  (a real session's mounted buckets are never redirected); OFF by default is a strict no-op.
+- `--dev-sandbox-seed` copies your real **STATE + DATA** (not CACHE — it is re-fetchable) once, so a
+  dev build starts against realistic state. It runs only when the sandbox is fresh.
+- `cco whoami` reports when a sandbox is active, with the redirected bucket paths — so a sandbox
+  session is never mistaken for the real one.
 
 ---
 

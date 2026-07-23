@@ -174,6 +174,23 @@ real buckets and a visible indicator (in `cco whoami` / command output). With th
 binaries never touch each other's state, so §1's `die`-on-everything costs the developer nothing and
 protects the ordinary user completely.
 
+> **Implementation annotation (2026-07-23, WS-6 — the calls §7 deferred).**
+> - **CONFIG (`~/.cco`) stays SHARED; only STATE/DATA/CACHE are redirected.** The gate's inputs all
+>   live in the redirected buckets — the index in STATE (`shared/index`), the global `schema_version`
+>   in STATE (`global/update/meta`), the registries/provenance in DATA — so isolating those three is
+>   sufficient. Sandboxing CONFIG too would needlessly fork the developer's authored packs/templates/
+>   `.claude`. (`_cco_apply_dev_sandbox`, `lib/paths.sh`.)
+> - **Surface:** a global `--dev-sandbox` flag (consumed anywhere in the args by `bin/cco` before the
+>   first-run gate) equivalently `CCO_DEV_SANDBOX=1`; root overridable via `CCO_DEV_SANDBOX_ROOT`
+>   (default `~/.cco-devsandbox`, buckets `{state,data,cache}`). **Host-only** and **never clobbers an
+>   explicit `CCO_*_HOME` override** (tests/power-users keep control); OFF is a strict no-op.
+> - **Seed is opt-in and narrow:** `--dev-sandbox-seed` / `CCO_DEV_SANDBOX_SEED=1` copies real
+>   **STATE + DATA** once (only when the sandbox STATE is fresh); **CACHE is not seeded** — it is
+>   re-fetchable and potentially large. A copy failure is non-fatal (warn).
+> - **Indicator:** `cco whoami` (host branch) reports the sandbox root + the redirected bucket paths;
+>   a one-line stderr banner prints on every command while active.
+> - **No scope split** → **no FI-27**; WS-6 shipped as one workstream.
+
 ## Alternatives considered
 
 - **A — die on writers, warn on read-only.** FI-16 floats this. Rejected: reading a schema the binary

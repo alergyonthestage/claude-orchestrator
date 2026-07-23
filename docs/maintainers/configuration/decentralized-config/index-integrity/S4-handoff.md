@@ -1,5 +1,13 @@
 # S4 handoff — Dev-sandbox + docs cutover (WS-6 + WS-7 + N3)
 
+> **RETIRED — S4 landed (2026-07-23), the FINAL session of the index-integrity cluster:** WS-6
+> developer sandbox (`--dev-sandbox` → isolated STATE/DATA/CACHE, CONFIG shared, opt-in seed, whoami
+> indicator); N3 (`_resolve_unit` propagates rc=2 → `cco start` aborts, `cco resolve[/--all]` exit
+> cleanly); WS-7 docs cutover (changelog #48, FI-16/23 done + FI-22 partial, living-doc sweep,
+> ADR-0051 D6 + ADR-0021 §5 + ADR-0052 §7 forward-annotations). Suite `1511/7` in-container. The
+> whole cluster is now on `feat/index/integrity-hardening`, ready for the host gates (see below +
+> `00-plan.md`). Kept for reference.
+
 **Read this first, then `00-plan.md` §WS-6/§WS-7 for the full spec.** This handoff carries the
 *starting context* + the *S1–S3-derived guidance* the original plan could not know (chiefly the WS-7
 inventory the cluster accrued). Retire it once S4 lands — S4 is the **final** session of the cluster.

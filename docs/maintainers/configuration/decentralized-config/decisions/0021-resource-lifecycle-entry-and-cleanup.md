@@ -120,6 +120,19 @@ here (the index is machine-local). Orphans are surfaced via the existing **remin
 > and moves to **`cco project validate`** (ADR-0023 D2). The two `validate` verbs are intentional —
 > different scope, different question ("is my internal state clean?" vs "is this project share-ready?").
 
+> **Forward annotation (2026-07-23, ADR-0052 §4/§5 — index-integrity cluster).** `cco config validate`
+> gains **two lanes beyond orphan-prune**, keeping this decision's sync-class + preview-first + never-
+> automatic contract intact:
+> - **Malformed-report lane (§5, FI-22):** unparseable/non-absolute internal index records are
+>   collected separately (`_CV_MALFORMED`), reported under their own heading with remediation advice,
+>   and **NEVER pruned** — format repair is the user's call. This generalises the `cco path list`
+>   flag-on-read precedent; only genuine orphans stay in the prune lane (Decision 5's two-phase confirm).
+> - **Re-home lane (§4, FI-23):** a legacy `extra_mount` bound project-less in `unscoped:` that a
+>   project's `project.yml` actually declares is **MOVED** under that project (its own confirmation) —
+>   a relocation, not a prune. A distinct arm from the orphan cascade above.
+> `--fix`'s completion summary now counts what was actually pruned AND re-homed; a failed store write
+> surfaces the affected records as surviving (non-zero exit), never asserting the requested total.
+
 ### 6. Defensive uniqueness (F12 dismissed)
 
 The legacy vault already enforces cross-resource name uniqueness at create

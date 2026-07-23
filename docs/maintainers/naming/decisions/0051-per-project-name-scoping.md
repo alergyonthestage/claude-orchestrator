@@ -155,6 +155,22 @@ inside `lib/index.sh`**:
 - **Notification only**: a `changelog.yml` **breaking** entry announces the model change
   (surfaced by `cco update --news`); the migration itself does not depend on `cco update`.
 
+> **Forward annotation (2026-07-23, ADR-0052 — index-integrity cluster).** D6's "lossless
+> migration" is extended along three axes it did not cover:
+> - **The `version:` field is now READ.** D6 noted it was "written but never read"; ADR-0052 §1
+>   adds a host-only version gate (`_cco_version_gate`) that `die`s when the on-disk index (or the
+>   global `schema_version`) is NEWER than the binary supports — turning the version stamp into an
+>   enforced compatibility bound (single `CCO_INDEX_VERSION` constant). This is what stops an older
+>   cco from misreading a v2 index as "empty" and writing v1 residue back into it.
+> - **The LOCATION transition is reconciled non-destructively.** Beyond the v1→v2 *schema* upgrade
+>   here, the index also moved `<state>/cco/index` → `<state>/cco/shared/index`. ADR-0052 §2 merges a
+>   legacy-location index into the current one (adopt-missing / dedupe-agreeing / keep-both-on-conflict),
+>   never the old "new-wins `rm -f`" — so the losslessness guarantee now spans location, not just schema.
+> - **Residue absorption + extra_mount re-home.** A v2 file carrying a stray `paths:` residue (an old
+>   binary's write) is folded in on the next host write (§3); and the v1→v2 re-home now places each
+>   extra_mount under its declaring project rather than `unscoped:` (§4, FI-23 — the narrowing this
+>   D6 annotation anticipated above). See ADR-0052 for all four.
+
 ## Consequences
 
 - **Breaking schema** (index `version` 2), but migrated **transparently in-index** (D6 — no

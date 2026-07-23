@@ -388,7 +388,23 @@ Needs proper analysis, evaluation, and design — captured here as a note to kee
 
 ## FI-16: Fail-loud state guards for mixed cco versions
 
-**Status**: 📝 Note — to analyze (surfaced 2026-07-15 while fixing the ADR-0049 §5 start bug).
+**Status**: ✅ Done (2026-07-23, [ADR-0052](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md) — index-integrity cluster). A single host-only
+version gate in `_cco_first_run` (`_cco_version_gate`, `lib/migrate.sh`) now `die`s on ANY command
+when the on-disk index (`version:`) or global `.cco/meta` (`schema_version`) is newer than this
+binary supports — the max index version is the declared `CCO_INDEX_VERSION` constant, the schema
+bound is the self-maintaining `_latest_schema_version global`. The gate never trusts a version it
+could not cleanly read (probes by opening, dies honestly on unreadable/truncated/malformed). The
+`_cco_in_container` `==0` gap is closed. Tests: `tests/test_version_gate.sh`; changelog #48; the
+developer sandbox (ADR-0052 §7, `--dev-sandbox`) is the dev-side mitigation that makes the hard
+`die` costless. The three new defects the 2026-07-22 e2e incident surfaced are resolved with it:
+**N1** (migration 017's "new-wins `rm -f`" data loss) and **N2** (the hot path never reconciled the
+legacy index location) → the non-destructive merge reconcile + residue absorption of ADR-0052 §2/§3
+(`_index_reconcile_legacy_location`, called from both `_cco_first_run` and 017); **N3** (`q`/Exit did
+not abort `cco start`) → rc=2 now propagates through `_resolve_unit` (ADR-0052 §6). Broad
+structural validation of the OTHER unversioned readers (tags, remotes) stays open under
+[FI-22](#fi-22-internal-state-validation-doctor-and-repair).
+
+**Status history**: 📝 Note — to analyze (surfaced 2026-07-15 while fixing the ADR-0049 §5 start bug).
 
 **Context**: two cco installs on one machine share a single config store, and a newer one can
 leave state an older one silently misreads. Observed: `./bin/cco` (dev, ADR-0051) upgraded the
@@ -632,7 +648,18 @@ note **is** that track.
 
 ## FI-22: Internal-state validation, doctor and repair
 
-**Status**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer question following the FI-16 incident).
+**Status**: 🟡 Partially done (2026-07-23, [ADR-0052 §5](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md) — index-integrity cluster). The
+**index-focused doctor** landed: `cco config validate` now collects malformed/unparseable index
+records into a separate `_CV_MALFORMED` set, reports them under their own heading with remediation
+advice, and NEVER auto-prunes them (the user decides format repair); only genuine orphans are pruned,
+keeping the ADR-0021 two-phase sync-class confirm. This generalises the `cco path list` flag-on-read
+precedent to `config validate`. Tests: `tests/test_config_validate.sh`; changelog #48. **Still open
+(this note stays):** broad structural/format validation of the OTHER unversioned lenient readers —
+the **tags** and **remotes** registries — is explicitly out of scope for the index-integrity cluster
+(ADR-0052 §5) and remains to analyze here. The root-cause misread that made corruption look like
+"empty" is closed upstream by [FI-16](#fi-16-fail-loud-state-guards-for-mixed-cco-versions).
+
+**Status history**: 📝 Note — to analyze (surfaced 2026-07-16, maintainer question following the FI-16 incident).
 
 **Context**: if an internal file is written by a wrong/older cco or hand-edited, records can end up
 malformed or **mixed-format** (e.g. an un-scoped v1 repo path inside a v2 per-project index). The
@@ -682,7 +709,14 @@ artifacts (schema-touching → migration). **Effort**: Med (Low if FI-16 lands f
 
 ## FI-23: extra_mount legacy bindings land in the `unscoped:` bucket (ADR-0051 migration residue)
 
-**Status**: 📝 Note — to analyze (found 2026-07-16 by code inspection while triaging FI-21; **live on
+**Status**: ✅ Done (2026-07-23, [ADR-0052 §4](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md) — index-integrity cluster). The v1→v2
+migration now re-homes each extra_mount under the project whose `project.yml` declares it (via
+`yml_get_mount_coords`, host-only), leaving `unscoped:` for genuine project-less `cco path set` pins
+only — restoring ADR-0051 D2. Residue already on disk is re-homed by a dedicated `fi23_rehome` lane
+in `cco config validate --fix` (a MOVE under the declaring project, distinct from the orphan-prune
+lane). Tests: `tests/test_resolve.sh` / `test_migrate_completeness.sh`; changelog #48.
+
+**Status history**: 📝 Note — to analyze (found 2026-07-16 by code inspection while triaging FI-21; **live on
 the maintainer's machine**).
 
 **Context**: the v1→v2 index migration (`lib/index.sh:97`) re-homes a flat `paths:` name under every

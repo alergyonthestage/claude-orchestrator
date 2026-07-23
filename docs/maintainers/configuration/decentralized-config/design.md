@@ -387,10 +387,15 @@ command's full contract is **ADR-0023 D2** (share-readiness validate).
 
 ## 3. Machine-Agnostic Config & the Local Path Index
 
-The single source of machine-specific truth is the **index** (`<state>/cco/index`),
-never committed, never synced:
+The single source of machine-specific truth is the **index** (`<state>/cco/shared/index`),
+never committed, never synced. It is **v2** (nested `project_paths:` — per-project logical
+name → absolute path; identity is the path, name is a per-project label — ADR-0051), and it is
+**version-gated + self-healed** on upgrade: a host-only gate `die`s if the on-disk version is
+newer than the binary supports, and a legacy-location index (`<state>/cco/index`, older cco) is
+MERGED into `shared/index` non-destructively rather than overwritten (ADR-0052). The v1 shape
+below is the legacy form the in-index self-upgrade (ADR-0051 D6) converts on the first host write:
 ```yaml
-version: 1
+version: 1                   # legacy shape — self-upgraded in-index to v2 project_paths: on first write
 paths:                       # logical name -> absolute path (repos AND extra mounts), quoted
   repo1: "/Users/me/dev/repo1"
   repo2: "/Users/me/dev/repo2"
@@ -399,7 +404,9 @@ projects:                    # subsumes the old registry — member repo names, 
   projectA: "repo1 repo2 repo3"
 ```
 > Format note: values are stored double-quoted; `projects:` holds a space-separated
-> member-name string (not a nested mapping) — this matches `lib/index.sh`.
+> member-name string (not a nested mapping) — this matches `lib/index.sh`. The current
+> on-disk shape is v2 (`project_paths:`/`unscoped:`); see ADR-0051 for the schema and
+> ADR-0052 for the version gate + non-destructive location reconcile.
 > The index **subsumes** both `@local` markers and the per-repo `<repo>/.cco/local-paths.yml`
 > (ADR-0016 D4): the per-repo file is removed (it was internal data inside a config bucket — a P6
 > violation, C4-class). The index is the **local-path materialization** of the repo coordinate
