@@ -197,3 +197,74 @@ YML
     run_cco config validate
     assert_output_not_contains "mis-scoped extra_mount"
 }
+
+# ── FI-27 / ADR-0053: non-canonical index path re-key lane ────────────────
+
+# Seed the index RAW (bypassing the canonicalizing writer) with a project-scoped
+# and an unscoped entry that carry a trailing /. over an EXISTING dir (so they are
+# non-canonical, not orphaned) plus one non-absolute (malformed) entry. $real is
+# already physical (mktemp output is canonicalized), so canon only strips the /.
+_cv_seed_noncanon() {
+    local tmpdir="$1" real="$2"
+    mkdir -p "$real"
+    local idxf; idxf=$(cd "$REPO_ROOT" \
+        && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_file)
+    mkdir -p "$(dirname "$idxf")"
+    cat > "$idxf" <<EOF
+version: 2
+projects:
+  myproj: "myrepo"
+project_paths:
+  myproj:
+    myrepo: "$real/."
+unscoped:
+  umount: "$real/."
+  bad: "relative/nope"
+EOF
+}
+
+# --dry-run reports non-canonical entries in the re-key lane, keeps the
+# non-absolute one in the SEPARATE malformed lane, and flags neither as an orphan.
+test_config_validate_reports_noncanonical_index_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _cv_seed_noncanon "$tmpdir" "$tmpdir/real"
+
+    run_cco config validate
+    assert_output_contains "non-canonical"
+    assert_output_contains "myrepo"
+    assert_output_contains "umount"
+    assert_output_contains "re-key"
+    # The non-absolute entry stays in the malformed lane, never the re-key lane.
+    assert_output_contains "malformed"
+    assert_output_contains "bad"
+    # An existing (if non-canonical) path is NOT an orphan.
+    assert_output_not_contains "myrepo' -> $tmpdir/real/. (missing)"
+}
+
+# --fix re-keys the non-canonical entries to their canonical form and leaves the
+# malformed one untouched; a re-validate is then clean of non-canonical entries.
+test_config_validate_fix_rekeys_noncanonical_index_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _cv_seed_noncanon "$tmpdir" "$tmpdir/real"
+
+    run_cco config validate --fix -y
+    assert_output_contains "Re-keyed"
+
+    # The stored values are now canonical (no trailing /.).
+    local got
+    got=$(cd "$REPO_ROOT" && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_get_path myproj myrepo)
+    assert_equals "$tmpdir/real" "$got"
+    got=$(cd "$REPO_ROOT" && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_get_path myproj umount)
+    assert_equals "$tmpdir/real" "$got"
+
+    # Re-validate: no non-canonical left; the malformed entry is still reported
+    # (never fixed).
+    run_cco config validate
+    assert_output_not_contains "non-canonical"
+    assert_output_contains "malformed"
+}

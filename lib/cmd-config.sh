@@ -207,6 +207,16 @@ _cv_mal() { _CV_MALFORMED+=( "$1" ); }
 # STATE index is machine-local, rebuildable). Usage: _cv_rehome_add <name> <project> <label>
 _cv_rehome_add() { _CV_REHOME+=( "local"$'\t'"fi23_rehome"$'\t'"$1"$'\t'"$2"$'\t'"$3" ); }
 
+# Append a NON-CANONICAL index record to RE-KEY (ADR-0053 D5): an absolute,
+# existing path whose stored spelling differs from its canonical form (an
+# unresolved symlink like /var vs /private/var, or a trailing /.). Unlike a
+# MALFORMED (non-absolute) record it IS --fix-able: re-keying is a mechanical
+# re-spelling of the SAME resource, so a-name / b-project drive the fixed key while
+# the value is re-derived and re-canonicalized at apply time (idx_recanon arm) —
+# never stale. b="" targets the unscoped bucket. class = local (machine-local
+# index). Usage: _cv_noncanon_add <name> <project> <label>
+_cv_noncanon_add() { _CV_NONCANON+=( "local"$'\t'"idx_recanon"$'\t'"$1"$'\t'"$2"$'\t'"$3" ); }
+
 # Flag each per-id dir under <parent> whose <rtype> resource no longer resolves.
 _cv_scan_dirs() {
     local parent="$1" rtype="$2" class="$3" blabel="$4" d nm note
@@ -232,6 +242,7 @@ _cv_detect() {
     _CV_RECS=()
     _CV_MALFORMED=()   # WS-5: malformed index records (reported, never pruned)
     _CV_REHOME=()      # WS-4/FI-23: mis-scoped extra_mounts to re-home
+    _CV_NONCANON=()    # FI-27/ADR-0053: non-canonical index paths to re-key (--fix)
     # Read-path honesty (v3 R3 / S4). `config validate` is the verb a user runs to
     # ASK whether the store is healthy, so an unreadable index returning "no
     # orphans" is the most damaging instance of the class — a false clean bill of
@@ -251,13 +262,22 @@ _cv_detect() {
     # absolute value whose target dir is gone is a genuine orphan; the record
     # carries the OWNING project (field b) so the prune re-keys the right scope
     # (ADR-0051), an empty project = the unscoped bucket.
-    local pproj name path
+    # A non-canonical value (absolute + existing, but an unresolved symlink or a
+    # trailing /. — ADR-0053) is neither malformed nor orphaned: it is the SAME
+    # resource under a stale spelling, so it goes to the re-key lane (--fix-able).
+    # Detected only when the path exists (a missing path is an orphan; a
+    # non-existent one cannot have its symlinks resolved).
+    local pproj name path _canon
     while IFS=$'\t' read -r pproj name path; do
         [[ -z "$name" ]] && continue
         if ! _index_normalize_path "$path" >/dev/null 2>&1; then
             _cv_mal "index path '[$pproj] $name' -> $path (non-absolute)"
         elif [[ ! -d "$path" ]]; then
             _cv_add local idx_path "$name" "$pproj" "index path '[$pproj] $name' -> $path (missing)"
+        else
+            _canon=$(_index_canonicalize_path "$path" 2>/dev/null)
+            [[ -n "$_canon" && "$_canon" != "$path" ]] \
+                && _cv_noncanon_add "$name" "$pproj" "index path '[$pproj] $name' -> $path (non-canonical → $_canon)"
         fi
     done < <(_index_pp_dump_all)
     while IFS='=' read -r name path; do
@@ -266,6 +286,10 @@ _cv_detect() {
             _cv_mal "index path '$name' (unscoped) -> $path (non-absolute)"
         elif [[ ! -d "$path" ]]; then
             _cv_add local idx_path "$name" "" "index path '$name' (unscoped) -> $path (missing)"
+        else
+            _canon=$(_index_canonicalize_path "$path" 2>/dev/null)
+            [[ -n "$_canon" && "$_canon" != "$path" ]] \
+                && _cv_noncanon_add "$name" "" "index path '$name' (unscoped) -> $path (non-canonical → $_canon)"
         fi
     done < <(_index_section_dump unscoped)
 
@@ -369,6 +393,24 @@ _cv_prune_record() {
             [[ -n "$_rp" ]] || return 0             # already re-homed / gone
             _index_pp_set "$b" "$a" "$_rp" && _index_section_remove unscoped "$a"
             ;;
+        # Re-key a non-canonical index path (ADR-0053 D5): re-derive the CURRENT
+        # stored value (never stale) and re-write it through the canonicalizing
+        # writer, which re-spells it to its physical/lexical canonical form. A pure
+        # value rewrite under a fixed key — it cannot violate AD5′ (same path under
+        # different names is legal), so no keep-both is needed. A value that
+        # vanished between detect and apply is a clean no-op.
+        idx_recanon)
+            local _cv
+            if [[ -n "$b" ]]; then
+                _cv=$(_index_pp_get "$b" "$a")
+                [[ -n "$_cv" ]] || return 0
+                _index_pp_set "$b" "$a" "$_cv"
+            else
+                _cv=$(_index_section_get unscoped "$a")
+                [[ -n "$_cv" ]] || return 0
+                _index_set_unscoped "$a" "$_cv"
+            fi
+            ;;
         rmdir)    rm -rf "$a" ;;
         # rc 1 = already gone, which for a PRUNE is the desired end state; rc ≥2 =
         # the token store could not be written and the orphan survives. `|| true`
@@ -391,10 +433,13 @@ Usage: cco config validate [--dry-run | --fix [-y]]
 
 Detect (and optionally repair) internal bookkeeping — index/tags/source/STATE/
 CACHE/token entries with no resolvable backing resource. Read-only by default;
-never automatic. Three lanes:
+never automatic. Four lanes:
   • orphans    — no backing resource; pruned under --fix (preview + confirm)
   • re-home    — an extra_mount the index parks in the unscoped bucket though a
                  project declares it; --fix MOVES it under that project (FI-23)
+  • re-key     — an existing path stored under a non-canonical spelling (an
+                 unresolved symlink, or a trailing /.); --fix RE-KEYS it to the
+                 canonical form — the same resource, data-preserving (FI-27)
   • malformed  — a non-absolute index path; REPORTED, never pruned (fix by hand
                  or 'cco resolve --scan')
 
@@ -414,10 +459,10 @@ EOF
         esac
     done
 
-    local -a _CV_RECS=() _CV_MALFORMED=() _CV_REHOME=()
+    local -a _CV_RECS=() _CV_MALFORMED=() _CV_REHOME=() _CV_NONCANON=()
     _cv_detect
 
-    if [[ ${#_CV_RECS[@]} -eq 0 && ${#_CV_MALFORMED[@]} -eq 0 && ${#_CV_REHOME[@]} -eq 0 ]]; then
+    if [[ ${#_CV_RECS[@]} -eq 0 && ${#_CV_MALFORMED[@]} -eq 0 && ${#_CV_REHOME[@]} -eq 0 && ${#_CV_NONCANON[@]} -eq 0 ]]; then
         ok "No orphaned internal state — bookkeeping is clean."
         return 0
     fi
@@ -451,6 +496,15 @@ EOF
         for rec in "${_CV_REHOME[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
     fi
 
+    # Non-canonical index paths (FI-27/ADR-0053): an existing dir stored under a
+    # stale spelling (an unresolved symlink like /var vs /private/var, or a trailing
+    # /.). --fix RE-KEYS it to the canonical form — repairable, unlike a malformed
+    # (non-absolute) record, because it is the same resource under a different name.
+    if [[ ${#_CV_NONCANON[@]} -gt 0 ]]; then
+        info "Found ${#_CV_NONCANON[@]} non-canonical index path$([[ ${#_CV_NONCANON[@]} -eq 1 ]] && echo '' || echo s) (re-key to canonical form):"
+        for rec in "${_CV_NONCANON[@]}"; do label="${rec##*$'\t'}"; info "    • $label"; done
+    fi
+
     # Malformed index records (WS-5): reported, NEVER pruned — shown in both report
     # and --fix modes, so the user knows the format needs a hand-fix or a scan.
     if [[ ${#_CV_MALFORMED[@]} -gt 0 ]]; then
@@ -461,7 +515,7 @@ EOF
     fi
 
     if [[ "$mode" != fix ]]; then
-        if [[ ${#_CV_RECS[@]} -gt 0 || ${#_CV_REHOME[@]} -gt 0 ]]; then
+        if [[ ${#_CV_RECS[@]} -gt 0 || ${#_CV_REHOME[@]} -gt 0 || ${#_CV_NONCANON[@]} -gt 0 ]]; then
             info "Run 'cco config validate --fix' to apply (preview-first, with confirmation)."
         fi
         return 0
@@ -514,6 +568,23 @@ EOF
             fi
         else
             info "Skipped extra_mount re-homing."
+        fi
+    fi
+    # Re-key non-canonical index paths (FI-27/ADR-0053) — machine-local (STATE
+    # index), its own confirmation. Data-preserving: it rewrites the value to its
+    # canonical form under the same key (executed via idx_recanon), never deletes.
+    if [[ ${#_CV_NONCANON[@]} -gt 0 ]]; then
+        if _confirm_destructive "$force" "Re-key ${#_CV_NONCANON[@]} non-canonical index path(s) to canonical form?"; then
+            _failed=0
+            for rec in "${_CV_NONCANON[@]}"; do _cv_prune_record "$rec" || _failed=$((_failed + 1)); done
+            if [[ $_failed -gt 0 ]]; then
+                warn "Re-keyed $(( ${#_CV_NONCANON[@]} - _failed )) of ${#_CV_NONCANON[@]} path(s) — $_failed could not be written (the index is not writable). Re-run once it is writable."
+                _rc=1
+            else
+                ok "Re-keyed ${#_CV_NONCANON[@]} non-canonical index path(s) to canonical form."
+            fi
+        else
+            info "Skipped index path re-keying."
         fi
     fi
     return $_rc
