@@ -908,3 +908,28 @@ test_start_resolve_paths_aborts_on_user_quit() {
     [[ $rc -eq 2 ]] \
         || fail "_start_resolve_paths must propagate a user Exit as rc=2 (start abort), got: $rc"
 }
+
+# FI-27 / ADR-0053: _resolve_to_abs canonicalizes its output (symlink + /.), so the
+# value it feeds to BOTH the pre-write AD5' conflict check and the write is the same
+# canonical spelling the writer would store.
+test_resolve_to_abs_canonicalizes_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/real"
+    ln -sfn "$tmpdir/real" "$tmpdir/link"
+    local phys; phys=$(cd "$tmpdir/real" && pwd -P)
+    local got
+    got=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_to_abs "$tmpdir/link"
+    )
+    [[ "$got" == "$phys" ]] || fail "_resolve_to_abs must resolve the symlink (got '$got', want '$phys')"
+    got=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_to_abs "$tmpdir/real/."
+    )
+    [[ "$got" == "$phys" ]] || fail "_resolve_to_abs must collapse a trailing /. (got '$got', want '$phys')"
+}

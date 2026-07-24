@@ -269,7 +269,12 @@ _cco_init_ensure_global() {
 # and register it in the STATE index. Refuses an existing .cco/ unless --force.
 _cco_init_scaffold_repo() {
     local name_arg="$1" force="$2" tmpl_name="${3:-}" repo_name_arg="${4:-}"
-    local target="$PWD"
+    # Canonicalize the repo dir (ADR-0053): $PWD is the LOGICAL cwd (symlinks not
+    # resolved), but the index stores the physical path, so the AD5′ pre-check
+    # (_index_path_conflicts below) and the write must probe the same canonical
+    # form — else a re-init from a symlinked cwd (macOS /tmp, /var) would raise a
+    # false "already bound to <physical>" conflict.
+    local target; target=$(_index_canonicalize_path "$PWD") || target="$PWD"
     local ccodir="$target/.cco"
 
     if [[ -d "$ccodir" ]] && [[ "$force" != "true" ]]; then
