@@ -3,6 +3,17 @@
 # Sourced by bin/test before running any test file.
 # All functions are available in every test function's subshell context.
 
+# ── Portable in-place sed (tests) ─────────────────────────────────────
+# macOS BSD `sed -i` REQUIRES a backup-suffix arg (`sed -i '' …`) while GNU
+# `sed -i` forbids one — so `sed -i "s/…/…/" file` silently misfires on macOS
+# (it reads the script as the suffix and the file as the script), leaving the
+# file untouched. Edit via temp file + mv instead: identical on both.
+# Usage: _t_sed_i <file> <sed-script...>
+_t_sed_i() {
+    local file="$1"; shift
+    sed "$@" "$file" > "$file.sedtmp" && mv "$file.sedtmp" "$file"
+}
+
 # ── Environment Setup ─────────────────────────────────────────────────
 
 # Configure CCO env vars to point into $tmpdir, not the real global/projects

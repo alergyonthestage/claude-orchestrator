@@ -23,9 +23,9 @@ test_update_first_run_no_meta() {
     # Simulate pre-update install (no .cco/meta)
     setup_global_from_defaults "$tmpdir"
     # Substitute language placeholders manually (as old init would)
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     run_cco update
     assert_file_exists "$(state_global_meta)" \
@@ -188,9 +188,9 @@ test_update_migrations_run_in_order() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     # Create .cco/meta with schema_version 0
     create_cco_meta "$(state_global_meta)" "schema_version: 0
@@ -221,9 +221,9 @@ test_update_migration_failure_stops() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     # Create a failing migration with higher ID (in the framework sandbox — the
     # tracked migrations/ tree is never touched).
@@ -959,7 +959,7 @@ test_update_dry_run_shows_migrations() {
 
     # Lower schema_version to simulate pending migrations
     local meta="$(state_global_meta)"
-    sed -i "s/^schema_version: .*/schema_version: 0/" "$meta"
+    _t_sed_i "$meta" "s/^schema_version: .*/schema_version: 0/"
 
     run_cco update --dry-run
     assert_output_contains "migration(s) pending"
