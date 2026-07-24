@@ -316,9 +316,9 @@ in `test_update.sh` that silently misfired on macOS (`eb8086c`); **(G)** `test_p
 was NOT a symlink case (its cleanup works, zero residue) — BSD `wc -l` right-justifies the count with
 leading spaces and `assert_equals` compares as strings, so `"0" != "       0"` failed; add the
 `| tr -d ' '` every other wc site already uses (`7f5ef2c`). In-container suite unaffected (each fix is a
-no-op or output-identical on bash 5.2/GNU — verified). **Host run 2026-07-24 confirmed A/C/D/F + B's
-four symlink tests green; the 6th (G) surfaced only then and is fixed. Only `git push` from the Mac
-remains.** ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
+no-op or output-identical on bash 5.2/GNU — verified). **Host FULLY GREEN 2026-07-24 across 4 rounds
+(all six A–G confirmed on bash 3.2 + BSD tools, 0 failures). Only `git push` +
+merge → develop from the Mac remain.** ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
 paper-over of a real index-model gap — `_index_normalize_path` canonicalizes neither symlinks nor a
 trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` still diverges. Its impl fix wants a
 design pass **before** v3.1 runs, per the maintainer's rule that impl-touching fixes are settled
