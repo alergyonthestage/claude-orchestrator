@@ -112,7 +112,12 @@ test_config_pull_non_ff_aborts() {
     git clone -q "$tmpdir/remote.git" "$clone"
     echo "remote change" >> "$clone/.claude/CLAUDE.md"
     git -C "$clone" add -A && git -C "$clone" commit -q -m "remote edit"
-    git -C "$clone" push -q origin HEAD:master 2>/dev/null || git -C "$clone" push -q origin HEAD 2>/dev/null
+    # Push the remote-side divergence onto the SAME branch ~/.cco tracks — whatever
+    # the host's init.defaultBranch is (master in CI, main on many dev machines).
+    # Hardcoding master let the edit land on a branch cco never pulls, so
+    # 'pull --ff-only' saw no divergence and did NOT abort — a false pass on macOS.
+    local _cfg_branch; _cfg_branch=$(git -C "$HOME/.cco" rev-parse --abbrev-ref HEAD)
+    git -C "$clone" push -q origin "HEAD:$_cfg_branch"
     echo "local change" >> "$HOME/.cco/.claude/CLAUDE.md"
     run_cco config save -m "local edit"
     if run_cco config pull 2>/dev/null; then
