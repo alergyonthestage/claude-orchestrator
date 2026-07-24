@@ -419,15 +419,25 @@ projects:                    # subsumes the old registry — member repo names, 
   one entry); per-project namespacing is **reserved post-v1** (ADR-0022 D2). Writes are **atomic**
   (`mktemp` + `mv`, the existing `local-paths.sh` convention), single-writer, **no file lock** in v1 —
   writes are user-serial; a rare race is last-writer-wins and self-heals via `cco resolve --scan`.
-- **Absolute paths only — enforced at the write boundary.** Every write goes through
-  `_index_set_path`, which normalizes the value (expands `~`/`$HOME`) and **refuses** anything still
-  non-absolute (relative / empty / a bare `@local` marker), returning non-zero so the caller skips it.
-  CLI commands additionally absolutize cwd-relative paths before storing. `_index_path_conflicts`
-  normalizes **both** sides before comparing, so two spellings of the *same* dir (`~/x` vs
-  `/home/me/x`) are never a false AD5 conflict. `cco path list` normalizes for display and flags any
-  stale non-absolute entry as `⚠ malformed`; the one-shot migration `016_normalize-index` cleans
-  entries written before this boundary existed (idempotent; unrecoverable values dropped, self-heal
-  via `cco resolve --scan`).
+- **Canonical absolute paths only — enforced at the write boundary (ADR-0053).** Canonicalization
+  is two-tier. **Tier 1 (lexical, pure string)** lives in `_index_normalize_path` — the shared
+  normalizer every read/compare site calls: it expands `~`/`$HOME`, **refuses** anything still
+  non-absolute (relative / empty / a bare `@local` marker), and collapses lexical noise (`//`, `/./`,
+  a trailing `/.`, a trailing `/`) so `/a//b`, `/a/b/.` and `/a/b/` compare equal. It never touches
+  the filesystem (correct on a not-yet-existing path; `..` is left intact — collapsing it lexically
+  is wrong across a symlink). **Tier 2 (physical, best-effort)** lives in `_index_canonicalize_path`,
+  called **only** at the write boundary (`_index_pp_set` / `_index_set_unscoped`, and the
+  probe-deriving `_resolve_to_abs`): when the path exists it resolves symlinks via `cd … && pwd -P`
+  (the portable builtin — the codebase carries no `realpath`), so a symlink alias (`/var/x`) and its
+  physical target (`/private/var/x`, the same dir on macOS) key identically — enforcing the ADR-0051
+  D1 path identity. Physical resolution is **host-only** (the index is unwritable in-container under
+  the ADR-0047 boundary, and host paths do not exist in a container; INV-CANON). `_index_path_conflicts`
+  normalizes **both** sides before comparing, so a `~/x`-vs-`/home/me/x` spelling — or a canonical-vs-
+  physical probe — is never a false AD5 conflict. `cco path list` normalizes for display and flags a
+  non-absolute entry as `⚠ malformed`. Existing divergent entries self-heal on the next write and are
+  repairable in bulk by `cco config validate` (the **re-key** lane, ADR-0053 D5); the one-shot
+  migration `016_normalize-index` cleaned the pre-boundary non-absolute entries (idempotent;
+  unrecoverable values dropped, self-heal via `cco resolve --scan`).
 - **Resolution CLI — consolidated on `cco resolve` (ADR-0017 D2)**: `cco resolve [project]`
   (interactively resolve each unresolved repo/mount: *specify local path* · *clone-from-`url`* ·
   *skip*), `cco resolve --all` (all projects), and `cco resolve --scan <dir>` (auto-discover by

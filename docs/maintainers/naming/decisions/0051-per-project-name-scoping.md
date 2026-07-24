@@ -54,6 +54,13 @@ project's scope*, where the name→path map is 1:1. This reverses the v1 "bare n
 identity" assumption (AD5). (llms remains globally scoped — content cache keyed by name — and is
 out of this ADR; project identity stays the global `name:`, ADR-0024 D1.)
 
+> **Forward annotation (2026-07-24, ADR-0053 — FI-27).** "Same path ⇒ same resource" is only true
+> once the two paths are compared in the SAME spelling. `_index_normalize_path` was a pure-string
+> normalizer, so a symlink alias (`/var/x`) and its physical target (`/private/var/x`) — the same
+> working tree on macOS — were stored and compared as different keys, silently breaking this D1
+> identity. ADR-0053 makes the write boundary canonicalize physically (resolve symlinks + collapse
+> lexical noise), so D1's path-identity is now *enforced*, not merely asserted.
+
 ### D2 — repo/extra_mount names are scoped to their project (no global default)
 
 The index binds `(project, name) → path`. There is **no** global-default layer (rejected — see

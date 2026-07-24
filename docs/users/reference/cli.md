@@ -1516,7 +1516,7 @@ Examples:
 #### `cco config validate [--dry-run | --fix [-y]]`
 
 **Internal-state sanitization** of the global id-keyed state after a manual deletion or an
-upgrade. The report has **three distinct lanes**, each handled differently (ADR-0052 §4/§5):
+upgrade. The report has **four distinct lanes**, each handled differently (ADR-0052 §4/§5, ADR-0053):
 
 1. **Orphans** (the original lane) — index paths/memberships, tags, install provenance,
    STATE/CACHE per-id dirs, remote tokens whose backing resource no longer resolves. With
@@ -1527,7 +1527,11 @@ upgrade. The report has **three distinct lanes**, each handled differently (ADR-
    project's `project.yml` actually declares. With `--fix`, it is **MOVED** under its declaring
    project (its own confirmation), never pruned — restoring per-project scoping (FI-23). This is
    a distinct lane from orphan pruning: it relocates a valid binding, it does not delete one.
-3. **Malformed** — unparseable/non-absolute internal index records. These are **REPORTED** under
+3. **Re-key** — an existing index path stored under a non-canonical spelling (an unresolved
+   symlink like `/var` vs `/private/var`, or a trailing `/.`). With `--fix`, it is **rewritten**
+   to its canonical form (its own confirmation) — the same resource, data-preserving, never
+   deleted. This keeps the index consistent with the physical path identity on macOS (FI-27).
+4. **Malformed** — unparseable/non-absolute internal index records. These are **REPORTED** under
    their own heading with remediation advice and are **NEVER auto-pruned**: format repair is your
    call (`cco update` normalizes the index, or `cco resolve --scan <dir>` rebuilds it). FI-22.
 

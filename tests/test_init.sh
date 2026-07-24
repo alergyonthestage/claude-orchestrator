@@ -427,3 +427,33 @@ test_init_unwritable_index_does_not_claim_registration() {
         || { fail "the failure must report the scaffold that landed and the repair command: $out"; return 1; }
     return 0
 }
+
+# FI-27 / ADR-0053: a re-init through a SYMLINKED cwd must not raise a false AD5'
+# conflict. Reaching a repo via a symlink alias makes $PWD the LOGICAL path while
+# the physical path (pwd -P) differs — exactly macOS /tmp and /var. Because the
+# writer stores the canonical (physical) path, cmd-init must canonicalize its
+# probe too, or the AD5' pre-check would compare a logical probe against the
+# physical stored value and die "already bound to <physical>".
+test_init_reinit_from_symlinked_cwd_no_false_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    local phys; phys=$(cd "$repo" && pwd -P)
+    local link="$tmpdir/repo-link"
+    ln -sfn "$repo" "$link"
+
+    # First init through the symlink alias.
+    ( cd "$link" && run_cco init --name myrepo --repo-name myrepo --lang "English" )
+
+    # The binding is stored CANONICAL (physical), not the symlink alias.
+    local got
+    got=$( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+           source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+           _index_get_path myrepo myrepo )
+    assert_equals "$phys" "$got"
+
+    # Re-init --force through the SAME symlinked cwd: no false AD5' conflict.
+    local rc=0
+    ( cd "$link" && run_cco init --name myrepo --repo-name myrepo --force --lang "English" ) || rc=$?
+    [[ $rc -eq 0 ]] || fail "re-init from a symlinked cwd raised a false AD5' conflict (rc=$rc)"
+}

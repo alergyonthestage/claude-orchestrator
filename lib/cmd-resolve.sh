@@ -31,8 +31,13 @@
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-# Resolve a CLI-supplied path to an absolute path (tilde + cwd-relative).
-# The index stores absolute paths only (design §3).
+# Resolve a CLI-supplied path to an absolute, CANONICAL path (tilde + cwd-relative
+# + lexical + best-effort symlink resolution). The index stores canonical absolute
+# paths only (design §3, ADR-0053). Canonicalizing HERE is load-bearing: this
+# value feeds BOTH the pre-write AD5′ conflict check (_index_path_conflicts) and
+# the write, so the probe and the stored value share one spelling — a
+# `cco path set /var/x` no longer diverges from a `/private/var/x` cwd-derived
+# binding of the same dir.
 _resolve_to_abs() {
     local p
     # Strip one pair of surrounding quotes first (ADR-0050 D8) — a path pasted as
@@ -42,9 +47,13 @@ _resolve_to_abs() {
     p=$(_strip_surrounding_quotes "$1")
     p=$(expand_path "$p")
     case "$p" in
-        /*) printf '%s\n' "$p" ;;
-        *)  printf '%s\n' "$(pwd -P)/$p" ;;
+        /*) : ;;
+        *)  p="$(pwd -P)/$p" ;;
     esac
+    # Canonicalize; fall back to the raw absolute path if canon somehow fails (it
+    # cannot for an absolute input, but stay defensive — the contract is "always
+    # emit an absolute path").
+    _index_canonicalize_path "$p" || printf '%s\n' "$p"
 }
 
 # Walk cwd and its ancestors for a <dir>/.cco/project.yml; echo the owning <dir>

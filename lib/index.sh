@@ -615,13 +615,14 @@ _index_pp_get() {
 }
 
 # Upsert (<project>, <name>) → "<value>" into project_paths: (atomic). The value
-# is normalized at this boundary (_index_normalize_path); a non-absolute value
-# that cannot be recovered is SKIPPED (no write) and the call returns 1. Creates
-# the section and/or the project block on demand. AD5′ conflict policy lives in
-# the caller — see _index_pp_conflicts(). Usage: _index_pp_set <project> <name> <path>
+# is CANONICALIZED at this boundary (_index_canonicalize_path — Tier-1 lexical plus
+# best-effort symlink resolution when the dir exists, ADR-0053); a non-absolute
+# value that cannot be recovered is SKIPPED (no write) and the call returns 1.
+# Creates the section and/or the project block on demand. AD5′ conflict policy
+# lives in the caller — see _index_pp_conflicts(). Usage: _index_pp_set <project> <name> <path>
 _index_pp_set() {
     local project="$1" name="$2" value norm f
-    norm=$(_index_normalize_path "$3") || return 1
+    norm=$(_index_canonicalize_path "$3") || return 1
     value="$norm"
     _index_ensure_file || return 1
     f=$(_index_file)
@@ -804,6 +805,17 @@ _index_pp_dump_all() {
 # Rejecting at the write boundary keeps every reader (resolve, path list,
 # conflict check, compose mount-gen) free of the tilde/@local poisoning that
 # broke by-name resolve and produced false AD5 conflicts (design §3).
+#
+# TIER-1 lexical canonicalization (ADR-0053 D1): after expansion it also collapses
+# the lexical non-canonical spellings — duplicate slashes (`//`), `/./` segments,
+# a trailing `/.`, and a trailing slash — so two lexical spellings of one dir
+# (`/a//b`, `/a/b/.`, `/a/b/`) compare equal. This stays PURE STRING: no
+# filesystem access, correct on a not-yet-existing path, and idempotent, so it is
+# cheap to run at the many read/compare sites that share this normalizer. `..` is
+# deliberately NOT collapsed — lexical `..` removal is wrong across a symlink; only
+# the physical resolution in _index_canonicalize_path (the write boundary)
+# collapses it (D6). SYMLINK resolution is NOT done here (that is fs-touching and
+# host-only — see _index_canonicalize_path / INV-CANON).
 # Usage: _index_normalize_path <value>  → stdout abs path, return 0
 #                                       → (non-absolute) no output, return 1
 _index_normalize_path() {
@@ -815,7 +827,47 @@ _index_normalize_path() {
         '$HOME/'*)  p="$HOME/${p#\$HOME/}" ;;
     esac
     [[ "$p" == /* ]] || return 1
+    # Fixed-point lexical canonicalization (bash 3.2-safe: parameter expansion
+    # only, no subprocess). Loops until stable so interleaved forms (e.g. `/a/.//b`)
+    # fully collapse regardless of order.
+    local prev=""
+    while [[ "$p" != "$prev" ]]; do
+        prev="$p"
+        p="${p//\/\//\/}"                                # //  -> /
+        p="${p//\/.\//\/}"                               # /./ -> /
+        [[ "$p" == */. ]] && p="${p%/.}"                 # trailing /.
+        [[ "$p" == */ && "$p" != "/" ]] && p="${p%/}"    # trailing /
+    done
+    [[ -z "$p" ]] && p="/"                               # e.g. input was "/." or "/"
     printf '%s\n' "$p"
+}
+
+# Physical, best-effort canonicalizer for the WRITE boundary (ADR-0053 D2/D4).
+# Runs the value through the pure Tier-1 normalizer, then — IFF the result is an
+# existing directory — resolves symlinks physically via `cd … && pwd -P` (the
+# portable shell builtin; the codebase carries no `realpath`, matching _sync_canon
+# in cmd-sync.sh). A path that does not exist yet (a `cco path set` external
+# install, a legacy re-home) keeps the lexical form and self-heals on the next
+# existing-path write / `cco resolve --scan` / `cco config validate --fix`.
+# Idempotent (pwd -P output is already fully canonical).
+#
+# INV-CANON: physical resolution belongs ONLY here, at the host-only write
+# boundary — the index is unwritable in-container under the ADR-0047 privilege
+# boundary, and a host path does not exist in a container. Reads/compares use the
+# pure _index_normalize_path and MUST NEVER `cd` a (possibly non-existent) host
+# path. Probe SOURCES (a repo dir derived at a command entry) may canonicalize
+# here so their value matches the canonical stored form; the shared compare
+# primitive stays pure-lexical.
+# Usage: _index_canonicalize_path <value>  → stdout canonical abs path, return 0
+#                                          → (non-absolute) no output, return 1
+_index_canonicalize_path() {
+    local norm phys
+    norm=$(_index_normalize_path "$1") || return 1
+    if [[ -d "$norm" ]]; then
+        phys=$(cd "$norm" 2>/dev/null && pwd -P) \
+            && [[ -n "$phys" ]] && { printf '%s\n' "$phys"; return 0; }
+    fi
+    printf '%s\n' "$norm"
 }
 
 # ── Public API (per-project scoped, ADR-0051; dual-schema read) ───────
@@ -884,9 +936,9 @@ _index_name_for_path() {
     fi
 }
 
-# Bind (<project>, <name>) → <path> (upsert). Normalized at the boundary; a
-# non-absolute value that cannot be recovered is SKIPPED (no write, return 1).
-# AD5′ conflict policy lives in the caller — see _index_path_conflicts().
+# Bind (<project>, <name>) → <path> (upsert). Canonicalized at the boundary
+# (ADR-0053); a non-absolute value that cannot be recovered is SKIPPED (no write,
+# return 1). AD5′ conflict policy lives in the caller — see _index_path_conflicts().
 # Usage: _index_set_path <project> <name> <path>
 _index_set_path() { _index_pp_set "$1" "$2" "$3"; }
 
@@ -904,9 +956,10 @@ _index_remove_path() {
 }
 
 # Bind a project-less name in the unscoped bucket (the `cco path set` escape
-# hatch when the cwd is not inside a project). Usage: _index_set_unscoped <name> <path>
+# hatch when the cwd is not inside a project). Canonicalized at the boundary
+# (_index_canonicalize_path, ADR-0053). Usage: _index_set_unscoped <name> <path>
 _index_set_unscoped() {
-    local norm; norm=$(_index_normalize_path "$2") || return 1
+    local norm; norm=$(_index_canonicalize_path "$2") || return 1
     _index_ensure_file || return 1
     _index_section_set unscoped "$1" "$norm"
 }

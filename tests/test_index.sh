@@ -938,3 +938,92 @@ IDX
     [[ -z "$(_index_pp_get app assets)" ]] || fail "operator mode must NOT re-home the extra_mount, got: $(_index_pp_get app assets)"
     [[ "$(_index_section_get unscoped assets)" == "$tmp/assets-dir" ]] || fail "the extra_mount must remain unscoped in operator mode, got: $(_index_section_get unscoped assets)"
 }
+
+# ── FI-27 / ADR-0053: path canonicalization at the write boundary ─────────
+
+# Tier-1 lexical canonicalization is pure string: collapse //, /./, trailing /.
+# and trailing /, but NEVER collapse .. (unsafe across a symlink — D6). Works on
+# a not-yet-existing path.
+test_index_normalize_path_lexical_canon() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local -a cases=(
+        "/a/b/.=/a/b" "/a//b=/a/b" "/a/./b=/a/b" "/a/b/=/a/b"
+        "/a/.//b/./=/a/b" "/a///b////=/a/b" "/=/" "/.=/" "//=/"
+        "/a/../b=/a/../b"
+    )
+    local c inp want got
+    for c in "${cases[@]}"; do
+        inp="${c%%=*}"; want="${c#*=}"
+        got=$(_index_normalize_path "$inp")
+        [[ "$got" == "$want" ]] || fail "normalize '$inp' -> '$got' (want '$want')"
+    done
+    # Still rejects the non-absolute (unchanged contract).
+    _index_normalize_path "relative/x" >/dev/null 2>&1 && fail "must reject relative"
+    _index_normalize_path "" >/dev/null 2>&1 && fail "must reject empty"
+    return 0
+}
+
+# Tier-2 physical: resolve symlinks when the dir exists; lexical-fallback when it
+# does not; reject the non-absolute. Idempotent.
+test_index_canonicalize_resolves_symlink_and_falls_back() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    [[ "$(_index_canonicalize_path "$tmp/link")" == "$phys" ]] \
+        || fail "symlink not resolved: got $(_index_canonicalize_path "$tmp/link")"
+    [[ "$(_index_canonicalize_path "$tmp/real/.")" == "$phys" ]] \
+        || fail "trailing /. not collapsed on existing dir"
+    # Missing path → best-effort lexical only, no crash.
+    [[ "$(_index_canonicalize_path "$tmp/missing/.")" == "$tmp/missing" ]] \
+        || fail "missing path should lexical-fallback"
+    # Idempotent.
+    [[ "$(_index_canonicalize_path "$phys")" == "$phys" ]] || fail "not idempotent"
+    _index_canonicalize_path "relative" >/dev/null 2>&1 && fail "must reject non-absolute"
+    return 0
+}
+
+# The project-scoped writer stores the CANONICAL form (symlink resolved, /. gone).
+test_index_set_path_stores_canonical() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    _index_set_path proj repo "$tmp/link"
+    [[ "$(_index_get_path proj repo)" == "$phys" ]] \
+        || fail "writer must store the physical path, got: $(_index_get_path proj repo)"
+    _index_set_path proj repo2 "$tmp/real/."
+    [[ "$(_index_get_path proj repo2)" == "$phys" ]] \
+        || fail "writer must collapse trailing /., got: $(_index_get_path proj repo2)"
+}
+
+# The unscoped writer canonicalizes too.
+test_index_set_unscoped_stores_canonical() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/u"
+    _index_set_unscoped uname "$tmp/u/."
+    [[ "$(_index_get_path anyproj uname)" == "$tmp/u" ]] \
+        || fail "unscoped writer must canonicalize, got: $(_index_get_path anyproj uname)"
+}
+
+# The core bug: two spellings of one working tree (a symlink alias vs the physical
+# dir) must NOT be a false AD5' conflict. The writer stores canonical; a physical
+# (pwd -P-derived) probe then compares equal.
+test_index_no_false_conflict_across_symlink_alias() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    _index_set_path proj repo "$tmp/link"
+    if _index_path_conflicts proj repo "$phys"; then
+        fail "false AD5' conflict: physical probe vs canonical stored value"
+    fi
+    # Re-binding the same resource under its physical name is a clean no-op upsert.
+    _index_set_path proj repo "$phys"
+    [[ "$(_index_get_path proj repo)" == "$phys" ]] || fail "re-bind changed the value"
+}

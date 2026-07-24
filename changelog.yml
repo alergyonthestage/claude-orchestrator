@@ -980,3 +980,22 @@ entries:
       "yes" instead of skipping it). The project's own test runner (`bin/test`) now
       exports it, which is what makes the suite immune to a captured prompt hanging
       it when run from a real terminal.
+  - id: 50
+    date: "2026-07-24"
+    type: additive
+    title: "Canonical index paths — consistent identity on macOS (symlinks, trailing /.)"
+    description: >
+      The machine-local path index now stores every repo/extra_mount path in its
+      CANONICAL form: symlinked prefixes are resolved (on macOS `/tmp` and `/var`
+      are symlinks to `/private/tmp` and `/private/var`) and lexical noise
+      (duplicate slashes, `/./`, a trailing `/.`) is collapsed, at the single write
+      boundary. This closes a divergence where the same working tree reached one way
+      via the cwd (physical path) and another via a coordinate or `cco path set`
+      (unresolved symlink) was recorded as two different resources — breaking by-name
+      resolve, cwd-first repo/extra_mount rename, `join` member indexing, the AD5′
+      uniqueness check, and firing spurious index-reconcile warnings. Existing
+      divergent entries self-heal on the next write and can be repaired in bulk with
+      a new `cco config validate` lane: `re-key` reports a stored path whose spelling
+      is non-canonical and `--fix` rewrites it to the canonical form (data-preserving,
+      distinct from the `malformed` lane, which is still reported-only). Identity is
+      the physical path (ADR-0051 D1); see ADR-0053.
