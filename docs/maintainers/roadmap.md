@@ -459,10 +459,45 @@ flowchart LR
 - S2 → *"…Sessione 2 (WS-2+3, ADR-0052 §2/§3)…"* · S3 → *"…Sessione 3 (WS-4+5, ADR-0052 §4/§5)…"* · S4 → *"…Sessione 4 (WS-6+7, ADR-0052 §6/§7)…"*
 
 **Out-of-session / host gates after S4** (from the Mac): `cco build` + live dogfood (0.5.2→develop
-reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run for a **clean
-0-failure** pass (no FI-19 boundary skips on the host); push both branches + merge → develop (host-only per
-FI-20). Only then resume the e2e-review v3.1 host runbook. (Host suite is clean/0 — the 7 in-container
-FI-19 failures all pass on the host, which has no privilege-boundary skips.)
+reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run toward a clean pass;
+push both branches + merge → develop (host-only per FI-20). Only then resume the e2e-review v3.1 host
+runbook. ⚠ **The prior "host suite is clean/0" assumption was FALSE** — the first full host run
+(2026-07-24) surfaced a silent-hang class (a captured `/dev/tty` prompt) and, once fixed, **1500/20** on
+macOS bash 3.2. The 7 in-container FI-19 boundary failures do pass on the host, but the host has its own
+~20 terminal/bash-3.2 failures. See **§Test runner — host-side green** below (the interactivity-hang
+class is already fixed on develop; the remaining 20 are the pre-e2e-v3.1 gate).
+
+### Test runner — host-side green (pre-e2e-v3.1 gate)
+
+The first full **host-side** suite run (macOS default bash 3.2, from a real Terminal) exposed failures
+invisible in Docker/CI. Getting the host suite green is a gate before resuming the e2e-review v3.1.
+
+**✅ DONE — interactivity-hang class fix** (2026-07-24, commit **`04143e4`**, FF-merged to `develop`;
+branch `fix/test-runner/noninteractive-suite` — push + branch-delete are Mac-only; changelog **#49**).
+Two defects, both green in CI/Docker (no controlling terminal) but biting only from a real terminal:
+- **Bug 1** — spurious detail-less `[FAIL]`s: `_run_test`'s `$(( set -e; fn ))` relied on bash 5.x
+  suppressing errexit inside the capture; Apple bash 3.2 does not. Fix = drop the inner `set -e`
+  (mask-guard + final rc stay the detectors).
+- **Bug 2** — silent HANG. **Root cause was NOT bash 3.2**: a cco prompt blocking on `read < /dev/tty`
+  while the runner's `$()` swallowed its text (first offender = `cco init`'s repo-name prompt, since
+  `init_global` never passes `--repo-name`). A CLASS — ~20 gates spelled interactivity three ways
+  (`(exec < /dev/tty)`, `[[ -t 0 ]]`, `[[ ! -t 0 ]]`) across `lib/` + one in `migrations/010`.
+- **Class fix** (one spelling, one opt-out): `_cco_have_tty` now honours `CCO_NONINTERACTIVE=1`; every
+  raw gate routes through it; `_confirm_destructive` reads `/dev/tty` to match its gate; `bin/test`
+  exports `CCO_NONINTERACTIVE=1`; new static invariant `test_invariant_tty_gate_single_spelling` bans
+  the raw probe across `lib/`+`bin/`+`migrations/`. Completes the migration to `_cco_have_tty` begun by
+  the earlier `cco resolve` fix (`c558568`). Also fixed a pre-existing unconditional failure in
+  `test_migration_010_user_project_named_tutorial` (+2 siblings) — they sourced the migration without
+  `colors.sh`. **Repro trick** (no Mac needed): `script -qec './bin/test …' /dev/null` gives a pty so
+  `/dev/tty` is reachable → the hang reproduces in-container on bash 5.2/Linux.
+- **Verified**: full suite under a pty in-container = **1513/7** (the 7 = pre-existing FI-19 host-only,
+  identical on `develop`), zero hangs. `test_clean` now passes host-side.
+
+**▶ NEXT (own session, before e2e v3.1)** — **host-side suite is 1500/20** after this fix. The 20 are a
+DIFFERENT set from both the interactivity hang (fixed) and the 7 in-container FI-19 boundary failures
+(which pass on the host). They are the remaining macOS-bash-3.2 / terminal-environment failures; each
+must be triaged and fixed (or confirmed genuinely host-only) to reach a clean host pass. Only then
+resume the e2e-review v3.1 host runbook (the `e2e-review/handoff-v3.1.md` handoff).
 
 ### Pre-merge review cycle (gate to v1)
 
