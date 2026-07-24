@@ -927,3 +927,38 @@ piecemeal. Enumerate all of them before designing.
 **Type & tracking**: CLI environment-awareness (dual-context correctness); no schema change.
 Sibling of FI-21's "explicit project scope on the host-path surface". **Effort**: Med.
 **Not gating** cycle-1.1.
+
+## FI-27: `_index_normalize_path` does not canonicalize symlinks or a trailing `/.` (macOS index divergence)
+
+**Status**: 📝 Note — to DESIGN (found 2026-07-24 during the macOS bash-3.2 / BSD test-portability
+sweep). ⚠ **Gating the e2e v3.1 review** per the maintainer: impl-touching fixes are decided
+*before* the review, unlike the test-harness paper-over already shipped for the same root cause.
+
+**Context**: `_index_normalize_path` (`lib/index.sh`) is the single normalizer every value written to
+the index `paths:` section flows through. By design (design §3) it is a **pure string** normalizer —
+it expands `~`/`$HOME` and rejects non-absolute input, but deliberately does **not** touch the
+filesystem. So it neither resolves symlinks nor collapses a trailing `/.`: two spellings of the *same*
+directory are stored and compared as distinct keys.
+
+**The consequence**: on macOS the same dir has two names — `/var/folders/…` is a symlink to
+`/private/var/…`, and cco resolves the caller cwd with `cd -P … && pwd` → the `/private/var` form,
+while a path registered from a raw `mktemp`/coordinate keeps `/var`. The two never match, so by-name
+resolve, cwd-first repo/extra-mount rename, `join` member indexing and the AD5 conflict check all
+diverge — plus the reconcile "legacy … vs current … differ" warning fires. The test suite hit exactly
+this; it is now papered over in the harness by wrapping `mktemp` to canonicalize its output with
+`pwd -P` (commit `8317222`; the earlier `TMPDIR`-canonicalization `92bdad0` was a macOS no-op — BSD
+`mktemp` ignores a reassigned `TMPDIR`). **A real macOS user is still exposed**: any repo under
+`/var`, `/tmp`, or another symlinked prefix — or a path
+registered with a trailing `/.` — reproduces it. The live self-dev session path map already shows this
+repo registered as `…/claude-orchestrator/.` (trailing `/.`), which is the same class.
+
+**Why it is not a one-liner**: adding `realpath`/`pwd -P` at the write boundary is a filesystem-
+touching change on the hot path that *every* path write crosses, and it reverses the deliberate purity
+of design §3. The design pass must decide: (a) resolve symlinks + strip trailing `/.` at the write
+boundary, vs canonicalize only at the (fewer) compare sites; (b) how to stay correct when the path
+does **not exist yet** at write time (a coordinate not yet cloned — `realpath` on a missing path); and
+(c) whether a migration is needed to re-key already-divergent bindings in existing indexes.
+
+**Type & tracking**: index-model correctness (macOS symlink / `/.` canonicalization). Part of the
+FI-21/22/23 index-model theme; likely no schema change, but see (c). **Effort**: Med.
+**Gating** the e2e v3.1 review (design + decision), not blocking the shipped test-harness fix.

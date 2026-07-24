@@ -172,13 +172,14 @@ _usage_prune_empty_sections() {
     '
 }
 
-usage() {
-    # D7: `--host` (in-container) shows the FULL list with host-only verbs flagged;
-    # the default is the filtered list. Ignored on the host.
-    local _want_host=false _a
-    for _a in "$@"; do [[ "$_a" == "--host" ]] && _want_host=true; done
-    local _body
-    _body=$(cat <<'EOF'
+# The usage text, emitted as a plain heredoc. Kept in its own function — NOT
+# inline as `_body=$(cat <<'EOF' … )` — because bash 3.2's legacy command-
+# substitution scanner does not skip heredoc bodies: the apostrophes in the text
+# (repo's, 'cco help', …) desync its single-quote tracking, it never matches the
+# closing `)`, and `cco help`/`--help` dies with a syntax error on macOS stock
+# /bin/bash. A trivial `$(_cco_usage_text)` sidesteps that scanner entirely.
+_cco_usage_text() {
+    cat <<'EOF'
 Usage: cco <command> [options]
 
 Project lifecycle:
@@ -222,7 +223,15 @@ Tools & Sharing:
 Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
 Use 'cco --version' to print the version, 'cco --help' for this message.
 EOF
-)
+}
+
+usage() {
+    # D7: `--host` (in-container) shows the FULL list with host-only verbs flagged;
+    # the default is the filtered list. Ignored on the host.
+    local _want_host=false _a
+    for _a in "$@"; do [[ "$_a" == "--host" ]] && _want_host=true; done
+    local _body
+    _body=$(_cco_usage_text)
     # Host mode: print the usage verbatim. Container-operator mode (ADR-0042/D7):
     # the header caveats are RECOMPUTED from the resolved level (S6-04 — no more
     # reciting gates that don't apply at edit-all), and the command list is FILTERED

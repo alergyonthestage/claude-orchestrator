@@ -3,6 +3,39 @@
 # Sourced by bin/test before running any test file.
 # All functions are available in every test function's subshell context.
 
+# ── Portable in-place sed (tests) ─────────────────────────────────────
+# macOS BSD `sed -i` REQUIRES a backup-suffix arg (`sed -i '' …`) while GNU
+# `sed -i` forbids one — so `sed -i "s/…/…/" file` silently misfires on macOS
+# (it reads the script as the suffix and the file as the script), leaving the
+# file untouched. Edit via temp file + mv instead: identical on both.
+# Usage: _t_sed_i <file> <sed-script...>
+_t_sed_i() {
+    local file="$1"; shift
+    sed "$@" "$file" > "$file.sedtmp" && mv "$file.sedtmp" "$file"
+}
+
+# ── mktemp: canonicalize the created path (macOS /var → /private/var) ──
+# macOS $TMPDIR sits under /var/folders/… (a symlink to /private/var/…), and —
+# unlike GNU mktemp — BSD mktemp IGNORES a reassigned $TMPDIR (it reads the Darwin
+# per-user temp dir via confstr), so canonicalizing $TMPDIR up front is a no-op on
+# macOS. cco resolves the caller cwd with `cd -P … && pwd` → the /private/var form,
+# so an index path a test registers from its raw /var tmpdir never matches the path
+# cco later looks up (repo-rename cwd-first, resolve-by-origin, join, pack cleanup).
+# Wrap mktemp to resolve the REAL created path with pwd -P — correct regardless of
+# how mktemp treats $TMPDIR — so every test tmpdir is canonical and cco's pwd -P is
+# then a no-op. Test-local by design (NOT export -f): cco's own mktemp is untouched.
+mktemp() {
+    local out
+    out="$(command mktemp "$@")" || return
+    if [[ -d "$out" ]]; then
+        (cd "$out" && pwd -P)
+    elif [[ -f "$out" ]]; then
+        printf '%s/%s\n' "$(cd "$(dirname "$out")" && pwd -P)" "$(basename "$out")"
+    else
+        printf '%s\n' "$out"   # -u/dry-run: nothing created, pass the name through
+    fi
+}
+
 # ── Environment Setup ─────────────────────────────────────────────────
 
 # Configure CCO env vars to point into $tmpdir, not the real global/projects
