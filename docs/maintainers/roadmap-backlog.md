@@ -945,8 +945,10 @@ directory are stored and compared as distinct keys.
 while a path registered from a raw `mktemp`/coordinate keeps `/var`. The two never match, so by-name
 resolve, cwd-first repo/extra-mount rename, `join` member indexing and the AD5 conflict check all
 diverge — plus the reconcile "legacy … vs current … differ" warning fires. The test suite hit exactly
-this; it is now papered over in the harness by canonicalizing `TMPDIR` (commit `92bdad0`). **A real
-macOS user is still exposed**: any repo under `/var`, `/tmp`, or another symlinked prefix — or a path
+this; it is now papered over in the harness by wrapping `mktemp` to canonicalize its output with
+`pwd -P` (commit `8317222`; the earlier `TMPDIR`-canonicalization `92bdad0` was a macOS no-op — BSD
+`mktemp` ignores a reassigned `TMPDIR`). **A real macOS user is still exposed**: any repo under
+`/var`, `/tmp`, or another symlinked prefix — or a path
 registered with a trailing `/.` — reproduces it. The live self-dev session path map already shows this
 repo registered as `…/claude-orchestrator/.` (trailing `/.`), which is the same class.
 

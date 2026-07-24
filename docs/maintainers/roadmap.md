@@ -304,8 +304,12 @@ test-vs-impl. **Two real impl bugs** (user-facing on macOS): **(A)** the usage h
 odd apostrophe count desynced its quote tracking so `cco help`/`--help` printed only a syntax error on
 stock `/bin/bash` (`266886b`, moved into `_cco_usage_text()`); **(C)** `_cache_fresh`'s BSD `date -j`
 lacked `-u`, parsing the UTC cache stamp in local time and skewing remote-cache freshness on `cco
-update` (`5b89b43`). **Three test-fragility fixes**: **(B)** canonicalize `TMPDIR` at runner start so
-the macOS `/var`→`/private/var` symlink stops desyncing index paths (`92bdad0`); **(D)** push the
+update` (`5b89b43`). **Three test-fragility fixes**: **(B)** the macOS `/var`→`/private/var` symlink desynced index
+paths (`mktemp` tmpdir vs cco's `pwd -P` cwd resolution). A first pass canonicalized `TMPDIR`
+(`92bdad0`) but that is a **no-op on macOS** — BSD `mktemp` ignores a reassigned `TMPDIR` (it reads the
+Darwin temp dir via confstr), so the host suite still failed; the real fix wraps `mktemp` to
+canonicalize its OUTPUT with `pwd -P` (`8317222`), reproduced + verified in-container via a symlinked
+`TMPDIR`; **(D)** push the
 config-pull divergence to the branch `~/.cco` actually tracks, not a hardcoded `master`, which no-op'd
 under `init.defaultBranch=main` (`55efa43`); **(F)** a BSD-safe `_t_sed_i` replacing ten raw `sed -i`
 in `test_update.sh` that silently misfired on macOS (`eb8086c`). In-container suite unaffected (each
