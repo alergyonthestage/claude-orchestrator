@@ -65,8 +65,11 @@ _cache_fresh() {
     # Parse ISO8601 timestamp to epoch (portable)
     if date -d "$checked_time" +%s >/dev/null 2>&1; then
         checked_epoch=$(date -d "$checked_time" +%s)
-    elif date -j -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s >/dev/null 2>&1; then
-        checked_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s)
+    elif date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s >/dev/null 2>&1; then
+        # BSD date (macOS): -u is REQUIRED, else the trailing Z is a literal and the
+        # UTC timestamp is parsed in local time, skewing the epoch by the tz offset
+        # (e.g. +2h in CEST) so a fresh cache is wrongly judged stale.
+        checked_epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$checked_time" +%s)
     else
         return 1  # Can't parse — treat as stale
     fi
