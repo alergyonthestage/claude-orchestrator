@@ -37,19 +37,6 @@ unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER \
       CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME CCO_CONFIG_DIR \
       CCO_SESSION_CONTEXT CCO_SUBAGENT_CONTEXT 2>/dev/null || true
 
-# Canonicalize TMPDIR (macOS). On macOS $TMPDIR is under /var/folders/… — a
-# symlink to /private/var/… — so `mktemp -d` hands back the /var spelling. But
-# cco resolves the caller cwd with `cd -P … && pwd`, yielding the /private/var
-# form, so index registrations written from a test's tmpdir never match the
-# path cco looks up (repo rename cwd-first, resolve-by-origin, join, pack-clone
-# cleanup all diverge). Resolving TMPDIR once here makes every `mktemp -d` in
-# the suite return the already-canonical path, so both sides agree. On Linux
-# TMPDIR is usually unset (mktemp uses /tmp, no such symlink) → no-op.
-if [[ -n "${TMPDIR:-}" && -d "$TMPDIR" ]]; then
-    TMPDIR="$(cd "$TMPDIR" && pwd -P)"
-    export TMPDIR
-fi
-
 # ── Colors ───────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
     GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
