@@ -1023,7 +1023,7 @@ _index_reconcile_legacy_location() {
                 if [[ -z "$existing" ]]; then
                     _index_pp_set "$a" "$b" "$cn" || return 1
                 elif [[ "$existing" != "$cn" ]]; then
-                    if [[ "$interactive" == true && -t 0 ]]; then
+                    if [[ "$interactive" == true ]] && _cco_have_tty; then
                         _reconcile_conflict_prompt "[$a] $b" "$existing" "$cn" && { _index_pp_set "$a" "$b" "$cn" || return 1; }
                     else
                         conflict=1
@@ -1037,7 +1037,7 @@ _index_reconcile_legacy_location() {
                 if [[ -z "$existing" ]]; then
                     _index_set_unscoped "$a" "$cn" || return 1
                 elif [[ "$existing" != "$cn" ]]; then
-                    if [[ "$interactive" == true && -t 0 ]]; then
+                    if [[ "$interactive" == true ]] && _cco_have_tty; then
                         _reconcile_conflict_prompt "$a (unscoped)" "$existing" "$cn" && { _index_set_unscoped "$a" "$cn" || return 1; }
                     else
                         conflict=1

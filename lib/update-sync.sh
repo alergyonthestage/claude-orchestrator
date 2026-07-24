@@ -77,7 +77,7 @@ _interactive_sync() {
                     echo ""
                     info "$scope_label: $rel_path (new framework file)"
                     echo "  (A)dd file  (S)kip"
-                    if (exec < /dev/tty) 2>/dev/null; then
+                    if _cco_have_tty; then
                         read -rp "  Choice [A/s]: " choice < /dev/tty
                     fi
                     choice="${choice:-A}"
@@ -107,7 +107,7 @@ _interactive_sync() {
                     echo ""
                     info "$scope_label: $rel_path (framework updated, you haven't modified)"
                     echo "  (A)pply update  (S)kip  (D)iff"
-                    if (exec < /dev/tty) 2>/dev/null; then
+                    if _cco_have_tty; then
                         read -rp "  Choice [A/s/d]: " choice < /dev/tty
                     fi
                     choice="${choice:-A}"
@@ -117,7 +117,7 @@ _interactive_sync() {
                         diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                             --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         echo ""
-                        if (exec < /dev/tty) 2>/dev/null; then
+                        if _cco_have_tty; then
                             read -rp "  (A)pply update  (S)kip [A/s]: " choice < /dev/tty
                         fi
                         choice="${choice:-A}"
@@ -158,7 +158,7 @@ _interactive_sync() {
                 # In non-TTY mode without auto_action, skip (don't silently create .new files).
                 local choice="$auto_action"
                 if [[ -z "$choice" ]]; then
-                    if ! (exec < /dev/tty) 2>/dev/null; then
+                    if ! _cco_have_tty; then
                         # Non-TTY: skip silently
                         choice="s"
                     else
@@ -175,7 +175,7 @@ _interactive_sync() {
                         diff -u "$installed_dir/$rel_path" "$_is_new_file" \
                             --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         echo ""
-                        if (exec < /dev/tty) 2>/dev/null; then
+                        if _cco_have_tty; then
                             read -rp "  (N)ew-file (.new)  (A)pply update  (K)eep yours  (S)kip [N/a/k/s]: " choice < /dev/tty
                         fi
                         choice="${choice:-N}"
@@ -227,7 +227,7 @@ _interactive_sync() {
                     info "$scope_label: $rel_path (both modified — merge needed)"
                     echo "  (M)erge 3-way  (N)ew-file (.new)  (R)eplace + .bak  (K)eep yours  (S)kip  (D)iff"
                     echo "  Tip: use (N) if you restructured this file — saves framework version as .new for manual review"
-                    if (exec < /dev/tty) 2>/dev/null; then
+                    if _cco_have_tty; then
                         read -rp "  Choice [M/n/r/k/s/d]: " choice < /dev/tty
                     fi
                     choice="${choice:-M}"
@@ -247,7 +247,7 @@ _interactive_sync() {
                                 --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         fi
                         echo ""
-                        if (exec < /dev/tty) 2>/dev/null; then
+                        if _cco_have_tty; then
                             read -rp "  (M)erge 3-way  (N)ew-file (.new)  (R)eplace + .bak  (K)eep yours  (S)kip [M/n/r/k/s]: " choice < /dev/tty
                         fi
                         choice="${choice:-M}"
@@ -321,7 +321,7 @@ _interactive_sync() {
                     info "$scope_label: $rel_path (heavily customized — text merge unlikely to help)"
                     echo "  (N)ew-file (.new)  (K)eep yours  (R)eplace + .bak  (S)kip  (D)iff"
                     echo "  Tip: saves framework version as .new for manual review"
-                    if (exec < /dev/tty) 2>/dev/null; then
+                    if _cco_have_tty; then
                         read -rp "  Choice [N/k/r/s/d]: " choice < /dev/tty
                     fi
                     choice="${choice:-N}"
@@ -336,7 +336,7 @@ _interactive_sync() {
                                 --label "your version" --label "new default" 2>/dev/null | sed 's/^/  /' || true
                         fi
                         echo ""
-                        if (exec < /dev/tty) 2>/dev/null; then
+                        if _cco_have_tty; then
                             read -rp "  (N)ew-file (.new)  (K)eep yours  (R)eplace + .bak  (S)kip [N/k/r/s]: " choice < /dev/tty
                         fi
                         choice="${choice:-N}"
@@ -405,7 +405,7 @@ _interactive_sync() {
                     echo ""
                     info "$scope_label: $rel_path (you deleted, framework has updates)"
                     echo "  (A)dd back with new version  (S)kip"
-                    if (exec < /dev/tty) 2>/dev/null; then
+                    if _cco_have_tty; then
                         read -rp "  Choice [s/A]: " choice < /dev/tty
                     fi
                     choice="${choice:-s}"

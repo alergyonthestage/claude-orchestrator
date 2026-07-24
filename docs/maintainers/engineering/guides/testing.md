@@ -174,6 +174,7 @@ bin/test --list                         # List all test names without running
 
 The test runner automatically sets:
 - `CCO_SKIP_BUILD=1` — skips Docker image build in `cco init` (not needed for integration tests)
+- `CCO_NONINTERACTIVE=1` — forces every cco prompt to its non-interactive branch, so the suite is **hermetic to interactivity**. Without it, a prompt writes to stdout/stderr and reads `/dev/tty`; because the runner CAPTURES each command's output (`output=$(( fn ) 2>&1)` in `_run_test`, and the nested `$()` in `run_cco`), the prompt text is swallowed while the read blocks on the terminal — a silent, unattributable hang. It only bites when the suite runs from a real terminal (a dev's Mac): in Docker/CI there is no controlling terminal, so every prompt already takes its non-interactive branch and the suite is green, which is why this class stayed invisible until `cco init`'s repo-name prompt surfaced it. All prompts route through `_cco_have_tty` (`lib/utils.sh`), the single place that honours this variable; a raw `(exec < /dev/tty)` gate that bypasses it is banned by `test_invariant_tty_gate_single_spelling`. A test that genuinely needs to exercise an interactive prompt unsets `CCO_NONINTERACTIVE` itself.
 - `REPO_ROOT` — absolute path to the repository root
 
 Each test should create its own tmpdir and use `setup_cco_env` to redirect all CCO paths there.

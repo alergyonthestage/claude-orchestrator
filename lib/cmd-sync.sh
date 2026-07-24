@@ -304,7 +304,7 @@ EOF
         echo ""
 
         if ! $auto; then
-            if [[ ! -t 0 ]]; then
+            if ! _cco_have_tty; then
                 die "non-interactive: pass --auto-approve to sync without confirmation."
             fi
             printf "  Apply to %s? [y/N]: " "$(basename "$tgt")" >&2

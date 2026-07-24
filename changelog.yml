@@ -960,3 +960,23 @@ entries:
       sandbox is active. (6) `q`/Exit at a `cco start` mount-resolve prompt now
       ABORTS the launch (no session boots) instead of skipping and starting anyway;
       standalone `cco resolve` exits cleanly. Requires `cco build`.
+
+  - id: 49
+    date: "2026-07-24"
+    type: additive
+    title: "CCO_NONINTERACTIVE — force every prompt to its non-interactive branch"
+    description: >
+      New environment variable `CCO_NONINTERACTIVE=1` makes cco behave as if no
+      controlling terminal were present: every interactive prompt (language,
+      project/repo name, update-sync merge choices, migration confirmations,
+      destructive-action confirmations, path disambiguation, …) takes the same
+      non-interactive branch it already takes under Docker/CI — falling back to
+      defaults or requiring an explicit flag (`-y`/`--auto-approve`) rather than
+      blocking on input. Use it when scripting cco in automation that runs from a
+      terminal (where prompts would otherwise wait for a human), or to make a
+      command's behavior identical whether launched interactively or headless. It
+      is honoured centrally by `_cco_have_tty`, so it covers all prompts uniformly;
+      it is complementary to `CCO_ASSUME_YES=1` (which ANSWERS a yes/no prompt
+      "yes" instead of skipping it). The project's own test runner (`bin/test`) now
+      exports it, which is what makes the suite immune to a captured prompt hanging
+      it when run from a real terminal.

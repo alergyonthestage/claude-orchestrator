@@ -146,7 +146,7 @@ cmd_update() {
 
     # Non-TTY warning for --sync mode
     if [[ "$cmd_mode" == "sync" && -z "$auto_action" ]]; then
-        if ! (exec < /dev/tty) 2>/dev/null; then
+        if ! _cco_have_tty; then
             warn "Non-interactive mode: skipping all file changes. Use a terminal for interactive merge."
             auto_action="skip"
         fi

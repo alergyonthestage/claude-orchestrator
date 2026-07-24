@@ -48,7 +48,20 @@ _path_exists() {
 # terminal (this silently broke `cco resolve`, which then never prompted). The
 # prompts themselves read from /dev/tty, so /dev/tty reachability is the correct
 # interactivity test. The subshell keeps the probe from consuming the parent fd 0.
+#
+# CCO_NONINTERACTIVE=1 forces this to FALSE: "behave as if no terminal existed",
+# i.e. take the same non-interactive default branch CI and Docker already take.
+# It is the single opt-out every prompt in the codebase honours, and it is what
+# `bin/test` exports so the suite cannot block on a prompt. Complementary to (not
+# the same as) CCO_ASSUME_YES, which ANSWERS a prompt "yes" rather than skipping it.
+#
+# Why it is needed: a prompt writes to stdout/stderr, and a caller that CAPTURES
+# those (`out=$(cmd 2>&1)` — the test runner, any `$()` wrapper) makes the prompt
+# text INVISIBLE while the read still blocks on /dev/tty. The result is a silent,
+# unattributable hang. That is exactly how `cco init`'s repo-name prompt froze the
+# whole suite whenever it was run from a real terminal instead of CI.
 _cco_have_tty() {
+    [[ -n "${CCO_NONINTERACTIVE:-}" ]] && return 1
     (exec < /dev/tty) 2>/dev/null
 }
 
@@ -342,11 +355,11 @@ _check_reserved_project_name() {
 _confirm_destructive() {
     local skip="$1" prompt="$2" reply
     [[ "$skip" == true ]] && return 0
-    if [[ ! -t 0 ]]; then
+    if ! _cco_have_tty; then
         die "Refusing to proceed without confirmation ($prompt) — re-run with -y."
     fi
     printf '%s [y/N] ' "$prompt" >&2
-    read -r reply
+    read -r reply < /dev/tty
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 

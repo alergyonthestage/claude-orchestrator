@@ -10,6 +10,18 @@ export REPO_ROOT
 # Skip Docker build in cco init — integration tests don't need the image
 export CCO_SKIP_BUILD=1
 
+# Make the suite HERMETIC to interactivity. A cco prompt writes to stdout/stderr
+# and reads /dev/tty; when the runner CAPTURES a command's output (`output=$(( fn )
+# 2>&1)` in _run_test, and the nested `$()` in run_cco), the prompt text is
+# swallowed while the read blocks on the terminal — a silent, unattributable hang.
+# It only bites when the suite runs from a real terminal (a dev's Mac): in Docker/CI
+# there is no controlling terminal, so every prompt already takes its non-interactive
+# branch and the suite is green — which is exactly why this was invisible for so long.
+# CCO_NONINTERACTIVE=1 forces _cco_have_tty() false everywhere, so every prompt takes
+# that same non-interactive branch regardless of the launching terminal. Tests that
+# specifically exercise interactive prompts unset it themselves.
+export CCO_NONINTERACTIVE=1
+
 # Neutralize the ambient cco-SESSION environment so the suite runs host-side by
 # default. When `bin/test` is invoked from INSIDE a cco session (self-dev), the
 # container exports CCO_CONTAINER_OPERATOR=1 + absolute CCO_{DATA,STATE,CACHE}_HOME
@@ -82,8 +94,18 @@ _run_test() {
 
     local output exit_code=0
     # Run each test in a subshell for isolation; capture output.
-    # set -e must be explicit — bash disables it inside $() when || is used.
-    output=$(( set -e; "$fn_name" ) 2>&1) || exit_code=$?
+    # NOTE: deliberately NO `set -e` inside this subshell. bash 5.x already
+    # SUPPRESSES errexit inside `$(( set -e; fn ) )`, so the suite was authored
+    # for a context where a non-final non-zero command does NOT abort — negative
+    # tests use the idiom `bare_cmd_that_returns_nonzero; rc=$?`. macOS's default
+    # bash 3.2 does NOT suppress errexit there: it aborts those tests early with
+    # empty output (spurious [FAIL]s). Real failures are caught by the mask-guard
+    # below (the ASSERTION-FAILED sentinel grep) plus the test's own final exit
+    # code — not by errexit — so behaviour is now identical on bash 3.2 and 5.x.
+    # (The separate silent-HANG class — a cco prompt blocking on /dev/tty while its
+    # text is swallowed by this very capture — is handled by CCO_NONINTERACTIVE=1,
+    # exported at the top of this file; it is not a property of this subshell.)
+    output=$(( "$fn_name" ) 2>&1) || exit_code=$?
 
     # Mask-guard (adherence audit 2026-06-21, HITL-1): under `( set -e; fn )`,
     # a non-final assertion failure is swallowed — a failing `assert_*` (or a

@@ -1170,7 +1170,7 @@ _resolve_template_vars() {
 
         if [[ -n "$preset_match" ]]; then
             value="${preset_match#*=}"
-        elif [[ -t 0 ]]; then
+        elif _cco_have_tty; then
             # Interactive prompt
             local default=""
             case "$name" in

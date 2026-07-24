@@ -220,9 +220,16 @@ test_migration_010_legacy_tutorial_non_interactive() {
     touch "$proj_dir/.claude/skills/tutorial/SKILL.md"
     touch "$proj_dir/.claude/rules/tutorial-behavior.md"
 
-    # Run migration non-interactively (stdin from /dev/null)
+    # Run the migration the way `cco update` does — with the framework libs
+    # sourced, so its messaging (warn/info) and interactivity gate (_cco_have_tty)
+    # are the REAL ones, not silently-undefined no-ops. Non-interactivity comes
+    # from CCO_NONINTERACTIVE=1 (exported by bin/test), NOT a `< /dev/null` on fd 0:
+    # the removal prompt reads /dev/tty directly, so only the gate can suppress it
+    # (a `< /dev/null` never did, which is why this test hung under a real terminal).
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh"
-    migrate "$proj_dir" < /dev/null
+    migrate "$proj_dir"
 
     # Project should be kept (non-interactive doesn't remove)
     assert_dir_exists "$proj_dir"
@@ -240,7 +247,7 @@ test_migration_010_legacy_tutorial_heuristic() {
 
     # Run migration — should detect as legacy via heuristic
     local output
-    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
+    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/lib/utils.sh" && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" 2>&1)
 
     # Should mention "built-in" (legacy path, not user-project path)
     echo "$output" | grep -qF "built-in" || \
@@ -256,9 +263,16 @@ test_migration_010_user_project_named_tutorial() {
     echo "local" > "$proj_dir/.cco/source"
     echo "name: tutorial" > "$proj_dir/project.yml"
 
-    # Run migration
+    # Run migration with the framework libs sourced (as `cco update` does), so
+    # its warn/info messages are the real ones — this Case-2 path prints the
+    # "reserved name" warning the assertion below looks for. (Sourcing only the
+    # migration left warn undefined, so the text never printed and this test failed
+    # unconditionally — a pre-existing defect surfaced while auditing the tutorial
+    # tests for the interactivity-hang class.)
     local output
-    output=$(source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
+    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/lib/utils.sh" \
+             && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" \
+             && migrate "$proj_dir" 2>&1)
 
     # Should warn about reserved name, not offer removal
     echo "$output" | grep -qF "reserved name" || \

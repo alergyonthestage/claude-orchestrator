@@ -83,7 +83,7 @@ EOF
     # ── Member name: --name > interactive prompt (default basename) > basename
     local repo_name="$name_override" default_name; default_name=$(basename "$repo")
     if [[ -z "$repo_name" ]]; then
-        if [[ -t 0 ]]; then
+        if _cco_have_tty; then
             printf "Member name for this repo [%s]: " "$default_name" >&2
             read -r repo_name
             [[ -z "$repo_name" ]] && repo_name="$default_name"
@@ -130,7 +130,7 @@ EOF
         target_dirs=( "${owned_dirs[@]}" )            # Case B: all in-sync members
     else
         # Case C — divergent members exist; the maintainer ruling is to PROMPT.
-        if [[ ! -t 0 ]]; then
+        if ! _cco_have_tty; then
             die "Project '$project' has divergent members (their .cco/ differ). Re-run 'cco join' interactively to choose which to update, or converge them first with 'cco sync'."
         fi
         echo "Project '$project' has members with divergent .cco/. Pick the project.yml to update:" >&2

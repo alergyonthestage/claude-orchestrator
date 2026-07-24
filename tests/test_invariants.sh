@@ -306,6 +306,46 @@ test_invariant_11_no_negative_only_rc_assertions() {
     [[ -z "$hits" ]] || fail "banned negative-only rc assertion (RC-17): assert an exact rc + a state change, or assert_refused"$'\n'"$hits"
 }
 
+# ── INV-TTY single interactivity spelling (test-runner capture-hang class) ──
+# Every interactive prompt gate must go through _cco_have_tty() (lib/utils.sh) —
+# the SINGLE place that probes /dev/tty AND honours CCO_NONINTERACTIVE. The raw
+# `(exec < /dev/tty)` reachability probe is banned everywhere else: a gate spelled
+# inline cannot be forced non-interactive, so when a caller CAPTURES the command's
+# output (`out=$(cmd 2>&1)` — the test runner's _run_test, the nested $() in
+# run_cco, any script wrapper) the prompt text is swallowed while the read blocks
+# on the terminal: a silent, unattributable hang. It bites ONLY from a real
+# terminal — CI/Docker have no controlling tty, so every prompt already takes its
+# non-interactive branch and the suite is green — which is why `cco init`'s
+# repo-name prompt froze the suite undetected for so long. utils.sh is the probe's
+# one legitimate home (the helper body); a deliberate exception elsewhere carries a
+# same-line `# allow-raw-tty: <why>` marker. (`[[ -t 0 ]]` is left to convention —
+# it has legitimate non-prompt uses (piped-stdin detection) a static ban would
+# false-positive; the codebase carries none as a prompt gate today.)
+test_invariant_tty_gate_single_spelling() {
+    # 1. Live tree: no raw probe outside the helper. migrations/ is scanned too —
+    #    a migration runs under `cco update` with the libs sourced, so it must reach
+    #    for _cco_have_tty like everything else (010_tutorial_to_internal.sh hid one
+    #    raw probe here, latent-hanging the suite the moment it ran from a terminal).
+    local hits
+    hits=$(grep -rnE 'exec[[:space:]]*<[[:space:]]*/dev/tty' \
+             "$REPO_ROOT/lib" "$REPO_ROOT/bin" "$REPO_ROOT/migrations" \
+             | grep -vE '/utils\.sh:' | grep -v 'allow-raw-tty:' || true)
+    [[ -z "$hits" ]] || fail "INV-TTY: raw '(exec < /dev/tty)' interactivity probe outside _cco_have_tty — route the gate through _cco_have_tty so CCO_NONINTERACTIVE can force it off (test-runner capture-hang class):"$'\n'"$hits"
+
+    # 2. Discrimination (a static invariant cannot "fail on reverted lib/", so it
+    #    must PROVE it catches the shape it forbids). Plant the raw probe in a
+    #    throwaway lib/ and assert the same grep flags it.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/lib"
+    printf '%s\n' '_probe() { if (exec < /dev/tty) 2>/dev/null; then read -r x; fi; }' > "$tmp/lib/cmd-fake.sh"
+    local planted
+    planted=$(grep -rnE 'exec[[:space:]]*<[[:space:]]*/dev/tty' "$tmp/lib" \
+                | grep -vE '/utils\.sh:' | grep -v 'allow-raw-tty:' || true)
+    [[ -n "$planted" ]] \
+        || { fail "INV-TTY lint does NOT discriminate: a planted raw /dev/tty probe went uncaught"; return 1; }
+    return 0
+}
+
 # ── INV-F probe locality (RC-2 / 04-host-path-class.md §6.7) ──────────
 # A path read from the STATE index is a HOST path; in a container-operator session
 # it must NEVER be existence-tested (it can never exist there — the member is bound

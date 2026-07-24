@@ -186,7 +186,7 @@ EOF
 
     # ── Confirm ─────────────────────────────────────────────────────────────
     if [[ "$force" != true ]]; then
-        if [[ -t 0 ]]; then
+        if _cco_have_tty; then
             printf "Forget '%s'? [y/N] " "$name" >&2
             local reply; read -r reply
             [[ "$reply" =~ ^[Yy]$ ]] || { info "Aborted"; return 0; }
@@ -220,7 +220,7 @@ EOF
         local do_purge=false
         if [[ "$purge" == true ]]; then
             do_purge=true
-        elif [[ -t 0 ]]; then
+        elif _cco_have_tty; then
             printf "Also DELETE the owned .cco/ dir(s) above? [y/N] " >&2
             local preply; read -r preply
             [[ "$preply" =~ ^[Yy]$ ]] && do_purge=true

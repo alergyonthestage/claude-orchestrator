@@ -483,7 +483,7 @@ _cco_confirm_overwrite_global() {
     echo "    $archive" >&2
     local ans=""
     if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
-    elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
+    elif _cco_have_tty; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
     ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
     [[ "$ans" == "y" || "$ans" == "yes" ]] || return 1
     rm -rf "$(_cco_global_claude_dir)"
@@ -1194,7 +1194,7 @@ _cco_migrate_project() {
         # otherwise SKIP — never seed a tag silently without a user choice (M4).
         local ans=""
         if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
-        elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Convert? [Y/n]: " ans < /dev/tty
+        elif _cco_have_tty; then read -rp "  Convert? [Y/n]: " ans < /dev/tty
         else ans="n"; info "Non-interactive: skipping profile→tag conversion (re-run interactively or set CCO_ASSUME_YES=1)."; fi
         ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
         if [[ "$ans" != "n" ]]; then

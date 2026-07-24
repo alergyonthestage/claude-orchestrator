@@ -196,7 +196,7 @@ _cco_init_ensure_global() {
         comm_lang="${comm_lang:-English}"
         docs_lang="${docs_lang:-$comm_lang}"
         code_lang="${code_lang:-English}"
-    elif (exec < /dev/tty) 2>/dev/null; then
+    elif _cco_have_tty; then
         echo "" >&2
         info "Language configuration"
         echo "  Common choices: English, Italian, Spanish, French, German, Portuguese" >&2
@@ -425,7 +425,7 @@ _cco_init_resolve_name() {
     base=$(basename "$PWD")
     if [[ -n "$name_arg" ]]; then
         name="$name_arg"
-    elif (exec < /dev/tty) 2>/dev/null; then
+    elif _cco_have_tty; then
         # B-DF2: no `2>/dev/null` on the read — bash writes the `-p` prompt to stderr,
         # so redirecting it swallows the prompt and the command looks hung. The tty is
         # already proven available by the guard above; `|| name=""` handles a read fail.
@@ -447,7 +447,7 @@ _cco_init_resolve_repo_name() {
     base=$(basename "$PWD")
     if [[ -n "$repo_arg" ]]; then
         name="$repo_arg"
-    elif (exec < /dev/tty) 2>/dev/null; then
+    elif _cco_have_tty; then
         read -rp "  Repo name [$base]: " name < /dev/tty || name=""
         name="${name:-$base}"
     else

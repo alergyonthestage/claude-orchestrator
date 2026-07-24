@@ -130,8 +130,8 @@ _rename_index_keyed() {
     # ── Directory-move decision (D4 / §5) ──────────────────────────────
     # In a session the member IS a bind-mount root, so a directory move can only
     # fail (EBUSY) and leave the host tree untouched — refuse explicit --move-dir
-    # (exit 2, D-M9/Q-5) rather than silently downgrade, and NEVER prompt (-t 0 is
-    # true under tmux). The name-only rename proceeds. The move machinery below is
+    # (exit 2, D-M9/Q-5) rather than silently downgrade, and NEVER prompt (a tty is
+    # present under tmux). The name-only rename proceeds. The move machinery below is
     # thereby host-exclusive.
     local base newpath="" do_move=false
     base=$(basename "$oldpath")
@@ -143,7 +143,7 @@ _rename_index_keyed() {
         [[ "$base" == "$old" ]] \
             || die "--move-dir needs the directory basename ('$base') to equal <old> ('$old'); refusing an ambiguous move."
         do_move=true
-    elif [[ "$skip" != true && "$base" == "$old" && -t 0 ]]; then
+    elif [[ "$skip" != true && "$base" == "$old" ]] && _cco_have_tty; then
         newpath="$(dirname "$oldpath")/$new"
         printf 'Also move the directory %s → %s? (external references to the old path are NOT updated) [y/N] ' "$oldpath" "$newpath" >&2
         local reply; read -r reply

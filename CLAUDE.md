@@ -188,6 +188,7 @@ Per `docs/maintainers/environment/design/design-docker.md` (sezione directory st
 - Entrypoint must handle Docker socket GID mismatch between host and container.
 - macOS Docker Desktop: never use `network_mode: host` (refers to Linux VM, not macOS). Always use port mappings.
 - bash 3.2 compatibility: always guard empty arrays with `[[ ${#arr[@]} -gt 0 ]]` or `${arr[@]+"${arr[@]}"}` when `set -u` is active.
+- Interactive prompts: gate on `_cco_have_tty` (`lib/utils.sh`) — never a raw `(exec < /dev/tty)` or `[[ -t 0 ]]`. It is the single interactivity test and the only one that honours `CCO_NONINTERACTIVE=1`; a raw `/dev/tty` probe is banned by `test_invariant_tty_gate_single_spelling`. This keeps the suite (and any output-capturing caller) from hanging on a prompt whose text the capture swallowed.
 
 ## Update System & Migrations
 

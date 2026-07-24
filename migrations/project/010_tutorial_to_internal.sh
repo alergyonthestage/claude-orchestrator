@@ -44,7 +44,7 @@ migrate() {
         echo "  It can be safely removed."
         echo ""
 
-        if (exec < /dev/tty) 2>/dev/null; then
+        if _cco_have_tty; then
             local choice
             read -rp "  Remove legacy tutorial project? [y/N] " choice < /dev/tty
             choice="${choice:-n}"
