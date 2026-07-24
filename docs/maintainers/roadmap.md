@@ -298,13 +298,13 @@ document: **[`e2e-review/handoff-v3.1.md`](configuration/agent-cco-access/e2e-re
 
 **0 — macOS host-suite portability (✅ fixed 2026-07-24, branch `fix/test-suite/macos-bash32-portability`
 from develop; NOTHING PUSHED).** The host suite showed ~20 failures the container never sees (container
-= bash 5.2 + GNU coreutils; host = bash 3.2.57 + BSD tools). Triaged to 5 root causes, split
+= bash 5.2 + GNU coreutils; host = bash 3.2.57 + BSD tools). Triaged to 6 root causes, split
 test-vs-impl. **Two real impl bugs** (user-facing on macOS): **(A)** the usage heredoc lived inside
 `_body=$(cat <<'EOF' … )` and bash 3.2's legacy command-sub scanner does not skip heredoc bodies — the
 odd apostrophe count desynced its quote tracking so `cco help`/`--help` printed only a syntax error on
 stock `/bin/bash` (`266886b`, moved into `_cco_usage_text()`); **(C)** `_cache_fresh`'s BSD `date -j`
 lacked `-u`, parsing the UTC cache stamp in local time and skewing remote-cache freshness on `cco
-update` (`5b89b43`). **Three test-fragility fixes**: **(B)** the macOS `/var`→`/private/var` symlink desynced index
+update` (`5b89b43`). **Four test-fragility fixes**: **(B)** the macOS `/var`→`/private/var` symlink desynced index
 paths (`mktemp` tmpdir vs cco's `pwd -P` cwd resolution). A first pass canonicalized `TMPDIR`
 (`92bdad0`) but that is a **no-op on macOS** — BSD `mktemp` ignores a reassigned `TMPDIR` (it reads the
 Darwin temp dir via confstr), so the host suite still failed; the real fix wraps `mktemp` to
@@ -312,9 +312,13 @@ canonicalize its OUTPUT with `pwd -P` (`8317222`), reproduced + verified in-cont
 `TMPDIR`; **(D)** push the
 config-pull divergence to the branch `~/.cco` actually tracks, not a hardcoded `master`, which no-op'd
 under `init.defaultBranch=main` (`55efa43`); **(F)** a BSD-safe `_t_sed_i` replacing ten raw `sed -i`
-in `test_update.sh` that silently misfired on macOS (`eb8086c`). In-container suite unaffected (each
-fix is a no-op or output-identical on bash 5.2/GNU — verified); **host-side green + push from the Mac
-remain**. ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
+in `test_update.sh` that silently misfired on macOS (`eb8086c`); **(G)** `test_pack_install_cleanup`
+was NOT a symlink case (its cleanup works, zero residue) — BSD `wc -l` right-justifies the count with
+leading spaces and `assert_equals` compares as strings, so `"0" != "       0"` failed; add the
+`| tr -d ' '` every other wc site already uses (`7f5ef2c`). In-container suite unaffected (each fix is a
+no-op or output-identical on bash 5.2/GNU — verified). **Host run 2026-07-24 confirmed A/C/D/F + B's
+four symlink tests green; the 6th (G) surfaced only then and is fixed. Only `git push` from the Mac
+remains.** ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
 paper-over of a real index-model gap — `_index_normalize_path` canonicalizes neither symlinks nor a
 trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` still diverges. Its impl fix wants a
 design pass **before** v3.1 runs, per the maintainer's rule that impl-touching fixes are settled
