@@ -296,6 +296,26 @@ document: **[`e2e-review/handoff-v3.1.md`](configuration/agent-cco-access/e2e-re
 — §10 is the host runbook (ordered, each step with its motivation, exact command, and how to verify),
 §5/§6 the session matrix.
 
+**0 — macOS host-suite portability (✅ fixed 2026-07-24, branch `fix/test-suite/macos-bash32-portability`
+from develop; NOTHING PUSHED).** The host suite showed ~20 failures the container never sees (container
+= bash 5.2 + GNU coreutils; host = bash 3.2.57 + BSD tools). Triaged to 5 root causes, split
+test-vs-impl. **Two real impl bugs** (user-facing on macOS): **(A)** the usage heredoc lived inside
+`_body=$(cat <<'EOF' … )` and bash 3.2's legacy command-sub scanner does not skip heredoc bodies — the
+odd apostrophe count desynced its quote tracking so `cco help`/`--help` printed only a syntax error on
+stock `/bin/bash` (`266886b`, moved into `_cco_usage_text()`); **(C)** `_cache_fresh`'s BSD `date -j`
+lacked `-u`, parsing the UTC cache stamp in local time and skewing remote-cache freshness on `cco
+update` (`5b89b43`). **Three test-fragility fixes**: **(B)** canonicalize `TMPDIR` at runner start so
+the macOS `/var`→`/private/var` symlink stops desyncing index paths (`92bdad0`); **(D)** push the
+config-pull divergence to the branch `~/.cco` actually tracks, not a hardcoded `master`, which no-op'd
+under `init.defaultBranch=main` (`55efa43`); **(F)** a BSD-safe `_t_sed_i` replacing ten raw `sed -i`
+in `test_update.sh` that silently misfired on macOS (`eb8086c`). In-container suite unaffected (each
+fix is a no-op or output-identical on bash 5.2/GNU — verified); **host-side green + push from the Mac
+remain**. ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
+paper-over of a real index-model gap — `_index_normalize_path` canonicalizes neither symlinks nor a
+trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` still diverges. Its impl fix wants a
+design pass **before** v3.1 runs, per the maintainer's rule that impl-touching fixes are settled
+pre-review (unlike the shipped test paper-over).
+
 **1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
 is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.
 
