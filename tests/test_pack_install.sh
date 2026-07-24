@@ -443,9 +443,12 @@ test_pack_install_cleanup_custom_tmpdir() {
     TMPDIR="$custom_tmp" run_cco pack install "$remote" --pick "cleanup-test"
     assert_dir_exists "$CCO_PACKS_DIR/cleanup-test"
 
-    # Temp clones should be cleaned up
+    # Temp clones should be cleaned up. Strip whitespace: BSD `wc -l` (macOS) pads
+    # the count with leading spaces, and assert_equals compares as strings, so a
+    # bare "$(… | wc -l)" yields "       0" ≠ "0" and fails even at zero residue.
+    # Matches the `| tr -d ' '` used at every other wc -l site in the suite.
     local remaining
-    remaining=$(find "$custom_tmp" -maxdepth 1 -name 'cco-*' -type d 2>/dev/null | wc -l)
+    remaining=$(find "$custom_tmp" -maxdepth 1 -name 'cco-*' -type d 2>/dev/null | wc -l | tr -d ' ')
     assert_equals "0" "$remaining" "Temp clone dirs should be cleaned up"
 }
 
