@@ -158,6 +158,12 @@ orphan pruning keeps the ADR-0021 two-phase sync-class calibration (STATE/CACHE 
 synced DATA a second). Broad structural/format validation of the other lenient readers (tags,
 remotes) is **out of scope this cycle** and remains under FI-22.
 
+> **Forward annotation (2026-07-24, ADR-0053 — FI-27).** This flag-on-read contract gains a THIRD
+> index lane: **non-canonical** — an absolute, existing path stored under a stale spelling (an
+> unresolved symlink, or a trailing `/.`). Unlike *malformed* (non-absolute, reported-only), a
+> non-canonical entry IS `--fix`-able: it is the same resource under a different name, so `--fix`
+> **re-keys** it to the canonical form (a data-preserving value rewrite). See ADR-0053 D5.
+
 ### 6. `q`/Exit honours the exit (N3)
 
 `_resolve_unit` propagates rc=2 (abort) instead of `return 0`; `_start_resolve_paths` aborts the
@@ -189,7 +195,11 @@ protects the ordinary user completely.
 >   re-fetchable and potentially large. A copy failure is non-fatal (warn).
 > - **Indicator:** `cco whoami` (host branch) reports the sandbox root + the redirected bucket paths;
 >   a one-line stderr banner prints on every command while active.
-> - **No scope split** → **no FI-27**; WS-6 shipped as one workstream.
+> - **No scope split** → **no follow-up**; WS-6 shipped as one workstream. (This originally read
+>   "no FI-27", using "FI-27" as a placeholder for a hypothetical CONFIG-vs-STATE sandbox scope-split
+>   follow-up. That number was **later assigned** to an unrelated item — the index path-canonicalization
+>   work (ADR-0053), found 2026-07-24. The dev-sandbox never needed a separate follow-up; the real
+>   FI-27 is a different concern entirely.)
 
 ## Alternatives considered
 

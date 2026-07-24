@@ -930,9 +930,10 @@ Sibling of FI-21's "explicit project scope on the host-path surface". **Effort**
 
 ## FI-27: `_index_normalize_path` does not canonicalize symlinks or a trailing `/.` (macOS index divergence)
 
-**Status**: 📝 Note — to DESIGN (found 2026-07-24 during the macOS bash-3.2 / BSD test-portability
-sweep). ⚠ **Gating the e2e v3.1 review** per the maintainer: impl-touching fixes are decided
-*before* the review, unlike the test-harness paper-over already shipped for the same root cause.
+**Status**: ✅ **Design + implementation DONE (2026-07-24)** — ADR-0053 + code + tests, on
+`feat/index/path-canonicalization` (off develop; see Resolution). Found during the macOS bash-3.2 /
+BSD test-portability sweep. It **gated the e2e v3.1 review** (impl-touching fixes decided *before*
+the review); with it closed, the gate lifts.
 
 **Context**: `_index_normalize_path` (`lib/index.sh`) is the single normalizer every value written to
 the index `paths:` section flows through. By design (design §3) it is a **pure string** normalizer —
@@ -960,5 +961,18 @@ does **not exist yet** at write time (a coordinate not yet cloned — `realpath`
 (c) whether a migration is needed to re-key already-divergent bindings in existing indexes.
 
 **Type & tracking**: index-model correctness (macOS symlink / `/.` canonicalization). Part of the
-FI-21/22/23 index-model theme; likely no schema change, but see (c). **Effort**: Med.
-**Gating** the e2e v3.1 review (design + decision), not blocking the shipped test-harness fix.
+FI-21/22/23 index-model theme; **no schema change** (see Resolution (c)). **Effort**: Med.
+Was **gating** the e2e v3.1 review (design + decision), not blocking the shipped test-harness fix.
+
+**Resolution (ADR-0053, 2026-07-24).** The three design questions were answered:
+(a) **canonicalize at the write boundary, two-tier** — a pure-string lexical pass folded into
+`_index_normalize_path` (collapses `//`, `/./`, trailing `/.`/`/`; `..` left intact) closes the
+lexical class at every read/compare site, plus a filesystem-touching `_index_canonicalize_path`
+(`cd … && pwd -P`, no `realpath`) at the write boundary + `_resolve_to_abs` resolves symlinks;
+(b) **best-effort** — resolve symlinks only when the dir exists, else keep the lexical form (the
+hot-path writers always have an existing dir; `path set`/legacy-rehome fall back and self-heal);
+(c) **no migration** — lazy self-heal on write + a new `cco config validate` **re-key** lane
+(`--fix` rewrites a non-canonical entry to canonical; the `016_normalize-index` precedent stays
+pure-string, ADR-0051 D6 keeps the index self-upgrade in-index). Physical resolution is host-only
+(INV-CANON, ADR-0047). Suite **1521/7** in-container (+8 new tests; the 7 = pre-existing FI-19
+host-only). See ADR-0053, changelog #50; fwd-annotated on ADR-0051 D1 + ADR-0052 §5/§7.
