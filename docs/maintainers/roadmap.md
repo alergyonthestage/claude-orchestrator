@@ -317,12 +317,17 @@ was NOT a symlink case (its cleanup works, zero residue) — BSD `wc -l` right-j
 leading spaces and `assert_equals` compares as strings, so `"0" != "       0"` failed; add the
 `| tr -d ' '` every other wc site already uses (`7f5ef2c`). In-container suite unaffected (each fix is a
 no-op or output-identical on bash 5.2/GNU — verified). **Host FULLY GREEN 2026-07-24 across 4 rounds
-(all six A–G confirmed on bash 3.2 + BSD tools, 0 failures). Only `git push` +
-merge → develop from the Mac remain.** ⚠ **[FI-27](roadmap-backlog.md) gates this before the review**: B is a *test-harness*
-paper-over of a real index-model gap — `_index_normalize_path` canonicalizes neither symlinks nor a
-trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` still diverges. Its impl fix wants a
-design pass **before** v3.1 runs, per the maintainer's rule that impl-touching fixes are settled
-pre-review (unlike the shipped test paper-over).
+(all six A–G confirmed on bash 3.2 + BSD tools, 0 failures). ✅ MERGED → develop (`--no-ff` merge
+`03583de`) and PUSHED (`origin/develop == develop == d5b9a6d`, 2026-07-25); only the optional
+`git branch -d` of the merged branch remains.**
+✅ **[FI-27](roadmap-backlog.md) — its gate is now LIFTED (done 2026-07-24, ADR-0053, on develop `d5b9a6d`, pushed).**
+B was a *test-harness* paper-over of a real index-model gap — `_index_normalize_path` canonicalized
+neither symlinks nor a trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` diverged.
+The impl fix (design pass first, per the maintainer's rule that impl-touching fixes settle pre-review)
+is done: two-tier canonicalization at the write boundary (lexical + best-effort physical symlink
+resolution) + a `cco config validate` re-key lane; merged → develop (`--no-ff` `d5b9a6d`), suite
+1522/7. **This macOS symlink/`/.` behaviour is now itself worth confirming on the real host during the
+v3.1 run** (a repo under `/var`|`/tmp`, `cco config validate --fix`).
 
 **1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
 is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.

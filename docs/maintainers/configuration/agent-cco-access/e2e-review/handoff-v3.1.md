@@ -290,6 +290,33 @@ Every step states **why** it exists, the **exact command**, and **how you know i
 order matters: 1 before 4 (the image bakes the rule), 5 before 9 (attribution), 9e last among the
 destructive ones.
 
+> **✅ STATUS UPDATE (2026-07-25) — develop is current + pushed; the FI-27 gate is LIFTED.**
+> `develop` is at **`d5b9a6d`** and `origin/develop` matches it (**pushed**). Verified against git,
+> develop already contains, in order:
+> - the **cycle-1.1** access-model fix — **§10.3 is already done** (completed 2026-07-22; `314b47c`
+>   is an ancestor of develop, `develop..cycle-1.1 = 0`);
+> - the three **`.claude` patches** — **§10.1 is already done** (commit `6b4d693` on develop; the
+>   S5/S7 host-only-remote-verb text is present in `defaults/managed/.claude/rules/cco-config-interaction.md`);
+> - the **macOS host-suite portability** fixes — merge `03583de`;
+> - **FI-27 / ADR-0053 — index path canonicalization** — merge `d5b9a6d`, which **lifts the FI-27
+>   gate** that blocked v3.1 (an impl-touching fix that had to settle pre-review). Suite 1522/7;
+>   reviewer 0 crit/0 major.
+>
+> So the ordering prerequisites §10.1 and §10.3 are **done** and develop is **pushed**. What remains
+> before the W1–W4 sessions:
+> 1. **§10.4 `cco build`** on the current develop (bakes cycle-1.1 + the `.claude` patches + FI-27 +
+>    portability), then **§10.5 provenance verify** — the expected tip is now **`develop@d5b9a6d`**
+>    (supersedes the older `314b47c` in earlier notes).
+> 2. Optional cleanup: `git branch -d feat/index/path-canonicalization
+>    fix/test-suite/macos-bash32-portability` (both merged into develop).
+> 3. **Add a lightweight FI-27 confirmation to the run** (it is exactly a macOS behaviour, so the
+>    real host is where it matters): with a repo whose working tree sits under `/var` or `/tmp` (a
+>    symlinked prefix on macOS), `cco init`/`resolve` should store the **physical** path
+>    (`cco path list` shows `/private/…`, not `/var/…`), a re-init from that cwd raises **no** false
+>    "already bound" conflict, and `cco config validate` reports any non-canonical legacy entry under
+>    the new **re-key** lane (`--fix` rewrites it). See ADR-0053. This is additive to the W1–W4
+>    matrix, not a gate.
+
 ### 10.1 — Apply the three `.claude` patches ⚠ FIRST
 
 **Why.** These files are tool *source*: `defaults/managed/.claude/` is baked into the image at
