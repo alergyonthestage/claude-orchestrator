@@ -1072,8 +1072,17 @@ Decisions preserved in
 
 ## Backlog
 
-The framework-improvements tracker (FI-1 … FI-30, with analysis and decisions) is the
+The framework-improvements tracker (FI-1 … FI-32, with analysis and decisions) is the
 detailed backlog: see [roadmap-backlog.md](roadmap-backlog.md).
+
+🔴 **[FI-31](roadmap-backlog.md) is a live bug on the default path, reproduced on the host 2026-07-26**:
+pack (and llms) child binds under `/workspace/.claude` seed no mountpoint, so `cco start` dies in runc
+with `read-only file system` whenever `claude` `Cp=ro` — i.e. **the ADR-0049 default** — and the
+committed `<repo>/.cco/claude/` tree has no matching entry. It is the ADR-0049 §5
+`_emit_local_settings_overlay` class, fixed for `settings.local.json` and never extended to the
+pack/llms lanes; pre-ADR-0049 projects are masked by auto-created stub residue. Blocks pack adoption
+for any new pack shipping skills/rules/agents/knowledge, and **feeds the pending e2e v3.1 run**
+(the suite cannot see it — compose YAML is asserted in dry-run, no test starts a container).
 
 Newest entries (2026-07-26, all 📝 to design/analyze — raised by the maintainer's "adopt a pack
 across all my projects" question):

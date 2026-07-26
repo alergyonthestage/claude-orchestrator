@@ -1125,3 +1125,91 @@ today, not a target model.
 an npm **post-install hook** ("Unificazione dell'install => hook post install", note in
 `workspace-ai.rtf`) — a design question in its own right, to be settled before rewriting the quick
 start around it. **Effort**: Low (review) + Med if the post-install unification is taken on.
+
+---
+
+## FI-31: pack/llms child mounts have no mountpoint stub → `cco start` fails on a `:ro` `/workspace/.claude`
+
+**Status**: 🔴 **Bug — reproduced on the host 2026-07-26** (maintainer, project `cave-ensemble` after
+`cco pack import` + `cco project add pack core-dev-framework`). Blocks pack adoption at the **default**
+access level. Not yet fixed.
+
+**Symptom** (host, `cco start`):
+
+```
+Error response from daemon: failed to create task for container: … runc create failed:
+error mounting "/host_mnt/Users/…/.cco/packs/core-dev-framework/skills/review-refactoring"
+to rootfs at "/workspace/.claude/skills/review-refactoring": create mountpoint … : read-only file system
+```
+
+**Root cause (confirmed in code)**: a child bind whose target does not exist inside a `:ro` parent
+bind cannot be created — runc must `mkdirat`/`mknod` the mountpoint in the parent's backing tree and
+gets `EROFS`. `_generate_pack_mounts` (`lib/packs.sh:171–211`) emits **four** such child binds —
+`/workspace/.claude/packs/<pack>` (knowledge), `/workspace/.claude/rules/<f>`,
+`/workspace/.claude/agents/<f>`, `/workspace/.claude/skills/<dir>` — and `_generate_llms_mounts`
+(`lib/llms.sh:123`) a fifth, `/workspace/.claude/llms/<name>`. **None of them seeds the mountpoint in
+the mount source** (`<repo>/.cco/claude/`). The parent B2 mount is `:ro` whenever `claude` `Cp=ro`
+(`lib/cmd-start.sh:1582/1637`), which **ADR-0049 made the default** (it reverses P17 — a normal
+session no longer authors `.claude`).
+
+**This is the exact class already fixed once**: ADR-0049 §5's `_emit_local_settings_overlay`
+(`lib/cmd-start.sh:479`) exists *only* because of it, and its comment states the rule — *"Mountpoint
+stub inside the `:ro`-to-be parent … a missing one means a caller bug, and the bind fails loudly."*
+The fix was applied to the `settings.local.json` lane and **never extended to the pack/llms lanes**.
+See the `start-mount-fix` diagnosis (2026-07-15) for the original analysis of the same shape.
+
+**Why it surfaced only now**: projects configured **before** ADR-0049 flipped the default ran with
+`.claude` writable, so runc silently created the mountpoint dirs inside their committed
+`<repo>/.cco/claude/` tree — those stubs persist and mask the bug (claude-orchestrator's own tree
+carries exactly this residue: `.cco/claude/llms/{platform-claude,code-claude}/`, auto-created empty
+dirs). A **newly adopted** pack has no such residue → first `cco start` after adoption fails.
+
+**Why the suite is green**: the same blind spot recorded for the ADR-0049 §5 bug — tests assert the
+**generated compose YAML** (dry-run), and no test starts a real container.
+
+**Directions to weigh at design** (re-derive the boundary first):
+- **(a) extend the stub-seeding precedent** — one `_ensure_mountpoint` helper called for every child
+  bind under a `:ro` B2/B1 parent (dir stub for `skills/`, `packs/`, `llms/`; empty-file stub for
+  `rules/`, `agents/`), reusing the migration-014 `.gitignore` machinery so the stubs do not pollute
+  the repo. ⚠ Two traps: an empty-file stub must **never truncate** an existing committed file, and a
+  `packs/<n>` stub must stay **empty** or `_detect_cross_tree_conflicts` (`lib/packs.sh:106`) fires
+  its "framework-reserved" warning on the framework's own stub.
+- **(b) mirror-and-mount** — assemble the `.claude` view (committed tree + mountpoint stubs) in CACHE
+  and mount **that** at `/workspace/.claude`, leaving the repo untouched. No repo residue, no
+  `.gitignore` coupling; costs a per-start mirror step and a drift question.
+- **(c) parent `:rw`** — already **rejected** for the settings lane (holes the `ro` guarantee: new
+  files become creatable). Today it is the only *workaround* available to users.
+- **Test gap**: whichever lands, the regression is invisible to a dry-run assertion — this class needs
+  a real-container smoke check (the e2e harness is the natural home).
+
+**Type & tracking**: mount-generation correctness; **user-visible regression on the default path**
+(any project at default access adopting a pack that ships skills/rules/agents/knowledge). Feeds the
+pending **e2e v3.1** run. Related: ADR-0049 §5, `_emit_local_settings_overlay`, FI-20 (`:ro` overlay
+consequences), FI-32. **Effort**: Low–Med (the fix is small; choosing (a) vs (b) is the design call).
+
+---
+
+## FI-32: pack↔global collisions are undetected (`_detect_cross_tree_conflicts` only looks at the project tree)
+
+**Status**: 📝 Note — to analyze (found 2026-07-26 while diagnosing FI-31, on the maintainer's real
+`core-dev-framework` pack). Silent, not a crash.
+
+**Context**: `_detect_cross_tree_conflicts` (`lib/packs.sh:106`) compares a pack's declared
+`rules`/`agents`/`skills` against the **committed project tree** (`<repo>/.cco/claude/`) only.
+The **global** store `~/.cco/.claude/{rules,agents,skills}` — mounted user-level into *every* session
+(`lib/cmd-start.sh` B3) — is never consulted, and `_detect_pack_conflicts` only compares packs against
+each other.
+
+**Consequence**: a pack that ships `rules/workflow.md`, `agents/reviewer.md` or `skills/review/` with
+the same names as the user's global defaults produces **two live copies at different scopes** (user
+level `~/.claude/…` + project level `/workspace/.claude/…`) with **no warning at all**. This is not
+theoretical: the maintainer's `core-dev-framework` duplicates three of the four shipped global rules
+(`documentation.md`, `git-practices.md`, `workflow.md`) and overlaps the shipped global skills
+(`analyze`, `commit`, `design`, `review*`) and agents (`analyst`, `reviewer`). The agent then reads
+two potentially divergent versions of the same rule with no signal about which is authoritative.
+
+**Suggested direction**: extend the detector with a global-tree pass (warn, never block — P14), and
+decide the *reporting* question it exposes: cross-scope duplication is legitimate in some cases
+(a project deliberately overriding a global rule), so the message must name the scopes and the
+resolution order rather than imply an error. Relevant to **FI-28** (a globally adopted pack multiplies
+exactly this class). **Effort**: Low.
