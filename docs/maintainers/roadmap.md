@@ -331,17 +331,18 @@ is done: two-tier canonicalization at the write boundary (lexical + best-effort 
 resolution) + a `cco config validate` re-key lane; merged → develop (`--no-ff` `d5b9a6d`), suite
 1522/7. **This macOS symlink/`/.` behaviour is now itself worth confirming on the real host during the
 v3.1 run** (a repo under `/var`|`/tmp`, `cco config validate --fix`).
-
-⚠ **FI-27 follow-on — one fix branch still pending host verification (2026-07-25/26).** The host suite
-caught a **bash 3.2 regression inside the new Tier-1 lexical canonicalizer**: `_index_normalize_path`
-wrote `${p//\/\//\/}` / `${p//\/.\//\/}`, and bash 3.2 (macOS `/bin/bash`) does **not** un-escape a
-backslash in the *replacement* of a parameter-expansion substitution — so `//` collapsed to `\/`
-(`/a//b` → `/a\/b`) instead of `/`. bash ≥4.3 un-escapes it, so the in-container suite (bash 5) never
-saw it. Fixed by holding the slash sequences in variables (neither pattern nor replacement carries an
-escaped `/`) on **`fix/index/normalize-bash32-replacement`** (`c9b6d35`, off develop `9ba10dd`,
-**not pushed**); in-container suite **1522/7**; no changelog/migration (bugfix to unreleased FI-27
-code). ▶ **Host-side, before the v3.1 matrix**: re-run the suite on the Mac (it is the only place the
-regression is observable), FF-merge → `develop`, push, then `cco build` from develop.
+✅ **FI-27 follow-on — bash 3.2 regression in the new Tier-1 lexical canon, FIXED (2026-07-26).** The
+host suite caught what the in-container review could not: `_index_normalize_path`'s lexical loop used
+`${p//\/\//\/}` / `${p//\/.\//\/}`, whose replacement `\/` carries a backslash. bash ≥4.3 un-escapes it
+to `/`, but bash 3.2 (macOS default `/bin/bash`) keeps it literal, so `//`→`\/` and `/./`→`\/`
+(`/a//b`→`/a\/b`, `//`→`\`) — `test_index_normalize_path_lexical_canon` failed on the Mac, green in the
+container. Fix: move the slash sequences into variables so neither pattern nor replacement carries an
+escaped `/` (`c9b6d35` on `fix/index/normalize-bash32-replacement`, from develop). Behaviour identical
+on bash ≥4, correct on bash 3.2; only those two lines carried the antipattern (`remote.sh:41` escapes
+only in the pattern → safe). In-container suite unchanged (1522/7); **host suite fully green on bash 3.2**
+(`./bin/test` → 0 FAIL). No changelog/migration (bugfix to unreleased FI-27 code). Merged → develop
+(`--no-ff` `6b1cb2c`). ▶ Host-side, still open: `git push` develop, then `cco build` from develop
+before the v3.1 matrix.
 
 **1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
 is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.
