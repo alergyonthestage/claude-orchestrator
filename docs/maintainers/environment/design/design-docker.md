@@ -688,9 +688,24 @@ Pack and llms resources are mounted `:ro` from `~/.cco/packs/<name>/` (or the op
 project-local `<repo>/.cco/packs/<name>/`) and from CACHE (`<cache>/cco/llms/<name>/`) as
 individual file/dir overlays into `/workspace/.claude/` — see §6.3 and ADR-0005.
 
+**Who owns the `/workspace/.claude` parent (ADR-0054).** Those overlays are *child* binds, and
+a child bind needs its mountpoint to already exist inside the parent — runc creates it through
+the parent mount, which fails with `EROFS` when the parent is `:ro` (the default since ADR-0049
+made `Cp=ro`). So the parent is **not** the committed tree whenever the session injects children:
+cco builds a mountpoints-only view at `<cache>/cco/projects/<name>/claude-view/` (empty dirs and
+files, rebuilt every start), mounts **it** at `/workspace/.claude` **at the policy's mode**, and
+binds the committed tree back in entry by entry — per file inside a namespace that received an
+injection (`rules/`, `agents/`, `skills/`), whole-directory otherwise. A session with no packs or
+llms keeps the single whole-tree bind shown in the table above. Consequence to know: in a `Cp=rw`
+session that *is* composing, editing an existing file still reaches the repo through its own
+bind, but a **newly created** file directly under a composed namespace is session-local (`cco
+start` says so once).
+
 **Read-only vs Read-write**:
 - `ro`: Config that should not be modified by the agent (global settings, git config, generated overlays)
-- `rw` (default): Repos (Claude writes code), the invoking repo's `.cco/claude/` (Claude may update), memory + transcripts in STATE (Claude writes)
+- `rw`: Repos (Claude writes code), memory + transcripts in STATE (Claude writes). The invoking
+  repo's `.cco/claude/` follows the `claude` `Cp` axis and is **`ro` by default** since ADR-0049
+  reversed P17 — a normal session no longer authors `.claude`
 - **`~/.claude.json`**: Seeded read-write from STATE (`<state>/cco/claude.json`). Shared across all projects. On macOS, OAuth tokens live in Keychain — this file holds other Claude state.
 
 ---

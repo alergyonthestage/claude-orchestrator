@@ -69,7 +69,10 @@ Sequence: **A → merge → E (✅) → {B, C, D}; C ✅ RELEASED (`0.5.1` on np
 B; F = opinionated extraction + `cco update` refactor, after C). ADR map: **0036** + **0041** (B — capability model +
 R1), **0042** (B2 — agent↔cco access, ✅ design approved), **0037** (C, ✅ shipped +
 released), **0038** (D), **0039** (E, ✅), **0040** (F). ADR **0042** (B2, ✅ accepted) +
-**0043** (unified CLI env & access-scope, ✅ accepted). Next free ADR = **0044**.
+**0043** (unified CLI env & access-scope, ✅ accepted). Next free ADR = **0055**
+(0044–0054 landed since: the access-model refinements 0044/0046/0047/0048/0049, the session
+registry 0045, the naming/rename pair 0050/0051, the index cluster 0052/0053, and 0054
+framework-owned mountpoints).
 
 #### B2 e2e-review fix — agent ↔ cco access (✅ implemented 2026-07-05)
 
@@ -1075,14 +1078,21 @@ Decisions preserved in
 The framework-improvements tracker (FI-1 … FI-32, with analysis and decisions) is the
 detailed backlog: see [roadmap-backlog.md](roadmap-backlog.md).
 
-🔴 **[FI-31](roadmap-backlog.md) is a live bug on the default path, reproduced on the host 2026-07-26**:
-pack (and llms) child binds under `/workspace/.claude` seed no mountpoint, so `cco start` dies in runc
-with `read-only file system` whenever `claude` `Cp=ro` — i.e. **the ADR-0049 default** — and the
-committed `<repo>/.cco/claude/` tree has no matching entry. It is the ADR-0049 §5
-`_emit_local_settings_overlay` class, fixed for `settings.local.json` and never extended to the
-pack/llms lanes; pre-ADR-0049 projects are masked by auto-created stub residue. Blocks pack adoption
-for any new pack shipping skills/rules/agents/knowledge, and **feeds the pending e2e v3.1 run**
-(the suite cannot see it — compose YAML is asserted in dry-run, no test starts a container).
+✅ **[FI-31](roadmap-backlog.md) — found and FIXED on 2026-07-26** (design + implementation in one
+cycle, on `docs/roadmap/pack-global-adoption`). Pack (and llms) child binds under
+`/workspace/.claude` seeded no mountpoint, so `cco start` died in runc with `read-only file system`
+whenever `claude` `Cp=ro` — i.e. **the ADR-0049 default** — and the committed `<repo>/.cco/claude/`
+tree had no matching entry: the ADR-0049 §5 class, fixed for `settings.local.json` and never
+extended to the pack/llms lanes, on top of the **ADR-0005 F3 precondition ("parent stays rw") that
+ADR-0049 §2 invalidated**. Pre-ADR-0049 projects were masked by auto-created stub residue.
+[**ADR-0054**](configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
+replaces the precondition with **INV-MP** (cco owns every framework mountpoint, host-side): when a
+session injects children, the `/workspace/.claude` parent is composed from a mountpoints-only CACHE
+view at the policy's mode and the committed tree is bound back in entry by entry. Changelog #51, no
+migration, suite **1531/7** (+9 tests, 8 of them revert-checked against pre-fix `lib/`). ⚠ Still
+**worth one e2e v3.1 probe**: this class is invisible to the hermetic suite by construction (third
+recurrence — ADR-0049 §5, e2e v2 RC-17, now this), so only a real container start with a
+skills-shipping pack at default access proves it on the host.
 
 Newest entries (2026-07-26, all 📝 to design/analyze — raised by the maintainer's "adopt a pack
 across all my projects" question):

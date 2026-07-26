@@ -211,6 +211,21 @@ The exact set is verified against Claude Code behaviour at implementation (e.g.
 >   the emitted YAML and never execute it, so this shipped green. Mount-time failures are
 >   invisible to a hermetic suite and belong to the e2e gate.
 
+> **Forward annotation (2026-07-26) — the mountpoint rule was a CLASS, not a lane
+> ([ADR-0054](../../decentralized-config/decisions/0054-framework-owned-mountpoints.md)).**
+> The annotation above diagnosed the mechanism exactly and then fixed one consumer of it.
+> `settings.local.json` was never the only child bind under a `:ro` parent: pack
+> `rules`/`agents`/`skills`/knowledge and llms docs are the others, and they inherited the
+> same broken precondition (ADR-0005 F3, "parent stays rw", which §2 of this ADR invalidated).
+> They stayed unnoticed because a project adopting its first pack is the trigger, and every
+> project configured *before* §2 carried mountpoint directories runc had auto-created while
+> the tree was still writable. Reproduced on a host 2026-07-26 (roadmap FI-31). ADR-0054
+> generalizes the remedy into **INV-MP** — cco creates every framework mountpoint host-side,
+> in a tree it owns — and moves this lane's stub into that tree. The §5 discriminator is
+> unchanged and gains a sibling: the `claude` axis governs **authoring**, never the
+> **visibility** of framework resources. Note the harness caveat above came true a **third**
+> time here — the dry-run compose was correct throughout.
+
 > **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-17).** The "only as verifiable as the
 > harness" caveat came true a **second** time: the e2e v2 review found three subsystems declaring
 > `rw` and mounting `ro`, one write path faking success, and one read verb applying no scoping —

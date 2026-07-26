@@ -1130,9 +1130,10 @@ start around it. **Effort**: Low (review) + Med if the post-install unification 
 
 ## FI-31: pack/llms child mounts have no mountpoint stub → `cco start` fails on a `:ro` `/workspace/.claude`
 
-**Status**: 🔴 **Bug — reproduced on the host 2026-07-26** (maintainer, project `cave-ensemble` after
-`cco pack import` + `cco project add pack core-dev-framework`). Blocks pack adoption at the **default**
-access level. Not yet fixed.
+**Status**: ✅ **FIXED 2026-07-26** — [ADR-0054](../configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
++ implementation + 9 tests, changelog #51 (see Resolution). Reproduced on the host the same day
+(maintainer, project `cave-ensemble` after `cco pack import` + `cco project add pack
+core-dev-framework`); it blocked pack adoption at the **default** access level.
 
 **Symptom** (host, `cco start`):
 
@@ -1211,6 +1212,23 @@ dirs). A **newly adopted** pack has no such residue → first `cco start` after 
 (any project at default access adopting a pack that ships skills/rules/agents/knowledge). Feeds the
 pending **e2e v3.1** run. Related: ADR-0049 §5, `_emit_local_settings_overlay`, FI-20 (`:ro` overlay
 consequences), FI-32. **Effort**: Low–Med (the fix is small; choosing (a) vs (b) is the design call).
+
+**Resolution (ADR-0054, 2026-07-26).** Direction **(b)** — the design question was *who owns the
+mountpoint*, and answering "the framework" removes the coupling instead of working around it.
+**INV-MP**: cco creates every framework mountpoint host-side, in a tree it owns, never leaving it to
+runc and never depending on a policy-governed tree being writable. When (and only when) a session
+injects children under `/workspace/.claude`, the parent becomes a mountpoints-only view in CACHE
+(`_cco_project_claude_view`, rebuilt per start) mounted **at the policy's mode** (D3 — a rw-by-fiat
+parent would fake successful writes), with the committed tree bound back in entry by entry: per file
+inside a namespace that received an injection, whole-directory otherwise. The injected set is
+**derived from the emitted mount lines**, so FI-29's `commands/` lane will be covered the day it
+emits one. ADR-0005 F2 precedence is now explicit (the duplicate committed bind is dropped) and F1
+regains the `settings.local.json` lane (its stub moves into the view). One bounded delta, surfaced at
+start (D4): in a composing session with `Cp=rw`, a *newly created* file directly under a composed
+namespace is session-local. No migration. Suite **1531/7** (+9 tests; 8 revert-checked against
+pre-fix `lib/` — the 9th pins the unchanged no-injection path and must pass on both). ⚠ The
+mount-time failure itself remains invisible to the hermetic suite (D7, third recurrence) — one e2e
+v3.1 probe with a skills-shipping pack at default access is what actually proves it on a host.
 
 ---
 

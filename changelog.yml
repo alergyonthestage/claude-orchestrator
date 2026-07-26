@@ -999,3 +999,28 @@ entries:
       is non-canonical and `--fix` rewrites it to the canonical form (data-preserving,
       distinct from the `malformed` lane, which is still reported-only). Identity is
       the physical path (ADR-0051 D1); see ADR-0053.
+
+  - id: 51
+    date: "2026-07-26"
+    type: additive
+    title: "Packs with skills/rules/agents now start at the default access level"
+    description: >
+      `cco start` could die before the session existed — "create mountpoint …:
+      read-only file system" from runc — for any project that adopted a pack
+      shipping skills, rules, agents or knowledge (and for llms docs) while the
+      `claude` access stayed at its default. Cause: those resources are mounted as
+      CHILD binds inside `/workspace/.claude`, and a child bind needs its mountpoint
+      to already exist — Docker cannot create it through a read-only parent, which
+      is what the committed `.cco/claude/` tree became when ADR-0049 made `Cp=ro`
+      the default. Only projects created before that flip kept working, on
+      mountpoint directories that had been auto-created back when the tree was
+      writable. cco now owns those mountpoints: when a session injects pack/llms
+      overlays it composes the `/workspace/.claude` parent from a mountpoints-only
+      view in CACHE (rebuilt at every start) and binds the committed tree back in
+      entry by entry, at the same access mode as before. Pack visibility no longer
+      depends on the `claude` policy — that policy governs authoring only. Nothing
+      changes for a project without packs or llms, and the committed tree stops
+      accumulating empty mountpoint residue. In a session that both composes and has
+      `claude` write access, a NEWLY created file placed directly in a composed
+      namespace is session-local (edits to existing files still reach the repo);
+      `cco start` says so once. No migration; see ADR-0054.
