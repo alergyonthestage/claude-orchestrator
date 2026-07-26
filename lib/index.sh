@@ -829,12 +829,15 @@ _index_normalize_path() {
     [[ "$p" == /* ]] || return 1
     # Fixed-point lexical canonicalization (bash 3.2-safe: parameter expansion
     # only, no subprocess). Loops until stable so interleaved forms (e.g. `/a/.//b`)
-    # fully collapse regardless of order.
-    local prev=""
+    # fully collapse regardless of order. The slash sequences live in variables so
+    # neither pattern nor replacement carries an escaped `/`: bash 3.2 does NOT
+    # un-escape a backslash in the replacement of ${var//pat/rep}, so a literal
+    # `\/` replacement would emit `\/` verbatim (e.g. `/a//b` -> `/a\/b`).
+    local prev="" dslash='//' sdot='/./' slash='/'
     while [[ "$p" != "$prev" ]]; do
         prev="$p"
-        p="${p//\/\//\/}"                                # //  -> /
-        p="${p//\/.\//\/}"                               # /./ -> /
+        p="${p//$dslash/$slash}"                         # //  -> /
+        p="${p//$sdot/$slash}"                           # /./ -> /
         [[ "$p" == */. ]] && p="${p%/.}"                 # trailing /.
         [[ "$p" == */ && "$p" != "/" ]] && p="${p%/}"    # trailing /
     done

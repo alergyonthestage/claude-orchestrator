@@ -976,3 +976,14 @@ hot-path writers always have an existing dir; `path set`/legacy-rehome fall back
 pure-string, ADR-0051 D6 keeps the index self-upgrade in-index). Physical resolution is host-only
 (INV-CANON, ADR-0047). Suite **1521/7** in-container (+8 new tests; the 7 = pre-existing FI-19
 host-only). See ADR-0053, changelog #50; fwd-annotated on ADR-0051 D1 + ADR-0052 §5/§7.
+
+**Follow-on fix (2026-07-26): bash 3.2 replacement escaping.** The Tier-1 lexical loop shipped with
+`${p//\/\//\/}` / `${p//\/.\//\/}`, whose replacement `\/` carries a backslash. bash ≥4.3 un-escapes it
+to `/`; bash 3.2 (macOS default `/bin/bash`) keeps it literal, so `//`→`\/`, `/./`→`\/`
+(`/a//b`→`/a\/b`, `//`→`\`). The in-container review (bash 5) never saw it; the host suite did
+(`test_index_normalize_path_lexical_canon`). Fixed by moving the slash sequences into variables so
+neither pattern nor replacement carries an escaped `/` (`c9b6d35`, `fix/index/normalize-bash32-replacement`
+→ develop). Only those two lines carried the antipattern (`remote.sh:41` escapes only in the pattern →
+safe). Host suite now fully green on bash 3.2; no changelog/migration (unreleased code). Lesson: a
+backslash in the **replacement** of `${var//pat/rep}` is a bash-3.2 antipattern the in-container suite
+cannot catch — use variables.
