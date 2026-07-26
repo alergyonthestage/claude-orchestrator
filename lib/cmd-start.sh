@@ -475,18 +475,124 @@ _emit_secret_overlays() {
 # its content on first start instead of being shadowed by an empty `{}`. From
 # then on STATE is the live copy and the stub stays frozen.
 # All seeding is skipped on dry-run — the dumped compose is never executed.
-# Args: <state_source> <host_mountpoint> <container_target> <dry_run:true|false>.
+# Args: <state_source> <host_mountpoint> <container_target> <dry_run:true|false>
+#       [<seed_from>] — where STATE takes its first content from, when the
+#       mountpoint is NOT the committed file itself. Under ADR-0054 the stub moves
+#       into the framework-owned view (CACHE), so the committed settings.local.json
+#       must still be the seed; defaults to the mountpoint (pre-0054 behaviour).
 _emit_local_settings_overlay() {
-    local src="$1" mp="$2" tgt="$3" dry="$4"
+    local src="$1" mp="$2" tgt="$3" dry="$4" seed_from="${5:-$2}"
     if [[ "$dry" != "true" ]]; then
         # Mountpoint stub inside the :ro-to-be parent (its dir is the mount source,
         # so it exists; a missing one means a caller bug, and the bind fails loudly).
+        mkdir -p "$(dirname "$mp")" 2>/dev/null || true
         [[ -f "$mp" ]] || printf '{}\n' > "$mp" 2>/dev/null || true
-        # STATE source, seeded from the mountpoint (see above).
+        # STATE source, seeded from the committed file (see above).
         mkdir -p "$(dirname "$src")" 2>/dev/null || true
-        [[ -f "$src" ]] || cp "$mp" "$src" 2>/dev/null || printf '{}\n' > "$src" 2>/dev/null || true
+        [[ -f "$src" ]] || cp "$seed_from" "$src" 2>/dev/null || printf '{}\n' > "$src" 2>/dev/null || true
     fi
     _compose_vol "$src" "$tgt"
+}
+
+# ── Framework-owned mountpoints for /workspace/.claude (ADR-0054, INV-MP) ─────
+# Same mechanism as the stub above, generalized: a child bind whose target does
+# not exist inside a :ro parent cannot be created (runc mkdirat's it THROUGH the
+# read-only bind → EROFS → the container never starts). ADR-0005 F3 ("parent stays
+# rw") was the precondition that hid this for the pack/llms lanes; ADR-0049 §2 made
+# Cp=ro the default and dropped it. INV-MP restores it from the other side: cco
+# creates every framework mountpoint host-side, in a tree IT owns, so visibility
+# of packs/llms no longer depends on the authoring policy.
+#
+# The view is mountpoints ONLY (empty dirs/files) and becomes the /workspace/.claude
+# parent at the policy's mode (D3 — never rw-by-fiat: that would fake successful
+# writes into CACHE); the committed tree is bound back in entry by entry. Built
+# ONLY when the session injects children (D2) — a project with no packs/llms keeps
+# today's single whole-tree bind, byte-identical.
+
+# Split a compose volume line — '      - "SRC:TGT[:MODE]"' — into _CV_SRC/_CV_TGT.
+# A container target never contains ':', so peeling an optional trailing :ro|:rw
+# and then the last ':' is exact for every line _compose_vol emits.
+_claude_view_split() {
+    local raw="$1"
+    raw="${raw#*\"}"; raw="${raw%\"*}"
+    case "$raw" in *:ro|*:rw) raw="${raw%:*}" ;; esac
+    _CV_TGT="${raw##*:}"; _CV_SRC="${raw%:*}"
+}
+
+# Create one mountpoint <rel> inside <view>, shaped after its source (dir → dir,
+# anything else → empty file). Never overwrites an existing entry.
+_claude_view_stub() {
+    local view="$1" rel="$2" src="$3" mp="$view/$rel"
+    if [[ -d "$src" ]]; then
+        mkdir -p "$mp" || return 1
+    else
+        mkdir -p "$(dirname "$mp")" || return 1
+        [[ -e "$mp" ]] || : > "$mp" || return 1
+    fi
+    return 0
+}
+
+# Emit the B2 parent + the committed tree's per-entry binds for a composing
+# session, creating every mountpoint in the view as it goes.
+# Args: <view> <claude_src> <b2_mode> <injected_lines> <dry_run:true|false>
+_emit_claude_view() {
+    local view="$1" claude_src="$2" mode="$3" injected="$4" dry="$5"
+    local line rel ns e f base fb
+    # Sets, newline-delimited (bash 3.2 — no associative arrays).
+    local inj_targets=$'\n' inj_ns=$'\n'
+
+    # 1. One mountpoint per injected child. The set is DERIVED from the emitted
+    #    mount lines, never re-enumerated, so a future injector (commands/, FI-29)
+    #    is covered the day it emits a line — there is no second list to drift.
+    while IFS= read -r line; do
+        [[ "$line" == *':/workspace/.claude/'* ]] || continue
+        _claude_view_split "$line"
+        rel="${_CV_TGT#/workspace/.claude/}"
+        [[ -n "$rel" ]] || continue
+        if [[ "$dry" != "true" ]]; then
+            _claude_view_stub "$view" "$rel" "$_CV_SRC" \
+                || die "Cannot create the .claude mountpoint view at $view (entry '$rel')."
+        fi
+        inj_targets+="$_CV_TGT"$'\n'
+        case "$rel" in
+            */*) ns="${rel%%/*}"
+                 [[ "$inj_ns" == *$'\n'"$ns"$'\n'* ]] || inj_ns+="$ns"$'\n' ;;
+        esac
+    done <<< "$injected"
+
+    # 2. The view IS the parent — at the policy's mode (D3).
+    _compose_vol "$view" "/workspace/.claude" "$mode"
+
+    # 3. Bind the committed tree back in. A directory that received an injection
+    #    must stay owned by the view (it holds files from two sources), so its
+    #    entries are bound one by one; everything else is bound whole.
+    for e in "$claude_src"/* "$claude_src"/.[!.]*; do
+        [[ -e "$e" ]] || continue
+        base="${e##*/}"
+        # The rw STATE overlay owns settings.local.json when B2 is :ro.
+        [[ "$base" == "settings.local.json" && "$mode" == "ro" ]] && continue
+        if [[ -d "$e" && "$inj_ns" == *$'\n'"$base"$'\n'* ]]; then
+            for f in "$e"/* "$e"/.[!.]*; do
+                [[ -e "$f" ]] || continue
+                fb="${f##*/}"
+                # A pack overlay wins over a committed file of the same path
+                # (ADR-0005 F2) — emitting both would be a duplicate compose target.
+                [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base/$fb"$'\n'* ]] && continue
+                if [[ "$dry" != "true" ]]; then
+                    _claude_view_stub "$view" "$base/$fb" "$f" \
+                        || die "Cannot create the .claude mountpoint view at $view (entry '$base/$fb')."
+                fi
+                _compose_vol "$f" "/workspace/.claude/$base/$fb" "$mode"
+            done
+        else
+            [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base"$'\n'* ]] && continue
+            if [[ "$dry" != "true" ]]; then
+                _claude_view_stub "$view" "$base" "$e" \
+                    || die "Cannot create the .claude mountpoint view at $view (entry '$base')."
+            fi
+            _compose_vol "$e" "/workspace/.claude/$base" "$mode"
+        fi
+    done
 }
 
 # ── Recursive nested-config detection (ADR-0049 §7) ──────────────────
@@ -1634,13 +1740,47 @@ YAML
         # session is ro). The structural framework config (project.yml/secrets/.cco
         # metadata) is protected separately by the <repo>/.cco overlay below (Axis A).
         echo "      # Project config B2 (/workspace/.claude — mode from claude Cp; .cco metadata overlay below per cco_access)"
-        _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
+        # The framework-injected children (packs + llms) are GENERATED here, ahead of
+        # the parent decision that needs to see them (ADR-0054 D2); their lines are
+        # emitted at their usual place further down, unchanged.
+        local _pack_mounts _llms_mounts
+        _pack_mounts=$(_generate_pack_mounts "$pack_names" "$project_dir")
+        _llms_mounts=$(_generate_llms_mounts "$project_yml" "$pack_names" "$project_dir")
+        local _injected="${_pack_mounts}"$'\n'"${_llms_mounts}"
+        local _claude_view="" _b2_local_mp="${claude_src}/settings.local.json"
+        if [[ "$_injected" == *':/workspace/.claude/'* ]]; then
+            # INV-MP (ADR-0054): a child bind needs its mountpoint to pre-exist, and
+            # the committed tree is :ro under the ADR-0049 default — so cco owns the
+            # parent, in CACHE, and binds the committed tree back in entry by entry.
+            _claude_view=$(_cco_project_claude_view "$project_name")
+            if [[ "$dry_run" != "true" ]]; then
+                # Rebuilt from scratch: a removed pack must leave no stale mountpoint.
+                rm -rf "$_claude_view"
+                mkdir -p "$_claude_view" \
+                    || die "Cannot create the .claude mountpoint view at $_claude_view."
+            fi
+            _emit_claude_view "$_claude_view" "$claude_src" "$_b2_mode" "$_injected" "$dry_run"
+            _b2_local_mp="${_claude_view}/settings.local.json"
+            # ADR-0054 D4: the one behavioural delta, surfaced instead of silent. A
+            # composed namespace holds files from two sources, so it belongs to the
+            # view: edits to existing files still reach the repo through their own
+            # bind, but a NEW file created directly there is session-local. Only
+            # worth saying when the session could author at all (Cp=rw).
+            if [[ -z "$_b2_mode" ]]; then
+                info "/workspace/.claude is composed for this session (pack/llms overlays). Edits to existing files reach the repo; NEW files created directly under it are session-local — author them in ${claude_src#"$source_repo/"}/."
+            fi
+        else
+            _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
+        fi
         # Functional-write floor (ADR-0049 §5): when B2 is :ro, keep settings.local.json
-        # writable via a rw child overlay from per-project STATE.
+        # writable via a rw child overlay from per-project STATE. While composing, its
+        # mountpoint lives in the view (ADR-0054 D6) so the committed tree stays clean;
+        # STATE is still seeded from the committed file when the repo carries one.
         if [[ "$_b2_mode" == "ro" ]]; then
             _emit_local_settings_overlay "${session_state_dir}/local-settings/workspace.json" \
-                "${claude_src}/settings.local.json" \
-                "/workspace/.claude/settings.local.json" "$dry_run"
+                "$_b2_local_mp" \
+                "/workspace/.claude/settings.local.json" "$dry_run" \
+                "${claude_src}/settings.local.json"
         fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
         # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
@@ -1946,11 +2086,13 @@ YAML
             done
         fi
 
-        # Pack resources: read-only mounts from central pack registry (ADR-14)
-        _generate_pack_mounts "$pack_names" "$project_dir"
+        # Pack resources: read-only mounts from central pack registry (ADR-14).
+        # Generated with the B2 block above (ADR-0054 D2) — replayed here so the
+        # compose layout is unchanged and each generator still runs exactly once.
+        [[ -n "$_pack_mounts" ]] && printf '%s\n' "$_pack_mounts"
 
         # LLMs.txt documentation: read-only mounts from central llms registry
-        _generate_llms_mounts "$project_yml" "$pack_names" "$project_dir"
+        [[ -n "$_llms_mounts" ]] && printf '%s\n' "$_llms_mounts"
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"

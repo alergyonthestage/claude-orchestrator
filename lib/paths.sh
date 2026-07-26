@@ -189,6 +189,19 @@ _cco_project_cache_managed() {
     printf '%s\n' "$(_cco_cache_dir)/projects/$1/managed"
 }
 
+# The framework-owned mountpoint view for /workspace/.claude (ADR-0054, INV-MP).
+# Holds mountpoints ONLY — empty dirs/files, never content — so every
+# framework-injected child bind (pack rules/agents/skills/knowledge, llms docs)
+# has a target that exists before the container starts, whatever mode the
+# `claude` policy gives the parent. Rebuilt from scratch on every `cco start`:
+# CACHE by ADR-0004 (regenerable, machine-local), and NOT an ADR-0047-confined
+# bucket — it carries no cross-project or host-path data, only stub names from
+# the session's own project. $1 = project NAME (the `<id>`), matching
+# _cco_project_cache_managed above.
+_cco_project_claude_view() {
+    printf '%s\n' "$(_cco_cache_dir)/projects/$1/claude-view"
+}
+
 # Session-scoped machine-local state for a project (ADR-0009 / design §2.2):
 # auto-memory + session transcripts, mounted into the container by cmd-start and
 # hydrated by `cco init --migrate`. Both memory and transcripts live under the
