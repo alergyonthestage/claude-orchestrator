@@ -522,7 +522,12 @@ _claude_view_split() {
 # Create one mountpoint <rel> inside <view>, shaped after its source (dir → dir,
 # anything else → empty file). Never overwrites an existing entry.
 _claude_view_stub() {
-    local view="$1" rel="$2" src="$3" mp="$view/$rel"
+    local view="$1" rel="$2" src="$3"
+    # SEPARATE statement, deliberately: `local a=$1 b="$a/x"` expands b's RHS
+    # BEFORE the assignments happen, so `$a` would resolve to the CALLER's `a`
+    # (dynamic scope) — silently right in one call path and silently wrong in
+    # another, which is exactly how this shipped once (see tests).
+    local mp="$view/$rel"
     if [[ -d "$src" ]]; then
         mkdir -p "$mp" || return 1
     else

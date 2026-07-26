@@ -1241,6 +1241,18 @@ pre-fix `lib/` — the 9th pins the unchanged no-injection path and must pass on
 mount-time failure itself remains invisible to the hermetic suite (D7, third recurrence) — one e2e
 v3.1 probe with a skills-shipping pack at default access is what actually proves it on a host.
 
+**Follow-up the same day — the first implementation was still broken on the host** (`EROFS` on
+`settings.json` instead of on a pack skill). Cause: `local view="$1" rel="$2" src="$3"
+mp="$view/$rel"` — `local` is a builtin, so every argument is expanded *before* any assignment lands,
+and `$view`/`$rel` resolved to the **caller's** identically-named variables (dynamic scope). That is
+correct by accident inside the injected-children loop and a silent no-op for every committed entry,
+so their mountpoints were never created and the emitted binds had no target. Three things came out of
+it: the one-line fix; D7 strengthened from spot checks to a **property** (every emitted child target,
+from both halves, must have a mountpoint of the matching shape — the assertion that would have caught
+it); and a static lint **INV-LOCAL** (`test_invariant_no_local_self_reference`) closing the language
+trap for good, which surfaced two more latent instances (`_config_ensure_gitignore`, `_mig014_rm` —
+both accidentally correct today, one caller rename from breaking). Suite **1533/7**.
+
 ---
 
 ## FI-32: pack↔global collisions are undetected (`_detect_cross_tree_conflicts` only looks at the project tree)

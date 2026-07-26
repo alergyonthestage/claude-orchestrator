@@ -23,7 +23,8 @@ _MIG014_FILES="claude/workspace.yml claude/packs.md claude/scheduled_tasks.lock"
 # Remove one generated file (path relative to the .cco dir). git rm when tracked
 # so the deletion is staged; plain rm for an untracked copy; no-op when absent.
 _mig014_rm() {
-    local ccodir="$1" rel="$2" f="$ccodir/$rel"
+    local ccodir="$1" rel="$2"
+    local f="$ccodir/$rel"   # separate: `local` expands all its args first (INV-LOCAL)
     if git -C "$ccodir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
        && git -C "$ccodir" ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
         git -C "$ccodir" rm -f "$rel" >/dev/null 2>&1 || rm -f "$f"

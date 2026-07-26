@@ -67,6 +67,44 @@ test_claude_view_materializes_mountpoints() {
         || fail "a mountpoint stub must stay empty — it carries no content"
 }
 
+# INV-MP as a PROPERTY, not a spot check: every target this function emits under
+# /workspace/.claude must have its mountpoint in the view, shaped like its source.
+# Cherry-picking entries is what let a real bug through — the injected children
+# had stubs, the committed ones silently did not, and `cco start` still died in
+# runc (on settings.json, the first target in Docker's ordering).
+test_claude_view_every_emitted_target_has_a_mountpoint() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _cv_test_env; _cv_fixture "$tmpdir"
+    # Cover every shape at once: top-level file, top-level dir, a file inside an
+    # injected namespace, plus the injected children themselves.
+    printf '{"model":"x"}\n' > "$CV_SRC/settings.json"
+    echo "# a" > "$CV_SRC/agents/mine.md"
+
+    local out; out=$(_emit_claude_view "$CV_VIEW" "$CV_SRC" "ro" "$CV_INJECTED" "false")
+
+    # The full child set is what this function emits PLUS what the caller emits
+    # from the captured pack/llms lines — INV-MP covers both halves.
+    local all; all=$(printf '%s\n%s\n' "$out" "$CV_INJECTED")
+    local line raw tgt src rel checked=0
+    while IFS= read -r line; do
+        [[ "$line" == *':/workspace/.claude/'* ]] || continue
+        raw="${line#*\"}"; raw="${raw%\"*}"
+        case "$raw" in *:ro|*:rw) raw="${raw%:*}" ;; esac
+        tgt="${raw##*:}"; src="${raw%:*}"
+        rel="${tgt#/workspace/.claude/}"
+        [[ -e "$CV_VIEW/$rel" ]] \
+            || fail "INV-MP: '$tgt' is bound but has no mountpoint in the view — runc must create it inside the :ro parent and will fail EROFS"
+        if [[ -d "$src" ]]; then
+            [[ -d "$CV_VIEW/$rel" ]] || fail "mountpoint for '$rel' must be a directory (its source is one)"
+        else
+            [[ -f "$CV_VIEW/$rel" ]] || fail "mountpoint for '$rel' must be a file (its source is one)"
+        fi
+        checked=$((checked + 1))
+    done <<< "$all"
+
+    [[ "$checked" -ge 5 ]] || fail "expected at least 5 child binds to check, saw $checked — the fixture stopped covering the shapes"
+}
+
 # The committed tree is bound back in, so nothing the project authored is lost.
 test_claude_view_binds_committed_entries_back() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT

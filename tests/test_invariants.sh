@@ -751,3 +751,73 @@ test_invariant_env_one_spelling_per_state() {
         || { fail "INV-ENV budget does NOT bite: a second spelling in a ratified module went uncaught"; return 1; }
     return 0
 }
+
+# ── INV-LOCAL: no self-reference inside a single `local` statement ────
+# `local a="$1" b="$a/x"` does not do what it reads like. `local` is a BUILTIN, so
+# every one of its arguments is expanded BEFORE any assignment happens: `$a` there
+# resolves to the CALLER's `a` (bash is dynamically scoped), or aborts as unbound
+# under `set -u`. Both failure modes are silent-until-they-are-not — the shipped
+# instance (ADR-0054's mountpoint stub) was accidentally correct on one call path,
+# because a caller happened to hold identically-named variables, and a silent no-op
+# on another: `cco start` then died in runc on a mountpoint that was never created.
+# Split the statement; the shape is unreviewable, not merely fragile.
+_local_selfref_prog() {
+    cat <<'AWK'
+/^[[:space:]]*local[[:space:]]/ {
+  line = $0
+  sub(/^[[:space:]]*local[[:space:]]+/, "", line)
+  sub(/;.*$/, "", line)          # after a `;` it is a NEW command — assignments have landed
+  n = split(line, parts, /[[:space:]]+/)
+  delete declared; out = ""
+  for (i = 1; i <= n; i++) {
+    p = parts[i]; eq = index(p, "=")
+    if (eq == 0) { name = p; rhs = "" } else { name = substr(p, 1, eq - 1); rhs = substr(p, eq + 1) }
+    if (name !~ /^[A-Za-z_][A-Za-z0-9_]*$/) continue
+    for (d in declared)
+      if (index(rhs, "$" d) > 0 || index(rhs, "${" d) > 0) out = out " " d
+    declared[name] = 1
+  }
+  if (out != "") print FILENAME ":" FNR ": [self-ref:" out " ]  local " substr(line, 1, 90)
+}
+AWK
+}
+
+_local_selfref_violations() {
+    local prog; prog=$(_local_selfref_prog)
+    local f; local -a files=()
+    while IFS= read -r f; do files+=("$f"); done < <(
+        find "$@" -type f \( -name '*.sh' -o -name 'cco' \) 2>/dev/null | sort)
+    [[ ${#files[@]} -gt 0 ]] || return 0
+    awk "$prog" "${files[@]}" 2>/dev/null || true
+}
+
+test_invariant_no_local_self_reference() {
+    # 1. The live tree must be clean.
+    local hits
+    hits=$(_local_selfref_violations "$REPO_ROOT/lib" "$REPO_ROOT/bin" \
+                                     "$REPO_ROOT/migrations" "$REPO_ROOT/config")
+    [[ -z "$hits" ]] || fail "INV-LOCAL: a \`local\` statement references a name it declares in the SAME statement — the RHS is expanded before the assignment, so it reads the CALLER's variable (or dies under set -u). Split it into two statements:"$'\n'"$hits"
+
+    # 2. Discrimination: a static invariant cannot "fail on reverted lib/", so it
+    #    must prove it catches the shape it forbids.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/lib"
+    cat > "$tmp/lib/cmd-fake.sh" <<'PLANT'
+_f() {
+    local a="$1" b="$a/x"
+    echo "$b"
+}
+_g() {
+    local a="$1"
+    local b="$a/x"
+    echo "$b"
+}
+PLANT
+    local planted; planted=$(_local_selfref_violations "$tmp/lib")
+    [[ -n "$planted" ]] \
+        || { fail "INV-LOCAL lint does NOT discriminate: a planted self-reference went uncaught"; return 1; }
+    # ...and must not flag the CORRECT two-statement form on the very next line.
+    [[ "$(printf '%s\n' "$planted" | wc -l | tr -d ' ')" == "1" ]] \
+        || fail "INV-LOCAL lint over-reports: the split form is legal, got:"$'\n'"$planted"
+    return 0
+}

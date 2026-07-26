@@ -37,7 +37,8 @@ _CONFIG_ALLOWLIST=( .gitignore packs templates .claude \
 # Write the whitelist .gitignore (first barrier) if it is missing. Idempotent —
 # never clobbers a user-edited one.
 _config_ensure_gitignore() {
-    local cfg="$1" gi="$cfg/.gitignore"
+    local cfg="$1"
+    local gi="$cfg/.gitignore"   # separate: `local` expands all its args first (INV-LOCAL)
     [[ -f "$gi" ]] && return 0
     cat > "$gi" <<'EOF'
 # cco ~/.cco allowlist — commit ONLY authored config (the first of the

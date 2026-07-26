@@ -156,6 +156,19 @@ view materializes every mountpoint. The **mount-time** failure itself stays an e
 this is the third recurrence of "the hermetic suite cannot see mount-time failures" (ADR-0049 §5,
 e2e v2 RC-17, now FI-31), and D7 does not pretend to close it.
 
+> **Implementation note (2026-07-26, same day).** The first implementation satisfied D7 as written
+> and still shipped a broken `cco start` — the host hit `EROFS` on `settings.json` instead of a pack
+> skill. Cause: `local view="$1" rel="$2" src="$3" mp="$view/$rel"` in the stub helper. `local` is a
+> builtin, so **all** its arguments are expanded before any assignment lands; `$view`/`$rel` therefore
+> resolved to the *caller's* identically-named variables (bash is dynamically scoped) — correct by
+> accident while looping over injected children, and a silent no-op for every committed entry, whose
+> mountpoints were consequently never created. D7 is therefore **strengthened from spot checks to a
+> property**: for every child target emitted (by this function *and* by the captured pack/llms lines),
+> the view must carry a mountpoint of the matching shape. The language trap is closed separately by a
+> static lint, `test_invariant_no_local_self_reference` (INV-LOCAL), which also found — and fixed —
+> two latent instances of the same shape elsewhere in the tree (`_config_ensure_gitignore`,
+> `_mig014_rm`; both were accidentally correct, one caller rename away from breaking).
+
 ## Alternatives considered
 
 | Option | Why not |
