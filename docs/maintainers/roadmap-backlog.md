@@ -976,3 +976,152 @@ hot-path writers always have an existing dir; `path set`/legacy-rehome fall back
 pure-string, ADR-0051 D6 keeps the index self-upgrade in-index). Physical resolution is host-only
 (INV-CANON, ADR-0047). Suite **1521/7** in-container (+8 new tests; the 7 = pre-existing FI-19
 host-only). See ADR-0053, changelog #50; fwd-annotated on ADR-0051 D1 + ADR-0052 §5/§7.
+
+---
+
+## FI-28: Global pack adoption — declare a pack adopted across projects from the personal store (with filters)
+
+**Status**: 📝 Note — to design (raised 2026-07-26 by the maintainer, from a field question: *"how do
+I import a pack globally into `~/.cco` and adopt it in all my projects by default?"*). Not started.
+
+**Context (code-grounded, verified 2026-07-26).** Attaching a pack is **per-project and only
+per-project**: a `packs:` entry in `<repo>/.cco/project.yml`, written by hand or by `cco project add
+pack <name>` (`lib/cmd-project-add.sh`, cwd-first or `--project`). `_generate_pack_mounts`
+(`lib/packs.sh`) reads that list and nothing else, so a pack that is not named in a project's manifest
+is invisible to its sessions. There is **no** global/default adoption surface anywhere: no
+`defaults.yml`, no `default_packs`, no `~/.cco` file that `cco start` consults for packs. The two
+things that come close are both something else:
+
+- `~/.cco/.claude/{CLAUDE.md,rules/,agents/,skills/,settings.json,mcp.json}` — mounted user-level in
+  **every** session (`lib/cmd-start.sh`, B3 block). This is the real always-on layer today, but it is
+  the `.claude` **authoring** tree, not the pack model: no `knowledge/` mount, no pack identity /
+  coordinate / provenance / `cco pack update`, and no per-project opt-in or visibility.
+- project **templates** — a `packs:` list in a template gives a default to **new** projects only,
+  never retroactively.
+
+**The ask (maintainer, 2026-07-26).** A **global settings surface in `~/.cco`** where a pack can be
+declared adopted across projects, optionally **filtered** (tags / attributes / conditions) so it lands
+only on a subset. A CLI verb may exist but would be a thin editor of that config — bulk adoption
+without touching any repo. A **second mode** materializes the adoption instead: write the `packs:`
+reference into every matching project's `project.yml`, which some users will prefer (explicit,
+committed, team-visible), also filter-driven.
+
+```mermaid
+flowchart TD
+  P["pack in ~/.cco/packs/<name>"] --> M1["M1 declarative: ~/.cco adoption rules + filters"]
+  P --> M2["M2 materialized: bulk write packs[] into matching project.yml"]
+  M1 --> R["cco start resolves: project packs[] UNION adopted-by-rule"]
+  M2 --> Y["project.yml carries the ref (normal per-project path)"]
+  R --> S["session mounts + session context must state WHY each pack is here"]
+  Y --> S
+```
+
+**The two modes are not exclusive** (plausibly one verb with a `--mode`/`--materialize` switch), and
+each carries a different hazard:
+
+- **M1 — declarative / personal store (maintainer's preferred primary).** Personal, reversible, no
+  repo churn, works even for repos you do not own. Hazard: it is **implicit context** — a session
+  carries packs the repo does not declare, so a teammate cloning the same repo gets a *different*
+  session. That runs against the standing invariant that `<repo>/.cco/project.yml` is the source of
+  truth and committed config is machine-agnostic + reproducible. Mitigation is visibility, not
+  prohibition: the resolved set and its provenance must surface in the injected session context and in
+  `cco project show` (same "hidden ≠ absent" discipline as ADR-0043).
+- **M2 — materialized / bulk (the earlier option B).** Explicit, git-visible, reproducible for the
+  team. Hazard: a fan-out **write across N repos**, each with its own git state; in-session the
+  `<repo>/.cco` overlay is `:ro` (FI-20) and writing other projects' trees is the `Po` axis of the
+  ADR-0046/0047 model (`edit-all` or granular today) — so it is host-leaning, non-atomic (cf. the
+  E6B-04 pack-rename fan-out half-apply class), and not undoable in one step.
+
+**Design questions**:
+1. **Where + what name.** A dedicated `~/.cco/packs.yml`, or a general `~/.cco/defaults.yml` that
+   could later host other cross-project defaults (model, ports, llms)? Precedent exists:
+   `~/.cco/access.yml` is already a personal-store settings file consulted by `cco start` and sitting
+   in a documented precedence chain (CLI > `project.yml` > `~/.cco/access.yml` > preset) — the
+   adoption file should join a chain of the same shape.
+2. **Filter grammar.** The per-user **tag registry** (DATA, `cco tag add`, `lib/tags.sh`) already tags
+   projects/packs/templates and `cco list --tag` already filters on it → tags are the obvious primary
+   selector. What else is needed (name globs, path prefixes, "project has repo X", arbitrary
+   attributes)? Constraint: declarative and evaluable host-side, never user code execution.
+3. **Precedence + opt-out.** Union with the project's own `packs:`? Can a project refuse an adopted
+   pack (an explicit exclude list), and does a project-local pack of the same name win (three-layer
+   resolution, ADR-0019 D5)?
+4. **Provenance/visibility.** The session context must distinguish "declared in project.yml" from
+   "adopted by rule R" — otherwise the implicit-context hazard above is unattributable.
+5. **Access model.** Which `(G,Pc,Po)` levels may read/write the adoption file (personal store = `G`)
+   and which may run M2 (`Po=rw`)? The in-container shim must gate both, and M2 is a candidate
+   host-only verb.
+6. **Contribution surface.** Which pack kinds a global adoption may contribute — `knowledge/`,
+   `rules/`, `agents/`, `skills/` today; `commands/` is missing entirely → **FI-29**.
+7. **Change class.** Additive (new optional personal-store file + new verb): code-level default when
+   absent + `changelog.yml` entry; no migration unless M2 rewrites manifests.
+
+**Type & tracking**: pack model + personal-store configuration; introduces a **new configuration
+precedence axis**, which is ADR-worthy rather than a quiet feature. Related: **FI-29** (`commands/`),
+`#9 Pack inheritance / composition` in [roadmap.md](roadmap.md) (same "who composes what" question),
+ADR-0019 D5 (three-layer pack resolution), ADR-0032 (pack coordinates), ADR-0043 (scoped visibility /
+hidden ≠ absent), ADR-0046/0047 (write axes + boundary), FI-20 (`:ro` `.cco` overlay vs writes).
+**Effort**: Med–High (design-first; the implementation of M1 alone is small).
+
+---
+
+## FI-29: `commands/` (slash commands) has no home in the global store or in packs
+
+**Status**: 📝 Note — to analyze (found 2026-07-26 by code inspection while answering FI-28's field
+question). Independent of FI-28 but blocks the same use case.
+
+**Context**: a grep over `lib/`, `config/` and `defaults/` finds **no handling of `commands/` at
+all**. Two consequences, both asymmetric with how skills/agents/rules are treated:
+
+- The global `.claude` mount is **explicit, entry by entry** (`lib/cmd-start.sh` B3: `settings.json`,
+  `CLAUDE.md`, `rules/`, `agents/`, `skills/`, `mcp.json`), so a `~/.cco/.claude/commands/` directory
+  would simply never be mounted — it is silently ignored, not an error.
+- `pack.yml` declares only `knowledge` / `skills` / `agents` / `rules` (`templates/pack/base/pack.yml`,
+  `_generate_pack_mounts` + `_validate_single_pack` in `lib/packs.sh`), so a pack cannot ship slash
+  commands either.
+
+Only the **project** tree works today, and only incidentally: `<repo>/.cco/claude/` is mounted whole
+at `/workspace/.claude`, so a `commands/` inside it lands exactly where Claude Code looks for project
+commands.
+
+**Why it matters**: a "dev framework" distributed as Claude Code slash commands is a common shape (it
+was precisely the shape of the directory that raised FI-28). Today such a bundle can only be adopted
+per-project by hand, and cannot be packaged as a pack at all.
+
+**Suggested direction** (re-derive the boundary before designing): (a) add `commands/` to the B3
+global mount + a `defaults/global/.claude/commands/` scaffold; (b) add `commands:` to the pack schema,
+`_generate_pack_mounts` (per-file mounts to `/workspace/.claude/commands/<f>.md`, identical in shape
+to the rules/agents lanes), `_validate_single_pack` and `cco pack show`; (c) verify the pack conflict
+detectors (`_detect_pack_conflicts`, `_detect_cross_tree_conflicts`) cover the new kind. Additive
+(changelog entry); no migration needed — an absent `commands/` reproduces today's behavior.
+**Effort**: Low–Med.
+
+---
+
+## FI-30: user-facing install / init / configuration procedures — coherence review
+
+**Status**: 📝 Note — to analyze (raised 2026-07-25/26 by the maintainer; captured here from the
+working note `to-verify-guides-docs.md` at the repo root).
+
+**Context**: the top-level README quick start reads
+
+```
+npm install -g @claude-orchestrator/cco   # install the CLI
+cco init                                   # "seeds your personal ~/.cco store and builds the image"
+cco start tutorial
+```
+
+which presents `cco init` as a **global bootstrap runnable from anywhere**. In the implemented model
+`cco init` is **cwd/repo-based project initialization**; seeding `~/.cco` on first run is a side
+effect, not its purpose. As written the quick start is misleading about the very first command a new
+user types.
+
+**Scope of the review**: install / init / configuration procedures across the top-level README, the
+user guides (installation, project-setup, configuration-management), the tutorial, and the maintainer
+docs — checking each is correct, non-misleading, and mutually coherent (user docs vs maintainer docs).
+Per the documentation-lifecycle rule these are **shipped-behavior** docs: they must track what works
+today, not a target model.
+
+**Adjacent question flagged by the maintainer**: whether the install itself should be unified behind
+an npm **post-install hook** ("Unificazione dell'install => hook post install", note in
+`workspace-ai.rtf`) — a design question in its own right, to be settled before rewriting the quick
+start around it. **Effort**: Low (review) + Med if the post-install unification is taken on.

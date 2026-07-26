@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-07-21.
+> Last updated: 2026-07-26.
 
 ## Current status
 
@@ -328,6 +328,17 @@ is done: two-tier canonicalization at the write boundary (lexical + best-effort 
 resolution) + a `cco config validate` re-key lane; merged → develop (`--no-ff` `d5b9a6d`), suite
 1522/7. **This macOS symlink/`/.` behaviour is now itself worth confirming on the real host during the
 v3.1 run** (a repo under `/var`|`/tmp`, `cco config validate --fix`).
+
+⚠ **FI-27 follow-on — one fix branch still pending host verification (2026-07-25/26).** The host suite
+caught a **bash 3.2 regression inside the new Tier-1 lexical canonicalizer**: `_index_normalize_path`
+wrote `${p//\/\//\/}` / `${p//\/.\//\/}`, and bash 3.2 (macOS `/bin/bash`) does **not** un-escape a
+backslash in the *replacement* of a parameter-expansion substitution — so `//` collapsed to `\/`
+(`/a//b` → `/a\/b`) instead of `/`. bash ≥4.3 un-escapes it, so the in-container suite (bash 5) never
+saw it. Fixed by holding the slash sequences in variables (neither pattern nor replacement carries an
+escaped `/`) on **`fix/index/normalize-bash32-replacement`** (`c9b6d35`, off develop `9ba10dd`,
+**not pushed**); in-container suite **1522/7**; no changelog/migration (bugfix to unreleased FI-27
+code). ▶ **Host-side, before the v3.1 matrix**: re-run the suite on the Mac (it is the only place the
+regression is observable), FF-merge → `develop`, push, then `cco build` from develop.
 
 **1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
 is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.
@@ -1061,8 +1072,21 @@ Decisions preserved in
 
 ## Backlog
 
-The framework-improvements tracker (FI-1 … FI-11, with analysis and decisions) is the
+The framework-improvements tracker (FI-1 … FI-30, with analysis and decisions) is the
 detailed backlog: see [roadmap-backlog.md](roadmap-backlog.md).
+
+Newest entries (2026-07-26, all 📝 to design/analyze — raised by the maintainer's "adopt a pack
+across all my projects" question):
+
+- **FI-28** — **global pack adoption**: a personal-store settings surface in `~/.cco` that declares a
+  pack adopted across projects, with **filters** (tags/attributes) to scope it to a subset; the CLI
+  verb is a thin editor of that config. Alternative **materialized mode** (bulk-write `packs:` into
+  every matching `project.yml`) kept as a second mode. Today there is **no** default-pack mechanism at
+  all — `packs:` is per-project only, and `~/.cco/.claude/` is the only always-on layer.
+- **FI-29** — `commands/` (slash commands) has **no home** in the global store or in `pack.yml`; only
+  the per-project `<repo>/.cco/claude/commands/` works, and only incidentally.
+- **FI-30** — user-facing **install/init/configuration procedure coherence review** (the README quick
+  start presents the repo-scoped `cco init` as a global bootstrap).
 
 ## History
 
