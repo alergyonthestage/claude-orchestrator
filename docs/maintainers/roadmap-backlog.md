@@ -1158,6 +1158,19 @@ stub inside the `:ro`-to-be parent … a missing one means a caller bug, and the
 The fix was applied to the `settings.local.json` lane and **never extended to the pack/llms lanes**.
 See the `start-mount-fix` diagnosis (2026-07-15) for the original analysis of the same shape.
 
+**The design trail says the intent was right and a precondition was dropped.** ADR-0005's
+`RD-claude-mount` resolution designed exactly this composition — pack/llms resources as nested `:ro`
+binds inside `/workspace/.claude`, ordered parent-before-child — and recorded **F3 as an invariant:
+"parent stays rw"**. The nested-overlay mechanism was proven *on that precondition*. **ADR-0049 §2
+then made `Cp=ro` the default and never revisited F3.** The consequence was discovered on 2026-07-15
+and written down verbatim in ADR-0049 §5's forward annotation — *"Docker/runc cannot create the
+mountpoint inside the `:ro` parent … the target must simply pre-exist"* — but the remedy was applied
+**only to the `settings.local.json` lane**. The pack/llms overlays are the other consumers of the same
+dropped precondition, and nothing carried the fix to them. So the ADRs do **not** disagree about the
+intent (pack resources are readable in every session regardless of the `claude` policy — that policy
+governs *authoring*, never *visibility*); what is missing is the mechanism that still makes the intent
+true after F3 stopped holding.
+
 **Why it surfaced only now**: projects configured **before** ADR-0049 flipped the default ran with
 `.claude` writable, so runc silently created the mountpoint dirs inside their committed
 `<repo>/.cco/claude/` tree — those stubs persist and mask the bug (claude-orchestrator's own tree
@@ -1171,12 +1184,24 @@ dirs). A **newly adopted** pack has no such residue → first `cco start` after 
 - **(a) extend the stub-seeding precedent** — one `_ensure_mountpoint` helper called for every child
   bind under a `:ro` B2/B1 parent (dir stub for `skills/`, `packs/`, `llms/`; empty-file stub for
   `rules/`, `agents/`), reusing the migration-014 `.gitignore` machinery so the stubs do not pollute
-  the repo. ⚠ Two traps: an empty-file stub must **never truncate** an existing committed file, and a
+  the repo. ⚠ Three traps: an empty-file stub must **never truncate** an existing committed file; a
   `packs/<n>` stub must stay **empty** or `_detect_cross_tree_conflicts` (`lib/packs.sh:106`) fires
-  its "framework-reserved" warning on the framework's own stub.
-- **(b) mirror-and-mount** — assemble the `.claude` view (committed tree + mountpoint stubs) in CACHE
-  and mount **that** at `/workspace/.claude`, leaving the repo untouched. No repo residue, no
-  `.gitignore` coupling; costs a per-start mirror step and a drift question.
+  its "framework-reserved" warning on the framework's own stub; and a **file** stub in `rules/` /
+  `agents/` is indistinguishable from user content to a static `.gitignore` pattern (the
+  `settings.local.json` precedent got away with a single fixed name — here the names come from
+  whatever the pack declares). Also note this direction writes framework-derived artifacts into the
+  committed tree, which **ADR-0005 F1 explicitly decided against** ("generated files are NOT written
+  into `.cco/claude/`; they are produced in a machine-local cache dir and overlaid"): the `settings.local.json`
+  seed is already an exception to F1, and this would multiply it across four more lanes.
+- **(b) framework-owned parent** — compose `/workspace/.claude` in CACHE (committed-tree entries bound
+  in individually at the policy's mode, pack/llms children as today) so the parent's writability
+  belongs to the **framework**, not to the policy. This restores F3 by construction, applies F1's own
+  rule to mountpoints, leaves zero residue in the repo, and makes pack visibility structurally
+  independent of `claude_access`. ⚠ Cost to weigh: a *shared* namespace that must hold files from two
+  sources (`rules/`, `agents/`, `skills/`) has to be framework-owned, so a **newly created** file
+  written there in-session lands in CACHE rather than the repo (edits to existing files still reach
+  the repo through their per-file bind). Bounding the composition to the namespaces a pack actually
+  contributes to — or to `Cp=ro` sessions only — keeps that cost off the authoring path.
 - **(c) parent `:rw`** — already **rejected** for the settings lane (holes the `ro` guarantee: new
   files become creatable). Today it is the only *workaround* available to users.
 - **Test gap**: whichever lands, the regression is invisible to a dry-run assertion — this class needs
