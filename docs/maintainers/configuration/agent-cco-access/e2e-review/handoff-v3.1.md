@@ -325,8 +325,10 @@ destructive ones.
 > a pack that ships `skills`/`rules`/`agents`/knowledge at the **default** access level — the
 > `/workspace/.claude` parent is `:ro` since ADR-0049 §2, and a child bind cannot create its
 > mountpoint through it. cco now owns the mountpoints (INV-MP): the parent is composed from a
-> mountpoints-only CACHE view whenever children are injected. **The expected provenance value in
-> §10.5 is now `develop@4b3679a`** (supersedes `d5b9a6d`).
+> mountpoints-only CACHE view whenever children are injected. **§10.5's expected provenance value is
+> no longer the pinned `d5b9a6d`**: build from `develop` and compare against whatever
+> `git rev-parse --short HEAD` prints at that moment (the tip when this note was written was
+> `f4a98b5`) — the check is "the image matches the tree I built from", not a fixed sha.
 >
 > **§10.5b — the FI-31 probe (do it right after the provenance check).** This class is invisible to
 > the hermetic suite *by construction* — dry-run compose assertions never execute a mount, which is
