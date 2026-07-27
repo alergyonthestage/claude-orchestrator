@@ -34,6 +34,7 @@ per stage, from the only vantage that can answer it — a live container on a re
 | **S8 / V3-03** | Bare `repo rename <new>` at the WORKDIR root refuses **as ambiguous** | W1 |
 | **D-M11** | A granular `current=ro` makes the config-editor target mount honestly **read-only** | W3 |
 | **§7 / E6B-04** | pack-rename fan-out atomicity — **never executed in any round** | §10.9 |
+| **FI-31 / ADR-0054** | a project with a **skills-shipping pack** boots at the **default** access level (INV-MP: cco owns every framework mountpoint) | §10.5b |
 | **D-M6** | Can `cco-svc` write a store it does not own? (the Linux question) | §11 |
 
 **Not under test.** Everything `handoff-v3.md` §9 defers, plus the whole *"do not re-litigate"* list
@@ -316,6 +317,34 @@ destructive ones.
 >    "already bound" conflict, and `cco config validate` reports any non-canonical legacy entry under
 >    the new **re-key** lane (`--fix` rewrites it). See ADR-0053. This is additive to the W1–W4
 >    matrix, not a gate.
+>
+> **➕ UPDATE (2026-07-26) — develop moved to `4b3679a`; one new probe is REQUIRED, not optional.**
+> Since the note above, develop gained the FI-27 bash-3.2 follow-on (`6b1cb2c`) and, from a host
+> report, **FI-31 / [ADR-0054](../../decentralized-config/decisions/0054-framework-owned-mountpoints.md)**:
+> `cco start` died in runc (`create mountpoint …: read-only file system`) for **any** project adopting
+> a pack that ships `skills`/`rules`/`agents`/knowledge at the **default** access level — the
+> `/workspace/.claude` parent is `:ro` since ADR-0049 §2, and a child bind cannot create its
+> mountpoint through it. cco now owns the mountpoints (INV-MP): the parent is composed from a
+> mountpoints-only CACHE view whenever children are injected. **The expected provenance value in
+> §10.5 is now `develop@4b3679a`** (supersedes `d5b9a6d`).
+>
+> **§10.5b — the FI-31 probe (do it right after the provenance check).** This class is invisible to
+> the hermetic suite *by construction* — dry-run compose assertions never execute a mount, which is
+> how it shipped, and how a **second** defect in the same fix shipped hours later. A real container
+> start is the only proof:
+>
+> 1. From a project that references a pack shipping **skills** (e.g. `cave-ensemble` +
+>    `core-dev-framework`), at **default** access — no `access:` override in `project.yml`:
+>    `cco start` must **boot** (no runc mountpoint error).
+> 2. Inside the session: the pack's skills/rules/agents are present under `/workspace/.claude/…`, and
+>    `<repo>/.cco/claude/` gained **no** new empty dirs or files on the host (the view holds them).
+> 3. Then the `Cp=rw` arm — `--claude-access repo` (or `access.claude.current: rw`): the session still
+>    boots and prints the composed-view notice once; editing an existing committed file under
+>    `/workspace/.claude/` still reaches the repo.
+>
+> A failure here is a **release gate**, not a finding to consolidate: it means no session at default
+> access can start on a pack-bearing project. Record it in the shared output dir like any other
+> result, then stop the run.
 
 ### 10.1 — Apply the three `.claude` patches ⚠ FIRST
 
