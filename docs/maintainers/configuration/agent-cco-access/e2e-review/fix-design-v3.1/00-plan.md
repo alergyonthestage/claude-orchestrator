@@ -405,11 +405,20 @@ not the `mkdir` the first probe reproduced). **D7's "composes with no packs at a
 host-side**: it needs a project referencing no pack, so it is unreachable from a session where
 `cco start` is refused. Only `test_claude_view_composed_for_the_write_floor_without_packs` covers it.
 
-📝 Observed en passant, not chased: the new key was given a plain `memory/` directory of its own. Only
-`-workspace/memory` is the bound bucket (ADR-0055 D5), so a teammate started from a repo cwd writes a
-**different** memory bucket — it persists (it is inside the STATE bind) but it is not the project's
-memory. Sibling in shape to FI-37: the repo-cwd lane again gets a path that works but is not the one
-the main session reads.
+📝 Observed en passant, then **corrected the same day** — the first wording of this note claimed more
+than the run showed, and is restated here rather than left standing. What was actually observed: an
+**empty** `memory/` directory appeared under the new key and was gone again minutes later. Nothing was
+ever written to it, so the run demonstrates no memory split; the first note inferred one and recorded
+the inference as an observation.
+
+The mechanism, checked against the official docs afterwards, is also not what that note implied: project
+auto-memory is **not** per-agent and not per-cwd — it lives at `~/.claude/projects/<project>/memory/`
+with `<project>` derived from the **git repository**. A cco session splits because `/workspace` is not a
+git repo (so the project root is used → `-workspace`) while `/workspace/<repo>` is (→ its own key). A
+subagent inherits the session's cwd and therefore shares the main session's memory. Both this and a
+second, unrelated hole — eight agents declare `memory: user`, whose target `~/.claude/agent-memory/` is
+bound nowhere and dies with the `--rm` container — are filed together as
+**[FI-39](../../../../roadmap-backlog.md)**, to be settled in one ADR **after** this cycle.
 
 | Session | Suite | Container probe | Date |
 |---|---|---|---|

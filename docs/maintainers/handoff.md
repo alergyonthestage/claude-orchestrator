@@ -71,6 +71,9 @@ points at them, it does not fork them.
 - [ ] **Host-side, yours** (FI-20 — merges touching `.cco` are host-only): `git push` this branch,
       then the merge into `develop`.
 - [ ] **[FI-37](roadmap-backlog.md)** and **[FI-38](roadmap-backlog.md)** — filed, not scheduled.
+- [ ] **[FI-39](roadmap-backlog.md)** — Claude Code memory state cco does not persist: the
+      `agent-memory` bind (a proven defect) and the `autoMemoryDirectory` simplification. **One ADR,
+      after this cycle** — scheduled by the maintainer, not open for re-litigation.
 
 ## Context
 
@@ -95,14 +98,22 @@ block**; the short version:
 
 No decision was made that needs an ADR; ADR-0055 already carries S1's model and needed no amendment.
 
-### Open question for the human
+### Settled after the probe — memory state, and a correction
 
-**Should the memory-bucket observation be filed as a backlog item?** Observed during the probe, not
-chased, recorded in §7: the new transcript key was given a plain `memory/` directory of its own. Only
-`-workspace/memory` is the bound bucket (ADR-0055 D5), so a teammate started from a repo cwd writes a
-**different** memory bucket. It persists — it is inside the STATE bind — but it is not the memory the
-main session reads. It is a sibling in shape to FI-37: the repo-cwd lane again gets a path that works
-but is not the one that counts. Filing it is the maintainer's call, so it was left unfiled.
+The probe left a note in §7 saying a repo-cwd teammate writes a different memory bucket. **That note
+was wrong and has been corrected in place.** What was observed was an *empty* directory that
+disappeared again; nothing was written, so no split was demonstrated. The official docs then showed
+the mechanism is not per-agent at all: project auto-memory is keyed by the **git repository**, which
+is why `/workspace` (not a repo) and `/workspace/<repo>` (a repo) land on different keys, and why a
+subagent — which inherits the session's cwd — shares the main session's memory.
+
+Chasing it did surface a **real** defect, unrelated to the split: eight agent definitions declare
+`memory: user`, whose target `~/.claude/agent-memory/` is bound nowhere and dies with the `--rm`
+container. Both are filed as **[FI-39](roadmap-backlog.md)**.
+
+**Maintainer decision, 2026-07-28**: **one ADR covering both**, opened **after cycle-1.2** — the
+priority is finishing this cycle's fixes and the release. Do not split it into two ADRs, and do not
+open it inside the cycle.
 
 ### Non-obvious things worth not rediscovering
 

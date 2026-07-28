@@ -1443,3 +1443,83 @@ wins"*. ⚠ Implementation note for whoever takes this: the function runs inside
 inside would corrupt the generated file.
 
 **Related**: ADR-0055 D3 · ADR-0005 F2 (pack overlay wins) · [FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr).
+
+---
+
+## FI-39: Claude Code memory state cco does not persist — one ADR, two decisions
+
+**Found**: 2026-07-28, answering a maintainer question after S1's probe. **Severity**: (a) silent
+loss of content Claude writes, no user-visible error · (b) none — a simplification.
+**Effort**: (a) Low · (b) Medium. **Scheduling — maintainer decision 2026-07-28**: **one ADR
+covering both**, opened **after cycle-1.2**; the priority until then is finishing the cycle's fixes
+and the release. Do not split this into two ADRs.
+
+Same axis as [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md):
+`claude_access` governs *authoring*, while Claude Code's **runtime state** must persist. ADR-0055
+settled transcripts and the `{settings.local.json, workflows/}` floor. Memory has two remaining
+holes, and they meet in one ADR because both answer *"where does Claude's own memory live in a
+container that is destroyed at exit"*.
+
+### (a) Per-agent memory is declared on eight agents and evaporates — the defect
+
+The subagent frontmatter field `memory:` gives an agent a persistent directory
+(`user` → `~/.claude/agent-memory/<name>/` · `project` → `.claude/agent-memory/<name>/` ·
+`local` → `.claude/agent-memory-local/<name>/`).
+
+**Eight agent definitions in a normal session already declare `memory: user`** — the six from the
+`core-dev-framework` pack (`analyst`, `designer`, `documenter`, `implementer`, `reviewer`, `tester`)
+and the two user-level ones (`analyst`, `reviewer`). Their target is `~/.claude/agent-memory/`, and:
+
+- it is **not bound anywhere** — under `~/.claude` cco binds `agents`, `skills`, `rules`,
+  `settings.json`, `CLAUDE.md`, `projects`, `.credentials.json` and `mcp-global.json`, and nothing
+  else (verified against `/proc/self/mountinfo` in a live session);
+- the container runs `docker compose run --rm` (`lib/cmd-start.sh:2455`), so its own filesystem is
+  destroyed at exit.
+
+So the capability is advertised to eight agents and has never survived a session. The strings
+`agent-memory` and `autoMemoryDirectory` appear **nowhere** in cco's code or maintainer docs. Nothing
+remains from past sessions to confirm an agent ever wrote there — by construction, the container is
+gone — so the evidence is the mount shape, not a recovered file.
+
+⚠ **`project` scope is a trap here, not an alternative**: it resolves to
+`/workspace/.claude/agent-memory/`, which is the CACHE view `cco start` rebuilds with `rm -rf` — the
+exact defect `aa97b3b` has just closed for `workflows/`. Whatever the ADR decides, it must not land
+there without the same materialisation treatment.
+
+### (b) `autoMemoryDirectory` — collapse the cwd-derived split, and drop a nested mount
+
+Project auto-memory is **not** per-agent and not per-cwd: the official docs put it at
+`~/.claude/projects/<project>/memory/`, where `<project>` is **derived from the git repository** —
+worktrees and subdirectories of one repo share it, and outside a repo the project root is used
+instead. That is why a cco session splits: the main session's cwd `/workspace` is **not** a git repo
+→ key `-workspace`; anything started inside `/workspace/<repo>` **is** → its own key, its own memory
+directory. cco binds STATE memory only at `-workspace/memory`.
+
+`autoMemoryDirectory` (settings.json, honoured at user/project/local/**policy** scope; landed in
+Claude Code **2.1.74**, and the installed version is well past it) points every key at one directory.
+
+- **The real gain is structural, not symptomatic.** The split has not been observed to bite — the
+  second key's memory directory was created empty and removed again, nothing was ever written there.
+  What the change buys is removing the `-workspace/memory` **child mount**: memory stops being a bind
+  nested inside the `projects` bind, which is the shape that required INV-MP, the D6 self-heal and
+  the mountpoint work. It takes one case out of the class that has now failed four times.
+- **Migration is trivial**: the STATE source stays `session/memory`; only the container-side target
+  and the setting change. No content moves, no migration script.
+- **Safe in both branches**: if the setting is honoured memory goes to the new path; if it is not
+  (an older Claude Code), it falls back inside the `projects` bind, which is already bound. Neither
+  branch loses data — but the fallback is **silent**, and the ADR should say whether that is accepted
+  or covered by a version check.
+
+**What it costs, to be weighed in the ADR, not assumed away:**
+
+- the native per-repo semantic goes: two repos in one cco project would share one memory. Defensible
+  (in cco the *project* is the unit) but it is a model choice and must be written as one;
+- **policy scope is the only honest home** — project scope needs the workspace trust dialog, and
+  `~/.cco/.claude/settings.json` is user-owned and never rewritten by cco — so the user loses the
+  ability to relocate memory;
+- it does **not** fix (a). Different mechanism, separate decision inside the same ADR.
+
+**Related**: ADR-0055 (the axis) · ADR-0039 (Claude Code installed at first start, version not
+pinned) · ADR-0054/INV-MP (nested mountpoints) ·
+[FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr) (same lane: the
+repo cwd gets a path that works but is not the one that counts).
