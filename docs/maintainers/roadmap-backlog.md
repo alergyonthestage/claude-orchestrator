@@ -1373,3 +1373,73 @@ printed on the rename that creates the condition and does its job, so this is th
 user was warned about — not a contradiction of it. Cheapest correct fix is probably for the cwd-first
 derivation to consult the index rather than the mount basename, or to say *"this session still has the
 pre-rename mount"* when the derived name is absent. **Effort**: Low.
+
+---
+
+## FI-37: no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`)
+
+**Found**: 2026-07-28, `/review-implementation` of cycle-1.2 S1. **Severity**: usability, no data
+loss. **Effort**: Medium — the fix is a mechanism choice, not a patch.
+
+ADR-0055 D3 gives the cco *project* tree (`/workspace/.claude`) a functional-write floor so
+project-scope workflow saves work at any access level. The **repo** tree did not get one, and
+**INV-FLOOR is scoped accordingly** (ADR-0055 D2) — deliberately, because a repo's native `.claude/`
+is cross-cutting config shared with everyone who clones it, so writing there is closer to authoring
+that repository than to this session's runtime state.
+
+The usability gap that remains is real, and it lands on the class D5 exists to serve. Verified on a
+live default session:
+
+```
+.../claude-orchestrator/.claude   /workspace/claude-orchestrator/.claude          ro
+.../local-settings/repo-….json    /workspace/claude-orchestrator/.claude/settings.local.json  rw
+```
+
+A subagent, teammate, worktree or background session whose cwd is inside a repo saves to
+`<repo>/.claude/workflows/` — the official range is *"the closest existing `.claude/workflows/`
+between your working directory and the repository root"*, and `/workspace/.claude/workflows/` sits
+**above** that root, so D3's overlay is not a fallback. The save fails whether or not the directory
+exists (`:ro` bind either way).
+
+Worse in the nested case: `packages/*/.claude` overlays get **no floor at all**, not even
+`settings.local.json` — that overlay is conditioned on `_cl_rel == ".claude"` (`lib/cmd-start.sh`).
+
+**Options** (each was weighed and deferred rather than dismissed):
+
+- **(a) Stub directory in the user's repo + rw bind from STATE.** Extends the precedent already in
+  place for `settings.local.json`, which writes a stub into the user's repo. Cost: a visible
+  directory appears in a repo the user did not ask cco to modify, plus the gitignore question.
+- **(b) A per-repo view in CACHE**, generalizing ADR-0054's mechanism to B1. No residue in the user's
+  repo and structurally the same answer B2 already uses. Cost: a substantial mechanism change that
+  deserves its own design pass — which is why it is here and not in S1.
+- **(c) Leave it**, and say so in the user docs so the failure is expected rather than surprising.
+
+**Related**: ADR-0055 D2/D3 · ADR-0049 §2 (`Cr=ro` by default) · ADR-0024 (the reach argument that
+makes the repo tree cross-cutting).
+
+---
+
+## FI-38: hygiene of the workflows STATE overlay (stale stubs, silent collision)
+
+**Found**: 2026-07-28, `/review-implementation` of cycle-1.2 S1. **Severity**: minor, no data loss.
+**Effort**: Low each, but both are policy choices rather than bugs — which is why they are here.
+
+Two properties of `_emit_workflows_overlay` (`lib/cmd-start.sh`), the rw overlay ADR-0055 D3 puts at
+`/workspace/.claude/workflows` when B2 is `:ro`. Each committed workflow gets a 0-byte mountpoint stub
+seeded into STATE so its `:ro` bind has somewhere to land.
+
+**(a) A stub outlives the entry that justified it.** Remove a workflow from the committed tree and its
+stub stays in STATE — where STATE is the *rw parent*, so it now reads as a real, empty workflow of the
+same name. The CACHE view does not have this problem because it is rebuilt from scratch at every
+start; the STATE overlay cannot be, since it holds real user saves. A GC needs a rule for telling a
+stale stub from a genuinely empty file the user saved, which is the decision.
+
+**(b) A collision is resolved silently.** If the user saves `X.js` (lands in STATE) and the repo later
+commits its own `X.js`, the overlay correctly does not overwrite — and then binds the committed file
+`:ro` on top, so the user's version is invisible and unwritable with no notice. The exact precedent
+for saying so exists: `lib/packs.sh:133-143` warns *"collides with pack … the pack ':ro' overlay
+wins"*. ⚠ Implementation note for whoever takes this: the function runs inside `$( )` and its stdout
+**is** compose YAML, so any notice must go to stderr or be emitted by the caller — printing it from
+inside would corrupt the generated file.
+
+**Related**: ADR-0055 D3 · ADR-0005 F2 (pack overlay wins) · [FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr).

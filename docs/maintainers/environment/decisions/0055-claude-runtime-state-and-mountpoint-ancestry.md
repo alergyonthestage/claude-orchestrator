@@ -100,11 +100,27 @@ overlay (Axis A) — it only breaks the tool.
 
 The floor is stated as a rule, not an enumeration:
 
-> **INV-FLOOR** — no path Claude Code writes as runtime state is ever *refused* to the session.
-> Home scope satisfies this structurally (D4: `~/.claude` and every ancestor cco nests under are
-> claude-owned, so anything not explicitly bound is writable). Project scope, where the parent is
-> `:ro` by policy, satisfies it through an explicit list, **derived from the official *application
+> **INV-FLOOR** — within **home scope (`~/.claude`) and the cco *project* tree
+> (`/workspace/.claude`)**, no path Claude Code writes as runtime state is ever *refused* to the
+> session. Home scope satisfies this structurally (D4: `~/.claude` and every ancestor cco nests under
+> are claude-owned, so anything not explicitly bound is writable). The project tree, where the parent
+> is `:ro` by policy, satisfies it through an explicit list, **derived from the official *application
 > data* table** and carrying a provenance comment that names the doc it came from.
+
+**The repo tree (`<repo>/.claude`, axis `Cr`) is deliberately outside this invariant**, and the scope
+line is drawn here rather than left implicit — an earlier draft of INV-FLOOR said *"no path"*
+unqualified, which promised more than the code keeps. `<repo>/.claude` is `:ro` by default and
+carries only the `settings.local.json` overlay, so a session whose cwd is inside a repo — the very
+class D5 exists to make persistent — cannot save a project workflow: the official search range is
+*"between the working directory and the repository root"*, and `/workspace/.claude/workflows/` sits
+**above** that root, so the D3 overlay is not a fallback for it.
+
+The reason it is out of scope is not effort but ownership: a repo's native `.claude/` is
+**cross-cutting config shared with everyone who clones the repo**, including people who never use
+cco (ADR-0024's reach argument). A workflow saved there is closer to *authoring that repository* than
+to this session's runtime state, so `Cr` governing it is the correct outcome rather than an accident.
+What is *not* acceptable is that Claude Code has no working save path in that lane, which is a
+usability gap tracked as its own item (**FI-37**) and not silently closed here.
 
 The derived project-scope list is today `{settings.local.json, workflows/}`. Re-deriving it is a
 maintenance task tied to Claude Code releases, and the provenance comment is what makes that possible

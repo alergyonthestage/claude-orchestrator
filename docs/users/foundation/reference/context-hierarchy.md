@@ -824,6 +824,13 @@ Host origins are **host-absolute** sources resolved by `cco start`: project conf
 | Auto memory | `~/.claude/projects/-workspace/memory/` | `<state>/cco/projects/<id>/session/memory/` | Claude launch (prime 200 lines) | Claude Code |
 | Session transcripts | `~/.claude/projects/` (every cwd key) | `<state>/cco/projects/<id>/session/claude-state/` | `/resume` command | Claude Code |
 | Project workflow saves | `/workspace/.claude/workflows/` | `<state>/cco/projects/<id>/workflows/` when the project `.claude` tree is read-only; the repo itself under `--claude-access all` | `/workflows` save | Claude Code |
+
+> **Known limitation.** The save target above applies to the **project** tree. A session whose working
+> directory is inside a repo — a subagent or teammate you start there, a worktree or background
+> session — saves to that **repo's** own `<repo>/.claude/workflows/` instead, which is read-only unless
+> you raise `claude_access`, and `/workspace/.claude/workflows/` is not a fallback for it (Claude Code
+> only searches between the working directory and the repository root). Save from `/workspace`, or
+> raise `claude_access`, until this lane is closed.
 | Global secrets | Container env vars | `~/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Project secrets | Container env vars | `<repo>/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Git config | `~/.gitconfig` | `~/.gitconfig` on host | Git operations | Docker volume mount (`:ro`) |
