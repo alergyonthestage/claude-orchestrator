@@ -1,6 +1,7 @@
 # ADR 0055 — Claude Code runtime state is outside `claude_access`; INV-MP covers container-side ancestry
 
-**Status**: Proposed (design) — 2026-07-28. Cycle-1.2, session **S1**.
+**Status**: Accepted (design) — 2026-07-28, approved by the maintainer at S1's design gate.
+Implementation in the same session. Cycle-1.2, session **S1**.
 Closes **R-D** and **R-F** of the [e2e v3.1 consolidated review](../../configuration/agent-cco-access/e2e-review/results/consolidated-review-v3.1.md) §7.1.
 Generalizes **ADR-0054** (INV-MP) from the host side to the container side.
 Refines **ADR-0049 §5** by replacing the derivation of its *functional-write floor*.
@@ -144,6 +145,22 @@ pre-creation, and the comment there is rewritten to state the generalised rule r
 instance. This also covers `cco new` (`lib/cmd-new.sh:132`), which binds the same shape into a
 throwaway session and would otherwise reproduce R-D on its own.
 
+> **A second instance, found by the lint the moment it existed — and it is the DEFAULT lane.**
+> At project read scope the CONFIG mount is narrowed to the referenced packs, bound one by one at
+> `~/.cco/packs/<name>` (`cmd-start.sh:1972`), which leaves **both** `~/.cco` and `~/.cco/packs`
+> pass-through. Confirmed live in the session that wrote this ADR: `drwxr-xr-x root root`, writes
+> refused. At broader scope `~/.cco` is itself the mount and the question does not arise — the
+> *narrow* shape is the default, which is exactly why it went unseen. Pre-created likewise.
+>
+> The read-only outcome happened to agree with the access policy, so nothing looked broken. That
+> agreement was an accident of mount ordering, not enforcement: it is the policy's job to decide
+> who may write, and a root-owned pass-through ancestor cannot be the mechanism. Writes into the
+> container's own `~/.cco` were, and remain, session-local — they never reach the host store,
+> which is protected by the `:ro` flags on the binds and by ADR-0047 for the internal store.
+>
+> Two findings from one lint, on its first run, is the argument for D4 in miniature: the rule had
+> been written down twice and applied to one path each time.
+
 ### D5 — the whole `projects/` tree is cco-owned and persisted
 
 `cco start` binds **`~/.claude/projects`** from per-project STATE, replacing the bind of
@@ -220,7 +237,12 @@ was already considered and declined once.
   container after `cco build`, recorded in the cycle-1.2 acceptance log.
 - A compose-ancestry lint (parsing a **really generated** `docker-compose.yml`, not a fixture) makes
   INV-MP enforceable rather than remembered. Without it this ADR is the fourth written statement of a
-  rule that keeps being applied one path at a time.
+  rule that keeps being applied one path at a time. **Its reach has a stated limit**: once D5 makes
+  `projects/` a mount target, the lint no longer flags R-D's own path — an ancestor that is itself a
+  target is legitimately exempt. What it guards is the *shape* (a bind nested under a pass-through
+  ancestor), verified by reverting D5 and watching it name `/home/claude/.claude/projects` as the
+  ancestor of `.../projects/-workspace`. D4's Dockerfile entry is therefore not redundant with D5:
+  it is what `cco new` and any future un-bound path rely on.
 - Home-scope runtime state other than `projects/` stays ephemeral. Two entries with durable value
   (`history.jsonl`, global `~/.claude/workflows/`) go to the backlog, named.
 

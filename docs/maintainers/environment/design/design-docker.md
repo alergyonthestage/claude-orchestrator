@@ -604,7 +604,10 @@ services:
       - ${CACHE}/cco/projects/${ID}/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro
 
       # --- Claude state: session transcripts + auto memory (STATE) ---
-      - ${STATE}/cco/projects/${ID}/claude-state:/home/claude/.claude/projects/-workspace
+      # The whole projects/ TREE (ADR-0055 D5): Claude Code keys per-project state by
+      # cwd, so subagent/teammate, worktree and background sessions write under keys
+      # other than -workspace and must persist too.
+      - ${STATE}/cco/projects/${ID}/session/claude-state:/home/claude/.claude/projects
       - ${STATE}/cco/projects/${ID}/session/memory:/home/claude/.claude/projects/-workspace/memory
 
       # --- Repositories ---
@@ -675,7 +678,8 @@ HOST (host-absolute source)                          CONTAINER (fixed)          
 <repo>/.cco/claude/                       → /workspace/.claude/              Project context (rw)
 <cache>/cco/projects/<id>/.claude/workspace.yml → /workspace/.claude/workspace.yml Generated overlay (ro)
 <repo>/.cco/project.yml                   → /workspace/.claude/project.yml   Project config (rw, /init-workspace)
-<state>/cco/projects/<id>/claude-state/   → ~/.claude/projects/-workspace/   Session transcripts (rw)
+<state>/cco/projects/<id>/session/claude-state/ → ~/.claude/projects/         Session transcripts, every cwd key (rw — ADR-0055 D5)
+<state>/cco/projects/<id>/workflows/       → /workspace/.claude/workflows/    Project-scope workflow saves when B2 is :ro (rw — ADR-0055 D3)
 <state>/cco/projects/<id>/session/memory/ → ~/.claude/projects/-workspace/memory/  Auto memory (rw)
 ~/projects/repo-x/                        → /workspace/repo-x/               Repository (rw)
 ~/.gitconfig                              → ~/.gitconfig                     Git config (ro)

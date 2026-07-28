@@ -106,9 +106,10 @@ not exist for the next session.
   documents go in `docs/` within your repo. The agent's context comes from the repo,
   not from chat history.
 - **Auto memory is project-scoped.** Each project's machine-local STATE store
-  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/-workspace/`,
-  isolating session transcripts and memory per project. Memory persists across sessions within
-  the project but never leaks between projects.
+  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/`,
+  isolating session transcripts and memory per project. Transcripts persist for every session
+  key — the main session, subagents and teammates started inside a repo, worktree and background
+  sessions. Memory persists across sessions within the project but never leaks between projects.
 
 ### 1.2 Commit Discipline
 

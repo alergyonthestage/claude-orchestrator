@@ -413,8 +413,11 @@ Auto memory and session transcripts are **machine-local STATE** (ADR-0009) — n
 
 ```
 ~/.local/state/cco/projects/<id>/
-├── claude-state/         ← session transcripts → mounted to ~/.claude/projects/-workspace/
-│   └── <session-transcripts>   ← enables /resume across container rebuilds
+├── session/claude-state/ ← session transcripts → mounted to ~/.claude/projects/
+│   ├── -workspace/             ← the session started at the WORKDIR
+│   │   └── memory/             ← auto memory (its own mount, see below)
+│   └── -workspace-<repo>/      ← a subagent, teammate, worktree or background
+│       └── ...                   session started from a different directory
 └── session/memory/       ← auto memory → mounted to ~/.claude/projects/-workspace/memory/
     ├── MEMORY.md
     └── ...
@@ -423,11 +426,11 @@ Auto memory and session transcripts are **machine-local STATE** (ADR-0009) — n
 **Mount in docker-compose** (host sources are host-absolute, resolved by `cco start`):
 ```yaml
 volumes:
-  - <state>/cco/projects/<id>/claude-state:/home/claude/.claude/projects/-workspace
+  - <state>/cco/projects/<id>/session/claude-state:/home/claude/.claude/projects
   - <state>/cco/projects/<id>/session/memory:/home/claude/.claude/projects/-workspace/memory
 ```
 
-The transcripts mount captures session history; the child `memory/` mount captures auto memory written by Claude Code, so `/resume` works even after `cco build --no-cache`. Since only one project's container runs at a time (or they use different container names), there's no conflict.
+Claude Code keys per-project state by the directory a session starts in, so one cco project produces several keys: `/workspace` becomes `-workspace`, and a subagent, agent-team teammate, worktree or background session started inside a repo gets its own. cco mounts the whole `projects/` tree (ADR-0055), so **every** key persists and `/resume` finds all of them — even after `cco build --no-cache`. The child `memory/` mount captures auto memory written by Claude Code. Since only one project's container runs at a time (or they use different container names), there's no conflict.
 
 > Memory is **machine-local** (ADR-0009). Cross-PC / cross-team sync of state (memory and transcripts) is a deferred opt-in feature, not part of v1. The old vault auto-commit of `memory/` is removed.
 
@@ -819,7 +822,8 @@ Host origins are **host-absolute** sources resolved by `cco start`: project conf
 | MCP servers | `~/.claude.json` (merged) | `~/.cco/.claude/mcp.json` + `<repo>/.cco/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
 | Auth state | `~/.claude.json` | `~/.claude.json` on host (mounted as `.seed:ro`, copied at startup) | Claude launch | `entrypoint.sh` (copy seed) |
 | Auto memory | `~/.claude/projects/-workspace/memory/` | `<state>/cco/projects/<id>/session/memory/` | Claude launch (prime 200 lines) | Claude Code |
-| Session transcripts | `~/.claude/projects/-workspace/` | `<state>/cco/projects/<id>/claude-state/` | `/resume` command | Claude Code |
+| Session transcripts | `~/.claude/projects/` (every cwd key) | `<state>/cco/projects/<id>/session/claude-state/` | `/resume` command | Claude Code |
+| Project workflow saves | `/workspace/.claude/workflows/` | `<state>/cco/projects/<id>/workflows/` when the project `.claude` tree is read-only; the repo itself under `--claude-access all` | `/workflows` save | Claude Code |
 | Global secrets | Container env vars | `~/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Project secrets | Container env vars | `<repo>/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Git config | `~/.gitconfig` | `~/.gitconfig` on host | Git operations | Docker volume mount (`:ro`) |
