@@ -5,7 +5,7 @@
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
 > lives in [roadmap-backlog.md](roadmap-backlog.md).
 >
-> Last updated: 2026-07-26.
+> Last updated: 2026-07-28.
 
 ## Current status
 
@@ -362,7 +362,71 @@ which `edit-all` can never produce. ⚠ Two ordering constraints are load-bearin
 D-V3-1 refuses), and the **provenance value check runs before any session's results count** (v2's
 cycle-0 built from the wrong branch and the whole round was discarded).
 
-**2 — CLI-surface documentation audit** (own session, after v3.1 is ACCEPTED, before merge). Verify
+**1b — e2e review v3.1 RESULT: NOT ACCEPTED → cycle-1.2 (run 2026-07-28).** The four sessions ran on
+`develop@8fd479c` (provenance host-confirmed). Verdict and root map:
+**[`e2e-review/results/consolidated-review-v3.1.md`](configuration/agent-cco-access/e2e-review/results/consolidated-review-v3.1.md)**.
+
+**Everything cycle-1.1 set out to fix HOLDS live** — S1, S2/S2b/S2b-P, S5, S6, S7 (+ decision (b)),
+S8, D-M11, RC-1, RC-4, RC-6, the ADR-0047 boundary and secret masking were all confirmed from
+independent vantages, several beyond spec (W3 proved D-M11 fails **closed** through a *second bind of
+the same inode*; W1's rename round trip was re-confirmed from two sessions that never ran it). **No
+`✓` at exit 0 with nothing behind it anywhere in the round.** The failures are in how the system
+narrates itself, plus three composition roots found off-matrix.
+
+24 raw findings deduplicate to **8 product defects with one meta-root**, analysed in
+**[`engineering/analysis/invariant-gap-audit.md`](engineering/analysis/invariant-gap-audit.md)**:
+*a predicate every call site is free to compute for itself will diverge, and the divergence ships.*
+The three layers that fail (availability vocabulary · mountpoint ancestry · YAML section boundary)
+are exactly the three with **no invariant + lint** — while every layer that has one (INV-S1…S6,
+INV-IDX, the tty gate) held under direct attack. Each past cycle fixed the **reported site** and left
+its siblings; the `read-global`-for-a-project string was found independently by **all four sessions**.
+
+Blocking: **3 🔴** against criterion C/A (`R-C` index taxonomy · `R-A` availability vocabulary ·
+`R-B` uncountable hidden packs) plus **three roots found in consolidation, invisible to the session
+matrix**:
+
+- **R-D** — `~/.claude/projects` is materialised `root:root 0755` by the runtime, so Claude Code
+  cannot create any per-project key other than `-workspace`: this is the maintainer's **subagent /
+  agent-team transcript `EACCES`**. Reproduced live on macOS. Third recurrence of R1's mechanism —
+  and the `Dockerfile:119-124` comment already states the rule it violates.
+- **R-F** — ADR-0049's `:ro` default clamps paths Claude Code needs for **runtime state** (project
+  `.claude/workflows/`): the **workflow-persistence `EACCES`**. The §5 functional-write floor was
+  derived from one bug-reported path instead of the documented set.
+- **R-E** — `_yml_append_coord` (`cmd-project-add.sh:70-75`) treats a comment block as *inside* the
+  current section, so `cco project add|init|join` insert entries **after the next section's header
+  comment**, corrupting `project.yml` structure.
+
+**Decisions ratified 2026-07-28** (detail + anchoring rule in the consolidated review §6):
+**D-V31-1** hidden-vs-nonexistent → non-asserting wording, `unknown` arm only at read scope `all`
+(ADR-0043's own axis) · **D-V31-2** a session pre-flight refusal is **exit 2**, INV-S3b's text amended
+to state the axis without its example · **D-V31-3** dropped `extra_mounts` are **badged in the
+message**, the managed rule stays defense-in-depth (ADR-0047's mechanism-before-prose precedent) ·
+**D-V31-4** criterion C keeps its literal reading; release exceptions are written down, never
+inferred (so W1-01/W2-02 and W4-F01 are 🔴 despite being pre-existing).
+
+**2 — Cycle-1.2: fix at the root, not by report.** Three invariants with lints + two contracts; the
+eight findings close as a consequence. Session-by-session runbook in
+**[`e2e-review/fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**.
+
+| Lane | Deliverable | Closes |
+|---|---|---|
+| **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
+| **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session) | W4-F06 🔴 — **and every Linux session's read path** |
+| **L3** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** | R-D, R-F |
+| **L4** | **INV-YAML** — one comment-block-aware section boundary + golden-file lint | R-E |
+| **L5** | EXIT-trap sentinel discipline + lint | W2-06, W4-F02 |
+
+⚠ **L2, L3 and L4 cannot be accepted on suite-green** — the hermetic lane is blind to mount-time and
+container-context reality by construction. Each needs a probe in a **real container after
+`cco build`**, recorded in the acceptance log. This is **RC-17's fourth recurrence** (RC-17, the R1
+mount shape, FI-31, now R-D).
+
+Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`roadmap-backlog.md`](roadmap-backlog.md)).
+Still never executed in any round: **§10.9e / E6B-04** (pack-rename fan-out atomicity). Host cleanup
+owed: remotes `probe-2`, `x`, `probe-3`, `probe-3b`, plus the stale `scratch-pack` and
+`scratch-a`/`scratch-b`.
+
+**3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
 cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
 `extra_mounts` contract was ratified — and the last full audit
@@ -376,7 +440,10 @@ and [`cli/design/design-cli-environment-awareness.md`](cli/design/design-cli-env
 release whose CLI reference misstates where a verb runs ships the same defect class this cycle was
 about — a message that reads correct and strands the reader.
 
-**3 — Merge `develop → main` + release**, stating the verified platform (below).
+**4 — Merge `develop → main` + release**, stating the verified platform (below), with the README's
+self-contradiction on Linux corrected first: `README.md:59` says *"functional but not yet thoroughly
+tested"*, `README.md:220` says *"Fully supported"*. The table is stale — it does not even carry the
+OAuth caveat stated 160 lines above it.
 
 **⚠ D-M6 re-scoped — the Linux write-path gate (decided 2026-07-21).** It was classified a hard
 blocking gate. Grounding it in the code changes the classification: `cco-svc` is **uid 900**
@@ -391,6 +458,28 @@ correct"* but *"which platform can we claim"*. Two consequences: (a) the gate be
 real filesystem with real DAC**, so a two-command probe (`handoff-v3.1.md` §11) answers it directly.
 ⚠ That probe must run from the **host** terminal: attempted from a session it is refused twice by
 `cco-docker-proxy` (container name, then mount path) — the proxy working as designed.
+
+**✅ The §11 probe RAN (2026-07-28) and returned `EACCES`** — the prediction is now an observation
+(`e2e-review/host-verifications.md`). **And the exposure is wider than "writes", which the session
+reports did not catch.** The host buckets are created **mode 0700** (`paths.sh:448-451`, `umask 077`)
+and owned by the host user, so on native Linux `cco-svc` (uid 900) is neither owner nor group:
+
+- **writes** fail **closed and honestly** — `_store_probe` tests `-r`/`-x` on the bucket
+  (`store.sh:210`) → `reach unreachable` → `die` exit 1, *"nothing was changed"*. This is fine.
+- **reads LIE** — `_index_health` does `[[ -e "$f" ]]` (`index.sh:130`); with no search permission on
+  the parent the stat fails, so the index classifies **`absent`**, the only benign state → *"the path
+  index is empty — nothing is registered on this machine yet"* at **rc=0**, in **every** session.
+
+So **W4-F06 / root R-C is not a macOS edge case — on Linux it is the default experience**, which
+raises its priority and means one fix serves both: giving the taxonomy its session-vs-host axis
+(cycle-1.2 **L2**) converts Linux from *silently wrong* to *honestly refusing* — the precondition for
+stating a verified platform at all. **Criterion F stays signed off as macOS-verified**, with the
+Linux write path carried explicitly open. The Linux fix itself is an **ADR, not a patch**: the
+conflict is structural (the agent's uid must equal the host user's or it cannot write the repos; the
+store content is owned by that same uid; the elevated identity must **not** be that uid). Candidates
+— a dedicated host group + setgid dirs + the gid joined in the entrypoint; POSIX ACLs granting uid
+900; or dropping the boundary on Linux (a security regression) — all imply host-side setup and belong
+in **cycle-2**.
 
 #### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
 
