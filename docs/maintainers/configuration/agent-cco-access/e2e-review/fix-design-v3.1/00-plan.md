@@ -324,10 +324,40 @@ Fix the sentinel discipline, then add the lint that no early exit path skips it.
 
 ### Acceptance log
 
+#### S1 container probe — 2026-07-28
+
+Run in a **default** session on a real container. Provenance `cco whoami` →
+`image built from: fix/release/cycle-1.2@9ee07c2`; the `access: {claude: all}` block was
+**commented out** in `.cco/project.yml` first, so the session resolved `Cp=ro` — without that, the
+R-F arm proves nothing.
+
+```
+1. R-D — ownership          drwxr-xr-x claude claude  /home/claude/.claude/projects   (was root:root)
+2. R-D — the actual symptom mkdir  ~/.claude/projects/-workspace-claude-orchestrator  → OK
+3. R-D, 2nd instance        drwxr-xr-x claude claude  ~/.cco  and  ~/.cco/packs — both writable
+4. R-F — the save target    …/state/cco/projects/<id>/workflows  /workspace/.claude/workflows  rw
+5. B2 parent                …/cache/cco/projects/<id>/claude-view  /workspace/.claude  ro
+6. D5 — projects TREE       …/session/claude-state  /home/claude/.claude/projects        rw
+   memory as grandchild     …/session/memory        …/projects/-workspace/memory         rw
+7. D6 — self-heal on REAL data: 91 transcripts + memory now under -workspace/,
+   0 files stranded at the old depth, memory readable.
+```
+
+**What this probe did NOT observe** — stated so the next round does not read it as more than it is:
+
+- **Cross-restart persistence of a non-`-workspace` key.** The mount shape implies it (everything
+  under `projects/` is inside the STATE bind), but no key other than `-workspace` had yet been
+  written by a real session at probe time.
+- **D7's "composes with no packs at all".** This project references `core-dev-framework`, so the view
+  would have been composed regardless; only `test_claude_view_composed_for_the_write_floor_without_packs`
+  covers that arm.
+- **A real subagent from a repo cwd.** Step 2 reproduces the mechanical core (the `mkdir` Claude Code
+  performs), not the end-to-end write.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ✅ **1533/7** (two identical runs) | n/a | 2026-07-28 |
-| S1 | ✅ **1549/7** (+16 new, same 7 host-only) | ⬜ **required — S1 is NOT accepted until this is pasted here** | 2026-07-28 |
+| S1 | ✅ **1549/7** (+16 new, same 7 host-only) | ✅ **passed** — see below | 2026-07-28 |
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
 | S5 | ⬜ | n/a | |
