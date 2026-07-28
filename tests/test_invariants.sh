@@ -926,3 +926,23 @@ test_invariant_mount_ancestry_owned() {
 
     [[ -z "$bad" ]] || fail "INV-MP: mountpoint ancestor left for the container runtime to create — it will be root-owned and \`claude\` will not be able to write beside the bind (R-D). Pre-create it in the Dockerfile beside the other XDG base dirs:"$'\n'"$bad"
 }
+
+# The other half of INV-MP D4, which the ancestry lint cannot reach: an ancestor
+# that is itself a mount target is exempt by construction, so removing
+# `/home/claude/.claude/projects` from the Dockerfile is invisible to it (verified —
+# the lint still passes). That entry is what stands between a future lane binding a
+# single key again and R-D, so its presence is asserted directly against the set the
+# comment above it documents.
+test_invariant_mount_ancestry_image_set() {
+    local f="$REPO_ROOT/Dockerfile"
+    [[ -f "$f" ]] || { fail "INV-MP: Dockerfile not found"; return 1; }
+    local block; block=$(sed -n '/^RUN groupadd/,/chown -R claude/p' "$f")
+    [[ -n "$block" ]] || { fail "INV-MP: cannot find the user-setup RUN block"; return 1; }
+    local d missing=""
+    for d in /home/claude/.claude /home/claude/.claude/projects /home/claude/.cco/packs \
+             /home/claude/.local/bin /home/claude/.local/share /home/claude/.local/state \
+             /home/claude/.cache; do
+        case "$block" in *"$d"*) ;; *) missing="${missing}  ${d}"$'\n' ;; esac
+    done
+    [[ -z "$missing" ]] || fail "INV-MP: the image no longer pre-creates a documented mountpoint ancestor. An ancestor that is currently a mount target is EXEMPT from the ancestry lint, so dropping it here fails nothing until a lane stops binding it — which is how R-D shipped:"$'\n'"$missing"
+}

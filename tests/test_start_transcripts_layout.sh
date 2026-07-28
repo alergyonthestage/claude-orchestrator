@@ -24,6 +24,11 @@ _tl_test_env() {
 
 # A bucket in the pre-ADR-0055 shape: transcripts sit at the bucket root, because
 # the bucket WAS the -workspace key.
+#
+# Deliberately over-populated relative to reality: a real pre-0055 bucket holds an
+# EMPTY `memory` mountpoint, since memory content lives in the separate STATE bucket
+# `session/memory` bound over it. Seeding a file there is what lets one assertion
+# prove the move preserves content rather than merely relocating a directory.
 _tl_legacy_bucket() {
     local b="$1"
     mkdir -p "$b/013986a7-0b74-491f-bf3d-c09f97f52b1a/subagents" "$b/memory"
@@ -37,7 +42,7 @@ test_transcripts_heal_moves_legacy_content_under_workspace_key() {
     _tl_test_env
     local b="$tmpdir/claude-state"; _tl_legacy_bucket "$b"
 
-    _start_prepare_transcripts_bucket "$b" || fail "heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "heal returned non-zero"; return 1; }
 
     assert_file_exists "$b/-workspace/013986a7-0b74-491f-bf3d-c09f97f52b1a.jsonl" || return 1
     assert_file_exists "$b/-workspace/0690a188-d13f-40bd-b1cc-48285375c00c.jsonl" || return 1
@@ -55,7 +60,7 @@ test_transcripts_heal_preserves_content() {
     _tl_test_env
     local b="$tmpdir/claude-state"; _tl_legacy_bucket "$b"
 
-    _start_prepare_transcripts_bucket "$b" || fail "heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "heal returned non-zero"; return 1; }
 
     assert_equals '{"t":1}' "$(cat "$b/-workspace/013986a7-0b74-491f-bf3d-c09f97f52b1a.jsonl")"
 }
@@ -65,9 +70,9 @@ test_transcripts_heal_is_idempotent() {
     _tl_test_env
     local b="$tmpdir/claude-state"; _tl_legacy_bucket "$b"
 
-    _start_prepare_transcripts_bucket "$b" || fail "first heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "first heal returned non-zero"; return 1; }
     local after_first; after_first=$(cd "$b" && find . | sort)
-    _start_prepare_transcripts_bucket "$b" || fail "second heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "second heal returned non-zero"; return 1; }
     local after_second; after_second=$(cd "$b" && find . | sort)
 
     assert_equals "$after_first" "$after_second"
@@ -83,7 +88,7 @@ test_transcripts_heal_leaves_other_project_keys_alone() {
     mkdir -p "$b/-workspace-claude-orchestrator"
     echo '{"t":3}' > "$b/-workspace-claude-orchestrator/sess.jsonl"
 
-    _start_prepare_transcripts_bucket "$b" || fail "heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "heal returned non-zero"; return 1; }
 
     assert_file_exists "$b/-workspace-claude-orchestrator/sess.jsonl" || return 1
     assert_dir_not_exists "$b/-workspace/-workspace-claude-orchestrator"
@@ -99,7 +104,7 @@ test_transcripts_heal_never_clobbers_an_existing_target() {
     echo 'keep' > "$b/-workspace/sess.jsonl"
     echo 'stray' > "$b/sess.jsonl"
 
-    _start_prepare_transcripts_bucket "$b" || fail "heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "heal returned non-zero"; return 1; }
 
     assert_equals 'keep' "$(cat "$b/-workspace/sess.jsonl")" || return 1
     assert_equals 'stray' "$(cat "$b/sess.jsonl")"
@@ -114,7 +119,7 @@ test_transcripts_bucket_owns_the_memory_mountpoint() {
     _tl_test_env
     local b="$tmpdir/claude-state"; mkdir -p "$b"
 
-    _start_prepare_transcripts_bucket "$b" || fail "prepare returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "prepare returned non-zero"; return 1; }
 
     assert_dir_exists "$b/-workspace/memory"
 }
@@ -124,7 +129,7 @@ test_transcripts_heal_creates_the_workspace_key_on_an_empty_bucket() {
     _tl_test_env
     local b="$tmpdir/claude-state"; mkdir -p "$b"
 
-    _start_prepare_transcripts_bucket "$b" || fail "heal returned non-zero"
+    _start_prepare_transcripts_bucket "$b" || { fail "heal returned non-zero"; return 1; }
 
     assert_dir_exists "$b/-workspace"
 }
