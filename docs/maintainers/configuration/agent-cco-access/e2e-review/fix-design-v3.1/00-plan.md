@@ -47,7 +47,7 @@ maintainer's daily work, and it depends on nothing.
 
 | # | Session | Lane | Produces | Status |
 |---|---|---|---|---|
-| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | ⬜ not started |
+| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | 🟡 design done ([ADR-0055](../../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)) — **implementation gate pending** |
 | **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ⬜ not started |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
@@ -61,6 +61,12 @@ S1 and S5 are independent of everything — they may run in any order relative t
 **1531/7** (the 7 are the pre-existing host-only artifacts — see the memory note *suite-7-host-only*;
 do **not** try to fix them here). Run `./bin/test` once at the start of the cycle and record the
 actual number in §7; if it is not 1531/7, find out why before proceeding.
+
+> **Established 2026-07-28 — `1533/7`, reconciled.** The `+2` is `4b3679a` (the last ADR-0054
+> follow-up), which added exactly two test functions after the 1531 was recorded. The 7 are the known
+> host-only set, named here so a future run compares names and not just a count: the six
+> `test_as_*` access-scope output-scoping tests (defeated in-container by the ADR-0047 privilege
+> boundary) plus `test_paths_symlink_safe_tool_root`.
 
 ---
 
@@ -306,7 +312,7 @@ Fix the sentinel discipline, then add the lint that no early exit path skips it.
 
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
-| baseline | ⬜ | n/a | |
+| baseline | ✅ **1533/7** (two identical runs) | n/a | 2026-07-28 |
 | S1 | ⬜ | ⬜ **required** | |
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
