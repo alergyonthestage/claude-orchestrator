@@ -1,125 +1,134 @@
-# Handoff — verify S1's `Cp=rw` arm, then start S2
+# Handoff — S1 is accepted; S2 awaits its start gate
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
-> Written 2026-07-28, end of cycle-1.2 **S1**.
->
-> ✅ **The probe half of this handoff is CONSUMED (2026-07-28).** The `Cp=rw` arm passed across a
-> real restart, and two of §7's three "not observed" items closed with it; the output is in the
-> runbook's acceptance log (§7, second block) and **S1 is accepted**. What remains live below is
-> only *"Then: S2"* and the open items. Do not re-run the probe from this file.
+> Written 2026-07-28, after cycle-1.2 **S1** was accepted.
 
-## Where things stand
+## Methodology / where we are
 
 Branch **`fix/release/cycle-1.2`** off `develop` (which is level with `origin/develop`).
-**14 commits, nothing pushed.** Suite **1551 passed / 9 failed of 1560**.
+**17 commits, nothing pushed.** Tip `80788d8`.
 
-S1 (lane L3 — **R-D** + **R-F**) is implemented, probed and reviewed:
-[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) ·
-runbook [`fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)
-(§3 is S1, §7 holds the acceptance log) · [roadmap](roadmap.md) §B2-next lane L3.
+**S1 (lane L3 — R-D + R-F) is closed and accepted**: both container probes are green and recorded.
+The cycle's next unit is **S2**, which is a **Design** phase — *design only, no code* — and it ends at
+a human gate. S3 and S4 implement S2's ADR and cannot start before it.
 
-**The 9 failures are environmental, not regressions.** Seven are the long-standing host-only set;
-the other two (`test_update_new_file_added`, `test_update_dry_run`) write into
-`defaults/global/.claude/rules/`, which is tracked *and* mounted `:ro` whenever `Cr=ro`. They pass
-only when the `.claude` trees are writable — which is why the number recorded earlier in the cycle
-(1549/7) was wrong: it was measured with `access: {claude: all}` active. **Any suite figure from a
-self-dev session must state whether that block was on.**
+**The gate that is pending is S2's own start.** It was offered at the end of the last session and not
+answered, so no direction has been approved. Per `.claude/rules/workflow.md` this is gate (a):
+launching the work *and approving its direction*. Do not open S2 unilaterally.
 
-## The one thing to verify
-
-`/review-implementation` found that under **`Cp=rw` *and* composing** (i.e. any project that adopts a
-pack, which is the everyday shape here), a workflow Claude Code saved landed in the CACHE view — and
-`cco start` rebuilds that view with `rm -rf`, so the save was **destroyed at the next start**, not
-merely session-local. Fixed in `aa97b3b` by materialising `workflows/` in the committed tree and
-binding it back rw.
-
-**That fix landed after the container probe was recorded** (`c8549fa`), so it is the only unprobed
-arm. The probe itself ran at `Cp=ro` and none of its assertions are invalidated — those code paths
-are untouched.
-
-### No rebuild needed
-
-`cco start` runs on the **host** from the checkout, and `aa97b3b` only changes `lib/cmd-start.sh` —
-host-side compose generation. The `Dockerfile` half (`d550da8`) is already in the built image
-(`cco whoami` → `image built from: fix/release/cycle-1.2@9ee07c2`).
-
-### Why the probe needs `claude_access: all`, when the point of S1 was the opposite
-
-Worth stating plainly, because it reads backwards at first. S1 has two arms:
-
-- **`Cp=ro`** (the default) — the agent **could not save at all**: `/workspace/.claude/workflows/` was
-  `:ro`. That is R-F, it is fixed by the STATE overlay, and **the probe already confirmed it.**
-- **`Cp=rw`** — the agent could always save; the defect was *where the save landed*. With a pack
-  adopted, the parent is the CACHE view, which `cco start` rebuilds with `rm -rf`, so the file was
-  **destroyed at the next start**. That is the review finding, fixed by `aa97b3b`, unprobed.
-
-So the raised access level is not something the fix requires — it is simply the only configuration in
-which the unverified code path runs.
-
-**The `access: {claude: all}` block is restored in `.cco/project.yml`**, so the next session is
-already `Cp=rw` and no CLI flag is needed. Note the side effect: daily sessions no longer exercise the
-default lane, and `test_update_new_file_added` / `test_update_dry_run` will pass again — so suite
-figures taken from them are the masked ones.
-
-### The probe — who runs what
-
-**The session agent runs every check below.** The human is needed for exactly one thing: `cco start` /
-the restart, because container-spawning verbs are refused in-session by design (the privilege
-boundary), not out of convenience.
-
-Agent, at the start of the session:
-
-```bash
-# 1. The save target must be the COMMITTED tree, rw — not the STATE overlay, and
-#    not absent (absent IS the bug: the view would swallow the save).
-grep '/workspace/.claude/workflows' /proc/self/mountinfo
-#    expect a source under <repo>/.cco/claude/workflows and no 'ro,' flag
-# 2. The directory exists in the repo
-ls -ld /workspace/claude-orchestrator/.cco/claude/workflows
-# 3. Leave a marker, and confirm git sees it as a new untracked file —
-#    that is what "shared via git" means in changelog #52
-echo '// probe' > /workspace/.claude/workflows/probe.js
+```mermaid
+flowchart LR
+  S1["S1 · runtime paths<br/>✅ accepted"]
+  S2["S2 · availability model<br/>DESIGN ONLY — gate"]
+  S3["S3 · index-health axis"]
+  S4["S4 · INV-AVAIL sweep"]
+  S5["S5 · INV-YAML + EXIT-trap<br/>independent"]
+  S6["S6 · close-out"]
+  S2 --> S3
+  S2 --> S4
+  S3 --> S6
+  S4 --> S6
+  S5 --> S6
 ```
 
-Then **ask the human to restart the session** — that restart *is* the test, because the old behaviour
-destroyed the file at exactly that moment. On the way back in, the agent checks `probe.js` survived
-and deletes it.
+## How to resume
 
-### Two blind spots worth closing in the same sitting
+1. Confirm the ground: `git log --oneline -1` → `80788d8` on `fix/release/cycle-1.2`.
+2. **Ask the maintainer to open S2** (it is a phase transition — a gate, not a formality). While
+   waiting, the reading below is free to do; writing the ADR is not.
+3. Switch to **Plan mode** for S2 — the permission-mode-per-phase rule puts Design in read-only.
+4. Read the S2 brief: **§4** of
+   [`fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)
+   — §4.1 is what the ADR must settle, §4.2 the exit criteria. Then its own reading list:
+   `consolidated-review-v3.1.md` §3/§4/§6 · `invariant-gap-audit.md` §2 ·
+   [ADR-0043](cli/decisions/0043-unified-cli-environment-access-scope.md) ·
+   ADR-0047 §INV-S6 · `lib/access-scope.sh` · `lib/index.sh:104-180`.
+5. S2 produces **one ADR** covering both halves, because they meet in the same renderer:
+   `project show`'s `[unresolved]` marker answers *"the index did not tell me a path"* and prints it
+   as *"no path is bound"*. Splitting them would put one predicate in two ADRs.
 
-Both are recorded in §7 of the runbook as *not observed*, and both are cheap now:
+⚠ **The runbook warns that the W4 report's diagnosis of R-B is wrong**, and says why: packs *are*
+wired into the scope layer (`cmd-pack.sh:116` calls `_env_note_hidden`). The real cause is that at
+`G=none` the store is not mounted, so the enumeration loop never iterates. **You cannot count what
+you cannot enumerate** — the count has to come from the elevated side.
 
-- **Cross-restart persistence of a non-`-workspace` key.** Start a subagent or teammate from inside
-  `/workspace/claude-orchestrator`, restart, and confirm its key under `~/.claude/projects/` survived.
-  The first probe only proved the key could be *created*.
-- **D7 composing with no packs at all.** Needs a project that references none; only a unit test covers
-  that arm today.
+## Tasks
 
-### After the probe
+Status lives in the [roadmap](roadmap.md) §B2-next (lanes L1–L5) and in §2 of the runbook; this list
+points at them, it does not fork them.
 
-Paste the output into the acceptance log in §7 of the runbook and flip S1's row. If anything fails,
-the fix belongs in this branch before S2 — S1 is not accepted until this arm is green.
+- [ ] **S2** — availability model, design only, one ADR → roadmap lanes **L1 + L2**. *Blocked on the
+      start gate.*
+- [ ] **S3** — index-health session/host axis (**R-C** 🔴) → lane **L2**. Needs S2. **Requires a
+      container probe** after `cco build`; suite-green does not accept it.
+- [ ] **S4** — INV-AVAIL sweep + CLASS lint (**R-A**, **R-B** 🔴) → lane **L1**. Needs S2.
+- [ ] **S5** — INV-YAML + EXIT-trap sentinel → lanes **L4 + L5**. Independent; may run any time.
+- [ ] **S6** — close-out: §10.9e/E6B-04 (never executed in any round), host cleanup of the stale
+      remotes/projects, README platform contradiction (`:59` vs `:220`).
+- [ ] **D7 residual** — *"composes with no packs at all"*, the one item S1's probes could not reach.
+      It needs a project referencing **no** pack, so it is **host-side** (`cco start` is refused
+      in-session). Only `test_claude_view_composed_for_the_write_floor_without_packs` covers it today.
+- [ ] **Host-side, yours** (FI-20 — merges touching `.cco` are host-only): `git push` this branch,
+      then the merge into `develop`.
+- [ ] **[FI-37](roadmap-backlog.md)** and **[FI-38](roadmap-backlog.md)** — filed, not scheduled.
 
-## Then: S2
+## Context
 
-**S2 is design-only and ends at a human gate.** It must precede S3 and S4, which implement its ADR.
-Brief in §4 of the runbook. One ADR covering both halves of the availability model, because they meet
-in the same renderer: `project show`'s `[unresolved]` marker answers *"the index did not tell me a
-path"* and prints it as *"no path is bound"*.
+### What this session established
 
-Read first: `consolidated-review-v3.1.md` §3/§4/§6 · `invariant-gap-audit.md` §2 · ADR-0043 ·
-ADR-0047 §INV-S6 · `lib/access-scope.sh` · `lib/index.sh:104-180`.
+The `Cp=rw` arm of S1 — the only code path left unprobed, because its fix (`aa97b3b`) landed after
+the first container probe was recorded. Full output is in the runbook's **acceptance log §7, second
+block**; the short version:
 
-⚠ The runbook warns that the W4 report's diagnosis of **R-B is wrong** and says why — packs *are*
-wired into the scope layer; the real cause is that at `G=none` the store is not mounted, so the
-enumeration loop never iterates. **You cannot count what you cannot enumerate.**
+- The marker survived the restart with its checksum intact, **and the run is provably not vacuous**.
+  That distinction is the whole point: `probe.js` survives *because* it now lives in the committed
+  tree, so its survival alone would prove nothing. What proves it is that the view's own mtime moved
+  to the restart (`16:01`) while the marker kept its pre-restart one (`15:57`) — so
+  `rm -rf "$_claude_view"` (`lib/cmd-start.sh:1905`) really ran, and the save outlived it.
+- Two of the three items §7 listed as *not observed* closed in the same run: a non-`-workspace` key
+  (`-workspace-claude-orchestrator`) written by a **real** Claude Code session from a repo cwd — the
+  end-to-end write, not the mechanical `mkdir` the first probe reproduced — and its survival across
+  the restart.
+- Here the maintainer's `access: {claude: all}` block was deliberately **kept**, because at `Cp=rw`
+  it is not the mask but the *subject*: the only configuration in which the path executes. That is
+  the inverse of the first probe, which required stashing it.
 
-## Open items this session deliberately did not close
+No decision was made that needs an ADR; ADR-0055 already carries S1's model and needed no amendment.
 
-- **[FI-37](roadmap-backlog.md)** — the repo lane (`<repo>/.claude`, axis `Cr`) has no workflow-save
-  path. INV-FLOOR was scoped to say so rather than left promising more than the code keeps; the
-  usability gap is real and has three options weighed in the backlog entry.
-- **[FI-38](roadmap-backlog.md)** — workflows-overlay hygiene: a stub outliving its committed entry,
-  and a save/commit collision resolved silently.
-- **Host-side**: `git push` of this branch, and the merge into `develop`, are yours (FI-20 — merges
-  touching `.cco` are host-only).
+### Open question for the human
+
+**Should the memory-bucket observation be filed as a backlog item?** Observed during the probe, not
+chased, recorded in §7: the new transcript key was given a plain `memory/` directory of its own. Only
+`-workspace/memory` is the bound bucket (ADR-0055 D5), so a teammate started from a repo cwd writes a
+**different** memory bucket. It persists — it is inside the STATE bind — but it is not the memory the
+main session reads. It is a sibling in shape to FI-37: the repo-cwd lane again gets a path that works
+but is not the one that counts. Filing it is the maintainer's call, so it was left unfiled.
+
+### Non-obvious things worth not rediscovering
+
+- **Any suite figure from a self-dev session must state whether `access: {claude: all}` was on.** The
+  block is still uncommitted in `.cco/project.yml` and it is currently **on**. With it on,
+  `test_update_new_file_added` and `test_update_dry_run` pass; with it off they fail, because they
+  write into `defaults/global/.claude/rules/`, which is tracked *and* `:ro` when `Cr=ro`. The
+  unmasked figure is **1551 passed / 9 failed of 1560**; seven of the nine are the long-standing
+  host-only set. This mask has now cost three wrong numbers in this cycle.
+- **`cco start` runs host-side.** Edits to `lib/` change behaviour on the next start with no rebuild;
+  edits to the `Dockerfile` need `cco build`. Record provenance (`cco whoami` → `image built from:`)
+  with any probe — this session ran on `fix/release/cycle-1.2@c40e556`.
+- **L2/L3/L4 cannot be accepted on suite-green** (RC-17's fourth recurrence). The hermetic suite is
+  blind to mount-time and container-context reality by construction. S3 still owes a probe.
+- The working tree carries three untracked paths that are **not** this cycle's (`tmp`,
+  `to-verify-guides-docs.md`, `.claude/worktrees/`) and an uncommitted `.cco/project.yml` that also
+  contains a port change (`8081` → `8082`) beside the access block. Leave them alone unless asked.
+
+## Reference documents
+
+- [Roadmap](roadmap.md) — §B2-next, lanes L1–L5 (SSOT for status) · [backlog](roadmap-backlog.md)
+- [Cycle-1.2 runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — §2
+  session map · §3 S1 · **§4 S2** · §5 S3/S4 · §7 acceptance log · §8 host-only gates
+- [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) — what S1
+  decided: `claude_access` governs authoring, never Claude Code's runtime state
+- [ADR-0043](cli/decisions/0043-unified-cli-environment-access-scope.md) — symmetric read scoping,
+  the model S2 extends (note it lives under `cli/decisions/`, not with the access-model ADRs)
+- `docs/maintainers/engineering/analysis/invariant-gap-audit.md` — why the unit of work in this cycle
+  is the invariant plus its lint, not the reported finding
