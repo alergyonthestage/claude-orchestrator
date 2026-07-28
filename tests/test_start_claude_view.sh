@@ -272,8 +272,59 @@ test_write_floor_workflows_overlay_is_rw_from_state() {
     assert_file_contains "$compose" "test-proj/workflows:/workspace/.claude/workflows\""
 }
 
-# Under Cp=rw the overlay must NOT exist: saves belong in the repo, to be committed
-# and shared, exactly as the upstream docs describe. The access level is the choice.
+# Cp=rw AND composing: without this, a workflows/ dir Claude Code creates on save
+# lands in the CACHE view, which cco start rm -rf's at the next start — the save is
+# destroyed, not merely session-local. And it is the everyday shape for any project
+# with a pack, so the changelog's unconditional "saves land in the repo" depends on it.
+test_write_floor_workflows_committed_when_composing_at_rw() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_pack "$tmpdir" "s-pack" "$(printf 'name: s-pack\nskills:\n  - deploy\n')"
+    mkdir -p "$CCO_PACKS_DIR/s-pack/skills/deploy"
+    echo "# deploy" > "$CCO_PACKS_DIR/s-pack/skills/deploy/SKILL.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - s-pack\n')"
+
+    run_cco start "test-proj" --dry-run --dump --claude-access all
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+
+    # From the COMMITTED tree and rw (no :ro suffix — the closing quote pins it),
+    # never from STATE: at Cp=rw the repo is the right home for a saved workflow.
+    assert_file_contains "$compose" "claude/workflows:/workspace/.claude/workflows\"" || return 1
+    grep -qE 'state.*/workflows:/workspace/\.claude/workflows"' "$compose" \
+        && fail "at Cp=rw the save target must be the repo, not the STATE overlay"
+    return 0
+}
+
+# The host-side half the dry run cannot see: the directory must exist in the
+# committed tree BEFORE the view takes the parent slot, or there is nothing to bind.
+test_write_floor_workflows_committed_dir_is_materialised() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _cv_test_env
+    local src="$tmpdir/claude"; mkdir -p "$src"
+
+    local out; out=$(_emit_workflows_committed "$src" "false")
+
+    assert_dir_exists "$src/workflows" || return 1
+    case "$out" in
+        *"$src/workflows:/workspace/.claude/workflows\""*) ;;
+        *) fail "expected the committed workflows bind, got: $out" ;;
+    esac
+}
+
+test_write_floor_workflows_committed_dry_run_creates_nothing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _cv_test_env
+    local src="$tmpdir/claude"; mkdir -p "$src"
+
+    _emit_workflows_committed "$src" "true" >/dev/null
+
+    [[ -e "$src/workflows" ]] && fail "dry run must not touch the committed tree"
+    return 0
+}
+
+# Under Cp=rw with nothing to compose the committed tree is already the parent, so
+# no extra mount is needed: saves land in the repo by the plain whole-tree bind.
 test_write_floor_workflows_absent_when_authoring() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

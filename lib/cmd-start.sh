@@ -551,6 +551,25 @@ _emit_workflows_overlay() {
     done
 }
 
+# The Cp=rw half of the same contract (ADR-0055 D3). With B2 writable there is no
+# floor and saves belong in the repo — which is what happens when the committed
+# tree IS the parent. But a composing session (ADR-0054 D2) puts the CACHE view
+# there instead, and `cco start` rebuilds that view with `rm -rf` at every start:
+# a workflows/ directory Claude Code creates on save would be *destroyed at the
+# next start*, which is worse than the session-local delta D4 warns about, and it
+# is the everyday shape for any project that adopts a pack.
+#
+# So materialise the directory in the committed tree and bind it back rw. The
+# empty directory is the accepted cost: under Cp=rw authoring is precisely what
+# the session asked for, and `<repo>/.cco/claude/workflows/` is where a shared
+# project workflow belongs — the outcome the upstream docs describe.
+# Args: <claude_src> <dry_run:true|false>. Prints the compose line.
+_emit_workflows_committed() {
+    local claude_src="$1" dry="$2"
+    [[ "$dry" == "true" ]] || mkdir -p "${claude_src}/workflows" || return 1
+    _compose_vol "${claude_src}/workflows" "/workspace/.claude/workflows"
+}
+
 # ── Session-transcripts bucket layout (ADR-0055 D5/D6) ───────────────────────
 # The bucket is bound as the whole ~/.claude/projects TREE, not as the single
 # -workspace key, so transcripts persist for EVERY cwd key Claude Code derives
@@ -1858,6 +1877,7 @@ YAML
         # per-entry lines stay OUT of $_injected: their parent at runtime is the
         # STATE overlay, not the view, so their mountpoints belong in STATE.
         local _wf_lines="" _wf_parent=""
+        local _framework_children="${_pack_mounts}"$'\n'"${_llms_mounts}"
         if [[ "$_b2_mode" == "ro" ]]; then
             # Beside local-settings/, not under session/: both are functional-write
             # floor overlays for /workspace/.claude, while session/ is specifically
@@ -1866,8 +1886,14 @@ YAML
                 "${claude_src}/workflows" "$_b2_mode" "$dry_run") \
                 || die "Cannot prepare the workflows overlay at ${session_state_dir}/workflows."
             _wf_parent="${_wf_lines%%$'\n'*}"
+        elif [[ "$_framework_children" == *':/workspace/.claude/'* ]]; then
+            # Cp=rw AND composing — see _emit_workflows_committed for why the
+            # committed directory has to exist before the view takes the parent slot.
+            _wf_lines=$(_emit_workflows_committed "$claude_src" "$dry_run") \
+                || die "Cannot create ${claude_src}/workflows."
+            _wf_parent="$_wf_lines"
         fi
-        local _injected="${_pack_mounts}"$'\n'"${_llms_mounts}"$'\n'"${_wf_parent}"
+        local _injected="${_framework_children}"$'\n'"${_wf_parent}"
         local _claude_view="" _b2_local_mp=""
         if [[ "$_injected" == *':/workspace/.claude/'* ]]; then
             # INV-MP (ADR-0054): a child bind needs its mountpoint to pre-exist, and
@@ -1908,10 +1934,12 @@ YAML
                 "$_b2_local_mp" \
                 "/workspace/.claude/settings.local.json" "$dry_run" \
                 "${claude_src}/settings.local.json"
-            if [[ -n "$_wf_lines" ]]; then
-                echo "      # Functional-write floor: project-scope workflows (ADR-0055 D3)"
-                printf '%s\n' "$_wf_lines"
-            fi
+        fi
+        # Emitted for BOTH arms — the :ro floor overlay and the Cp=rw committed
+        # bind — so the save target is explicit in the compose either way.
+        if [[ -n "$_wf_lines" ]]; then
+            echo "      # Project-scope workflows: the save target (ADR-0055 D3)"
+            printf '%s\n' "$_wf_lines"
         fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
         # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds).
