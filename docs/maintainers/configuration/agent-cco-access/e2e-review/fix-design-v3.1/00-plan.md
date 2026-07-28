@@ -356,8 +356,20 @@ R-F arm proves nothing.
 
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
-| baseline | ✅ **1533/7** (two identical runs) | n/a | 2026-07-28 |
-| S1 | ✅ **1549/7** (+16 new, same 7 host-only) | ✅ **passed** — see below | 2026-07-28 |
+| baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
+| S1 | ✅ **1547/9** unmasked · 1549/7 masked (+16 new either way, total 1556 both) | ✅ **passed** — see below | 2026-07-28 |
+
+> ⚠ **Correction — both earlier numbers were taken with `access: {claude: all}` active.** Re-run in a
+> real default session (`Cr=ro`) the suite is **1547/9, total 1556** — the same 1556 tests, with two
+> more failing: `test_update_new_file_added` and `test_update_dry_run`, which write fixtures into
+> `defaults/global/.claude/rules/`. That path is tracked *and* mounted `:ro` whenever `Cr=ro`, so they
+> pass only when the `.claude` trees are writable. Nothing was lost and no test regressed — the delta
+> is environmental, the same category as the seven host-only ones.
+>
+> The point worth carrying forward is the **third** occurrence of one pattern in this cycle: the
+> plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
+> from a self-dev session must state whether the block was in place.** These two are *not* to be
+> chased inside S1 — the same rule as the seven.
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
 | S5 | ⬜ | n/a | |
