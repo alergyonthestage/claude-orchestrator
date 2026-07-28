@@ -412,7 +412,7 @@ eight findings close as a consequence. Session-by-session runbook in
 |---|---|---|
 | **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
 | **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session) | W4-F06 🔴 — **and every Linux session's read path** |
-| **L3** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** | R-D, R-F |
+| **L3** ✅ | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite 1549/7. ⏳ **not accepted until the container probe runs** (plan §3.4) | R-D, R-F |
 | **L4** | **INV-YAML** — one comment-block-aware section boundary + golden-file lint | R-E |
 | **L5** | EXIT-trap sentinel discipline + lint | W2-06, W4-F02 |
 

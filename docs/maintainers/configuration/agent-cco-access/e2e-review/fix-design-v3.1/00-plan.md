@@ -47,7 +47,7 @@ maintainer's daily work, and it depends on nothing.
 
 | # | Session | Lane | Produces | Status |
 |---|---|---|---|---|
-| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | 🟡 design done ([ADR-0055](../../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)) — **implementation gate pending** |
+| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | 🟢 code + docs landed ([ADR-0055](../../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md), 4 commits) — **awaiting `cco build` + the §3.4 container probe, which is what accepts it** |
 | **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ⬜ not started |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
@@ -160,6 +160,20 @@ grep '/workspace/.claude/workflows' /proc/self/mountinfo   # expect a rw entry (
 
 Then the real acceptance: **start a subagent / agent-team teammate from inside a repo directory** and
 confirm its transcript is written. That is the reported symptom, and nothing short of it closes R-D.
+Restart the container afterwards and confirm the transcript is still there — D5 persists every key,
+and a probe that only proves *writable* would leave the ephemeral half untested.
+
+> **Landed 2026-07-28** (branch `fix/release/cycle-1.2`, 4 commits `d550da8`, `3f27e39`, `918c8b1`,
+> `57ab325`; suite **1549/7**). Two notes for whoever runs the probe:
+>
+> - **A second instance of R-D was found by the lint, in the DEFAULT lane**: `~/.cco` and
+>   `~/.cco/packs` were `root:root` and unwritable, because project read scope binds the referenced
+>   packs one by one and leaves both parents pass-through. Fixed in the same Dockerfile change, so
+>   add `ls -ld /home/claude/.cco /home/claude/.cco/packs` to the probe.
+> - **The probe list above is a lower bound** for `grep '/workspace/.claude/workflows'`: the mount is
+>   present only when B2 is `:ro`. With the `access: {claude: all}` block still in `.cco/project.yml`
+>   there is *correctly* no overlay and workflows land in the repo — so stashing that block is not a
+>   nicety here, it decides which of two correct behaviours you are looking at.
 
 ---
 
@@ -313,7 +327,7 @@ Fix the sentinel discipline, then add the lint that no early exit path skips it.
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ✅ **1533/7** (two identical runs) | n/a | 2026-07-28 |
-| S1 | ⬜ | ⬜ **required** | |
+| S1 | ✅ **1549/7** (+16 new, same 7 host-only) | ⬜ **required — S1 is NOT accepted until this is pasted here** | 2026-07-28 |
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
 | S5 | ⬜ | n/a | |
