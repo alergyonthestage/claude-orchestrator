@@ -1279,3 +1279,97 @@ decide the *reporting* question it exposes: cross-scope duplication is legitimat
 (a project deliberately overriding a global rule), so the message must name the scopes and the
 resolution order rather than imply an error. Relevant to **FI-28** (a globally adopted pack multiplies
 exactly this class). **Effort**: Low.
+
+---
+
+## FI-33: two cco surfaces render the same binding's host path differently
+
+**Status**: 📝 Note — to analyze (found 2026-07-28, e2e v3.1 session W1; cosmetic, no data risk).
+
+**Context**: in one session, before a rename, `cco path list` printed
+`…/Software/claude-orchestrator` while `cco project show` printed the same binding as
+`…/Software/claude-orchestrator/.` — with a trailing `/.`. `_cco_display_path`
+(`lib/paths.sh:395-403`) is a pass-through when `show_host_paths` is on, so the two diverge
+**upstream**: `path list` reads the index, while the repo-centric `project show` takes `$repo_path`
+from the effective-mount source, which carries the compose bind's `/.` (the same form the injected
+session `path_map` shows). After the rename the divergence disappeared — the re-keyed index entry
+became the source for both.
+
+**Suggested direction**: ADR-0053 / FI-27-adjacent. The two-tier canonicalization landed at the index
+**write** boundary; this is a *display* source that never passes through it. Decide whether the
+effective-mount source should be normalized on read, or whether `project show` should read the index
+like its sibling. **Effort**: Low.
+
+---
+
+## FI-34: a project-shaped index entry that no reconciliation can see (`projects` vs `project_paths`)
+
+**Status**: 📝 Note — to analyze (found 2026-07-28, e2e v3.1 session W2, at `edit-all` where nothing
+is scope-hidden, so the two surfaces genuinely disagree).
+
+**Context**: `proj-b` owns a row in `cco path list` (`[proj-b] proj-c /tmp/cco-scratch/proj-c`) and is
+absent from `cco list projects`. Mechanism confirmed at the source: the two surfaces read **different
+index sections** — `_index_list_projects` dumps `projects` (`lib/index.sh:1130`), `cco path list`
+dumps `project_paths` (`_index_pp_dump_all`, `:774`, used at `:1122`, ADR-0051 D6). An entry with
+`project_paths` rows and no `projects` entry is structurally invisible to `_index_list_projects`.
+
+**Consequence**: S7's declared-vs-effective diff is built on exactly that call, so such an entry is
+**neither mounted nor announced** — the class S7 exists to close. `cco pack rename`'s fan-out guard
+counts unmounted projects from the same source, so its atomicity promise has a hole in the direction
+it was built to prevent.
+
+**Suggested direction**: probably scratch residue (`/tmp/cco-scratch/proj-c` is a host scratch path),
+but *"a project-shaped index entry no reconciliation can see"* is the item, not the entry. Whether
+this instance is residue or a live orphan **cannot be discriminated from inside a container** — it
+needs a host `cco config validate`, which is the verb that would normally arbitrate it. Decide
+whether `projects` and `project_paths` need a consistency lane in `config validate --fix`.
+**Effort**: Low–Med.
+
+---
+
+## FI-35: a binding whose target is a **file** passes every surface unflagged
+
+**Status**: 📝 Note — to analyze (found 2026-07-28, e2e v3.1 session W3; inert in that session because
+config-editor never mounts a target's extra_mounts).
+
+**Context**: `cave-web-kit` resolves to `…/shared/cave-web-kit/vite.config.ts` — a **file**, where a
+mount source must be a directory. `cco path list` and `cco project show` print it without comment, and
+`cco project validate` flags it only for the *unrelated* missing-`url` reason (`reachability=2`); the
+**shape** of the binding is never checked.
+
+**Consequence**: no surface distinguishes *"bound to something usable"* from *"bound to nonsense"* —
+V1-F2's `[unresolved]` covers **unbound**, not **bound-to-a-file**. Almost certainly a mis-scoped host
+`cco path set`, i.e. the host-side index-hygiene class `handoff-v3.md` §9 defers to cycle 2.
+
+**Suggested direction**: add a shape check to the validate lane (a mount source must be a directory),
+and decide whether it is a warning or an error. Related to FI-34 (both are index hygiene the container
+cannot arbitrate). **Effort**: Low.
+
+---
+
+## FI-36: after a rename the cwd-first `<old>` derivation is stale and misdiagnoses
+
+**Status**: 📝 Note — to analyze (found 2026-07-28, e2e v3.1 session W1; narrow — post-rename,
+pre-restart only — and non-destructive).
+
+**Context**: the cwd-first form of `cco repo rename` derives `<old>` from
+`_cco_member_name_from_mount`, i.e. the **mount basename** (`lib/paths.sh:411-418`). After a rename
+the mount path still carries the *old* label, so the derived `<old>` names something the index no
+longer has:
+
+```
+$ cco repo rename w1-third-name -y
+✗ No repo named 'claude-orchestrator' in project 'claude-orchestrator'. Run
+  'cco project show claude-orchestrator' to see its members.
+$ cco project show | tail -1
+  claude-orchestrator-w1probe (…) — also in: cave-ensemble
+```
+
+The message sends the user to a command whose output does **not** contain the name it just said is
+missing.
+
+**Suggested direction**: V3-P's info note (*"restart the session for the new name to take effect"*) is
+printed on the rename that creates the condition and does its job, so this is the cost of a state the
+user was warned about — not a contradiction of it. Cheapest correct fix is probably for the cwd-first
+derivation to consult the index rather than the mount basename, or to say *"this session still has the
+pre-rename mount"* when the derived name is absent. **Effort**: Low.
