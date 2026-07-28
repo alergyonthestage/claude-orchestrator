@@ -69,7 +69,9 @@ EOF
     fi
 
     local tmp_dir="/tmp/cc-${session_name}"
-    mkdir -p "$tmp_dir/claude-state/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
+    # claude-state is the ~/.claude/projects tree (ADR-0055 D5), so the memory
+    # dir sits under the -workspace key rather than at the bucket root.
+    mkdir -p "$tmp_dir/claude-state/-workspace/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
     trap 'rm -rf "'"$tmp_dir"'"' EXIT
 
     # Global config lives in the CONFIG bucket (~/.cco/.claude, flat — ADR-0028;
@@ -128,8 +130,8 @@ YAML
       - ${global_claude}/skills:/home/claude/.claude/skills:ro
       # Session config
       - ${tmp_dir}/.claude:/workspace/.claude
-      # Claude state: auto memory + session transcripts (enables /resume across rebuilds)
-      - ${tmp_dir}/claude-state:/home/claude/.claude/projects/-workspace
+      # Claude state: auto memory + session transcripts, every cwd key (ADR-0055 D5)
+      - ${tmp_dir}/claude-state:/home/claude/.claude/projects
 YAML
 
         # Global MCP config
