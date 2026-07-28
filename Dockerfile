@@ -133,9 +133,13 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 #   .local/{bin,share,state}, .cache  — operator buckets (ADR-0036 D4) and the
 #                                       native Claude Code install (ADR-0039)
 #   .claude                           — global authoring entries + runtime state
-#   .claude/projects                  — per-cwd session keys. cco binds the tree
-#                                       (ADR-0055 D5) and `cco new` binds one key
-#                                       inside it, which leaves it pass-through.
+#   .claude/projects                  — per-cwd session keys. Both `cco start` and
+#                                       `cco new` bind the whole tree here today
+#                                       (ADR-0055 D5), so it is a mount TARGET and
+#                                       the lint exempts it by construction — which
+#                                       is exactly why the entry stays: it is the
+#                                       only thing standing between a future lane
+#                                       that binds a single key again and R-D.
 #   .cco/packs                        — at the DEFAULT project read scope the
 #                                       CONFIG mount is narrowed to the referenced
 #                                       packs, bound one by one at

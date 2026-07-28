@@ -280,3 +280,5 @@ Per cycle-1.2 Rule 1, suite-green is **not** acceptance for this lane. After `cc
   STATE) is retained and generalised.
 - **ADR-0054** — INV-MP gains the container-side half (D4); D2's view trigger is widened by D7.
 - **ADR-0052** — alt-B's lazy self-heal is applied to a second STATE shape (D6).
+- **ADR-0006** — the transcripts mount target it fixes (`~/.claude/projects/-workspace`) becomes the
+  whole `projects/` tree (D5); its `-workspace` derivation and its memory child mount are unchanged.
