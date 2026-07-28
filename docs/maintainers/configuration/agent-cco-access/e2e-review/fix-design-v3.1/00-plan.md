@@ -343,6 +343,14 @@ R-F arm proves nothing.
    0 files stranded at the old depth, memory readable.
 ```
 
+**⚠ One arm landed AFTER this probe.** `/review-implementation` found that under `Cp=rw` *and*
+composing, a saved workflow went into the CACHE view and was destroyed by the next start's `rm -rf`;
+the fix (`aa97b3b`) materialises the committed `workflows/` directory instead. The probe above was run
+at `Cp=ro`, so **none of its assertions are invalidated** — that lane's code paths are untouched — but
+the new arm is unprobed. It needs one `cco build` and a session with `--claude-access all` on a
+project that adopts a pack: expect `<repo>/.cco/claude/workflows` bound rw at
+`/workspace/.claude/workflows`, and the saved file still present after a restart.
+
 **What this probe did NOT observe** — stated so the next round does not read it as more than it is:
 
 - **Cross-restart persistence of a non-`-workspace` key.** The mount shape implies it (everything
@@ -357,7 +365,7 @@ R-F arm proves nothing.
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
-| S1 | ✅ **1547/9** unmasked · 1549/7 masked (+16 new either way, total 1556 both) | ✅ **passed** — see below | 2026-07-28 |
+| S1 | ✅ **1551/9** unmasked, total 1560 (after the review fixes; was 1547/9 of 1556 before) | ✅ **passed** for the `:ro` lane · ⬜ the `Cp=rw` arm is **post-probe**, see below | 2026-07-28 |
 
 > ⚠ **Correction — both earlier numbers were taken with `access: {claude: all}` active.** Re-run in a
 > real default session (`Cr=ro`) the suite is **1547/9, total 1556** — the same 1556 tests, with two
