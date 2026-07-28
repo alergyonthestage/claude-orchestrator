@@ -32,43 +32,53 @@ binding it back rw.
 arm. The probe itself ran at `Cp=ro` and none of its assertions are invalidated — those code paths
 are untouched.
 
-### What actually needs rebuilding
+### No rebuild needed
 
-**Nothing, most likely.** `cco start` runs on the **host** from your checkout, and `aa97b3b` only
-changes `lib/cmd-start.sh` — host-side compose generation. The `Dockerfile` half (`d550da8`) is
-already in the image you built (`cco whoami` → `image built from: fix/release/cycle-1.2@9ee07c2`).
+`cco start` runs on the **host** from the checkout, and `aa97b3b` only changes `lib/cmd-start.sh` —
+host-side compose generation. The `Dockerfile` half (`d550da8`) is already in the built image
+(`cco whoami` → `image built from: fix/release/cycle-1.2@9ee07c2`).
 
-⚠ **The real precondition is that the `cco` you invoke on the Mac is this branch's**, not a separately
-installed copy — the npm-vs-checkout mixing that has confused two earlier sessions. Confirm before
-reading anything into the result.
+### Why the probe needs `claude_access: all`, when the point of S1 was the opposite
 
-### The probe
+Worth stating plainly, because it reads backwards at first. S1 has two arms:
 
-Start on this branch with the access level raised explicitly (the `access:` block in
-`.cco/project.yml` is currently commented out, so pass the flag):
+- **`Cp=ro`** (the default) — the agent **could not save at all**: `/workspace/.claude/workflows/` was
+  `:ro`. That is R-F, it is fixed by the STATE overlay, and **the probe already confirmed it.**
+- **`Cp=rw`** — the agent could always save; the defect was *where the save landed*. With a pack
+  adopted, the parent is the CACHE view, which `cco start` rebuilds with `rm -rf`, so the file was
+  **destroyed at the next start**. That is the review finding, fixed by `aa97b3b`, unprobed.
+
+So the raised access level is not something the fix requires — it is simply the only configuration in
+which the unverified code path runs.
+
+**The `access: {claude: all}` block is restored in `.cco/project.yml`**, so the next session is
+already `Cp=rw` and no CLI flag is needed. Note the side effect: daily sessions no longer exercise the
+default lane, and `test_update_new_file_added` / `test_update_dry_run` will pass again — so suite
+figures taken from them are the masked ones.
+
+### The probe — who runs what
+
+**The session agent runs every check below.** The human is needed for exactly one thing: `cco start` /
+the restart, because container-spawning verbs are refused in-session by design (the privilege
+boundary), not out of convenience.
+
+Agent, at the start of the session:
 
 ```bash
-cco start claude-orchestrator --claude-access all
-```
-
-Inside the session:
-
-```bash
-# 1. The save target must be the COMMITTED tree, rw — not the STATE overlay,
-#    and not absent (absent is the bug: the view would swallow the save).
+# 1. The save target must be the COMMITTED tree, rw — not the STATE overlay, and
+#    not absent (absent IS the bug: the view would swallow the save).
 grep '/workspace/.claude/workflows' /proc/self/mountinfo
-#    expect a source under <repo>/.cco/claude/workflows and NO 'ro,' flag
-
+#    expect a source under <repo>/.cco/claude/workflows and no 'ro,' flag
 # 2. The directory exists in the repo
 ls -ld /workspace/claude-orchestrator/.cco/claude/workflows
-
-# 3. Write something there, then exit the session
+# 3. Leave a marker, and confirm git sees it as a new untracked file —
+#    that is what "shared via git" means in changelog #52
 echo '// probe' > /workspace/.claude/workflows/probe.js
 ```
 
-Then **restart the session** and check `probe.js` is still there — that is the whole point, since the
-old behaviour destroyed it at exactly this moment. `git status` in the repo should also show it as a
-new untracked file, which is what "shared via git" means. Delete it afterwards.
+Then **ask the human to restart the session** — that restart *is* the test, because the old behaviour
+destroyed the file at exactly that moment. On the way back in, the agent checks `probe.js` survived
+and deletes it.
 
 ### Two blind spots worth closing in the same sitting
 
