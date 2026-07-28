@@ -2,6 +2,11 @@
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
 > Written 2026-07-28, end of cycle-1.2 **S1**.
+>
+> ✅ **The probe half of this handoff is CONSUMED (2026-07-28).** The `Cp=rw` arm passed across a
+> real restart, and two of §7's three "not observed" items closed with it; the output is in the
+> runbook's acceptance log (§7, second block) and **S1 is accepted**. What remains live below is
+> only *"Then: S2"* and the open items. Do not re-run the probe from this file.
 
 ## Where things stand
 
