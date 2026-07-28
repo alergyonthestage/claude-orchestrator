@@ -136,9 +136,18 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 #   .claude/projects                  — per-cwd session keys. cco binds the tree
 #                                       (ADR-0055 D5) and `cco new` binds one key
 #                                       inside it, which leaves it pass-through.
+#   .cco/packs                        — at the DEFAULT project read scope the
+#                                       CONFIG mount is narrowed to the referenced
+#                                       packs, bound one by one at
+#                                       .cco/packs/<name>, so both .cco and
+#                                       .cco/packs are pass-through. (At broader
+#                                       scope ~/.cco is itself the mount and this
+#                                       is moot — the narrow shape is the default,
+#                                       which is why it went unnoticed.)
 RUN groupadd -g 999 docker \
     && useradd -m -s /bin/bash claude \
     && mkdir -p /home/claude/.claude /home/claude/.claude/projects \
+       /home/claude/.cco/packs \
        /home/claude/.local/bin /home/claude/.local/share \
        /home/claude/.local/state /home/claude/.cache /workspace \
     && chown -R claude:claude /home/claude /workspace
