@@ -406,7 +406,7 @@ inferred (so W1-01/W2-02 and W4-F01 are 🔴 despite being pre-existing).
 
 **2 — Cycle-1.2: fix at the root, not by report.** Three invariants with lints + two contracts; the
 eight findings close as a consequence. Session-by-session runbook in
-**[`handoff.md`](handoff.md)**.
+**[`e2e-review/fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**.
 
 | Lane | Deliverable | Closes |
 |---|---|---|

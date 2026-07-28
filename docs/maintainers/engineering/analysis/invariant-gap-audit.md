@@ -5,7 +5,7 @@
 > **Scope**: cross-cutting — the message layer (`lib/access-scope.sh`, the `project` verb family),
 > the mount-composition layer (`Dockerfile`, `lib/cmd-start.sh`), and the config-editing layer
 > (`lib/cmd-project-add.sh`). **Status**: analysis complete; it is the design input for **cycle-1.2**,
-> sequenced in [`../../handoff.md`](../../handoff.md).
+> sequenced in [`../../configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md`](../../configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md).
 >
 > Sibling of [`false-success-class-audit.md`](false-success-class-audit.md), and written for the same
 > reason: the backlog convention requires re-deriving an item's real boundary before designing the

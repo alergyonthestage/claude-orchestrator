@@ -6,7 +6,7 @@
 > vantages and did not move. Every product finding this round sits in the **message / rendering /
 > composition** layer, and they collapse to **one meta-root**: three subsystems that never got an
 > invariant. The release is gated on **cycle-1.2**, scoped in §6 and sequenced in
-> [`../../../../handoff.md`](../../../../handoff.md).
+> [`../fix-design-v3.1/00-plan.md`](../fix-design-v3.1/00-plan.md).
 >
 > Run: 2026-07-28, 4 sessions (W1…W4) + the §11 host probe. Inputs: `/review-v3.1/W{1..4}-*.md`,
 > `host-verifications.md`. Image: `develop@8fd479c`, host-confirmed. Gate: `develop → main`.
@@ -412,7 +412,7 @@ and did not move. The trajectory across three acceptance rounds is unambiguous:
 | v3 | 14 (3 🔴) | 6, the three 🔴 collapsing to **one** | **data integrity** — six dead store verbs, half-applied renames with `✓` |
 | **v3.1** | 24 (3 🔴 after D-V31-4) | 8, all one meta-root | **the narration** — plus three composition roots found off-matrix |
 
-**Route to release** (sequenced in [`../../../../handoff.md`](../../../../handoff.md)):
+**Route to release** (sequenced in [`../fix-design-v3.1/00-plan.md`](../fix-design-v3.1/00-plan.md)):
 
 1. **Cycle-1.2 — fix at the root, not by report.** Three invariants with lints (**INV-AVAIL**,
    **INV-MP generalised**, **INV-YAML**) and two contracts (the index-health **session/host axis**;
