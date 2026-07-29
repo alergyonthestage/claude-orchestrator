@@ -124,6 +124,9 @@ _project_show_repo_centric() {
         # empty out (INV-F.1), so the (unresolved) rendering below is preserved for
         # a declared-but-unbound member and the outer -n guard is subsumed.
         p=$(_cco_display_path "$rn" "$p")
+        # Same single meaning as the extra-mounts badge below (ADR-0056 D7): an
+        # empty path here is an ABSENT BINDING, never "the index could not be
+        # read" — the entry guard in cmd_project_show has already ruled that out.
         [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
         [[ -n "$refby" ]] && l="$l — also in: $refby"
         echo "$l"
@@ -179,6 +182,21 @@ EOF
                 ;;
         esac
     done
+
+    # Read-path honesty (ADR-0056 D7). Every branch below reads the index —
+    # _project_show_repo_centric through _index_get_path/_index_paths_get_bindings,
+    # the by-name card through _mount_source_for and the member probe — and each
+    # reader degrades an UNREADABLE index into an empty answer. The observed
+    # result (review §10.9d) was not a degraded card but a FABRICATED one: three
+    # bound, readable mounts badged `[unresolved]`, and the repo's host path
+    # silently downgraded to its container path. A fabricated answer is strictly
+    # worse than a degraded one, so this verb renders no card at all and refuses
+    # here instead.
+    #
+    # ⚠ At verb ENTRY, before any read — the same discipline as `project list`,
+    # `path list` and `cco list`. Checking after a read loop would print the card
+    # (or "empty") first and then contradict it.
+    _index_assert_readable
 
     # Repo-centric view (ADR-0024 D5): invoked from a repo dir that hosts a
     # project, with no explicit name → summarize this repo's relationships.
@@ -298,6 +316,14 @@ EOF
             # the repos block above: a host path shows only where show_host_paths permits.
             echo "  $em_name → $em_target ($(_cco_display_path "$em_name" "$em_src"))"
         else
+            # ADR-0056 D7 — `[unresolved]` means EXACTLY ONE thing: the index holds
+            # no binding for this member. Not "the probe failed", and not "I could
+            # not read the index" — _mount_source_for returns empty for all three,
+            # which is precisely the conflation §10.9d observed (bound, readable
+            # mounts badged `[unresolved]` off an index that could not be read).
+            # What keeps the badge honest is the _index_assert_readable guard at
+            # verb entry: an unreadable index never reaches this line, so an empty
+            # source here can only be an absent binding.
             echo -e "  $em_name → $em_target ${YELLOW}[unresolved]${NC}"
         fi
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
