@@ -1051,3 +1051,43 @@ entries:
       migration: an existing transcripts bucket is repaired in place at the
       next `cco start`, without losing history. Requires `cco build`; see
       ADR-0055.
+
+  - id: 53
+    date: "2026-07-29"
+    type: additive
+    title: "'cco project add' no longer drops the new entry into the next section"
+    description: >
+      Adding a coordinate (`cco project add repo|mount|llms|pack`, and the
+      first repo written by `cco init` / `cco join`) decided where a section
+      of `project.yml` ends by looking for the first top-level line that is
+      not a comment. A comment block therefore did not close the section, so
+      the new entry slid PAST it and landed after the NEXT section's header
+      comment. On a project.yml scaffolded from the shipped template — where
+      `extra_mounts`, `packs`, `llms`, `github` and `browser` all ship
+      commented out — a second `cco project add repo` put its entry under the
+      "Docker options" banner, immediately above `docker:`. A section now
+      ends at the next top-level key, with the trailing run of top-level
+      comment and blank lines treated as that key's header: the new entry is
+      emitted before it. Indented commented examples (`  # - name: my-repo`)
+      are section content, so the entry lands after them, still inside its
+      own section. Nothing to migrate — YAML reads an already-misplaced entry
+      as part of the intended section, so existing files stay correct; move
+      the entry by hand if you want the file to read straight again.
+      Requires `cco build` for the in-session `cco`.
+
+  - id: 54
+    date: "2026-07-29"
+    type: additive
+    title: "No more '✗ cco exited unexpectedly' on runs that did not fail"
+    description: >
+      cco arms an exit trap that reports a crash unless the run marked itself
+      complete, so that a `set -e`/`set -u` violation or a syntax error is
+      never silent. Two ordinary paths forgot the mark. `cco project` and
+      `cco pack` with no subcommand printed their group help, exited 0, and
+      then printed "✗ cco exited unexpectedly (exit 0)" underneath it. And a
+      mistyped `--cco-access` got the crash line appended to its perfectly
+      correct refusal — the refusal is raised inside a subshell, whose mark
+      never reached the parent. Both are fixed: every deliberate exit now
+      goes through one primitive, so the trap speaks only for real crashes —
+      which is the point, since a warning users learn to ignore stops working
+      as a warning. Requires `cco build` for the in-session `cco`.
