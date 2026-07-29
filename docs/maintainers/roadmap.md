@@ -410,8 +410,8 @@ eight findings close as a consequence. Session-by-session runbook in
 
 | Lane | Deliverable | Closes |
 |---|---|---|
-| **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. **Designed** 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved) — implementation is **S4** | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
-| **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session). **Designed** in the same ADR-0056 — implementation is **S3** | W4-F06 🔴 — **and every Linux session's read path** |
+| **L1** 🟡 landed | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. Designed 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved); **implemented by S4** 2026-07-29, merged into the cycle branch. The sweep enumerated **five sites the ADR's table did not name** — the largest being `tags.sh:287-313`, i.e. `cco list` itself, which at `G=none` counted nothing at all (that *is* R-B, and it is bigger than the `pack validate` site the ADR named). D5's host-side count ships as `CCO_STORE_TOTALS`. ⚠ That signal only materialises **after `cco build`**, so it owes a host-side probe. Awaiting the block's single human gate | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
+| **L2** 🟡 landed | index-health **session-vs-host axis** (`absent` is never benign in a session). Designed in the same ADR-0056; **implemented by S3** 2026-07-29, merged into the cycle branch. `_index_read_state` stays byte-unchanged (A3); the axis lives in `_index_assert_readable`, split into two causes by parent traversability. Regression cover written **independently from the ADR** by a separate tester (`tests/test_index_session_axis.sh`, 12 tests; 7 of them fail on the pre-S3 tree). **S6 extended it**: a *zero-row* index in a session reached the same §10.9d sentence at rc=0 from a different cause, and is now refused too. ⚠ **Still owes its container probe** — suite-green is not acceptance for this lane | W4-F06 🔴 — **and every Linux session's read path** |
 | **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **Both container probes green** 2026-07-28 — the `:ro` lane and the `Cp=rw`+composing arm across a real restart (plan §7). Residual, host-side: D7 with no packs at all | R-D, R-F |
 | **L4** 🟡 landed | **INV-YAML** — one comment-block-aware section boundary + golden-file lint. Landed 2026-07-29 on `fix/cycle-1.2/s5-inv-yaml` (S5): `_yml_append_coord` buffers the trailing top-level comment/blank run and emits before it; golden-file round trip against the shipped base template + an insertion-class CLASS lint. **No ADR** — the runbook's Produces column does not ask for one. Awaiting the block's single human gate | R-E |
 | **L5** 🟡 landed | EXIT-trap sentinel discipline + lint. Landed 2026-07-29 on the same branch: one exit primitive (`_cco_exit`, beside `die`/`refuse`), both arms covered by tests (group help on exit 0; the crash notice glued to a well-formed `--cco-access` refusal), plus a lint that no raw shell `exit` bypasses the sentinel | W2-06, W4-F02 |
@@ -441,10 +441,21 @@ not. ⚠ In-session verification (suite + regression tests + lint self-tests) is
 **L2** — the probe that lane owes is host-side and belongs to that final gate. **L4 and L5 do close
 in-session** (ruling of 2026-07-29, above).
 
+**S6 — close-out, in-session half landed 2026-07-29.** Three items, all ratified by the maintainer
+before implementation: (a) a **zero-row index in a session** is non-benign, extending L2's rule to the
+sibling cause the independent tester found — the same §10.9d sentence at rc=0, reached past the entry
+guard; (b) `lib/migrate.sh` `_backfill_one_pack_llms` **destroyed comments in a user-authored
+`pack.yml`** (both indented and top-level — same *class* as R-E, but R-E misplaces and this deletes),
+now fixed with S5's buffer-and-flush discipline, which earned `migrate.sh` its way **off** the INV-YAML
+lint allowlist; (c) the **README platform contradiction** (`:59` vs `:220`), sharpened by ADR-0056 —
+native Linux now refuses index-reading verbs by construction, and the release cannot state a platform
+until that is said plainly.
+
 Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`roadmap-backlog.md`](roadmap-backlog.md)).
-Still never executed in any round: **§10.9e / E6B-04** (pack-rename fan-out atomicity). Host cleanup
-owed: remotes `probe-2`, `x`, `probe-3`, `probe-3b`, plus the stale `scratch-pack` and
-`scratch-a`/`scratch-b`.
+⚠ **S6's host-only half is still owed** and cannot be done from a session: **§10.9e / E6B-04**
+(pack-rename fan-out atomicity, never executed in any round) and the host cleanup of remotes
+`probe-2`, `x`, `probe-3`, `probe-3b`, plus the stale `scratch-pack` and `scratch-a`/`scratch-b`
+(clear those **first**, or the fan-out result is ambiguous to read).
 
 **3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
