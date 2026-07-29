@@ -946,3 +946,97 @@ test_invariant_mount_ancestry_image_set() {
     done
     [[ -z "$missing" ]] || fail "INV-MP: the image no longer pre-creates a documented mountpoint ancestor. An ancestor that is currently a mount target is EXEMPT from the ancestry lint, so dropping it here fails nothing until a lane stops binding it — which is how R-D shipped:"$'\n'"$missing"
 }
+
+# ── INV-YAML the section-boundary CLASS guard (R-E / runbook §6.1) ────
+#
+# THE INVARIANT — one spelling of "where does a YAML section end", comment-block
+# aware: buffer the trailing run of top-level comment and blank lines; on the next
+# top-level key, emit before the buffered run, then flush. The sanctioned spelling
+# is `_yml_append_coord` in lib/cmd-project-add.sh, reached by all four verbs that
+# add a coordinate (`cco project add {repo,mount,llms,pack}`, `cco init`,
+# `cco join`). Behavioural coverage: the golden-file round trip in
+# tests/test_project_add.sh.
+#
+# THE CLASS this lint guards — INSERTION, not parsing. The comment-blind idiom
+# `/^[^ #]/` appears ~40 times across lib/, and in the overwhelming majority it is
+# a READER (`{ exit }`, `{ in_sec = 0 }`, a parse into a stream). For a reader the
+# distinction is unobservable: a top-level comment run contains no `  - name:`
+# entry lines, so treating it as inside the section reads exactly the same set.
+# The defect only exists where the boundary decides WHERE NEW CONTENT IS EMITTED —
+# there, comment-blindness silently relocates a user's entry into someone else's
+# section. A lint over every reader would be ~40 lines of noise on day one, and a
+# lint that is noise gets silenced rather than heeded.
+#
+# ALLOWLIST — files where an insertion at the boundary is present and correct,
+# with the reason recorded (a bare file name is not a justification):
+#   lib/cmd-project-add.sh — DEFINES the sanctioned spelling.
+#   lib/index.sh           — the STATE index: a GENERATED file with no comments,
+#                            so the trailing run is always empty. (Named in the
+#                            runbook as the reason this lands as one-spelling-
+#                            plus-a-lint rather than a local patch: the idiom was
+#                            already spreading.)
+#   lib/tags.sh            — the DATA tags registry: same reason, generated and
+#                            never hand-edited (CLAUDE.md, "Framework state").
+#   lib/migrate.sh         — one-shot migrations over user YAML. NOT clean: the
+#                            llms url-recovery rewriter (:773) drops top-level
+#                            comments inside the block outright (`inblk { next }`),
+#                            a DIFFERENT defect from the misplacement this
+#                            invariant names. Allowlisted so the boundary rule is
+#                            not silently claimed over it; reported to the
+#                            maintainer rather than fixed inside S5's scope.
+test_invariant_yaml_section_end_one_spelling() {
+    local allow=" cmd-project-add.sh index.sh tags.sh migrate.sh "
+    # An awk rule that (a) tests the top-level section-end idiom, (b) EMITS in its
+    # action (`print <something>` — not a bare `print`/`print $0`, which re-emits
+    # the boundary line itself — or a flush() of buffered content), and (c) does
+    # NOT `exit` there. (c) is what separates a rewriter from a parser: a rewriter
+    # must copy the rest of the file, so it never terminates the scan at the
+    # boundary; a parser that has found its answer does (session-context.sh:120).
+    local prog='
+/\/\^\[\^ #\]\// {
+  act = $0
+  sub(/.*\/\^\[\^ #\]\//, "", act)
+  if (act ~ /(^|[^a-zA-Z_])exit([^a-zA-Z_]|$)/) next
+  if (act ~ /print[ \t]+[^ \t;}]/ || act ~ /flush\(\)/) print FILENAME ":" FNR ": " $0
+}'
+    local f base hits="" h
+    for f in "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/cco "$REPO_ROOT"/migrations/*/*.sh; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        case "$allow" in *" $base "*) continue ;; esac
+        h=$(awk "$prog" "$f")
+        [[ -n "$h" ]] && hits="${hits}${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || { fail "INV-YAML: a second INSERTION-class implementation of the YAML section-end idiom. A top-level comment block belongs to the NEXT key by YAML convention, so a \`/^[^ #]/\` boundary slides the insertion past it and into the following section (R-E). Route the insert through _yml_append_coord (lib/cmd-project-add.sh), or extend the allowlist here WITH ITS REASON:"$'\n'"$hits"; return 1; }
+
+    # Discrimination — a static lint that cannot fail is indistinguishable from an
+    # inert one. Plant the forbidden shape in a throwaway lib/ and assert it fires.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/lib"
+    cat > "$tmp/lib/cmd-fake.sh" <<'PLANT'
+_fake_append() {
+    awk -v sec="$1" '
+        $0 == sec":" { in_sec=1; print; next }
+        in_sec && /^[^ #]/ { if (!ins) { print ENVIRON["BLK"]; ins=1 } in_sec=0; print; next }
+        { print }
+    ' "$2"
+}
+PLANT
+    local planted; planted=$(awk "$prog" "$tmp/lib/cmd-fake.sh")
+    [[ -n "$planted" ]] \
+        || { fail "INV-YAML lint does NOT discriminate: a planted comment-blind insertion went uncaught"; return 1; }
+    # …and does NOT fire on a pure READER, which is outside the class.
+    cat > "$tmp/lib/cmd-reader.sh" <<'PLANT'
+_fake_read() {
+    awk -v sec="$1" '
+        $0 == sec":" { in_sec=1; next }
+        in_sec && /^[^ #]/ { exit }
+        in_sec && /^  - name:/ { print; next }
+    ' "$2"
+}
+PLANT
+    local reader; reader=$(awk "$prog" "$tmp/lib/cmd-reader.sh")
+    [[ -z "$reader" ]] \
+        || { fail "INV-YAML lint over-fires: a pure reader (no emission at the boundary) was flagged:"$'\n'"$reader"; return 1; }
+    return 0
+}
