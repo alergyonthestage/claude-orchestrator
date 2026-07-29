@@ -336,3 +336,82 @@ its consumers:
   datum (D5).
 - **Cycle-2** — the Linux store-reachability ADR is named by D6 and does not exist yet; the
   forward-pointer in the unreachable-store sentence must be updated when it lands.
+
+---
+
+## Implementation annotations — ratified 2026-07-29 (S3, S4, S5)
+
+The decision text above is **not rewritten**; these are forward notes recording where the
+implementation departed from, or reached past, what this ADR decided. Each was raised at
+implementation time and **ratified by the maintainer** rather than settled by the implementer. The
+point of writing them here is A6's lesson read forwards: an undocumented deviation is rediscovered
+and re-litigated, which is the cost this ADR exists to stop.
+
+### D4 — the refusal wording deviates from the string quoted in the decision
+
+D4 specifies the sentence *"no project 'X' is available at this access scope (cco_access=…)"*. The
+implementation emits **`'project X' is not available at this access scope …`** instead.
+
+**Why**: D4's own phrasing destroys the reserved fragment **`not available at this access scope`**,
+which INV-ENV budgets and which the managed rule `cco-config-interaction.md` quotes verbatim. Written
+literally it broke the pre-existing `test_as_require_visible_degrades_gracefully`. The implementation
+kept the reserved fragment and deleted only the **disclosing clause** (*"— it is outside this
+session's project ('Y')"*), which is the part D-V31-1 actually forbids.
+
+**Ratified**: D4's stated intent — *assert neither existence nor location* — is fully met. Naming the
+resource the caller just typed discloses nothing. ⚠ Anyone who wants the literal string must change
+INV-ENV's vocabulary **and** the managed rule with it; it is not a string substitution.
+
+### D4 — the `unknown` arm is gated on operator mode as well as read scope `all`
+
+D4 makes the arm a function of `_cco_level_read_scope`. On the **host**, `_env_read_scope` returns
+`all` by INV-A, so a literal reading enables the arm there too. The implementation keeps the host on
+its existing `unresolved` wording.
+
+**Ratified — narrower than a literal reading, deliberately**: the false claim D4 exists to kill
+(*"it exists on this machine"*) lives in the **not-mounted** sentence, which only a session produces.
+The host's `unresolved` already claims no more than *"not resolved on this machine"*, and host-side
+counterweight tests pin it.
+
+### D9 — the lint's tracked probe set is one function, not the full "member / mount / project path"
+
+**Ratified — narrower than D9's text, for D9's own reason.** The wider set
+(`_resolve_project_yml`, `_index_get_path`, `_mount_source_for`) flags **twelve** sites and every one
+is legitimate: `[[ -f "$project_yml" ]] || die "has no readable project.yml"` runs *after* the owner
+has already answered `here`, and asks a different question. A lint whose hits are mostly legitimate
+gets allowlisted until it is inert — which is the failure mode D9's second mandatory property exists
+to prevent. INV-S6 could ban its whole set only because behind the ADR-0047 boundary those reads are
+*meaningless*; here they are meaningful. The reason is written in the lint body, not only here.
+
+### D6 — a **missing** parent directory is folded into the store-unreachable row, not given a third arm
+
+D6 splits `absent`-in-session by probing the parent's traversability. A parent that is **absent** —
+the STATE bind itself gone, plausible on macOS — is not traversable and therefore lands in row 2,
+whose native-Linux framing is not what happened.
+
+**Ratified — two arms, as decided.** Rows 1 and 3 would carry the **same remedy** (*run cco on your
+host to inspect or rebuild it*), so a third arm buys diagnostic precision and changes no action.
+Against that: separating `ENOENT` from `EACCES` is not a one-liner in bash — `[[ -e ]]` is false for
+both, and on Linux the **grandparent** (`~/.local/state/cco`) is itself 0700/`cco-svc`, so a naive
+existence probe would misclassify the Linux default as "missing". It would need an ancestor walk to
+the first traversable directory, on bash 3.2 + BSD, with its own failure modes. The shipped sentence
+already names both sub-cases explicitly (*"no search permission on it, or it is not there at all"* …
+*"Anywhere else, the store bind itself is gone. Either way: …"*) and delivers the right remedy to
+both. **Recorded so the next reader does not rediscover the sub-case and re-open it.**
+
+### D6 — extended to a zero-row index in a session (S6)
+
+D6 covers the mechanical state `absent`. An index that is **present, readable and non-zero but holds
+zero rows** classifies `ok`, passes `_index_assert_readable`, and `cco path list` / `cco list
+projects` still answer *"the path index is empty — nothing is registered on this machine yet. Run cco
+on your host to populate it."* at **rc=0** — §10.9d's exact sentence, from a different cause, and
+containing the very string D6 calls *false exactly where it is printed*.
+
+Found by the independent tester writing S3's regression cover; **not** a violation of D6 as written —
+the classifier is right and the guard is right. But D6's own argument applies with identical force: a
+session is *launched from* the index, so a zero-row index in a session is as impossible as an absent
+one.
+
+**Ratified: closed in S6**, extending the interpretation rather than the classifier — the same shape
+as D6, and for the same reason A3 gives. Left open it would have been a textbook A6 outcome: the
+reported site fixed, its sibling shipped.
