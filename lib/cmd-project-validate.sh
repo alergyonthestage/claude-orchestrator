@@ -297,6 +297,13 @@ EOF
 
     if [[ "$all" == true ]]; then
         [[ -n "$target" ]] && die "'cco project validate --all' takes no project name."
+        # Read-path honesty (ADR-0056 D6/D7): --all enumerates the STATE index, and
+        # _index_list_projects feeds a process substitution whose status is
+        # discarded — so an unreadable (or, in a session, an absent) index would
+        # validate ZERO projects and return the share-ready exit 0. Same entry-guard
+        # discipline as `project list` / `path list` / `cco list`: classify BEFORE
+        # the loop, so a read failure is never rendered as "nothing to validate".
+        _index_assert_readable
         local proj yml cco_dir first=true
         while IFS='=' read -r proj _; do
             [[ -z "$proj" ]] && continue
