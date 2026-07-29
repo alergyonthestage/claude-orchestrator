@@ -1151,3 +1151,23 @@ entries:
       pack installed on the host mid-session is not reflected, which is harmless
       because the session could not see it either way. Requires `cco build`; see
       ADR-0056 (D1-D5, D7).
+
+  - id: 57
+    date: "2026-07-29"
+    type: additive
+    title: "An empty path index inside a session is now a refusal, not a cheerful rc=0"
+    description: >
+      A session is launched FROM cco's machine-local index, so inside a session
+      that index can never legitimately be empty — if it looks empty, the view is
+      broken, not the machine. Until now `cco path list` and `cco list project`
+      answered "the path index is empty — nothing is registered on this machine
+      yet. Run cco on your host to populate it." at exit 0, which is false exactly
+      where it was printed: the session came from that index. Both verbs now
+      refuse (exit 1) with a message that names the real cause — the index is
+      readable but holds no entries, so it has been emptied, replaced or rebuilt
+      since the session started — and a remedy you can act on, which is to inspect
+      or rebuild it from your host. ON THE HOST nothing changes: a machine with
+      nothing registered yet legitimately has an empty index, still says so at
+      exit 0, and is still told that `cco resolve` is the way to populate it. This
+      completes ADR-0056 D6, which gave the same treatment to an index that is
+      missing outright. Requires `cco build` for the in-session `cco`.

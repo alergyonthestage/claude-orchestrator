@@ -246,12 +246,70 @@ _index_assert_readable() {
 # The benign counterpart: what to say when the index really IS empty. Host and
 # container differ because `cco resolve` is host-only — the in-container arm is
 # the string R3 flagged, and it must never come back.
+#
+# ⚠ Since the S6 extension of ADR-0056 D6 (below) no PRODUCTION caller reaches the
+# operator arm: _index_report_empty refuses before the sentence is ever asked for.
+# It is kept, and kept pinned by test_index_empty_sentence_never_says_cco_resolve_
+# in_a_session, as defense in depth — this is a public builder, and the R3 rule
+# ("an in-session remedy may not prescribe the host-only 'cco resolve'") must hold
+# for whoever calls it, not merely for the callers that exist today.
 _index_empty_sentence() {
     if _cco_container_operator; then
         printf "the path index is empty — nothing is registered on this machine yet. Run cco on your host to populate it."
     else
         printf "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'."
     fi
+}
+
+# The sentence for a ZERO-ROW index IN A SESSION — the S6 extension of ADR-0056 D6.
+# Parallel in shape to _index_unreadable_sentence (cause, then a remedy true where
+# it is printed) but a separate builder on purpose: that one asserts "this is NOT
+# an empty index", which is exactly the claim that is false here. The index really
+# is empty; what is impossible is a SESSION seeing it that way.
+# Usage: _index_empty_in_session_sentence <file>
+_index_empty_in_session_sentence() {
+    printf "the cco index at %s is readable but holds no entries at all. This session was LAUNCHED from the index — the binding it was started from was read out of that file — so a session cannot legitimately see a zero-row index: it has been emptied, replaced or rebuilt since this session started. This is NOT a machine with nothing registered yet. Run cco on your host to inspect or rebuild it." "$1"
+}
+
+# The interpretation of EMPTINESS, and the only sanctioned way to report it.
+#
+# ADR-0056 D6 gave the mechanical state `absent` a session/host axis. Its own
+# argument applies with identical force one state over: a session is launched FROM
+# the index, so an index that is present, readable and non-zero but holds ZERO ROWS
+# is as impossible in a session as an absent one. It classifies `ok`, it passes
+# _index_assert_readable, and before this the readers answered §10.9d's exact
+# sentence — "nothing is registered on this machine yet. Run cco on your host to
+# populate it." — at rc=0, containing the very string D6 calls false exactly where
+# it is printed. Found by the independent tester writing S3's regression cover;
+# ratified for S6 as an extension of the INTERPRETATION, never of the classifier
+# (alternative A3: _index_read_state stays a pure mechanical classifier usable on
+# an arbitrary file argument, and a sixth state is the rejected design).
+#
+# ⚠ WHY THIS IS POST-READ, and not part of _index_assert_readable. The guard above
+# carries the warning "call it at verb ENTRY, before the read loop — checking after
+# the loop would report empty first and contradict itself". This is the one case
+# where post-read is unavoidable, for two independent reasons:
+#   1. "zero rows" is VERB-RELATIVE, not a property of the file. `path list` counts
+#      bindings (_index_pp_dump_all + the unscoped bucket); `cco list project`
+#      counts projects (_index_list_projects). An index can hold one and none of
+#      the other, so there is no single number the entry guard could compute.
+#   2. Emptiness must not be reported when rows were merely SCOPE-HIDDEN (INV-B:
+#      hidden is not absent, and _env_flush_hidden_notice speaks for that case) —
+#      and that is knowable only after the scope loop has run.
+# The contradiction the guard warns about is avoided by the call convention: the
+# benign sentence is never printed and THEN retracted, because it is only ever
+# reached through this function, which refuses instead of printing it.
+#
+# ONE SPELLING. Every verb that can reach the empty case calls this — `cco path
+# list` (cmd-resolve.sh) and `cco list project|projects` (cmd_project_list, the
+# bare per-kind view routed from tags.sh; `cco project list` itself was removed by
+# ADR-0029). A second `info "$(_index_empty_sentence)"` is the sibling-site failure
+# this cycle exists to remove.
+_index_report_empty() {
+    if _cco_container_operator; then
+        die "$(_index_empty_in_session_sentence "$(_index_file)")"
+    fi
+    info "$(_index_empty_sentence)"
 }
 
 # Echo the on-disk schema version (integer). Absent/unreadable → 1 (the pre-v2

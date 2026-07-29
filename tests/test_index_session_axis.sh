@@ -559,3 +559,207 @@ test_unresolved_means_no_binding_not_an_unreadable_index() {
     fi
     return 0
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# D6 extended — a ZERO-ROW index in a session (S6)
+# ══════════════════════════════════════════════════════════════════════
+#
+# WHAT WAS OBSERVED. Found by the independent tester writing the cover above, and
+# ratified into ADR-0056 as a forward annotation ("D6 — extended to a zero-row
+# index in a session (S6)"). An index that is present, readable and non-zero but
+# holds ZERO ROWS classifies `ok`, passes `_index_assert_readable`, and `cco path
+# list` / `cco list projects` still answered:
+#
+#   "the path index is empty — nothing is registered on this machine yet. Run cco
+#    on your host to populate it."     at rc=0
+#
+# — §10.9d's exact sentence from a different cause, containing the very string D6
+# calls "false exactly where it is printed": a session is LAUNCHED from the index,
+# so that IS where the index came from.
+#
+# WHAT THE RULE SAYS (the annotation, not the implementation):
+#   • D6's own argument applies with identical force — a zero-row index in a
+#     session is as impossible as an absent one, so in a session it routes to the
+#     fail-closed path. ON THE HOST it stays benign: a machine with nothing
+#     registered yet legitimately has an empty index and must still say so.
+#   • It is closed in the INTERPRETATION, never in the classifier — the same shape
+#     as D6 and for the same reason alternative A3 gives.
+#   • ONE SPELLING: every verb that can reach the empty case gets the same
+#     treatment, not just the one that was reported.
+#
+# BOTH DIRECTIONS ARE ASSERTED. A "fix" that made an empty index fatal everywhere
+# would break the host and must not pass here.
+
+# The scaffold `_index_ensure_file` writes on any first run: header, `version:`,
+# and the four section keys — a REAL index with no bindings in it. Seeded through
+# the real API host-side, so the on-disk shape is production's and not a literal
+# this test invented (the same discipline as _sa_seed_index).
+# Usage: _sa_scaffold_only_index <root>
+_sa_scaffold_only_index() {
+    local root="$1"
+    mkdir -p "$root/state/shared" "$root/data" "$root/cache" "$root/home"
+    # `_index_ensure_file` is a create-if-absent primitive, so an index seeded
+    # earlier in the same test would survive and leave the fixture populated —
+    # which the postcondition below catches, but only after the fact. Emptying it
+    # here is also the realistic shape of the defect: the file the session was
+    # launched from, rebuilt with no rows in it.
+    rm -f "$root/state/shared/index"
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/index.sh"
+        export CCO_ALLOW_HOST_RESOLVE=1 CCO_STATE_HOME="$root/state"
+        unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER CCO_DATA_HOME CCO_CACHE_HOME
+        _index_ensure_file
+    ) >/dev/null 2>&1
+    # Both halves matter: non-zero (or the state would be `truncated`, a different
+    # arm entirely) AND row-less (or the case under test never arises).
+    [[ -s "$root/state/shared/index" ]] || {
+        fail "fixture: the scaffold must be NON-ZERO — 0 bytes is the 'truncated' arm, not this one"
+        return 1
+    }
+    if grep -qE '^  ' "$root/state/shared/index"; then
+        fail "fixture: the scaffold must hold NO rows — every assertion below would be vacuous"
+        return 1
+    fi
+    return 0
+}
+
+# Run the real `cco` HOST-side against <root>'s state. The mirror of _sa_run: the
+# host arm has to be exercised through the same surface, or "it stays benign on the
+# host" is asserted only of a function and not of a verb.
+# Usage: _sa_run_host <root> <argv...>
+_sa_run_host() {
+    local root="$1"; shift
+    SA_OUT=$(
+        _sa_host_env "$root"
+        # The legacy-vault probe would otherwise print its migration banner over
+        # the output under test; point it at a path that does not exist.
+        export CCO_USER_CONFIG_DIR="$root/no-legacy-vault"
+        cd "$root" || exit 1
+        bash "$REPO_ROOT/bin/cco" "$@" 2>&1
+    )
+    SA_RC=$?
+    return 0
+}
+
+# THE PREMISE, asserted rather than assumed. The classifier must still say `ok`
+# and the entry guard must still pass — that is precisely why this needed closing
+# separately, and it is what A3 protects: a sixth state, or a guard that started
+# refusing here, is the rejected design. If this test ever fails, the fix was
+# applied in the wrong layer.
+test_zero_row_index_still_classifies_ok_and_passes_the_entry_guard() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _sa_source_libs
+    _sa_scaffold_only_index "$tmp" || return 1
+    _sa_session_env "$tmp" demo
+
+    [[ "$(_index_read_state)" == "ok" ]] \
+        || fail "a scaffold-only index is present, readable and non-zero: it must classify ok, got: $(_index_read_state)"
+    ( _index_assert_readable ) >/dev/null 2>&1 \
+        || fail "the entry guard must NOT refuse a zero-row index — the axis belongs in the interpretation (A3)"
+    return 0
+}
+
+# The rule itself, at the owner. In a session the benign info line becomes a
+# refusal with a non-zero exit; it names the real cause and carries a remedy true
+# where it is printed (D2 — never the host-only `cco resolve`), and it must not
+# re-emit the §10.9d sentence it replaces.
+test_zero_row_index_is_refused_inside_a_session() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _sa_source_libs
+    _sa_scaffold_only_index "$tmp" || return 1
+    _sa_session_env "$tmp" demo
+
+    local rc=0 msg
+    msg=$( ( _index_report_empty ) 2>&1 ) || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || fail "a zero-row index in a session must refuse, not answer at rc=0; got: $msg"
+    [[ "$msg" != *"nothing is registered on this machine yet"* ]] \
+        || fail "the benign sentence is false exactly where it is printed (D6); got: $msg"
+    [[ "$msg" != *"Run cco on your host to populate it"* ]] \
+        || fail "a session is LAUNCHED from the index — 'populate it on your host' is the retired remedy; got: $msg"
+    [[ "$msg" != *"cco resolve"* ]] \
+        || fail "D2: an in-session remedy may not prescribe the host-only 'cco resolve'; got: $msg"
+    [[ "$msg" == *"holds no entries"* ]] \
+        || fail "the refusal must name the REAL cause (a zero-row index), not something else; got: $msg"
+    [[ "$msg" == *"host"* ]] \
+        || fail "the remedy must point at the host, where the index can actually be inspected; got: $msg"
+    return 0
+}
+
+# The other direction, which a fix that simply made emptiness fatal would break:
+# on the host an empty index is the ordinary state of a machine with nothing
+# registered yet, and `cco resolve` IS the remedy there.
+test_zero_row_index_stays_benign_on_the_host() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _sa_source_libs
+    _sa_scaffold_only_index "$tmp" || return 1
+    _sa_host_env "$tmp"
+
+    local rc=0 msg
+    msg=$( ( _index_report_empty ) 2>&1 ) || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || fail "on the host an empty index is benign — it must not refuse (rc=$rc): $msg"
+    [[ "$msg" == *"the path index is empty"* ]] \
+        || fail "the host must still SAY the index is empty; got: $msg"
+    [[ "$msg" == *"cco resolve"* ]] \
+        || fail "on the host 'cco resolve' is the correct remedy — the rule is contextual, not a ban; got: $msg"
+    return 0
+}
+
+# ONE SPELLING, end to end. The enumeration is the assertion: these are ALL the
+# verbs that can reach the empty case — `cco path list` (cmd-resolve.sh) and the
+# bare per-kind project view, reachable as `cco list project` and `cco list
+# projects` (`cco project list` was removed by ADR-0029 and dies with a pointer).
+# A fix applied to the reported site only is the sibling-site failure this cycle
+# exists to remove.
+test_zero_row_index_refused_by_every_verb_that_can_reach_the_empty_case() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _sa_make_session "$tmp" demo || return 1
+
+    # Non-vacuity: with rows in the index every one of these answers at rc=0, so
+    # the refusals below are caused by the emptiness and by nothing else.
+    local v
+    for v in "path list" "list project" "list projects"; do
+        # shellcheck disable=SC2086
+        _sa_run "$tmp" demo $v
+        [[ "$SA_RC" -eq 0 ]] \
+            || fail "precondition: 'cco $v' must answer on a healthy session index, got rc=$SA_RC: $SA_OUT"
+    done
+
+    # Now empty the index in place, keeping the file present, readable and
+    # non-zero — the state that classifies `ok` and slips past the entry guard.
+    _sa_scaffold_only_index "$tmp" || return 1
+    for v in "path list" "list project" "list projects"; do
+        # shellcheck disable=SC2086
+        _sa_run "$tmp" demo $v
+        [[ "$SA_RC" -ne 0 ]] \
+            || fail "'cco $v' answered at rc=0 with a zero-row index in a session; got: $SA_OUT"
+        [[ "$SA_OUT" != *"the path index is empty"* ]] \
+            || fail "'cco $v' emitted the §10.9d sentence from the zero-row cause; got: $SA_OUT"
+        [[ "$SA_OUT" != *"nothing is registered on this machine yet"* ]] \
+            || fail "'cco $v' told a session that nothing is registered on the machine it was launched from; got: $SA_OUT"
+        [[ "$SA_OUT" == *"holds no entries"* ]] \
+            || fail "'cco $v' must name the real cause; got: $SA_OUT"
+    done
+    return 0
+}
+
+# The same enumeration, host-side — the counterweight. Every verb above must keep
+# answering at rc=0 with the benign sentence when the question is asked on the
+# host, or the fix has simply broken the empty-machine case.
+test_zero_row_index_verbs_stay_benign_on_the_host() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _sa_scaffold_only_index "$tmp" || return 1
+
+    local v
+    for v in "path list" "list project" "list projects"; do
+        # shellcheck disable=SC2086
+        _sa_run_host "$tmp" $v
+        [[ "$SA_RC" -eq 0 ]] \
+            || fail "'cco $v' on the host must stay benign on an empty index, got rc=$SA_RC: $SA_OUT"
+        [[ "$SA_OUT" == *"the path index is empty"* ]] \
+            || fail "'cco $v' on the host must still report the empty index; got: $SA_OUT"
+    done
+    return 0
+}

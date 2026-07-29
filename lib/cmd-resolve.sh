@@ -933,10 +933,13 @@ EOF
                 | awk '{ i=index($0,"="); if (i>0) printf "__unscoped__\t%s\t%s\n", substr($0,1,i-1), substr($0,i+1) }')
             if [[ $count -eq 0 && $hidden -eq 0 ]]; then
                 # Reached only for a genuinely empty index — _index_assert_readable
-                # above has already ruled out "the read failed". The sentence is
-                # shared and context-aware: in a session it must NOT say "run cco
-                # resolve", a verb the operator gate refuses there (R3).
-                info "$(_index_empty_sentence)"
+                # above has already ruled out "the read failed". The report is
+                # shared and context-aware: on the host it is the benign sentence
+                # (which must NOT say "run cco resolve" in a session, R3); IN A
+                # SESSION it is a refusal, because a session is launched from the
+                # index and cannot legitimately see it hold zero rows (ADR-0056 D6,
+                # extended in S6).
+                _index_report_empty
             elif [[ $malformed -gt 0 ]]; then
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi

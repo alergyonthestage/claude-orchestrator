@@ -61,11 +61,14 @@ EOF
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
         shown=$((shown + 1))
     done < <(_index_list_projects)
-    # An honestly empty listing says so. Reached only when the index is readable
-    # and genuinely holds no project — the failure shapes died above. Suppressed
-    # when rows were merely scope-hidden: _env_flush_hidden_notice speaks for
-    # that case, and printing both would contradict it (INV-E, one vocabulary).
-    if [[ $shown -eq 0 ]] && ! _env_has_hidden; then info "$(_index_empty_sentence)"; fi
+    # An honestly empty listing says so — ON THE HOST. Reached only when the index
+    # is readable and genuinely holds no project; the failure shapes died above.
+    # Suppressed when rows were merely scope-hidden: _env_flush_hidden_notice
+    # speaks for that case, and printing both would contradict it (INV-E, one
+    # vocabulary). IN A SESSION _index_report_empty refuses instead: a session is
+    # launched from the index, so zero rows here is a broken view, not an empty
+    # machine (ADR-0056 D6, extended in S6).
+    if [[ $shown -eq 0 ]] && ! _env_has_hidden; then _index_report_empty; fi
     _env_flush_hidden_notice
 }
 
