@@ -470,6 +470,49 @@ second, unrelated hole — eight agents declare `memory: user`, whose target `~/
 bound nowhere and dies with the `--rm` container — are filed together as
 **[FI-39](../../../../roadmap-backlog.md)**, to be settled in one ADR **after** this cycle.
 
+#### S5 — the Rule-1 ruling, and what closes L4/L5 in-session — 2026-07-29
+
+**Maintainer ruling, 2026-07-29 (recorded, not re-litigated): the golden-file round trip IS
+sufficient acceptance for L4.** S5 closes **in-session**, with no host-side probe; §1's Rule 1 named
+S5 and has been corrected, as has the roadmap's lane-L4 warning. The rule's own criterion is what
+settles it — S5's surface is neither mount-time nor container-context. `_yml_append_coord` rewrites a
+file the suite can hand it, and the EXIT trap's misfire is observable from any `bin/cco` invocation;
+both defects reproduce identically on host and in session, so a container adds no observation the
+hermetic lane lacks. The design input agreed from the start: `invariant-gap-audit.md` §5 names items
+**2, 3 and 4** as invisible to the suite and deliberately excludes item 5 (INV-YAML), and the session
+table below already carried `n/a` in S5's container-probe column. Rule 1's list was the outlier.
+
+**What was measured instead** (branch `fix/cycle-1.2/s5-inv-yaml`, three commits `71ee8e7`,
+`e468b01`, `a167fd6`):
+
+```
+1. R-E, the defect reproduced   two `cco project add repo` on the shipped base template:
+                                pre-fix `beta` landed at line 114 — past the
+                                `# ── Extra mounts` banner (line 54), immediately above
+                                `docker:` — 68 lines below its own `repos:` (line 46)
+2. R-E, the fix                 same run, post-fix: line 53, inside `repos:`, after the
+                                indented commented examples. Golden fixture:
+                                tests/golden/project-add-base-template.yml
+3. R-E regression proof         3 of the 5 new tests FAIL on the pre-fix code:
+                                golden round trip · placement-by-rule · the EOF arm
+4. R-G arm 1                    pre-fix `cco project` → help, exit 0, then
+                                "✗ cco exited unexpectedly (exit 0)". Post-fix: gone
+5. R-G arm 2                    pre-fix `--cco-access read-projekt` → the correct refusal
+                                WITH the crash line appended. Post-fix: refusal only
+6. R-G regression proof         both arm tests FAIL on the pre-fix tree
+7. lint discrimination          against a STAGED copy of the real tree with only the fixed
+                                sources reverted, not a synthetic fixture:
+                                INV-EXIT  → 18 sites: bin/cco:534,541,542,569,631,677,712
+                                            + cmd-start.sh:360-365,395-399
+                                            (631/677 = arm 1; the eleven = arm 2)
+                                INV-YAML  → 1 site: cmd-project-add.sh:72, the defect line
+                                Both lints also carry in-test plants in BOTH directions
+                                (must fire / must NOT fire), so neither can go inert.
+8. no lint dead zone            a raw `exit 0` appended to EVERY scanned file (bin/cco,
+                                lib/*.sh, migrations/*/*.sh) is detected in all of them —
+                                the quote/comment/heredoc stripper never desyncs
+```
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
@@ -488,7 +531,7 @@ bound nowhere and dies with the `--rm` container — are filed together as
 > chased inside S1 — the same rule as the seven.
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
-| S5 | ⬜ | n/a | |
+| S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 
 ---
 
