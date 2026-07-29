@@ -796,6 +796,53 @@ _nested_config_modes() {
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
 
+# Host-side totals for the store-resident resource kinds, as the CSV
+# "pack=N,template=N,llms=N,remote=N" the in-container access-scope layer reads
+# (ADR-0056 D5 — see _env_apply_store_supplement for why the count cannot be taken
+# in the session). Counts what EXISTS in the personal store, before any scoping:
+# scoping is a presentation filter over this host-owned truth (INV-D), and the
+# layer derives the hidden count as total-minus-enumerated.
+#
+# ⚠ Unlike its siblings this is NOT project-scoped — it is a property of the store,
+# so it is computed once per session regardless of which project is starting.
+# Emits nothing when the store is absent (a machine before `cco init`): an absent
+# signal degrades to the pre-ADR-0056 behaviour, which is the honest fallback —
+# never a fabricated zero, which would read as "the store is empty".
+# Stdout only; does not touch cmd_start's locals (its own function scope).
+_start_store_totals() {
+    local out="" kind dir n d rf
+    for kind in pack template llms; do
+        case "$kind" in
+            pack)     dir="$PACKS_DIR" ;;
+            template) dir="$TEMPLATES_DIR" ;;
+            llms)     dir="$LLMS_DIR" ;;
+        esac
+        [[ -n "$dir" && -d "$dir" ]] || continue
+        n=0
+        # `templates` nests one level deeper (project/ and pack/ kinds); the others
+        # are a flat directory of named entries. `.cco` is metadata, never an entry.
+        if [[ "$kind" == template ]]; then
+            for d in "$dir"/project/*/ "$dir"/pack/*/; do
+                [[ -d "$d" ]] || continue
+                n=$(( n + 1 ))
+            done
+        else
+            for d in "$dir"/*/; do
+                [[ -d "$d" ]] || continue
+                [[ "$(basename "$d")" == ".cco" ]] && continue
+                n=$(( n + 1 ))
+            done
+        fi
+        out="${out}${out:+,}${kind}=${n}"
+    done
+    rf=$(_remotes_file 2>/dev/null) || rf=""
+    if [[ -n "$rf" && -f "$rf" ]]; then
+        n=$(grep -cE '^[^#[:space:]][^=]*=' "$rf" 2>/dev/null || true)
+        out="${out}${out:+,}remote=${n:-0}"
+    fi
+    printf '%s' "$out"
+}
+
 # Announce a config-editor repo that was collected but will NOT be mounted this
 # session (RC-6 §3.9 / INV-B: nothing is ever silently dropped). One message
 # shape, worded to the D-M2 "not mounted in this session" vocabulary
@@ -1757,6 +1804,19 @@ YAML
             } | awk 'NF && !seen[$0]++{printf "%s%s",(n++?",":""),$0}')
             [[ -n "$_op_packs_csv" ]] && echo "      - CCO_PROJECT_PACKS=${_op_packs_csv}"
             [[ -n "$_op_llms_csv" ]]  && echo "      - CCO_PROJECT_LLMS=${_op_llms_csv}"
+            # Store totals (ADR-0056 D5) — the SECOND host-computed session signal,
+            # same pattern and same reason as the two above. INV-B wants a count-only
+            # notice so an agent can tell hidden from absent, but a session counts a
+            # store kind by ENUMERATING it: at G=none `~/.cco` is not mounted, the
+            # loop never iterates, and the notice stays silent about resources that
+            # certainly exist. Enumeration is possible HERE, so the count is taken
+            # here. (An elevated `store-op count` was rejected — A1 — as a widening of
+            # ADR-0047's privileged surface for a cosmetic datum.)
+            # ⚠ A SNAPSHOT: a pack installed from the host mid-session is not
+            # reflected. Accepted — the session could not see it anyway.
+            local _op_totals
+            _op_totals=$(_start_store_totals)
+            [[ -n "$_op_totals" ]] && echo "      - CCO_STORE_TOTALS=${_op_totals}"
 
             # ── Trusted session descriptor (ADR-0047 R2) ─────────────────
             # The setuid helper reads THIS file — never argv/env — to derive the
@@ -1774,6 +1834,7 @@ YAML
                 printf 'CCO_SHOW_HOST_PATHS=%s\n' "$show_host_paths"
                 printf 'CCO_PROJECT_PACKS=%s\n' "$_op_packs_csv"
                 printf 'CCO_PROJECT_LLMS=%s\n' "$_op_llms_csv"
+                printf 'CCO_STORE_TOTALS=%s\n' "$_op_totals"
                 printf 'CCO_CONFIG_TARGETS=%s\n' "$_cfg_targets_csv"
             } > "$session_descriptor"
         fi
