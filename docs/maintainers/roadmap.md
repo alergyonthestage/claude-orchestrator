@@ -421,6 +421,17 @@ container-context reality by construction. Each needs a probe in a **real contai
 `cco build`**, recorded in the acceptance log. This is **RC-17's fourth recurrence** (RC-17, the R1
 mount shape, FI-31, now R-D).
 
+**Execution plan for the remaining implementation, approved 2026-07-29.** S3 → S4 → S5 run as **one
+block**, each unit in a **session with dedicated context** (a subagent per unit, or a workflow), each
+verified — and corrected if needed — before the next begins. **S3 before S4**: both land in
+`lib/cmd-project-query.sh` (S4 rewrites `:249-253`, S3 rewrites `:301` plus the index guard), so
+parallelising them would collide. **S5 runs in parallel in its own worktree** — its surface
+(`cmd-project-add.sh`, `cmd-init.sh`, `cmd-join.sh`, `bin/cco`) does not overlap. The maintainer
+relaxed the per-phase gates for this block to a **single human gate at the end**; what is *not*
+relaxed is the standing rule that a decision the design never made stops for a human, mid-block or
+not. ⚠ In-session verification (suite + regression tests + lint self-tests) is **not** acceptance for
+L2 or L4 — the probes those lanes owe are host-side and belong to that final gate.
+
 Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`roadmap-backlog.md`](roadmap-backlog.md)).
 Still never executed in any round: **§10.9e / E6B-04** (pack-rename fan-out atomicity). Host cleanup
 owed: remotes `probe-2`, `x`, `probe-3`, `probe-3b`, plus the stale `scratch-pack` and
