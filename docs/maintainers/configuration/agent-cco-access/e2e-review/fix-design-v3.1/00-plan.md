@@ -26,11 +26,22 @@ cycle-2 (**FI-33…FI-36**).
 
 ## 1. Two rules that govern every session in this cycle
 
-**Rule 1 — suite-green is not acceptance for S1, S3 and S5.** The hermetic lane cannot observe
+**Rule 1 — suite-green is not acceptance for S1 and S3.** The hermetic lane cannot observe
 mount-time or container-context reality; that is RC-17, and this cycle contains its **fourth**
-recurrence. Those three sessions are accepted on a **probe in a real container after `cco build`**,
+recurrence. Those two sessions are accepted on a **probe in a real container after `cco build`**,
 pasted into §7's acceptance log. If you find yourself writing *"tests pass"* as the evidence for a
 mount or context behaviour, stop — you are about to repeat the exact mistake the review names.
+
+> **Corrected 2026-07-29 — S5 was in this list and should not have been.** The maintainer ruled
+> that the **golden-file round trip IS sufficient acceptance for L4** (and the two arm tests for L5):
+> S5 closes **in-session**, with no host-side probe. The rule's own criterion is what settles it —
+> S5's surface is neither mount-time nor container-context. `_yml_append_coord` rewrites a file the
+> suite can hand it, and the EXIT trap's misfire is observable from any `bin/cco` invocation; both
+> defects reproduce identically on host and in session. The design input agrees and always did:
+> `invariant-gap-audit.md` §5 names items **2, 3 and 4** as the ones invisible to the suite, and
+> deliberately not item 5 (INV-YAML). §7's session table likewise already carried `n/a` in S5's
+> container-probe column — Rule 1's list was the outlier, and it was simply too broad. The roadmap's
+> lane-L4 warning is corrected in step. Recorded in §7's acceptance log.
 
 **Rule 2 — design gate before implementation.** S2 is design-only and ends at a human gate. S1 has an
 internal gate (design → approve → implement) marked in its brief. Per
@@ -51,7 +62,7 @@ maintainer's daily work, and it depends on nothing.
 | **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ✅ **accepted 2026-07-29** ([ADR-0056](../../decisions/0056-availability-model-and-index-session-axis.md)) — D1–D9, six alternatives recorded. Two maintainer decisions inside it: R-B's count is host-computed at `cco start` (no new privileged surface), and `absent`-in-session gets **two** causes/sentences. S3 and S4 are unblocked |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
-| **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | ⬜ not started |
+| **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | 🟡 **landed 2026-07-29** on `fix/cycle-1.2/s5-inv-yaml` (own worktree, no ADR — see §6). Both lanes close **in-session** per the Rule-1 correction in §1; evidence in §7 |
 | **S6** | Close-out | — | §10.9e/E6B-04, host cleanup, re-acceptance, README platform fix | ⬜ not started |
 
 **Dependency**: S2 must precede S3 and S4 (it defines the states and the owner they both implement).
@@ -294,6 +305,28 @@ as one spelling plus a lint rather than a local patch.
 full comment furniture — the only form that catches placement, since a YAML parse would call every
 variant equivalent.
 
+> **Landed 2026-07-29** (`fix/cycle-1.2/s5-inv-yaml`, commit `71ee8e7`). Three notes.
+>
+> - **The scale of the defect on a scaffolded project**, measured rather than assumed: on the shipped
+>   base template a second `cco project add repo` put its entry at **line 114**, 68 lines below
+>   `repos:` (line 46) and immediately above `docker:` — because `extra_mounts`, `packs`, `llms`,
+>   `github` and `browser` all ship commented out, so `docker:` is the first top-level *key* after
+>   `repos:`. The golden fixture is `tests/golden/project-add-base-template.yml`.
+> - **The lint's class is INSERTION, not the raw idiom.** `/^[^ #]/` occurs ~40 times across `lib/`,
+>   and all but a handful are READERS. For a reader the rule is unobservable — a top-level comment run
+>   holds no `  - name:` line, so treating it as inside the section reads the same set. The flagged
+>   shape is therefore an awk section-end rule that *emits* at the boundary **and does not `exit`
+>   there*; the `exit` clause is what separates a rewriter (must copy the rest of the file) from a
+>   parser that has found its answer. A lint over every reader would be ~40 lines of noise on day one,
+>   and noise gets silenced rather than heeded.
+> - **`lib/index.sh` is allowlisted as the runbook says — and so are `lib/tags.sh` and
+>   `lib/migrate.sh`**, which the runbook did not name. `tags.sh` is the same case as `index.sh`
+>   (generated DATA registry, no comments). `migrate.sh` is **not clean**: its `llms` url-recovery
+>   rewriter (`:773`) drops top-level comments inside the block outright (`inblk { next }`) — a
+>   *different* defect from the misplacement INV-YAML names, in a one-shot migration. It is
+>   allowlisted **with that reason recorded in the lint** rather than silently, and reported to the
+>   maintainer instead of being fixed inside S5's scope.
+
 ### 6.2 EXIT-trap sentinel (**R-G**)
 
 `bin/cco:8`'s trap fires unless `_cco_completed=true` (`:534,541,542,568,711`). The group-help paths
@@ -304,6 +337,23 @@ mistyping `--cco-access`. After S2 taught this codebase that a `✓` must not su
 surviving a correct refusal is the same defect read backwards, and it masks real crashes.
 
 Fix the sentinel discipline, then add the lint that no early exit path skips it.
+
+> **Landed 2026-07-29** (`fix/cycle-1.2/s5-inv-yaml`, commit `e468b01`). Two notes.
+>
+> - **The discipline is one primitive, not a patch per site.** `_cco_exit <code>` joins `die` (1) and
+>   `refuse` (2) in `lib/colors.sh`, and every raw shell `exit` outside those three is gone — the two
+>   group-help arms, the five that already set the sentinel inline (a spelling the lint cannot verify),
+>   and the **eleven** `|| exit $?` propagation sites in `cmd-start.sh`. Arm 2's mechanism is not
+>   specific to `--cco-access`: the *claude*-access resolver at `:395-399` has the identical shape, so
+>   the fix covers both resolvers.
+> - **Only shell exits count.** The ~70 `exit` tokens in `lib/` are almost all awk program text, which
+>   terminates awk, not cco. The lint strips quoted regions, comments and heredoc bodies before
+>   matching. Four hazards each produced a false positive while it was written and are handled
+>   explicitly: the close-literal-reopen quote token (`llms.sh`, `paths.sh`), an apostrophe in a prose
+>   comment, a heredoc body (`cco update --help` prints the literal text *"(… exit 0)"*), and a
+>   heredoc delimiter that is itself quoted. The quote character is passed via `awk -v` because an
+>   `"\x27"` escape is a gawk extension that would silently not fire on the BSD awk this project
+>   targets.
 
 ---
 
