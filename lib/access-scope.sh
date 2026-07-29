@@ -48,7 +48,9 @@
 #
 # Provides: _env_context(), _env_access(), _env_read_rank(),
 #   _env_current_project(), _env_scope_class(), _env_in_scope(),
-#   _env_note_hidden(), _env_flush_hidden_notice(), _env_require_visible()
+#   _env_note_hidden(), _env_note_seen(), _env_flush_hidden_notice(),
+#   _env_require_visible(), _env_widening_clause(), _env_kind_widening(),
+#   _env_member_state(), _env_project_state(), _env_unavailable[_warn]()
 # Dependencies: colors.sh (die), paths.sh (_cco_container_operator)
 
 # Execution context: `operator` (wrapped-cco in a container) | `host`.
@@ -599,18 +601,158 @@ _env_note_hidden() {
 # reading the layer's private counters — INV-E keeps the policy in the layer.
 _env_has_hidden() { [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; }
 
+# ── D3: the widening offered is a function of what is hidden ─────────
+# ADR-0056 D3. ONE builder, every call site — the aggregate notice, the
+# per-resource refusal (_env_require_visible), the per-resource warn
+# (_env_unavailable_warn) and `cco path list`'s entry notice. They previously
+# shared the INTENT and each spelled its own string, which is precisely how the
+# `read-global`-for-a-project remedy reached four sites and was found
+# independently by all four review sessions. They now share the IMPLEMENTATION.
+#
+#   projects only    → read-all ALONE. read-global's SOLE difference from
+#                      read-all is that other projects stay hidden (this file's
+#                      header), so naming it would offer a remedy that reveals
+#                      NOTHING of what was hidden — worse than offering none.
+#   store kinds only → read-global (packs/llms/templates/remotes ride G).
+#   mixed            → both, with read-all attached to the projects clause.
+#
+# A `path` row rides Po exactly as a project does (RC-4), so it counts on the
+# projects side. Usage: _env_widening_clause <n_projects_hidden> <n_store_hidden>
+_env_widening_clause() {
+    local np="${1:-0}" ns="${2:-0}"
+    if [[ "$np" -gt 0 && "$ns" -eq 0 ]]; then
+        printf 'start a read-all session (other projects need Po≥ro)'
+    elif [[ "$np" -eq 0 && "$ns" -gt 0 ]]; then
+        printf 'start a read-global session'
+    else
+        printf 'start a read-global session (read-all to also see other projects)'
+    fi
+}
+
+# The same rule for a SINGLE named resource, expressed through the same builder
+# (D1: one owner, one implementation): `project`/`path` are the projects-only
+# case, every other kind is the store-kinds-only case.
+# Usage: _env_kind_widening <kind>
+_env_kind_widening() {
+    case "$1" in
+        project|path) _env_widening_clause 1 0 ;;
+        *)            _env_widening_clause 0 1 ;;
+    esac
+}
+
 # Emit the standardized scope notices to stderr (INV-B/C). Count-only — never
 # leaks names. Idempotent + no-op when nothing was noted. Two independent notices,
 # each gated on its own flag so a caller that noted ONLY unmounted members still
 # gets the second sentence: the "hidden by scope" notice (unchanged wording) and
 # the RC-2 "not mounted in this session" notice (D-M2). The latter must NOT say
 # "run cco resolve" — that string is what made today's output a lie.
+# ── D5: you cannot count what you cannot enumerate ───────────────────
+# ADR-0056 D5. INV-B requires a COUNT-only notice precisely so an agent can tell
+# hidden from absent — but a store-resident kind is counted by ENUMERATING it and
+# noting the rows scope hides. At G=none `~/.cco` is not mounted at all, so the
+# enumeration loop never iterates: zero rows, zero _env_note_hidden calls, and the
+# notice stays silent about resources that certainly exist. (`llms` behaves only
+# because it enumerates from CACHE, which is mounted regardless of G.)
+#
+# ⚠ The session reports diagnosed this as "packs are not wired into the scope
+# layer". They ARE wired — cmd-pack.sh:116 notes and :134 flushes. The cause is the
+# absent mount, and the ADR records the correction because a wrong root cause
+# survives longer than a wrong fix.
+#
+# So the count is a HOST-SIDE fact, computed by `cco start` where enumeration is
+# possible and injected as a session signal — the pattern CCO_PROJECT_PACKS /
+# CCO_PROJECT_LLMS already establishes ("computed once host-side (INV-E)", above).
+# An elevated `store-op count` was REJECTED (A1): it would widen ADR-0047's
+# privileged surface for a cosmetic datum. Dropping the count was REJECTED (A2):
+# that answers the finding by deleting the requirement.
+#
+# ⚠ CONSEQUENCE, recorded rather than discovered later: this is a SNAPSHOT AT
+# SESSION START. A pack installed from the host mid-session is not reflected. That
+# is accepted — the session could not see that pack anyway, and INV-D already
+# frames scoping as a presentation filter over a host-owned truth.
+#
+# Format: CCO_STORE_TOTALS="pack=7,template=3,llms=5,remote=2" (absent → no
+# supplement, so a host run and a pre-ADR-0056 container degrade to the old
+# behaviour rather than inventing a number).
+_ENV_STORE_KINDS="pack template llms remote"
+
+# Kinds the "not mounted in this session" notice can carry (see the flush below):
+# whole resources PLUS a project's parts, which `project show` classifies per row.
+_ENV_UNM_KINDS="project repo extra_mount pack llms template remote"
+
+# Kinds the "hidden by access scope" notice can carry. `path` (an index binding)
+# is here because `cco path list` now routes through the shared notice instead of
+# spelling its own — see _env_widening_clause: a path row rides Po exactly as a
+# project does, so it counts on the PROJECTS side of the widening, never the store
+# side (offering read-global for a hidden path row would reveal nothing).
+_ENV_HID_KINDS="project path pack llms template remote"
+
+# Host-side total for <kind> from the session signal; empty when unknown.
+_env_store_total() {
+    local kind="$1" tot="${CCO_STORE_TOTALS:-}" tok
+    [[ -n "$tot" ]] || return 1
+    local IFS=','
+    for tok in $tot; do
+        tok="${tok// /}"
+        [[ "${tok%%=*}" == "$kind" ]] || continue
+        tok="${tok#*=}"
+        case "$tok" in ''|*[!0-9]*) return 1 ;; esac
+        printf '%s' "$tok"; return 0
+    done
+    return 1
+}
+
+# Record one ENUMERATED resource of <kind> — every row the lister actually saw,
+# whether it went on to be shown or noted hidden. The difference between this and
+# the host-side total is what the mount could not show at all (D5). Mirrors
+# _env_note_hidden's bash-3.2 indirect counters. Usage: _env_note_seen <kind>
+_env_note_seen() {
+    local kind="$1"
+    local var="_ENV_SEEN_${kind}" cur
+    cur="${!var:-0}"
+    printf -v "$var" '%d' "$(( cur + 1 ))"
+}
+
+# Fold the unenumerable remainder into the hidden counters, just before the notice
+# is built. Operator-only (INV-A: the host is never scoped and always enumerates).
+# Per kind: supplement = max(0, host_total - enumerated), so it is correct for a
+# fully absent mount (enumerated 0 → the whole total), for the read-project
+# NARROWED pack mount (enumerated = the referenced subset → the rest), and for a
+# fully mounted store (enumerated = total → 0, and the existing per-row notes stand
+# alone). Never double-counts: rows the loop DID see are already counted by
+# _env_note_hidden if scope hid them.
+#
+# ⚠ ONCE per invocation. _env_flush_hidden_notice is idempotent and several verbs
+# call it on more than one path (`cco list`'s empty and non-empty arms, `llms …
+# --project`'s conditional flush). The per-row counters are zeroed after each
+# flush, but `seen` and the host total are NOT per-flush facts — re-deriving the
+# supplement on a second call would re-add it and print the notice twice.
+_env_apply_store_supplement() {
+    _cco_container_operator || return 0
+    [[ -n "${CCO_STORE_TOTALS:-}" ]] || return 0
+    [[ "${_ENV_SUPPL_DONE:-}" == "1" ]] && return 0
+    _ENV_SUPPL_DONE=1
+    local kind total seen svar n i
+    for kind in $_ENV_STORE_KINDS; do
+        total=$(_env_store_total "$kind") || continue
+        svar="_ENV_SEEN_${kind}"; seen="${!svar:-0}"
+        n=$(( total - seen ))
+        [[ "$n" -gt 0 ]] || continue
+        i=0
+        while [[ "$i" -lt "$n" ]]; do _env_note_hidden "$kind"; i=$(( i + 1 )); done
+    done
+}
+
 _env_flush_hidden_notice() {
     local kind var c label
+    # D5: fold in what this session could not enumerate BEFORE building the
+    # message — at G=none nothing was noted, and the supplement is exactly what
+    # makes the notice speak at all.
+    _env_apply_store_supplement
     # ── hidden by access scope (unchanged) ──────────────────────────────
     if [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; then
         local msg=""
-        for kind in project pack llms template remote; do
+        for kind in $_ENV_HID_KINDS; do
             var="_ENV_HID_${kind}"; c="${!var:-0}"
             [[ "$c" -gt 0 ]] || continue
             # "llms" is already plural; the others take a trailing 's' when >1.
@@ -621,30 +763,31 @@ _env_flush_hidden_notice() {
             msg="${msg}${msg:+, }${c} ${label}"
         done
         if [[ -n "$msg" ]]; then
-            # read-global reveals global-class resources (templates/remotes/unreferenced
-            # packs/llms); OTHER projects need read-all (Po≥ro). The notice names the
-            # correct widening for each (A1 §2.2) — but only for the kinds actually
-            # hidden. V4-F-V4-03: when the hidden set is projects-only (the shape
-            # `cco list projects` produces), leading with read-global offers a widening
-            # that reveals NONE of what was hidden — read-global's sole difference from
-            # read-all is that other projects stay hidden (see this file's header). An
-            # unreachable remedy is worse than none, so that case names read-all alone.
-            local widen='start a read-global session (read-all to also see other projects)'
-            if [[ "${_ENV_HID_project:-0}" -gt 0 ]] \
-               && [[ $(( ${_ENV_HID_pack:-0} + ${_ENV_HID_llms:-0} \
-                       + ${_ENV_HID_template:-0} + ${_ENV_HID_remote:-0} )) -eq 0 ]]; then
-                widen='start a read-all session (other projects need Po≥ro)'
-            fi
+            # The widening comes from the SHARED builder (D3) — this site used to
+            # spell it inline, and the two per-resource sites spelled it again and
+            # differently. See _env_widening_clause for the rule.
+            local widen
+            widen=$(_env_widening_clause \
+                "$(( ${_ENV_HID_project:-0} + ${_ENV_HID_path:-0} ))" \
+                "$(( ${_ENV_HID_pack:-0} + ${_ENV_HID_llms:-0} \
+                   + ${_ENV_HID_template:-0} + ${_ENV_HID_remote:-0} ))")
             printf 'note: %s hidden by access scope (cco_access=%s) — %s or run cco on your host.\n' \
                 "$msg" "$(_env_access)" "$widen" >&2
         fi
         _ENV_HIDDEN_ANY=0
-        for kind in project pack llms template remote; do printf -v "_ENV_HID_${kind}" '%d' 0; done
+        for kind in $_ENV_HID_KINDS; do printf -v "_ENV_HID_${kind}" '%d' 0; done
     fi
     # ── not mounted in this session (RC-2 / D-M2) ───────────────────────
     if [[ "${_ENV_UNMOUNTED_ANY:-}" == "1" ]]; then
         local umsg=""
-        for kind in project pack llms template remote; do
+        # ⚠ WIDER than the hidden-by-scope list above, and deliberately so. Scope
+        # hides whole RESOURCES (project/pack/llms/template/remote); "not mounted"
+        # also applies to a project's PARTS — a member repo, an extra_mount — which
+        # `project show` classifies per row (D7 / D-V31-3). A kind missing from this
+        # list would set _ENV_UNMOUNTED_ANY, contribute nothing to umsg, and the
+        # notice would silently vanish: counted, then dropped, which is the exact
+        # failure INV-B exists to prevent.
+        for kind in $_ENV_UNM_KINDS; do
             var="_ENV_UNM_${kind}"; c="${!var:-0}"
             [[ "$c" -gt 0 ]] || continue
             case "$kind" in
@@ -658,7 +801,7 @@ _env_flush_hidden_notice() {
                 "$umsg" >&2
         fi
         _ENV_UNMOUNTED_ANY=0
-        for kind in project pack llms template remote; do printf -v "_ENV_UNM_${kind}" '%d' 0; done
+        for kind in $_ENV_UNM_KINDS; do printf -v "_ENV_UNM_${kind}" '%d' 0; done
     fi
 }
 
@@ -682,10 +825,27 @@ _env_require_visible() {
     local kind="$1" name="$2" owner="${3:-}"
     _env_in_scope "$kind" "$name" "$owner" && return 0
     # A named-but-hidden resource is a policy refusal, not an error (D8/C3 → exit 2).
+    #
+    # ⚠ NON-DISCLOSING (ADR-0056 D4, ratifying D-V31-1). Both arms below used to
+    # assert that the resource EXISTS, and the project arm additionally asserted
+    # WHERE it is ("it is outside this session's project ('X')"). Below read scope
+    # `all` that is exactly the disclosure ADR-0043's scoping exists to prevent —
+    # it turned `project show` into an existence oracle across the scope boundary
+    # (W3-F05). The sentence now asserts NOTHING about existence or location: it
+    # reports only what this session can offer, which is all it honestly knows.
+    # The widening comes from the shared D3 builder, so this site can no longer
+    # drift from the aggregate notice — it named read-global for a PROJECT, a
+    # level whose sole difference from read-all is that projects stay hidden.
+    #
+    # ⚠ The RESERVED FRAGMENT "not available at this access scope" is deliberately
+    # preserved — it is the shared vocabulary INV-ENV budgets and the managed rule
+    # quotes. What D4 removes is the CLAUSE that followed it, not the sentence:
+    # naming the resource the caller just typed discloses nothing, whereas
+    # asserting that it exists and where it lives discloses both.
     if [[ "$(_env_scope_class "$kind")" == "global" ]]; then
-        refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; start a read-global session or run cco on your host."
+        refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — '$kind' is a personal-global resource; $(_env_kind_widening "$kind"), or run cco on your host."
     fi
-    refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — it is outside this session's project ('$(_env_current_project)'); start a read-global/read-all session or run cco on your host."
+    refuse "'$kind $name' is not available at this access scope (cco_access=$(_env_access)) — $(_env_kind_widening "$kind"), or run cco on your host."
 }
 
 # _env_require_kind_visible <kind> — gate a WHOLE-kind listing (bare `cco list
@@ -716,8 +876,18 @@ _env_require_kind_visible() {
 # | state       | truth test                       | remedy                | exit |
 # | here        | tree exists at the probe path    | —                     | 0    |
 # | not-mounted | binding exists, probe absent     | start a session / host| 2/0  |
-# | unresolved  | no binding, or host path absent  | cco resolve <name>    | 1    |
+# | unresolved  | no binding, or host path absent  | cco resolve <name>*   | 1    |
+# | unknown     | not in the index (scope=all only)| check the name        | 1    |
 # | out-of-scope| the scope layer hides it         | widen --cco-access    | 2    |
+#
+# * host-qualified in a session (D2) — `cco resolve` is host-only there.
+#
+# INV-AVAIL (ADR-0056 D1) — no verb computes an availability or scope-widening
+# answer for itself. Every such answer is produced HERE, which owns (a) the
+# classification, (b) the sentence, (c) the remedy and (d) the exit code. Same
+# shape as INV-S6, whose CLASS lint has held. Enforced by INV-ENV (one spelling
+# per state) + INV-AVAIL (the predicate half + the badge/remedy strings) in
+# tests/test_invariants.sh.
 
 # _env_member_state <name> <index_host_path> [<declared_target>]
 #   → here | not-mounted | unresolved
@@ -731,15 +901,72 @@ _env_member_state() {
     if _cco_container_operator; then printf 'not-mounted'; else printf 'unresolved'; fi
 }
 
-# _env_project_state <name> → out-of-scope | here | not-mounted | unresolved
+# _env_project_state <name> → out-of-scope | here | not-mounted | unknown | unresolved
 # Resolves through the operator-aware _resolve_project_yml (never the host-only
 # _resolve_unit_dir_for_project — INV-F.3), defined later in load order and bound
 # at call time — the same pattern _env_require_visible already uses.
+#
+# ── D4: the `unknown` arm, materialised ONLY at read scope `all` ──────
+# ADR-0056 D4 ratifies D-V31-1 by settling two findings that are both right on
+# DIFFERENT axes, using the axis ADR-0043 already defines (_cco_level_read_scope):
+#   • at read scope `all` NOTHING can be hidden by construction, so answering a
+#     typo with the not-mounted sentence — "it exists on this machine, but its
+#     files are not bound into this container" — is simply FALSE. The arm is safe
+#     AND owed here: no oracle is created, because the session would see the
+#     resource anyway. Truth source: _index_list_projects.
+#   • below `all` the arm is REFUSED (alternative A5, rejected): distinguishing
+#     "hidden" from "absent" there is exactly the existence oracle across the
+#     scope boundary that W3-F05 named. Those scopes get the non-disclosing
+#     out-of-scope sentence instead, which asserts nothing.
+# The arm is operator-gated as well as scope-gated: the wrong answer it replaces
+# ("it exists on this machine") is the not-mounted sentence, which only a session
+# can produce. On the host the existing `unresolved` wording stands — it already
+# claims no more than "not resolved on this machine".
 _env_project_state() {
     local name="$1"
     _env_in_scope project "$name" || { printf 'out-of-scope'; return 0; }
     if _resolve_project_yml "$name" >/dev/null 2>&1; then printf 'here'; return 0; fi
-    if _cco_container_operator; then printf 'not-mounted'; else printf 'unresolved'; fi
+    if _cco_container_operator; then
+        if [[ "$(_env_read_scope)" == "all" ]] && ! _env_project_registered "$name"; then
+            printf 'unknown'; return 0
+        fi
+        printf 'not-mounted'; return 0
+    fi
+    printf 'unresolved'
+}
+
+# Is <name> registered in the machine-local index? The truth source D4 names
+# (_index_list_projects, whose rows are `name=…`). Defined in index.sh, which
+# loads AFTER this module, so the call is bound at call time — the same late
+# binding _env_project_state already relies on for _resolve_project_yml. A
+# missing/unreadable enumerator must never MANUFACTURE an `unknown` verdict, so
+# any failure to enumerate returns 0 ("assume registered") and the caller falls
+# through to the conservative not-mounted arm.
+_env_project_registered() {
+    local name="$1" row
+    command -v _index_list_projects >/dev/null 2>&1 || return 0
+    while IFS='=' read -r row _; do
+        [[ "$row" == "$name" ]] && return 0
+    done < <(_index_list_projects 2>/dev/null)
+    return 1
+}
+
+# The single BADGE per state, for table/card renderings that show a state beside a
+# row rather than failing on it (`project show`'s repos and extra_mounts). Same
+# reason the sentence lives here (D1): the badge vocabulary is part of the answer,
+# and `[missing]` — the string this replaces — was a fourth spelling of a state the
+# classifier already had a name for. `here` deliberately renders EMPTY: a member
+# that is present needs no badge. Colour stays with the caller (this module has no
+# colour dependency), so a caller wraps it; the WORDS come from here.
+# Usage: _env_state_badge <here|not-mounted|unresolved|unknown|out-of-scope>
+_env_state_badge() {
+    case "$1" in
+        here)         printf '' ;;
+        not-mounted)  printf '[not mounted in this session]' ;;
+        out-of-scope) printf '[hidden by access scope]' ;;
+        unknown)      printf '[not registered]' ;;
+        *)            printf '[unresolved]' ;;
+    esac
 }
 
 # The single remedy SENTENCE per state — no leading glyph, no stream — so the
@@ -753,12 +980,30 @@ _env_unavailable_sentence() {
         not-mounted)
             printf "%s '%s' is not mounted in this session — it exists on this machine, but its files are not bound into this container. Run cco on your host, or start a session that mounts it." \
                 "$kind" "$name" ;;
+        unknown)
+            # D4: reached ONLY at read scope `all`, where nothing can be hidden, so
+            # naming the resource absent discloses nothing the session could not
+            # already see. This is the answer a typo must get instead of the
+            # not-mounted sentence's false "it exists on this machine".
+            printf "%s '%s' is not registered on this machine — no such %s is bound in the cco index. Check the name with 'cco list projects'." \
+                "$kind" "$name" "$kind" ;;
         *)
             # "not resolved on this machine" (not "unresolved") preserves the
             # historical host wording the rename guard shipped, so its host-side
             # counterweight test stays green across the vocabulary unification.
-            printf "%s '%s' is not resolved on this machine — run 'cco resolve %s' first." \
-                "$kind" "$name" "$name" ;;
+            #
+            # D2 — a remedy is a function of the PRINT SITE. `cco resolve` is
+            # host-only in a session (bin/cco's operator gate refuses it at exit
+            # 2), so prescribing it in-container is advice this very session will
+            # reject. This generalises index.sh's existing correct branch rather
+            # than inventing a rule.
+            if _cco_container_operator; then
+                printf "%s '%s' is not resolved on this machine — run 'cco resolve %s' on your host." \
+                    "$kind" "$name" "$name"
+            else
+                printf "%s '%s' is not resolved on this machine — run 'cco resolve %s' first." \
+                    "$kind" "$name" "$name"
+            fi ;;
     esac
 }
 
@@ -770,6 +1015,9 @@ _env_unavailable() {
     case "$state" in
         out-of-scope) _env_require_visible "$kind" "$name" ;;   # existing wording, exit 2
         not-mounted)  refuse "$(_env_unavailable_sentence not-mounted "$kind" "$name")" ;;
+        # D4: a name that is registered nowhere is a NAMING error, not a session
+        # shape — exit 1 with the unresolved arm, per D8's taxonomy.
+        unknown)      die    "$(_env_unavailable_sentence unknown     "$kind" "$name")" ;;
         *)            die    "$(_env_unavailable_sentence unresolved  "$kind" "$name")" ;;
     esac
 }
@@ -782,8 +1030,13 @@ _env_unavailable_warn() {
     local state="$1" kind="$2" name="$3"
     case "$state" in
         out-of-scope)
-            warn "$kind '$name' is hidden by access scope (cco_access=$(_env_access)) — start a read-global/read-all session or run cco on your host." ;;
+            # D3: the widening comes from the shared builder, not a third inline
+            # spelling. This site offered "read-global/read-all" for every kind —
+            # for a PROJECT, read-global reveals nothing (it is the level that
+            # hides other projects), so the remedy was unfollowable.
+            warn "$kind '$name' is hidden by access scope (cco_access=$(_env_access)) — $(_env_kind_widening "$kind"), or run cco on your host." ;;
         not-mounted)  warn "$(_env_unavailable_sentence not-mounted "$kind" "$name")" ;;
+        unknown)      warn "$(_env_unavailable_sentence unknown     "$kind" "$name")" ;;
         *)            warn "$(_env_unavailable_sentence unresolved  "$kind" "$name")" ;;
     esac
     return 1
