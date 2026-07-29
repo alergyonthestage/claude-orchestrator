@@ -54,12 +54,15 @@ distributed on npm as [`@claude-orchestrator/cco`](https://www.npmjs.com/package
 it ships the decentralized in-repo config model (project config lives in each
 repo's `.cco/`) and the native Claude Code installer (auto-updates in place).
 
-**Platform support:**
-- **macOS** — fully tested, primary development environment. OAuth login supported.
-- **Linux** — functional but not yet thoroughly tested. OAuth login is not yet available; authentication requires `CLAUDE_API_KEY` (API key). Linux OAuth support with subscription-based login is planned — see the [roadmap](docs/maintainers/roadmap.md).
-- **Windows** — use via WSL2 + Docker Desktop (see [Requirements](#requirements)).
+**Platform support:** macOS is the verified platform. Linux runs sessions but
+cco's own in-session commands do not work there yet — the detail is below, and
+the [OS compatibility](#os-compatibility) table says the same thing.
 
-**Planned before stable release:** network hardening (internet access control per project), E2E integration tests, Linux OAuth support. See the [roadmap](docs/maintainers/roadmap.md) for the full plan.
+- **macOS** — the verified platform and primary development environment. OAuth login supported (via Keychain).
+- **Linux** — **partially supported.** Sessions start and Claude Code works on your repos, but the `cco` command *inside* a session cannot reach cco's own internal store. Every verb that reads the machine-local index (`cco list`, `cco path list`, `cco project show`, `cco project validate`…) and every config **write** refuses with an error. The store is created mode `0700` for an elevated identity (`cco-svc`, uid 900) that a session running as your own uid cannot search. The refusal is deliberate and names the limitation: until recently those verbs answered *"the path index is empty — nothing is registered on this machine yet"* at exit 0, which was a confident wrong answer. `cco` on your **host** is unaffected. Fixing this needs host-side setup and is scheduled for the next development cycle as a dedicated architecture decision, not a patch. Separately, OAuth login is not yet available on Linux; authentication requires an API key (`ANTHROPIC_API_KEY`, via `cco start --api-key`). Linux OAuth support with subscription-based login is planned — see the [roadmap](docs/maintainers/roadmap.md).
+- **Windows** — use via WSL2 + Docker Desktop (see [Requirements](#requirements)). WSL2 runs as Linux, so the Linux caveats above apply.
+
+**Planned before stable release:** network hardening (internet access control per project), E2E integration tests, Linux internal-store reachability, Linux OAuth support. See the [roadmap](docs/maintainers/roadmap.md) for the full plan.
 
 Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -216,9 +219,9 @@ Full index: [docs/README.md](docs/README.md)
 
 | OS | Status | Notes |
 |---|---|---|
-| **macOS 12+** | Fully supported | Keychain integration for OAuth, iTerm2 agent teams |
-| **Linux** | Fully supported | All features except macOS-specific Keychain and iTerm2 |
-| **Windows (WSL2)** | Works, not officially tested | Run as Linux inside WSL2; Docker Desktop with WSL2 backend required |
+| **macOS 12+** | Fully supported — the verified platform | Keychain integration for OAuth, iTerm2 agent teams |
+| **Linux** | Partially supported | Sessions run and Claude Code works on your repos. `cco` **inside** a session cannot reach the internal store, so index-reading verbs and config writes refuse — the store is mode `0700` for the elevated identity `cco-svc` (uid 900), unsearchable by a session running as your uid. `cco` on the host is unaffected. No Keychain OAuth (`ANTHROPIC_API_KEY` required), no iTerm2 agent teams. See [Platform support](#status) |
+| **Windows (WSL2)** | Partially supported, not officially tested | Runs as Linux inside WSL2, so the Linux row applies; Docker Desktop with WSL2 backend required |
 | **Windows (native)** | Not supported | Would require a PowerShell rewrite; not planned |
 
 > **Windows users:** Install WSL2 + Docker Desktop with the WSL2 backend, then use cco from inside the WSL2 terminal. No changes to the tool are needed.
