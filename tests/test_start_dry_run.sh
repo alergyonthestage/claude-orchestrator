@@ -229,15 +229,17 @@ test_dry_run_ssh_not_mounted() {
 # ── Volume mounts: auto memory (Design Invariant 3) ──────────────────
 
 test_dry_run_auto_memory_exact_path() {
-    # Design Invariant 3: claude-state MUST be mounted at this exact container path
-    # /workspace → -workspace (root slash replaced by dash per Claude Code convention)
+    # Design Invariant 3 (ADR-0055 D5): claude-state IS the ~/.claude/projects tree,
+    # not the single -workspace key — Claude Code derives one key per cwd, and every
+    # key must persist. The closing quote anchors the target: without it the old
+    # ".../projects/-workspace" line would satisfy this assertion as a prefix.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "session/claude-state:/home/claude/.claude/projects/-workspace"
+        "session/claude-state:/home/claude/.claude/projects\""
 }
 
 test_dry_run_memory_child_mount() {
@@ -262,7 +264,7 @@ test_dry_run_memory_mount_after_claude_state() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local state_line memory_line
-    state_line=$(grep -n "session/claude-state.*-workspace\"\?$" "$compose" | head -1 | cut -d: -f1)
+    state_line=$(grep -n "session/claude-state:/home/claude/.claude/projects\"$" "$compose" | head -1 | cut -d: -f1)
     memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$state_line" || -z "$memory_line" ]]; then
         echo "ASSERTION FAILED: could not find claude-state or memory mount line"
@@ -916,7 +918,7 @@ test_dry_run_volume_order_memory_before_git() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local memory_line git_line
-    memory_line=$(grep -n "session/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "session/claude-state:/home/claude/.claude/projects\"$" "$compose" | head -1 | cut -d: -f1)
     git_line=$(grep -n ".gitconfig:ro" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$memory_line" || -z "$git_line" ]]; then
         echo "ASSERTION FAILED: could not find memory or git line"

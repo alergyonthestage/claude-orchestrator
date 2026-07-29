@@ -1373,3 +1373,153 @@ printed on the rename that creates the condition and does its job, so this is th
 user was warned about — not a contradiction of it. Cheapest correct fix is probably for the cwd-first
 derivation to consult the index rather than the mount basename, or to say *"this session still has the
 pre-rename mount"* when the derived name is absent. **Effort**: Low.
+
+---
+
+## FI-37: no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`)
+
+**Found**: 2026-07-28, `/review-implementation` of cycle-1.2 S1. **Severity**: usability, no data
+loss. **Effort**: Medium — the fix is a mechanism choice, not a patch.
+
+ADR-0055 D3 gives the cco *project* tree (`/workspace/.claude`) a functional-write floor so
+project-scope workflow saves work at any access level. The **repo** tree did not get one, and
+**INV-FLOOR is scoped accordingly** (ADR-0055 D2) — deliberately, because a repo's native `.claude/`
+is cross-cutting config shared with everyone who clones it, so writing there is closer to authoring
+that repository than to this session's runtime state.
+
+The usability gap that remains is real, and it lands on the class D5 exists to serve. Verified on a
+live default session:
+
+```
+.../claude-orchestrator/.claude   /workspace/claude-orchestrator/.claude          ro
+.../local-settings/repo-….json    /workspace/claude-orchestrator/.claude/settings.local.json  rw
+```
+
+A subagent, teammate, worktree or background session whose cwd is inside a repo saves to
+`<repo>/.claude/workflows/` — the official range is *"the closest existing `.claude/workflows/`
+between your working directory and the repository root"*, and `/workspace/.claude/workflows/` sits
+**above** that root, so D3's overlay is not a fallback. The save fails whether or not the directory
+exists (`:ro` bind either way).
+
+Worse in the nested case: `packages/*/.claude` overlays get **no floor at all**, not even
+`settings.local.json` — that overlay is conditioned on `_cl_rel == ".claude"` (`lib/cmd-start.sh`).
+
+**Options** (each was weighed and deferred rather than dismissed):
+
+- **(a) Stub directory in the user's repo + rw bind from STATE.** Extends the precedent already in
+  place for `settings.local.json`, which writes a stub into the user's repo. Cost: a visible
+  directory appears in a repo the user did not ask cco to modify, plus the gitignore question.
+- **(b) A per-repo view in CACHE**, generalizing ADR-0054's mechanism to B1. No residue in the user's
+  repo and structurally the same answer B2 already uses. Cost: a substantial mechanism change that
+  deserves its own design pass — which is why it is here and not in S1.
+- **(c) Leave it**, and say so in the user docs so the failure is expected rather than surprising.
+
+**Related**: ADR-0055 D2/D3 · ADR-0049 §2 (`Cr=ro` by default) · ADR-0024 (the reach argument that
+makes the repo tree cross-cutting).
+
+---
+
+## FI-38: hygiene of the workflows STATE overlay (stale stubs, silent collision)
+
+**Found**: 2026-07-28, `/review-implementation` of cycle-1.2 S1. **Severity**: minor, no data loss.
+**Effort**: Low each, but both are policy choices rather than bugs — which is why they are here.
+
+Two properties of `_emit_workflows_overlay` (`lib/cmd-start.sh`), the rw overlay ADR-0055 D3 puts at
+`/workspace/.claude/workflows` when B2 is `:ro`. Each committed workflow gets a 0-byte mountpoint stub
+seeded into STATE so its `:ro` bind has somewhere to land.
+
+**(a) A stub outlives the entry that justified it.** Remove a workflow from the committed tree and its
+stub stays in STATE — where STATE is the *rw parent*, so it now reads as a real, empty workflow of the
+same name. The CACHE view does not have this problem because it is rebuilt from scratch at every
+start; the STATE overlay cannot be, since it holds real user saves. A GC needs a rule for telling a
+stale stub from a genuinely empty file the user saved, which is the decision.
+
+**(b) A collision is resolved silently.** If the user saves `X.js` (lands in STATE) and the repo later
+commits its own `X.js`, the overlay correctly does not overwrite — and then binds the committed file
+`:ro` on top, so the user's version is invisible and unwritable with no notice. The exact precedent
+for saying so exists: `lib/packs.sh:133-143` warns *"collides with pack … the pack ':ro' overlay
+wins"*. ⚠ Implementation note for whoever takes this: the function runs inside `$( )` and its stdout
+**is** compose YAML, so any notice must go to stderr or be emitted by the caller — printing it from
+inside would corrupt the generated file.
+
+**Related**: ADR-0055 D3 · ADR-0005 F2 (pack overlay wins) · [FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr).
+
+---
+
+## FI-39: Claude Code memory state cco does not persist — one ADR, two decisions
+
+**Found**: 2026-07-28, answering a maintainer question after S1's probe. **Severity**: (a) silent
+loss of content Claude writes, no user-visible error · (b) none — a simplification.
+**Effort**: (a) Low · (b) Medium. **Scheduling — maintainer decision 2026-07-28**: **one ADR
+covering both**, opened **after cycle-1.2**; the priority until then is finishing the cycle's fixes
+and the release. Do not split this into two ADRs.
+
+Same axis as [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md):
+`claude_access` governs *authoring*, while Claude Code's **runtime state** must persist. ADR-0055
+settled transcripts and the `{settings.local.json, workflows/}` floor. Memory has two remaining
+holes, and they meet in one ADR because both answer *"where does Claude's own memory live in a
+container that is destroyed at exit"*.
+
+### (a) Per-agent memory is declared on eight agents and evaporates — the defect
+
+The subagent frontmatter field `memory:` gives an agent a persistent directory
+(`user` → `~/.claude/agent-memory/<name>/` · `project` → `.claude/agent-memory/<name>/` ·
+`local` → `.claude/agent-memory-local/<name>/`).
+
+**Eight agent definitions in a normal session already declare `memory: user`** — the six from the
+`core-dev-framework` pack (`analyst`, `designer`, `documenter`, `implementer`, `reviewer`, `tester`)
+and the two user-level ones (`analyst`, `reviewer`). Their target is `~/.claude/agent-memory/`, and:
+
+- it is **not bound anywhere** — under `~/.claude` cco binds `agents`, `skills`, `rules`,
+  `settings.json`, `CLAUDE.md`, `projects`, `.credentials.json` and `mcp-global.json`, and nothing
+  else (verified against `/proc/self/mountinfo` in a live session);
+- the container runs `docker compose run --rm` (`lib/cmd-start.sh:2455`), so its own filesystem is
+  destroyed at exit.
+
+So the capability is advertised to eight agents and has never survived a session. The strings
+`agent-memory` and `autoMemoryDirectory` appear **nowhere** in cco's code or maintainer docs. Nothing
+remains from past sessions to confirm an agent ever wrote there — by construction, the container is
+gone — so the evidence is the mount shape, not a recovered file.
+
+⚠ **`project` scope is a trap here, not an alternative**: it resolves to
+`/workspace/.claude/agent-memory/`, which is the CACHE view `cco start` rebuilds with `rm -rf` — the
+exact defect `aa97b3b` has just closed for `workflows/`. Whatever the ADR decides, it must not land
+there without the same materialisation treatment.
+
+### (b) `autoMemoryDirectory` — collapse the cwd-derived split, and drop a nested mount
+
+Project auto-memory is **not** per-agent and not per-cwd: the official docs put it at
+`~/.claude/projects/<project>/memory/`, where `<project>` is **derived from the git repository** —
+worktrees and subdirectories of one repo share it, and outside a repo the project root is used
+instead. That is why a cco session splits: the main session's cwd `/workspace` is **not** a git repo
+→ key `-workspace`; anything started inside `/workspace/<repo>` **is** → its own key, its own memory
+directory. cco binds STATE memory only at `-workspace/memory`.
+
+`autoMemoryDirectory` (settings.json, honoured at user/project/local/**policy** scope; landed in
+Claude Code **2.1.74**, and the installed version is well past it) points every key at one directory.
+
+- **The real gain is structural, not symptomatic.** The split has not been observed to bite — the
+  second key's memory directory was created empty and removed again, nothing was ever written there.
+  What the change buys is removing the `-workspace/memory` **child mount**: memory stops being a bind
+  nested inside the `projects` bind, which is the shape that required INV-MP, the D6 self-heal and
+  the mountpoint work. It takes one case out of the class that has now failed four times.
+- **Migration is trivial**: the STATE source stays `session/memory`; only the container-side target
+  and the setting change. No content moves, no migration script.
+- **Safe in both branches**: if the setting is honoured memory goes to the new path; if it is not
+  (an older Claude Code), it falls back inside the `projects` bind, which is already bound. Neither
+  branch loses data — but the fallback is **silent**, and the ADR should say whether that is accepted
+  or covered by a version check.
+
+**What it costs, to be weighed in the ADR, not assumed away:**
+
+- the native per-repo semantic goes: two repos in one cco project would share one memory. Defensible
+  (in cco the *project* is the unit) but it is a model choice and must be written as one;
+- **policy scope is the only honest home** — project scope needs the workspace trust dialog, and
+  `~/.cco/.claude/settings.json` is user-owned and never rewritten by cco — so the user loses the
+  ability to relocate memory;
+- it does **not** fix (a). Different mechanism, separate decision inside the same ADR.
+
+**Related**: ADR-0055 (the axis) · ADR-0039 (Claude Code installed at first start, version not
+pinned) · ADR-0054/INV-MP (nested mountpoints) ·
+[FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr) (same lane: the
+repo cwd gets a path that works but is not the one that counts).

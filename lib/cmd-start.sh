@@ -494,6 +494,117 @@ _emit_local_settings_overlay() {
     _compose_vol "$src" "$tgt"
 }
 
+# ── Functional-write floor: project-scope workflows (ADR-0055 D2/D3) ─────────
+# PROVENANCE — this floor is DERIVED from Claude Code's official application-data
+# contract, not from whichever path a bug report named (that derivation is what
+# ADR-0049 §5 got wrong). Sources, per the managed `use-official-docs` rule:
+#
+#   • the `claude-directory` doc's "Application data" table — the home-scope set,
+#     which ADR-0055 D2/D4 satisfy structurally (~/.claude and every ancestor cco
+#     nests under are claude-owned, so nothing there is ever refused);
+#   • the workflows doc: project saves target "the closest existing
+#     .claude/workflows/ directory that already exists between your working
+#     directory and the repository root".
+#
+# From the WORKDIR /workspace that resolves to /workspace/.claude/workflows/ —
+# inside the tree ADR-0049 §2 makes :ro by default, so the save failed. That is
+# the whole project-scope set today: {settings.local.json, workflows/}.
+# `.claude/worktrees/` is deliberately absent — the docs place it at the
+# REPOSITORY root, which is inside the repo's own rw mount and needs nothing.
+# Re-derive against the official docs when Claude Code adds a project-scope
+# runtime path.
+#
+# Shape: the settings.local.json overlay one level up — a rw child from
+# per-project STATE, so a read-project session saves workflows that survive the
+# container without writing the committed tree. Under Cp=rw no overlay exists and
+# saves land in the repo, shared via git exactly as upstream intends; which of
+# the two happens is the user's choice of access level, not the framework's.
+#
+# A repo that COMMITS project workflows keeps them visible: every entry is bound
+# back INSIDE the rw overlay, its mountpoint created host-side in STATE — INV-MP
+# again, one level down, where the parent is the STATE dir rather than the view.
+# Args: <state_dir> <committed_dir> <mode> <dry_run:true|false>
+# Prints the compose lines, PARENT FIRST (the caller feeds that first line to the
+# view so the mountpoint gets created, and emits the whole block in order).
+# Status is PROPAGATED, not swallowed: bin/cco dispatches every command body in a
+# `|| _cco_rc=$?` context, which disables errexit for the whole call tree (INV-IDX's
+# reasoning), and this runs inside `$( )` where a `die` could not exit the caller
+# anyway. A mountpoint that silently failed to be created fails later, in runc,
+# with a message pointing at Docker instead of at us.
+_emit_workflows_overlay() {
+    local state_dir="$1" committed="$2" mode="$3" dry="$4"
+    local f base
+    [[ "$dry" == "true" ]] || mkdir -p "$state_dir" || return 1
+    _compose_vol "$state_dir" "/workspace/.claude/workflows"
+    [[ -d "$committed" ]] || return 0
+    for f in "$committed"/* "$committed"/.[!.]*; do
+        [[ -e "$f" ]] || continue
+        base="${f##*/}"
+        if [[ "$dry" != "true" ]]; then
+            if [[ -d "$f" ]]; then
+                mkdir -p "$state_dir/$base" || return 1
+            else
+                [[ -e "$state_dir/$base" ]] || : > "$state_dir/$base" || return 1
+            fi
+        fi
+        _compose_vol "$f" "/workspace/.claude/workflows/$base" "$mode"
+    done
+}
+
+# The Cp=rw half of the same contract (ADR-0055 D3). With B2 writable there is no
+# floor and saves belong in the repo — which is what happens when the committed
+# tree IS the parent. But a composing session (ADR-0054 D2) puts the CACHE view
+# there instead, and `cco start` rebuilds that view with `rm -rf` at every start:
+# a workflows/ directory Claude Code creates on save would be *destroyed at the
+# next start*, which is worse than the session-local delta D4 warns about, and it
+# is the everyday shape for any project that adopts a pack.
+#
+# So materialise the directory in the committed tree and bind it back rw. The
+# empty directory is the accepted cost: under Cp=rw authoring is precisely what
+# the session asked for, and `<repo>/.cco/claude/workflows/` is where a shared
+# project workflow belongs — the outcome the upstream docs describe.
+# Args: <claude_src> <dry_run:true|false>. Prints the compose line.
+_emit_workflows_committed() {
+    local claude_src="$1" dry="$2"
+    [[ "$dry" == "true" ]] || mkdir -p "${claude_src}/workflows" || return 1
+    _compose_vol "${claude_src}/workflows" "/workspace/.claude/workflows"
+}
+
+# ── Session-transcripts bucket layout (ADR-0055 D5/D6) ───────────────────────
+# The bucket is bound as the whole ~/.claude/projects TREE, not as the single
+# -workspace key, so transcripts persist for EVERY cwd key Claude Code derives
+# (a subagent or teammate started from /workspace/<repo>, a worktree session, a
+# background session) and not only for the session started at the WORKDIR.
+#
+# Buckets created before ADR-0055 hold their transcripts one level too shallow —
+# they ARE the -workspace key's content. Repaired lazily here, at the write
+# boundary, per ADR-0052 alt-B: there is no migrations/ lane for STATE shape and
+# FI-27 declined to add one. Idempotent, and never destructive — entries are
+# moved, an existing target is never overwritten, nothing is removed.
+#
+# The discriminator is exact: a Claude Code project key is derived from an
+# ABSOLUTE cwd, so it always starts with '-'. Anything else in the bucket root
+# predates this change — the `<uuid>.jsonl` transcripts, their `<uuid>/` sidecar
+# dirs, and the old `memory` mountpoint, which lands on its new mountpoint.
+_start_prepare_transcripts_bucket() {
+    local bucket="$1"
+    local ws="$bucket/-workspace" e base
+    mkdir -p "$ws" || return 1
+    for e in "$bucket"/* "$bucket"/.[!.]*; do
+        [[ -e "$e" ]] || continue
+        base="${e##*/}"
+        [[ "$base" == -* ]] && continue
+        [[ -e "$ws/$base" ]] && continue
+        mv "$e" "$ws/$base" || return 1
+    done
+    # INV-MP: the auto-memory child binds at -workspace/memory, a mountpoint
+    # INSIDE this bucket — so cco owns it rather than the container runtime. It
+    # lives here, with the layout it belongs to, so one unit test covers both.
+    # A legacy `memory` moved in by the loop above makes this a no-op.
+    mkdir -p "$ws/memory" || return 1
+    return 0
+}
+
 # ── Framework-owned mountpoints for /workspace/.claude (ADR-0054, INV-MP) ─────
 # Same mechanism as the stub above, generalized: a child bind whose target does
 # not exist inside a :ro parent cannot be created (runc mkdirat's it THROUGH the
@@ -1304,10 +1415,18 @@ _start_prepare_state() {
         # Session transcripts + auto-memory are machine-local STATE, keyed by
         # project identity (ADR-0009): never committed, never in ~/.cco. The
         # /session partition is the future state-sync opt-in boundary (§2.2).
-        mkdir -p "$(_cco_project_session_transcripts "$project_name")" \
+        local session_transcripts; session_transcripts=$(_cco_project_session_transcripts "$project_name")
+        mkdir -p "$session_transcripts" \
                  "$(_cco_project_session_memory "$project_name")" \
                  "$managed_gen_dir" \
                  "$claude_gen_dir"
+
+        # ADR-0055 D5/D6: the bucket is the projects/ PARENT now — bring a
+        # pre-0055 bucket to the new depth and own the -workspace/memory
+        # mountpoint (INV-MP: a mountpoint ancestor is never left to the
+        # container runtime, on either side of the boundary).
+        _start_prepare_transcripts_bucket "$session_transcripts" \
+            || die "Cannot prepare the session transcripts bucket at $session_transcripts."
 
         # Claude Code native-install cache dirs (ADR-0039): pre-create so the
         # bind-mounts attach to directories (not auto-created files) and the
@@ -1751,8 +1870,31 @@ YAML
         local _pack_mounts _llms_mounts
         _pack_mounts=$(_generate_pack_mounts "$pack_names" "$project_dir")
         _llms_mounts=$(_generate_llms_mounts "$project_yml" "$pack_names" "$project_dir")
-        local _injected="${_pack_mounts}"$'\n'"${_llms_mounts}"
-        local _claude_view="" _b2_local_mp="${claude_src}/settings.local.json"
+        # The functional-write floor is a framework-owned child like any other
+        # (ADR-0055 D3), so feeding its parent line into $_injected buys the view's
+        # mountpoint machinery for free — and, since the floor exists whenever B2 is
+        # :ro, that is also what makes every Cp=ro session compose (D7). The
+        # per-entry lines stay OUT of $_injected: their parent at runtime is the
+        # STATE overlay, not the view, so their mountpoints belong in STATE.
+        local _wf_lines="" _wf_parent=""
+        local _framework_children="${_pack_mounts}"$'\n'"${_llms_mounts}"
+        if [[ "$_b2_mode" == "ro" ]]; then
+            # Beside local-settings/, not under session/: both are functional-write
+            # floor overlays for /workspace/.claude, while session/ is specifically
+            # the transcripts+memory partition with its own future sync semantics.
+            _wf_lines=$(_emit_workflows_overlay "${session_state_dir}/workflows" \
+                "${claude_src}/workflows" "$_b2_mode" "$dry_run") \
+                || die "Cannot prepare the workflows overlay at ${session_state_dir}/workflows."
+            _wf_parent="${_wf_lines%%$'\n'*}"
+        elif [[ "$_framework_children" == *':/workspace/.claude/'* ]]; then
+            # Cp=rw AND composing — see _emit_workflows_committed for why the
+            # committed directory has to exist before the view takes the parent slot.
+            _wf_lines=$(_emit_workflows_committed "$claude_src" "$dry_run") \
+                || die "Cannot create ${claude_src}/workflows."
+            _wf_parent="$_wf_lines"
+        fi
+        local _injected="${_framework_children}"$'\n'"${_wf_parent}"
+        local _claude_view="" _b2_local_mp=""
         if [[ "$_injected" == *':/workspace/.claude/'* ]]; then
             # INV-MP (ADR-0054): a child bind needs its mountpoint to pre-exist, and
             # the committed tree is :ro under the ADR-0049 default — so cco owns the
@@ -1777,20 +1919,36 @@ YAML
         else
             _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
         fi
-        # Functional-write floor (ADR-0049 §5): when B2 is :ro, keep settings.local.json
-        # writable via a rw child overlay from per-project STATE. While composing, its
-        # mountpoint lives in the view (ADR-0054 D6) so the committed tree stays clean;
-        # STATE is still seeded from the committed file when the repo carries one.
+        # Functional-write floor (ADR-0049 §5, re-derived by ADR-0055 D2): when B2 is
+        # :ro, Claude Code's project-scope runtime state stays writable through rw
+        # child overlays from per-project STATE. Their mountpoints live in the view
+        # (ADR-0054 D6) so the committed tree stays clean; settings.local.json is
+        # still seeded from the committed file when the repo carries one.
         if [[ "$_b2_mode" == "ro" ]]; then
+            # D7 makes a view exist whenever B2 is :ro — the floor is itself a
+            # framework-owned child. Fail loudly rather than silently fall back to a
+            # mountpoint inside the :ro committed tree, which cannot be created.
+            [[ -n "$_b2_local_mp" ]] \
+                || die "Internal: /workspace/.claude is :ro but no framework view was composed (ADR-0055 D7)."
             _emit_local_settings_overlay "${session_state_dir}/local-settings/workspace.json" \
                 "$_b2_local_mp" \
                 "/workspace/.claude/settings.local.json" "$dry_run" \
                 "${claude_src}/settings.local.json"
         fi
+        # Emitted for BOTH arms — the :ro floor overlay and the Cp=rw committed
+        # bind — so the save target is explicit in the compose either way.
+        if [[ -n "$_wf_lines" ]]; then
+            echo "      # Project-scope workflows: the save target (ADR-0055 D3)"
+            printf '%s\n' "$_wf_lines"
+        fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
-        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
-        echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
-        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects/-workspace"
+        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds).
+        # The whole projects/ tree, not just the -workspace key (ADR-0055 D5): Claude Code keys
+        # per-project state by cwd, so a subagent/teammate started inside a repo, a worktree
+        # session or a background session writes under a DIFFERENT key. Binding only -workspace
+        # left those keys on the container's ephemeral layer — and, before D4, unwritable.
+        echo "      # Claude state: session transcripts, every cwd key (machine-local STATE; /resume across rebuilds)"
+        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects"
         # Memory: auto memory files (machine-local STATE, separate from transcripts)
         echo "      # Memory: auto memory files (machine-local STATE, separate from transcripts)"
         _compose_vol "$(_cco_project_session_memory "$project_name")" "/home/claude/.claude/projects/-workspace/memory"

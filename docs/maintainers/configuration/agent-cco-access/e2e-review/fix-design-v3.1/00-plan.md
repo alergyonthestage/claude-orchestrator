@@ -47,8 +47,8 @@ maintainer's daily work, and it depends on nothing.
 
 | # | Session | Lane | Produces | Status |
 |---|---|---|---|---|
-| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | ⬜ not started |
-| **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ⬜ not started |
+| **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | ✅ **accepted 2026-07-28** ([ADR-0055](../../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)) — both container probes green (§7): the `:ro` lane, then the `Cp=rw`+composing arm across a real restart. One residual, host-side: D7 with no packs at all |
+| **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ✅ **accepted 2026-07-29** ([ADR-0056](../../decisions/0056-availability-model-and-index-session-axis.md)) — D1–D9, six alternatives recorded. Two maintainer decisions inside it: R-B's count is host-computed at `cco start` (no new privileged surface), and `absent`-in-session gets **two** causes/sentences. S3 and S4 are unblocked |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
 | **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | ⬜ not started |
@@ -61,6 +61,12 @@ S1 and S5 are independent of everything — they may run in any order relative t
 **1531/7** (the 7 are the pre-existing host-only artifacts — see the memory note *suite-7-host-only*;
 do **not** try to fix them here). Run `./bin/test` once at the start of the cycle and record the
 actual number in §7; if it is not 1531/7, find out why before proceeding.
+
+> **Established 2026-07-28 — `1533/7`, reconciled.** The `+2` is `4b3679a` (the last ADR-0054
+> follow-up), which added exactly two test functions after the 1531 was recorded. The 7 are the known
+> host-only set, named here so a future run compares names and not just a count: the six
+> `test_as_*` access-scope output-scoping tests (defeated in-container by the ADR-0047 privilege
+> boundary) plus `test_paths_symlink_safe_tool_root`.
 
 ---
 
@@ -154,6 +160,20 @@ grep '/workspace/.claude/workflows' /proc/self/mountinfo   # expect a rw entry (
 
 Then the real acceptance: **start a subagent / agent-team teammate from inside a repo directory** and
 confirm its transcript is written. That is the reported symptom, and nothing short of it closes R-D.
+Restart the container afterwards and confirm the transcript is still there — D5 persists every key,
+and a probe that only proves *writable* would leave the ephemeral half untested.
+
+> **Landed 2026-07-28** (branch `fix/release/cycle-1.2`, 4 commits `d550da8`, `3f27e39`, `918c8b1`,
+> `57ab325`; suite **1549/7**). Two notes for whoever runs the probe:
+>
+> - **A second instance of R-D was found by the lint, in the DEFAULT lane**: `~/.cco` and
+>   `~/.cco/packs` were `root:root` and unwritable, because project read scope binds the referenced
+>   packs one by one and leaves both parents pass-through. Fixed in the same Dockerfile change, so
+>   add `ls -ld /home/claude/.cco /home/claude/.cco/packs` to the probe.
+> - **The probe list above is a lower bound** for `grep '/workspace/.claude/workflows'`: the mount is
+>   present only when B2 is `:ro`. With the `access: {claude: all}` block still in `.cco/project.yml`
+>   there is *correctly* no overlay and workflows land in the repo — so stashing that block is not a
+>   nicety here, it decides which of two correct behaviours you are looking at.
 
 ---
 
@@ -304,10 +324,118 @@ Fix the sentinel discipline, then add the lint that no early exit path skips it.
 
 ### Acceptance log
 
+#### S1 container probe — 2026-07-28
+
+Run in a **default** session on a real container. Provenance `cco whoami` →
+`image built from: fix/release/cycle-1.2@9ee07c2`; the `access: {claude: all}` block was
+**commented out** in `.cco/project.yml` first, so the session resolved `Cp=ro` — without that, the
+R-F arm proves nothing.
+
+```
+1. R-D — ownership          drwxr-xr-x claude claude  /home/claude/.claude/projects   (was root:root)
+2. R-D — the actual symptom mkdir  ~/.claude/projects/-workspace-claude-orchestrator  → OK
+3. R-D, 2nd instance        drwxr-xr-x claude claude  ~/.cco  and  ~/.cco/packs — both writable
+4. R-F — the save target    …/state/cco/projects/<id>/workflows  /workspace/.claude/workflows  rw
+5. B2 parent                …/cache/cco/projects/<id>/claude-view  /workspace/.claude  ro
+6. D5 — projects TREE       …/session/claude-state  /home/claude/.claude/projects        rw
+   memory as grandchild     …/session/memory        …/projects/-workspace/memory         rw
+7. D6 — self-heal on REAL data: 91 transcripts + memory now under -workspace/,
+   0 files stranded at the old depth, memory readable.
+```
+
+**⚠ One arm landed AFTER this probe.** `/review-implementation` found that under `Cp=rw` *and*
+composing, a saved workflow went into the CACHE view and was destroyed by the next start's `rm -rf`;
+the fix (`aa97b3b`) materialises the committed `workflows/` directory instead. The probe above was run
+at `Cp=ro`, so **none of its assertions are invalidated** — that lane's code paths are untouched — but
+the new arm is unprobed. It needs one `cco build` and a session with `--claude-access all` on a
+project that adopts a pack: expect `<repo>/.cco/claude/workflows` bound rw at
+`/workspace/.claude/workflows`, and the saved file still present after a restart.
+
+**What this probe did NOT observe** — stated so the next round does not read it as more than it is:
+
+- **Cross-restart persistence of a non-`-workspace` key.** The mount shape implies it (everything
+  under `projects/` is inside the STATE bind), but no key other than `-workspace` had yet been
+  written by a real session at probe time.
+- **D7's "composes with no packs at all".** This project references `core-dev-framework`, so the view
+  would have been composed regardless; only `test_claude_view_composed_for_the_write_floor_without_packs`
+  covers that arm.
+- **A real subagent from a repo cwd.** Step 2 reproduces the mechanical core (the `mkdir` Claude Code
+  performs), not the end-to-end write.
+
+#### S1 container probe — the `Cp=rw` arm — 2026-07-28
+
+The arm the first probe could not reach, plus two of the three items it did not observe. Provenance
+`cco whoami` → `image built from: fix/release/cycle-1.2@c40e556` (branch tip). Here the
+`access: {claude: all}` block was deliberately **left in place**: at `Cp=rw` it is not the mask, it is
+the *subject* — the only configuration in which this code path runs. The project adopts
+`core-dev-framework`, so the view **is** composed, which is the other half of the defect's condition.
+
+Before the restart:
+
+```
+1. save target         …/claude-orchestrator/.cco/claude/workflows  /workspace/.claude/workflows  rw
+                       the COMMITTED tree, no `ro,` flag — not the CACHE view, not the STATE overlay
+2. repo dir            drwxr-xr-x claude claude  <repo>/.cco/claude/workflows
+3. marker + git        echo '// probe' > /workspace/.claude/workflows/probe.js
+                       md5 848a03c7ccd2da1a46a36303a5ff64c0 · git: `?? .cco/claude/workflows/`
+                       — i.e. "shared via git" in changelog #52 is literally what git reports
+4. a non-`-workspace` key written by a REAL session (`claude -p`, cwd /workspace/claude-orchestrator):
+                       ~/.claude/projects/-workspace-claude-orchestrator/b95c09bd-….jsonl  22569 B
+```
+
+After the restart:
+
+```
+5. marker SURVIVED     /workspace/.claude/workflows/probe.js  md5 848a03c7… unchanged
+6. and the test is NOT vacuous — the view really was rebuilt at this start:
+                       /workspace/.claude        mtime 16:01:23  (the restart)
+                       …/workflows/probe.js      mtime 15:57:55  (pre-restart, preserved)
+                       parent mount id 456 → 417 (new container)
+                       `rm -rf "$_claude_view"`  lib/cmd-start.sh:1905
+                       the destructive step ran and the save outlived it, because after aa97b3b the
+                       save target is the committed tree instead of the view
+7. transcript SURVIVED …/-workspace-claude-orchestrator/b95c09bd-….jsonl  22569 B, unchanged
+```
+
+Marker deleted afterwards; the tree is clean.
+
+**Two of the three "not observed" items above are closed by this run** — cross-restart persistence of
+a non-`-workspace` key, and a real session writing from a repo cwd (step 4 is the end-to-end write,
+not the `mkdir` the first probe reproduced). **D7's "composes with no packs at all" stays open and is
+host-side**: it needs a project referencing no pack, so it is unreachable from a session where
+`cco start` is refused. Only `test_claude_view_composed_for_the_write_floor_without_packs` covers it.
+
+📝 Observed en passant, then **corrected the same day** — the first wording of this note claimed more
+than the run showed, and is restated here rather than left standing. What was actually observed: an
+**empty** `memory/` directory appeared under the new key and was gone again minutes later. Nothing was
+ever written to it, so the run demonstrates no memory split; the first note inferred one and recorded
+the inference as an observation.
+
+The mechanism, checked against the official docs afterwards, is also not what that note implied: project
+auto-memory is **not** per-agent and not per-cwd — it lives at `~/.claude/projects/<project>/memory/`
+with `<project>` derived from the **git repository**. A cco session splits because `/workspace` is not a
+git repo (so the project root is used → `-workspace`) while `/workspace/<repo>` is (→ its own key). A
+subagent inherits the session's cwd and therefore shares the main session's memory. Both this and a
+second, unrelated hole — eight agents declare `memory: user`, whose target `~/.claude/agent-memory/` is
+bound nowhere and dies with the `--rm` container — are filed together as
+**[FI-39](../../../../roadmap-backlog.md)**, to be settled in one ADR **after** this cycle.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
-| baseline | ⬜ | n/a | |
-| S1 | ⬜ | ⬜ **required** | |
+| baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
+| S1 | ✅ **1551/9** unmasked, total 1560 (after the review fixes; was 1547/9 of 1556 before) | ✅ **passed** — the `:ro` lane (first block) *and* the `Cp=rw` arm (second block). Remaining gap: D7 without packs, host-side | 2026-07-28 |
+
+> ⚠ **Correction — both earlier numbers were taken with `access: {claude: all}` active.** Re-run in a
+> real default session (`Cr=ro`) the suite is **1547/9, total 1556** — the same 1556 tests, with two
+> more failing: `test_update_new_file_added` and `test_update_dry_run`, which write fixtures into
+> `defaults/global/.claude/rules/`. That path is tracked *and* mounted `:ro` whenever `Cr=ro`, so they
+> pass only when the `.claude` trees are writable. Nothing was lost and no test regressed — the delta
+> is environmental, the same category as the seven host-only ones.
+>
+> The point worth carrying forward is the **third** occurrence of one pattern in this cycle: the
+> plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
+> from a self-dev session must state whether the block was in place.** These two are *not* to be
+> chased inside S1 — the same rule as the seven.
 | S3 | ⬜ | ⬜ **required** | |
 | S4 | ⬜ | ⬜ | |
 | S5 | ⬜ | n/a | |

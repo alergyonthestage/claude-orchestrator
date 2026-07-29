@@ -226,6 +226,24 @@ The exact set is verified against Claude Code behaviour at implementation (e.g.
 > **visibility** of framework resources. Note the harness caveat above came true a **third**
 > time here — the dry-run compose was correct throughout.
 
+> **Forward annotation (2026-07-28) — the floor's DERIVATION was the defect
+> ([ADR-0055](../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)).**
+> §5's mechanism is right and survives unchanged; how its membership was decided is what
+> shipped a bug. The floor was derived from **one path a bug report named**
+> (`settings.local.json`) rather than from Claude Code's documented application-data
+> contract — so project-scope **workflow saves**, which the official docs place in *"the
+> closest existing `.claude/workflows/`"* (from the WORKDIR: `/workspace/.claude/workflows/`),
+> hit the `:ro` tree and failed. Found in the e2e v3.1 consolidation as **R-F**, together with
+> **R-D**, its home-scope twin: `~/.claude/projects` was materialised root-owned, so every
+> per-cwd session key but the bound `-workspace` got `EACCES`. ADR-0055 replaces the
+> derivation with an axis — **`claude_access` governs authoring, never Claude Code's runtime
+> state** — makes home scope satisfy it structurally, and leaves project scope a short
+> derived list carrying a provenance comment. This lane's own precedent is what the axis
+> generalises: `settings.json` was already bound rw unconditionally, commented *"always rw
+> (runtime prefs)"*. And the harness caveat came true a **fourth** time — R-D is invisible to
+> the dry-run compose lane by construction, which is why ADR-0055 adds an ancestry lint over
+> a really-generated compose plus a mandatory container probe.
+
 > **Forward annotation (2026-07-20, e2e v2 cycle-1 — RC-17).** The "only as verifiable as the
 > harness" caveat came true a **second** time: the e2e v2 review found three subsystems declaring
 > `rw` and mounting `ro`, one write path faking success, and one read verb applying no scoping —

@@ -116,15 +116,43 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 # Create docker group with placeholder GID (adjusted at runtime by entrypoint
 # to match host socket GID). Pre-creating ensures `chown claude:docker` never
 # fails due to missing group.
-# Pre-create the XDG base dirs (.local/bin, .local/share, .local/state, .cache)
-# claude-owned, not just .claude: cco's operator-bucket mounts (ADR-0036 D4)
-# nest bind mounts under these paths (e.g. .local/state/cco/index), and if the
-# base dir doesn't already exist the container runtime auto-creates it as a
-# root-owned mount point — blocking any sibling (e.g. .local/state/claude,
-# written by the native Claude Code installer) from being created by claude.
+# INV-MP, container side (ADR-0055 D4). THE RULE, not the instance: for every
+# bind cco generates, every ancestor of the target that the runtime would
+# otherwise have to materialise is pre-created here, claude-owned. When a
+# mountpoint ancestor is missing the container runtime creates it root-owned;
+# an ancestor that is itself a mount target is then harmless (the bind lands on
+# top of it), but a PASS-THROUGH ancestor stays root:root 0755 and `claude`
+# cannot create anything beside the bind — the failure is EACCES at runtime,
+# not at start, so it surfaces as a broken feature rather than a broken boot.
+#
+# Whenever a new bind target is added to lib/cmd-start.sh or lib/cmd-new.sh,
+# add its pass-through ancestors here. `test_invariant_mount_ancestry_owned`
+# checks a really-generated compose file against this list, so a forgotten
+# ancestor fails the suite instead of shipping.
+#
+#   .local/{bin,share,state}, .cache  — operator buckets (ADR-0036 D4) and the
+#                                       native Claude Code install (ADR-0039)
+#   .claude                           — global authoring entries + runtime state
+#   .claude/projects                  — per-cwd session keys. Both `cco start` and
+#                                       `cco new` bind the whole tree here today
+#                                       (ADR-0055 D5), so it is a mount TARGET and
+#                                       the lint exempts it by construction — which
+#                                       is exactly why the entry stays: it is the
+#                                       only thing standing between a future lane
+#                                       that binds a single key again and R-D.
+#   .cco/packs                        — at the DEFAULT project read scope the
+#                                       CONFIG mount is narrowed to the referenced
+#                                       packs, bound one by one at
+#                                       .cco/packs/<name>, so both .cco and
+#                                       .cco/packs are pass-through. (At broader
+#                                       scope ~/.cco is itself the mount and this
+#                                       is moot — the narrow shape is the default,
+#                                       which is why it went unnoticed.)
 RUN groupadd -g 999 docker \
     && useradd -m -s /bin/bash claude \
-    && mkdir -p /home/claude/.claude /home/claude/.local/bin /home/claude/.local/share \
+    && mkdir -p /home/claude/.claude /home/claude/.claude/projects \
+       /home/claude/.cco/packs \
+       /home/claude/.local/bin /home/claude/.local/share \
        /home/claude/.local/state /home/claude/.cache /workspace \
     && chown -R claude:claude /home/claude /workspace
 

@@ -1024,3 +1024,30 @@ entries:
       `claude` write access, a NEWLY created file placed directly in a composed
       namespace is session-local (edits to existing files still reach the repo);
       `cco start` says so once. No migration; see ADR-0054.
+
+  - id: 52
+    date: "2026-07-28"
+    type: additive
+    title: "Claude Code's own runtime state is writable and persisted at every access level"
+    description: >
+      Two failures with one cause: cco never classified which parts of
+      `~/.claude` and `/workspace/.claude` belong to Claude Code as RUNTIME
+      STATE rather than to you as authoring config. Subagents and agent-team
+      teammates started from inside a repo (and worktree or background
+      sessions) could not write their transcripts — `~/.claude/projects` was
+      created root-owned by the container runtime, so only the `-workspace`
+      key worked; and saving a project-scope workflow failed, because
+      `/workspace/.claude/workflows/` sits in the tree that is read-only
+      unless you opt into `claude_access: all`. `claude_access` now governs
+      authoring only (CLAUDE.md, rules, agents, skills); Claude Code's
+      runtime state stays writable at every level, as `settings.json`
+      already did. Transcripts persist for EVERY session key, not just the
+      one started at `/workspace`, so `/resume` finds subagent, teammate and
+      worktree sessions after a restart. Workflows saved by a read-project
+      session persist in machine-local state instead of the repo; under
+      `claude_access: all` they land in the repo and are shared via git, as
+      the Claude Code docs describe — the access level is the choice. A repo
+      that already commits `.cco/claude/workflows/` keeps seeing them. No
+      migration: an existing transcripts bucket is repaired in place at the
+      next `cco start`, without losing history. Requires `cco build`; see
+      ADR-0055.

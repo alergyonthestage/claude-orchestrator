@@ -5,6 +5,16 @@
 > **Forward note (decentralized-config ADR-0028, 2026-06-27):** the global config home is now
 > **`~/.cco/.claude/`** — read the `~/.cco/global/.claude/` mount source below as `~/.cco/.claude/`.
 
+> **Forward note ([environment ADR-0055](../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)
+> D5/D6, 2026-07-28):** the transcripts bind is now the **whole `~/.claude/projects` tree**, not the
+> single `-workspace` key — Claude Code derives one key per cwd, so subagent/teammate, worktree and
+> background sessions write under other keys and must persist too. Read the transcripts volume below
+> as `<state>/cco/projects/<id>/session/claude-state:/home/claude/.claude/projects` (the host source
+> also moved under `session/` with the STATE partition). The memory child mount is unchanged at
+> `~/.claude/projects/-workspace/memory`, and the `-workspace` derivation explained here still holds
+> — it is now one key among several rather than the only one. Pre-0055 buckets are repaired in place
+> at the next `cco start` (ADR-0052 alt-B), not by a migration.
+
 > Updated by the decentralized-config model (decentralized-config ADR-0009). See
 > the decentralized-config decisions tree for the cross-machine state-sync design.
 

@@ -2220,8 +2220,8 @@ services:
       # Project config (the invoking repo's <repo>/.cco/claude/) — no generated overlay:
       # the session context is injected via the CCO_SESSION_CONTEXT env var (above), not a file
       - /home/me/dev/backend/.cco/claude:/workspace/.claude
-      # Session transcripts (STATE; enables /resume across rebuilds)
-      - /home/me/.local/state/cco/projects/projectA/claude-state:/home/claude/.claude/projects/-workspace
+      # Session transcripts, every cwd key (STATE; enables /resume across rebuilds)
+      - /home/me/.local/state/cco/projects/projectA/session/claude-state:/home/claude/.claude/projects
       # Memory (STATE; machine-local, no sync in v1; separate from transcripts)
       - /home/me/.local/state/cco/projects/projectA/session/memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)

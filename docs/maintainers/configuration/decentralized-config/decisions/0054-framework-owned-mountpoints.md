@@ -91,6 +91,26 @@ level sees its packs and llms; what the level decides is who may *write* the aut
 F3 ("parent stays rw") is **superseded**: the parent's writability is no longer a precondition of
 the mechanism, so it is free to follow policy.
 
+> **Forward annotation (2026-07-28) — INV-MP had a second half, on the container side
+> ([ADR-0055](../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) D4).**
+> D1 as written says *host-side*, and solved the problem for binds cco composes into a tree it
+> owns. The same physics applies to ancestors inside the **image**: when a mountpoint ancestor
+> does not exist there, the runtime materialises it **root-owned**. That is harmless when
+> something is mounted *on* it — the bind hides it — and fatal when it is only passed
+> *through*. `~/.claude/projects` was such an ancestor (cco binds `projects/-workspace` but not
+> `projects/`), so Claude Code could create no per-cwd session key but the bound one: the e2e
+> v3.1 **R-D** `EACCES`, the mechanism's **third** recurrence, with the Dockerfile's own comment
+> already stating the rule it violated. ADR-0055 generalises D1 to *"host-side in cco's tree,
+> container-side in the image"* and adds the lint that was missing — an ancestry check over a
+> **really generated** compose, since this class is invisible to the hermetic lane.
+>
+> **D2's trigger widens too** (ADR-0055 D7): the view is built for *any* framework-owned child of
+> `/workspace/.claude`, which now includes the functional-write floor. In practice that means
+> every `Cp=ro` session composes, not only the pack/llms ones — the floor needs a mountpoint for
+> exactly the reason D1 states, and putting it in the committed tree would multiply the bounded
+> exception D6 was written to contain. D4's caveat is unaffected: it is surfaced only at `Cp=rw`,
+> and a `Cp=rw` session never composes for floor reasons.
+
 ### D2 — Mechanism: a framework-owned view directory, built only when children are injected
 
 When a session injects **no** children under `/workspace/.claude`, nothing changes: the committed

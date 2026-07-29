@@ -62,30 +62,39 @@ test_invariant_2_project_config_at_workspace_claude_readonly_by_default() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Decentralized source is <repo>/.cco/claude (no dot); the container target
-    # /workspace/.claude is the fixed contract (P3 read-path flip).
-    assert_file_contains "$compose" "/claude:/workspace/.claude"
     # ADR-0049 §6 REVERSES P17: a normal session no longer authors the project
     # Claude config by default. claude_access derives from cco (read-project →
     # Cp=ro), so B2 /workspace/.claude is mounted :ro. Authoring is now an explicit
     # opt-in (--claude-access repo or a cco edit level).
-    if ! grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
+    #
+    # Since ADR-0055 D7 the SOURCE behind that target is the framework-composed
+    # view whenever B2 is :ro (the functional-write floor needs a mountpoint to
+    # hang on), so what this invariant pins is the MODE of the mount holding
+    # /workspace/.claude — not which directory happens to be behind it.
+    if ! grep -qE ':/workspace/\.claude:ro"$' "$compose"; then
         echo "ASSERTION FAILED: project .claude must be :ro by default (ADR-0049 reverses P17)"
         return 1
     fi
-    # An explicit --claude-access repo re-opens B2 for authoring (Cp=rw).
+    if grep -qE ':/workspace/\.claude"$' "$compose"; then
+        echo "ASSERTION FAILED: /workspace/.claude must not be rw by default"
+        return 1
+    fi
+    # An explicit --claude-access repo re-opens B2 for authoring (Cp=rw) — and with
+    # no floor to compose for, the parent goes back to the committed tree itself.
     run_cco start "test-proj" --claude-access repo --dry-run --dump
     compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    if grep -qE "/claude:/workspace/\.claude:ro" "$compose"; then
+    if ! grep -qE '/claude:/workspace/\.claude"$' "$compose"; then
         echo "ASSERTION FAILED: --claude-access repo must make project .claude rw"
         return 1
     fi
+    return 0
 }
 
 # ── Invariant 3: Auto Memory Path ────────────────────────────────────
 # Claude state (memory + transcripts) is mounted as .cco/claude-state/ on the host.
-# Container path is /home/claude/.claude/projects/-workspace
-# (-workspace = WORKDIR /workspace with root slash replaced by dash)
+# Since ADR-0055 D5 the bucket is the whole ~/.claude/projects TREE; the auto-memory
+# child still lands at the -workspace key (WORKDIR /workspace with the root slash
+# replaced by a dash, per Claude Code's cwd-keying convention).
 
 test_invariant_3_auto_memory_exact_container_path() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -94,7 +103,7 @@ test_invariant_3_auto_memory_exact_container_path() {
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    assert_file_contains "$compose" "/home/claude/.claude/projects/-workspace"
+    assert_file_contains "$compose" "/home/claude/.claude/projects/-workspace/memory\""
 }
 
 test_invariant_3_memory_is_project_specific_host_path() {
@@ -820,4 +829,120 @@ PLANT
     [[ "$(printf '%s\n' "$planted" | wc -l | tr -d ' ')" == "1" ]] \
         || fail "INV-LOCAL lint over-reports: the split form is legal, got:"$'\n'"$planted"
     return 0
+}
+
+# ── INV-MP: mountpoint ancestry, container side (ADR-0055 D4 — R-D) ───────────
+# For every bind cco generates, every ancestor of the target that the container
+# runtime would otherwise have to materialise must already exist, owned by the
+# writer. An ancestor the runtime creates is root:root — harmless when something
+# is mounted ON it (the bind hides it), fatal when it is only passed THROUGH:
+# `claude` can traverse it and create nothing beside the bind. That is R-D.
+# ~/.claude/projects was exactly such a pass-through ancestor, so every per-cwd
+# session key other than the bound -workspace failed with EACCES *at runtime* —
+# a broken feature rather than a broken boot, which is why it survived three
+# rounds of review.
+#
+# Runs against a REALLY GENERATED compose file: a fixture would only re-assert
+# the fixture, and this class is invisible to the hermetic lane by construction
+# (RC-17 — v3's STATE bucket, FI-31, now R-D).
+#
+# DIVISION OF LABOUR, stated rather than left implicit:
+#   • this lint owns the IMAGE side — an ancestor outside every cco mount must be
+#     pre-created in the Dockerfile, and the allowed set is PARSED from the
+#     Dockerfile so the two cannot drift (the way its comment drifted from its
+#     own mkdir: the rule was written down and applied to one path);
+#   • an ancestor strictly INSIDE a cco mount is created host-side by cco and is
+#     covered by test_start_claude_view.sh / test_start_transcripts_layout.sh,
+#     which assert those directories directly.
+#
+# SCOPE: ancestors under /home/claude and /workspace — the trees `claude` must be
+# able to write. Elsewhere (/etc, /var/run) nothing needs to create a sibling.
+test_invariant_mount_ancestry_owned() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # A pack shipping skills exercises the view lane, so the generated file carries
+    # the deepest targets cco can emit.
+    create_pack "$tmpdir" "s-pack" "$(printf 'name: s-pack\nskills:\n  - deploy\n')"
+    mkdir -p "$CCO_PACKS_DIR/s-pack/skills/deploy"
+    echo "# deploy" > "$CCO_PACKS_DIR/s-pack/skills/deploy/SKILL.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - s-pack\n')"
+
+    run_cco start "test-proj" --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    [[ -f "$compose" ]] || { fail "INV-MP: no generated compose to lint"; return 1; }
+
+    # Pre-created in the image: tokens starting with '/' in the user-setup RUN,
+    # PLUS their ancestors — the RUN is a `mkdir -p` followed by `chown -R
+    # claude:claude /home/claude`, so an intermediate directory is created and
+    # owned just as surely as the leaf it was created for.
+    local image_dirs=$'\n' d
+    while IFS= read -r d; do
+        [[ -n "$d" ]] || continue
+        while [[ "$d" == /?* ]]; do
+            [[ "$image_dirs" == *$'\n'"$d"$'\n'* ]] || image_dirs+="$d"$'\n'
+            d="${d%/*}"
+        done
+    done <<< "$(sed -n '/^RUN groupadd/,/chown -R claude/p' "$REPO_ROOT/Dockerfile" \
+        | tr ' \t\\' '\n\n\n' | grep '^/' | sed 's:/*$::' | sort -u)"
+    [[ "$image_dirs" == *"/home/claude/.claude"* ]] \
+        || { fail "INV-MP: cannot parse the image's pre-created dirs from the Dockerfile"; return 1; }
+
+    # Every bind TARGET. Peel an optional :ro|:rw, then take the last ':' field —
+    # a container target never contains ':'. Port lines parse to a non-'/' value
+    # and fall out at the scope check below.
+    local line raw targets=$'\n'
+    while IFS= read -r line; do
+        case "$line" in *' - "'*) ;; *) continue ;; esac
+        raw="${line#*\"}"; raw="${raw%\"*}"
+        case "$raw" in *:ro|*:rw) raw="${raw%:*}" ;; esac
+        targets+="${raw##*:}"$'\n'
+    done < "$compose"
+    [[ "$targets" == *"/home/claude/.claude"* ]] \
+        || { fail "INV-MP: no /home/claude targets in the generated compose — did the mounts move?"; return 1; }
+
+    local t p bad=""
+    while IFS= read -r t; do
+        case "$t" in /home/claude/*|/workspace/*) ;; *) continue ;; esac
+        p="${t%/*}"
+        while [[ -n "$p" && "$p" != "/" ]]; do
+            # A tree root the image owns outright (chown -R) — stop here.
+            case "$p" in /home/claude|/workspace) break ;; esac
+            # Itself a mount target: the bind lands on top, ownership unobservable.
+            # Its own ancestors are checked when the outer loop reaches it.
+            [[ "$targets"    == *$'\n'"$p"$'\n'* ]] && break
+            # Pre-created in the image, claude-owned by the RUN's chown -R.
+            [[ "$image_dirs" == *$'\n'"$p"$'\n'* ]] && break
+            # Strictly inside a cco mount → cco creates it host-side (see above).
+            local m inside="" ; while IFS= read -r m; do
+                [[ -n "$m" ]] || continue
+                case "$p" in "$m"/*) inside=yes; break ;; esac
+            done <<< "$targets"
+            [[ -n "$inside" ]] && break
+            bad="${bad}  ${p}   (ancestor of ${t})"$'\n'
+            break
+        done
+    done <<< "$targets"
+
+    [[ -z "$bad" ]] || fail "INV-MP: mountpoint ancestor left for the container runtime to create — it will be root-owned and \`claude\` will not be able to write beside the bind (R-D). Pre-create it in the Dockerfile beside the other XDG base dirs:"$'\n'"$bad"
+}
+
+# The other half of INV-MP D4, which the ancestry lint cannot reach: an ancestor
+# that is itself a mount target is exempt by construction, so removing
+# `/home/claude/.claude/projects` from the Dockerfile is invisible to it (verified —
+# the lint still passes). That entry is what stands between a future lane binding a
+# single key again and R-D, so its presence is asserted directly against the set the
+# comment above it documents.
+test_invariant_mount_ancestry_image_set() {
+    local f="$REPO_ROOT/Dockerfile"
+    [[ -f "$f" ]] || { fail "INV-MP: Dockerfile not found"; return 1; }
+    local block; block=$(sed -n '/^RUN groupadd/,/chown -R claude/p' "$f")
+    [[ -n "$block" ]] || { fail "INV-MP: cannot find the user-setup RUN block"; return 1; }
+    local d missing=""
+    for d in /home/claude/.claude /home/claude/.claude/projects /home/claude/.cco/packs \
+             /home/claude/.local/bin /home/claude/.local/share /home/claude/.local/state \
+             /home/claude/.cache; do
+        case "$block" in *"$d"*) ;; *) missing="${missing}  ${d}"$'\n' ;; esac
+    done
+    [[ -z "$missing" ]] || fail "INV-MP: the image no longer pre-creates a documented mountpoint ancestor. An ancestor that is currently a mount target is EXEMPT from the ancestry lint, so dropping it here fails nothing until a lane stops binding it — which is how R-D shipped:"$'\n'"$missing"
 }
