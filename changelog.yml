@@ -1051,3 +1051,30 @@ entries:
       migration: an existing transcripts bucket is repaired in place at the
       next `cco start`, without losing history. Requires `cco build`; see
       ADR-0055.
+
+  - id: 53
+    date: "2026-07-29"
+    type: additive
+    title: "In-session cco refuses index-reading verbs it cannot answer, instead of reporting an empty index"
+    description: >
+      A cco session is LAUNCHED from the machine-local path index, so inside a
+      session a missing index can never mean "nothing is registered on this
+      machine yet" — it means the bind was severed, the host-side state was
+      removed, or the internal store is unreachable. Until now the index-reading
+      verbs (`cco list`, `cco list projects`, `cco path list`, `cco project
+      list`, `cco project validate --all`) reported that state as an EMPTY index
+      at exit 0, and `cco project show` rendered a fabricated card — mounts that
+      were bound and readable badged `[unresolved]`, and a repo host path
+      silently downgraded to its container path. Those verbs now refuse at entry
+      with a message naming the real cause and a remedy that works where it is
+      printed (`cco resolve` is host-only in a session and is never prescribed
+      there). `cco project show` renders no card at all rather than a fabricated
+      one, and `[unresolved]` now means exactly one thing: the index holds no
+      binding for that member. On the host nothing changes — a machine with
+      nothing registered yet legitimately has no index file, and still says so.
+      USER-VISIBLE REGRESSION, deliberate: on native Linux the internal store is
+      unreachable from a session by construction (0700 buckets owned by the
+      elevated identity), so these verbs begin refusing there instead of
+      answering confidently and wrongly. Native Linux support is scheduled for
+      cycle-2; until then, run cco on your host. Requires `cco build`; see
+      ADR-0056 (D6, D7).
