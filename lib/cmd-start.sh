@@ -357,12 +357,12 @@ _start_resolve_access() {
     # project-less session (config-editor global mode) floor Pc to `none`; every normal
     # session passes `true` and keeps the strict floor.
     local _cco_triple
-    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access" "$_has_current_project") || exit $?
-    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo" "$_has_current_project") || exit $?
-    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco" "$_has_current_project") || exit $?
-    elif [[ -n "$_gmg$_gmc$_gmo" ]]; then _cco_triple=$(_cco_promote_triple "$_gmg" "$_gmc" "$_gmo" "$_has_current_project") || exit $?
-    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco" "$_has_current_project") || exit $?
-    else                                  _cco_triple=$(_cco_resolve_access "$d_cco" "$_has_current_project") || exit $?
+    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$_gmg$_gmc$_gmo" ]]; then _cco_triple=$(_cco_promote_triple "$_gmg" "$_gmc" "$_gmo" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco" "$_has_current_project") || _cco_exit $?
+    else                                  _cco_triple=$(_cco_resolve_access "$d_cco" "$_has_current_project") || _cco_exit $?
     fi
     read -r cco_g cco_pc cco_po <<< "$_cco_triple"
 
@@ -392,11 +392,11 @@ _start_resolve_access() {
     # DISPLAY LABEL; claude_cr/cp/cg/co are the machine source consumers derive mount
     # modes from (INV-E). A map's omitted axes derive from cco just like a scalar's.
     local _claude_triple
-    if   [[ -n "$cli_claude_access" ]];      then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$_clr$_clc$_clg$_clo" ]];    then _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$p_claude" ]];               then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$_gclr$_gclc$_gclg$_gclo" ]]; then _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po") || exit $?
-    elif [[ -n "$g_claude" ]];               then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || exit $?
+    if   [[ -n "$cli_claude_access" ]];      then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_clr$_clc$_clg$_clo" ]];    then _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$p_claude" ]];               then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_gclr$_gclc$_gclg$_gclo" ]]; then _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$g_claude" ]];               then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
     else                                          _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
     fi
     read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
