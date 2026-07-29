@@ -101,11 +101,20 @@ _index_mktemp() {
 # is empty" at rc=0 (v3 V2-F01/F02) — the same false-success class as V3-01, one
 # direction over.
 #
-# Four states. `absent` is the only benign one and is NOT an error: a machine
-# with nothing registered yet has no index file at all.
+# Five MECHANICAL states. `absent` is the only benign one *as a classification*:
+# a machine with nothing registered yet has no index file at all.
+#
+# ⚠ Benign HERE does not mean benign everywhere. Whether an `absent` index is an
+# error depends on WHERE the question is asked, and that session/host axis lives
+# one level up, in _index_assert_readable — never in this function (ADR-0056 D6,
+# alternative A3 rejects a sixth state or a context-dependent classification).
+# The reason is concrete: the optional file argument below lets the legacy-location
+# reconcile classify ARBITRARY index files, where "in a session" is meaningless;
+# making the classifier context-dependent would corrupt that second consumer.
 #
 #   ok         — opens, non-empty, live
-#   absent     — no file: nothing registered on this machine yet (benign)
+#   absent     — no file. On the HOST: nothing registered on this machine yet
+#                (benign). IN A SESSION: never benign — see the axis note above
 #   unreadable — open(2) fails, typically EACCES (the STATE bucket crossed the
 #                ADR-0047 boundary without the elevated identity)
 #   truncated  — exists but 0 bytes. A legitimately empty index is NEVER 0
@@ -141,6 +150,19 @@ _index_link_count() {
     stat -c '%h' "$1" 2>/dev/null || stat -f '%l' "$1" 2>/dev/null || printf ''
 }
 
+# Is <dir> enterable by THIS process? The discriminator for D6's two `absent`
+# causes: `[[ -e "$f" ]]` in _index_read_state is a stat(2) through the parent, so
+# it needs SEARCH permission (the x bit) there — and it answers `false` alike for
+# "the file is gone" and "I may not look". chdir(2) asks for exactly that search
+# permission and, like open(2) and unlike access(2)/`test -r`, answers for the
+# EFFECTIVE uid — the same trap _index_read_state documents above and rename.sh:174
+# names. CDPATH is cleared so a configured search path cannot silently answer for
+# a same-named directory somewhere else.
+# Usage: _index_parent_traversable <dir>
+_index_parent_traversable() {
+    ( CDPATH= cd "$1" ) >/dev/null 2>&1
+}
+
 # The single sentence per non-benign read state — one vocabulary, so every
 # reader below fails with the same words (the R4 class: "one predicate, four
 # spellings, one of which drifted"). Names the real cause AND a remedy the
@@ -148,36 +170,76 @@ _index_link_count() {
 # (bin/cco's operator gate refuses it), so an in-container remedy that says
 # "run cco resolve" is advice the shim will reject — the retired-vocabulary half
 # of R3.
-# Usage: _index_unreadable_sentence <unreadable|truncated|stale> <file>
+#
+# Two of the states are INTERPRETED, not classified: `severed` and
+# `store-unreachable` are the two causes an `absent` index can have IN A SESSION
+# (ADR-0056 D6). They are produced by _index_assert_readable, never by
+# _index_read_state, which stays a pure mechanical classifier. They carry their
+# own remedy because the generic in-container one ("run cco on your host to
+# populate it") is false exactly where it would be printed: a session is LAUNCHED
+# from the index, so that is where the index came from.
+# Usage: _index_unreadable_sentence <unreadable|truncated|stale|severed|store-unreachable> <file>
 _index_unreadable_sentence() {
     local state="$1" f="$2" cause remedy
     case "$state" in
         unreadable) cause="it cannot be opened (permission denied)" ;;
         truncated)  cause="it is 0 bytes — an interrupted or half-applied write left it truncated" ;;
         stale)      cause="its backing file was replaced while this session was running, so this session holds a dead inode" ;;
+        severed)    cause="the file is gone. This session was LAUNCHED from the index, so it was readable when the session started and is no longer — the bind has been severed, or the host-side state was removed" ;;
+        store-unreachable)
+                    cause="its parent directory $(dirname "$f") cannot be entered by this session — no search permission on it, or it is not there at all — so the file cannot even be looked up" ;;
         *)          cause="it cannot be read" ;;
     esac
-    if _cco_container_operator; then
-        remedy="Run cco on your host to inspect or rebuild it."
-    else
-        remedy="Rebuild it with 'cco resolve --scan <dir>'."
-    fi
+    case "$state" in
+        severed)
+            remedy="Run cco on your host to inspect or rebuild it." ;;
+        store-unreachable)
+            # ⚠ FORWARD POINTER — update when the cycle-2 ADR lands (ADR-0056,
+            # "Forward annotations"): the Linux store-reachability ADR is named by
+            # D6 and is NOT written yet, so this must not cite an ADR number it
+            # would be inventing.
+            remedy="On native Linux this is the DEFAULT state of every session and a known, recorded limitation: cco's internal store is created mode 0700 for the elevated identity (cco-svc, uid 900), which a session running as your own uid cannot search. It is scheduled for cycle-2 as a dedicated Linux store-reachability ADR, not yet written. Anywhere else, the store bind itself is gone. Either way: run cco on your host to inspect or rebuild it." ;;
+        *)
+            if _cco_container_operator; then
+                remedy="Run cco on your host to inspect or rebuild it."
+            else
+                remedy="Rebuild it with 'cco resolve --scan <dir>'."
+            fi ;;
+    esac
     printf "the cco index at %s cannot be read: %s. No entries were listed — this is NOT an empty index. %s" \
         "$f" "$cause" "$remedy"
 }
 
 # Fail-closed entry guard for every verb that ENUMERATES the index. Dies (exit 1,
 # D8: a missing/broken dependency is an error, not a policy refusal) on any
-# non-benign state; returns 0 for `ok` and for the benign `absent`, which the
-# caller then reports with _index_empty_sentence.
+# non-benign state; returns 0 for `ok`, and for `absent` ON THE HOST — where a
+# machine with nothing registered yet legitimately has no index file, and the
+# caller reports it with _index_empty_sentence.
+#
+# ADR-0056 D6 — the session/host axis lives HERE, in the interpretation, and not
+# in the classifier. IN A SESSION `absent` is never benign: a session is launched
+# FROM the index, so the file was readable at start and something has broken. It
+# routes to the same fail-closed path as unreadable/truncated/stale, with the
+# cause discriminated by whether the parent is still enterable. (`stale` does not
+# cover this: that arm — nlink 0 — was designed against the pre-S1 FILE bind, and
+# S1's directory bind makes a host-side `mv` present as plain `absent`.)
 #
 # ⚠ Call it at verb ENTRY, before the read loop. Checking after the loop would
 # report "empty" first and contradict itself.
 _index_assert_readable() {
-    local st; st=$(_index_read_state)
+    local st f
+    st=$(_index_read_state)
+    f=$(_index_file)
     case "$st" in
-        ok|absent) return 0 ;;
-        *) die "$(_index_unreadable_sentence "$st" "$(_index_file)")" ;;
+        ok) return 0 ;;
+        absent)
+            _cco_container_operator || return 0
+            if _index_parent_traversable "$(dirname "$f")"; then
+                die "$(_index_unreadable_sentence severed "$f")"
+            else
+                die "$(_index_unreadable_sentence store-unreachable "$f")"
+            fi ;;
+        *) die "$(_index_unreadable_sentence "$st" "$f")" ;;
     esac
 }
 
