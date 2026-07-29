@@ -259,7 +259,8 @@ With <old> omitted, the resource hosting the working directory is renamed.
 EOF
     cat <<EOF
 
-Every member repo must be resolved on this machine (run 'cco resolve' first).
+Every member repo must be resolved on this machine
+(run 'cco resolve' on your host first).
 After renaming, commit + push the updated .cco/project.yml in each changed repo
 and run 'cco sync'.
 

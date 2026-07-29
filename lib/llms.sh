@@ -229,8 +229,11 @@ _validate_llms_refs() {
                     "$context" "$lname" "$lurl" "$lname" "${lvariant:+ --variant $lvariant}"
             else
                 # url absent → share-readiness gap (llms url is mandatory, ADR-0017 D1).
-                printf '%s: llms '\''%s'\'' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run '\''cco resolve'\'')\n' \
-                    "$context" "$lname"
+                # ADR-0056 D2 — host-qualified: this validator is reached from the
+                # container-reachable `project validate` / `llms validate`, and
+                # `cco resolve` is host-only there.
+                printf '%s: llms '\''%s'\'' has no url coordinate — required to share/re-fetch (add a url to the llms entry, or run '\''cco resolve'\''%s)\n' \
+                    "$context" "$lname" "$(_cco_container_operator && printf ' on your host')"
             fi
             ((errors++))
             continue
