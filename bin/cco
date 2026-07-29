@@ -4,6 +4,12 @@ set -euo pipefail
 # Catch silent crashes (set -e/set -u violations, syntax errors).
 # Expected errors (die, return 1) are caught by the dispatcher and exit
 # cleanly — only truly unexpected exits trigger this message.
+#
+# The sentinel below is set ONLY by lib/colors.sh's three exit primitives —
+# die (1), refuse (2), _cco_exit (any deliberate status). No other code path
+# may exit this process: see the INV-EXIT note in lib/colors.sh for why a raw
+# `exit` (or an `|| exit $?` propagating a SUBSHELL die) leaves the sentinel
+# false and prints "✗ exited unexpectedly" over a perfectly correct run.
 _cco_completed=false
 trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
@@ -531,15 +537,15 @@ _cco_verb_touches_store() {
 cmd="${1:-}"
 # No command → print usage and exit cleanly. Mark completion so the EXIT trap
 # does not misreport this normal exit-0 path as an unexpected crash.
-[[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
+[[ -z "$cmd" ]] && { usage; _cco_exit 0; }
 shift
 
 # Top-level --version/-v and --help/-h (FI-11): handled before the dispatch (and
 # before the J0 bootstrap below) so they work with no other args and have no side
 # effects — `cco --version` is a pure query. Per-subcommand --help is unaffected.
 case "$cmd" in
-    --version|-v) _cco_print_version; _cco_completed=true; exit 0 ;;
-    --help|-h)    usage "$@";         _cco_completed=true; exit 0 ;;
+    --version|-v) _cco_print_version; _cco_exit 0 ;;
+    --help|-h)    usage "$@";         _cco_exit 0 ;;
 esac
 
 # Container-operator mode (ADR-0036 D4): cco runs in-container behind the
@@ -565,8 +571,7 @@ if [[ "$cmd" == "__store" ]] && _cco_container_operator; then
     if [[ "$cmd" == "store-op" ]]; then
         _cco_store_rc=0
         _cco_operator_shim store-op "$@" || _cco_store_rc=$?
-        _cco_completed=true
-        exit $_cco_store_rc
+        _cco_exit $_cco_store_rc
     fi
     _cco_operator_shim "$cmd" "$@"
 elif _cco_container_operator; then
@@ -628,7 +633,7 @@ deregister cco's machine-local bookkeeping with 'cco forget' (ADR-0018 D2).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -674,7 +679,7 @@ List packs with 'cco list pack' (or 'cco list' for all resources).
 
 Run 'cco pack <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -708,5 +713,4 @@ EOF
     help)     usage "$@" ;;
     *)        die "Unknown command: $cmd. Run 'cco help' for usage." ;;
 esac
-_cco_completed=true
-exit $_cco_rc
+_cco_exit $_cco_rc

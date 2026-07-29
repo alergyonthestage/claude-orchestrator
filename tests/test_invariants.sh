@@ -1040,3 +1040,149 @@ PLANT
         || { fail "INV-YAML lint over-fires: a pure reader (no emission at the boundary) was flagged:"$'\n'"$reader"; return 1; }
     return 0
 }
+
+# ── INV-EXIT the sentinel discipline (R-G / runbook §6.2) ─────────────
+#
+# THE INVARIANT — bin/cco's EXIT trap prints "✗ cco exited unexpectedly (exit N)"
+# unless `_cco_completed` is true. Only lib/colors.sh's three exit primitives
+# (die 1 · refuse 2 · _cco_exit N) set it, so a raw shell `exit` anywhere else —
+# or an `|| exit $?` propagating a status out of a SUBSHELL die, whose assignment
+# died with the subshell — leaves it false and glues an ✗ onto a perfectly correct
+# run. Both shipped: the group-help paths of `cco project` / `cco pack` printed it
+# on exit 0, and a mistyped --cco-access printed it after a well-formed INV-2
+# refusal on the host. Behavioural coverage: the two arm tests below.
+#
+# MECHANISM — only SHELL exits count; the ~70 `exit` tokens in lib/ are almost all
+# awk program text (`{ print; exit }`), which terminates awk, not cco. Quoted
+# regions, comments and heredoc bodies are therefore removed before matching. Four
+# hazards are handled explicitly, each of which produced a false positive while
+# this was being written: the close-literal-reopen quote token (4 chars, in
+# lib/llms.sh and lib/paths.sh) must not invert the single-quote state; an
+# apostrophe in a prose comment must not either; a heredoc body is DATA (`cco
+# update --help` prints the literal text "(… exit 0)"); and a heredoc delimiter is
+# usually quoted, so its opener is matched on the raw line. The quote character
+# arrives via -v because an awk "\x27" escape is a gawk extension that would
+# silently not fire on the macOS/BSD awk this project targets. migrations/ is
+# scanned: a migration runs under `cco update` with the libs sourced, so its
+# `exit` is cco's exit — the same reason INV-TTY scans it.
+#
+# ALLOWLIST (by file, with the reason — a raw exit is legal only where it does NOT
+# terminate the cco process):
+#   lib/colors.sh   — DEFINES die / refuse / _cco_exit, the three primitives.
+#   lib/cmd-init.sh — `cd "$gclaude" || exit 1` inside an explicit ( … ) subshell:
+#                     it exits the subshell, and a cd that fails there IS an
+#                     undiagnosed crash — the trap firing is correct.
+_inv_exit_shell_exits() {
+    # Emits "<file>:<line>: <text>" for every `exit` reached in SHELL context.
+    awk -v q="'" '
+      BEGIN { inq = 0; indq = 0; inhd = 0 }
+      inhd { if ($0 ~ ("^[ \t]*" hdw "[ \t]*$")) inhd = 0; next }
+      {
+        line = $0; out = ""; i = 1; n = length(line)
+        while (i <= n) {
+          c = substr(line, i, 1)
+          if (inq && substr(line, i, 4) == q "\\" q q) { i += 4; continue }
+          if (indq && c == "\\") { i += 2; continue }
+          if (!indq && c == q)    { inq = !inq;   i++; continue }
+          if (!inq  && c == "\"") { indq = !indq; i++; continue }
+          if (!inq && !indq && c == "#" && (i == 1 || substr(line, i-1, 1) ~ /[ \t;&|(]/)) break
+          if (!inq && !indq) out = out c
+          i++
+        }
+        if (out ~ /(^|[;&|(){}[:space:]])exit([[:space:]]|;|$)/) print FILENAME ":" FNR ": " $0
+        hl = line; gsub(/"/, "", hl); gsub(q, "", hl)
+        if (match(hl, /<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/) \
+            && (RSTART == 1 || substr(hl, RSTART - 1, 1) != "<")) {
+          hdw = substr(hl, RSTART, RLENGTH); sub(/^<<-?[ \t]*/, "", hdw)
+          inhd = 1
+        }
+      }' "$1"
+}
+
+test_invariant_exit_sentinel_discipline() {
+    local allow_file=" colors.sh cmd-init.sh "
+    local f base hits="" h
+    for f in "$REPO_ROOT"/bin/cco "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/migrations/*/*.sh; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        case "$allow_file" in *" $base "*) continue ;; esac
+        h=$(_inv_exit_shell_exits "$f")
+        [[ -n "$h" ]] && hits="${hits}${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || { fail "INV-EXIT: a raw shell \`exit\` outside lib/colors.sh's primitives. It leaves the EXIT-trap sentinel false, so bin/cco prints \"✗ cco exited unexpectedly\" over a deliberate exit — which is both a lie and a mask for the real crashes the trap exists to catch (R-G). Use _cco_exit <code> (or die / refuse); for an exit that is subshell-local, extend the allowlist here WITH ITS REASON:"$'\n'"$hits"; return 1; }
+
+    # Discrimination, both directions.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf '%s\n' 'cmd_x() { [[ -z "$1" ]] && { usage; exit 0; }; }'     > "$tmp/raw.sh"
+    printf '%s\n' 'cmd_y() { local t; t=$(_resolve "$1") || exit $?; }'  > "$tmp/prop.sh"
+    local a b c
+    a=$(_inv_exit_shell_exits "$tmp/raw.sh")
+    [[ -n "$a" ]] || { fail "INV-EXIT lint does NOT discriminate: a planted bare 'exit 0' (the group-help arm) went uncaught"; return 1; }
+    b=$(_inv_exit_shell_exits "$tmp/prop.sh")
+    [[ -n "$b" ]] || { fail "INV-EXIT lint does NOT discriminate: a planted '|| exit \$?' (the subshell-propagation arm) went uncaught"; return 1; }
+    # …and does NOT fire on the shapes a naive grep would mistake for shell exits:
+    # awk program text under both quotings, a prose comment, and a heredoc body.
+    {
+        printf '%s\n' 'f() { awk "/^x:/ { print; exit }" "$1"; }'
+        printf '%s\n' "g() { awk '/^y:/ { print v; exit }' \"\$1\"; }"
+        printf '%s\n' "h() { awk -F': *' '/^n:/{gsub(/[\"'\\''\"]/,\"\",\$2); print \$2; exit}' \"\$1\"; }"
+        printf '%s\n' "# it doesn't matter how the caller chose to exit here"
+        printf '%s\n' 'u() { cat <<EOF' '  --flag   does a thing (read-only, exit 0)' 'EOF' '}'
+    } > "$tmp/awkonly.sh"
+    c=$(_inv_exit_shell_exits "$tmp/awkonly.sh")
+    [[ -z "$c" ]] || { fail "INV-EXIT lint over-fires: non-shell text was read as a shell exit:"$'\n'"$c"; return 1; }
+    return 0
+}
+
+# ── INV-EXIT arm 1: a SUCCESSFUL run must not be reported as a crash ──
+# `cco project` / `cco pack` with no subcommand print their group help and exit 0.
+# Both exited without setting the sentinel, so every such run ended with
+# "✗ cco exited unexpectedly (exit 0)" printed under its own help text.
+test_invariant_exit_sentinel_group_help_is_not_a_crash() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local ns rc
+    for ns in project pack; do
+        rc=0; run_cco "$ns" || rc=$?
+        [[ $rc -eq 0 ]] || { fail "INV-EXIT: 'cco $ns' group help should exit 0, got $rc"; return 1; }
+        case "$CCO_OUTPUT" in
+            *"Usage: cco $ns"*) ;;
+            *) fail "INV-EXIT: 'cco $ns' did not print its group help — the arm-1 assertion would be vacuous:"$'\n'"$CCO_OUTPUT"; return 1 ;;
+        esac
+        case "$CCO_OUTPUT" in
+            *"exited unexpectedly"*)
+                fail "INV-EXIT: 'cco $ns' printed the crash notice on a SUCCESSFUL exit-0 run:"$'\n'"$CCO_OUTPUT"
+                return 1 ;;
+        esac
+    done
+}
+
+# ── INV-EXIT arm 2: a CORRECT refusal must not be reported as a crash ─
+# The access resolver runs inside a command substitution, so its `die` set the
+# sentinel in a SUBSHELL and the parent propagated the status with a bare
+# `|| exit $?` — leaving the trap to append "✗ cco exited unexpectedly (exit 1)"
+# to a well-formed refusal. This is the path a user hits by mistyping
+# --cco-access, so it fired on the HOST on an ordinary typo. Two shapes, one
+# mechanism: an unknown preset, and an explicit INV-2 floor violation.
+test_invariant_exit_sentinel_access_refusal_is_not_a_crash() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+
+    local spec want rc
+    for spec in "read-projekt|Invalid cco_access" "current=none|INV-2"; do
+        want="${spec#*|}"
+        rc=0; run_cco start test-proj --cco-access "${spec%%|*}" --dry-run || rc=$?
+        [[ $rc -ne 0 ]] || { fail "INV-EXIT: --cco-access '${spec%%|*}' should have been refused, got exit 0"; return 1; }
+        case "$CCO_OUTPUT" in
+            *"$want"*) ;;
+            *) fail "INV-EXIT: expected the '$want' refusal for --cco-access '${spec%%|*}' — the arm-2 assertion would be vacuous:"$'\n'"$CCO_OUTPUT"; return 1 ;;
+        esac
+        case "$CCO_OUTPUT" in
+            *"exited unexpectedly"*)
+                fail "INV-EXIT: the crash notice was appended to a well-formed refusal for --cco-access '${spec%%|*}':"$'\n'"$CCO_OUTPUT"
+                return 1 ;;
+        esac
+    done
+}
