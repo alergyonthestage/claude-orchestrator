@@ -261,6 +261,7 @@ EOF
         # Output scoping (ADR-0043): the CACHE llms bucket is mounted whole at
         # every read level, so scope its OUTPUT to the current project's
         # referenced llms at read-project (INV-B count for the notice).
+        _env_note_seen llms   # D5: enumerated rows, for the host-total supplement
         if ! _env_in_scope llms "$dname"; then _env_note_hidden llms; continue; fi
 
         local var="?" lines="?" downloaded="?" source_url="?"

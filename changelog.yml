@@ -1118,3 +1118,36 @@ entries:
       goes through one primitive, so the trap speaks only for real crashes —
       which is the point, since a warning users learn to ignore stops working
       as a warning. Requires `cco build` for the in-session `cco`.
+
+  - id: 56
+    date: "2026-07-29"
+    type: additive
+    title: "One owner for availability answers — hidden is no longer reported as missing"
+    description: >
+      cco used to render "I cannot see X from here" as "X is not there", and
+      computed the remedy without regard to where the message was printed. Every
+      verb now ASKS the shared availability layer instead of deciding for itself,
+      so one vocabulary covers the three realities: a resource that is here, one
+      that exists but is not bound into this session, and one that is not
+      resolved at all. Concretely: `cco project show` badges a bound-but-unmounted
+      member `[not mounted in this session]` instead of `[missing]`, and the same
+      for a config-editor target's dropped extra_mounts and for packs it cannot
+      see; the retired `[missing]` badge is gone. The widening a message offers is
+      now derived from WHAT WAS HIDDEN — a hidden project offers `read-all`
+      (`read-global` is precisely the level that keeps other projects hidden, so
+      naming it revealed nothing), a hidden pack/template/remote offers
+      `read-global`. A message printed inside a session no longer prescribes
+      `cco resolve`, which is host-only there; it says to run it on your host.
+      `cco project coords <name>` now refuses an out-of-scope or unknown unit like
+      its `project show`/`project validate` siblings, instead of answering "no url
+      coordinates to check" at exit 0. At `read-all` a misspelt project name is
+      reported as not registered rather than "it exists on this machine" — that
+      arm is deliberately NOT enabled at narrower scopes, where it would turn
+      `project show` into an existence oracle across the access boundary.
+      Hidden-resource COUNTS are now correct for packs/templates/remotes even when
+      the personal store is not mounted at all (the common case at
+      `cco_access=read-project`): the count is computed host-side at `cco start`
+      and carried into the session. It is a snapshot taken at session start — a
+      pack installed on the host mid-session is not reflected, which is harmless
+      because the session could not see it either way. Requires `cco build`; see
+      ADR-0056 (D1-D5, D7).

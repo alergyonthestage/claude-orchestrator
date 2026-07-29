@@ -433,6 +433,10 @@ EOF
         else
             # Output scoping (ADR-0043): in operator mode, hide resources outside the
             # session's access scope and count them for the trailing notice (INV-B).
+            # D5: every ENUMERATED row is counted, shown or hidden — the shared
+            # layer derives what the mount could not show at all as
+            # host_total - seen (see _env_apply_store_supplement).
+            _env_note_seen "$rk"
             if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
             tkind=$(_list_tag_kind "$rk"); tags=""
             [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")

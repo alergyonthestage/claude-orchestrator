@@ -707,11 +707,15 @@ test_invariant_index_writes_status_checked() {
 #                                              S7 added the last two and a <kind> noun
 #                                              WITHOUT a third spelling: arms carry the
 #                                              detail, the single warn carries the state.
-#   cmd-resolve.sh 1 cmd_path (list)         — the hidden-COUNT notice for path
-#                                              entries, which must say read-all where
-#                                              the shared notice says read-global
-#                                              (other projects need Po≥ro). Reconciling
-#                                              the shared one is V4-F-V4-03 / Q-C3.
+#   cmd-resolve.sh 0 — RETIRED by ADR-0056 D3 (S4). It held one spelling because
+#                      `cco path list`'s notice "must say read-all where the shared
+#                      notice says read-global", with the note "reconciling the
+#                      shared one is V4-F-V4-03 / Q-C3". That reconciliation landed:
+#                      _env_widening_clause now derives the widening from WHAT IS
+#                      HIDDEN, and a `path` row rides Po exactly as a project does,
+#                      so the site routes through _env_note_hidden + the shared
+#                      flush and spells nothing. The entry is REMOVED rather than
+#                      left at 1 — a budget nobody spends is an invitation.
 #   cmd-project-rename.sh 1 cmd_project_rename — an AGGREGATE over member repos
 #                                              (a plural list), not a single
 #                                              resource's state; host-only verb.
@@ -720,7 +724,7 @@ test_invariant_index_writes_status_checked() {
 # one always does. Raising a budget is a deliberate act that has to be argued here.
 test_invariant_env_one_spelling_per_state() {
     local vocab='not available at this access scope|not mounted in this session|not resolved on this machine|hidden by access scope'
-    local ratified="store.sh:1 rename.sh:1 cmd-start.sh:2 cmd-resolve.sh:1 cmd-project-rename.sh:1"
+    local ratified="store.sh:1 rename.sh:1 cmd-start.sh:2 cmd-project-rename.sh:1"
     local f base budget n hits=""
     for f in "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/cco; do
         [[ -f "$f" ]] || continue
@@ -1185,4 +1189,185 @@ test_invariant_exit_sentinel_access_refusal_is_not_a_crash() {
                 return 1 ;;
         esac
     done
+}
+
+# ── INV-AVAIL the CLASS guard (ADR-0056 D1 / D9) ──────────────────────
+# INV-AVAIL: no verb computes an availability or scope-widening answer for itself.
+# Every such answer is produced by lib/access-scope.sh, which owns (a) the
+# three-state classification, (b) the sentence, (c) the remedy and (d) the exit
+# code. Deliberately the same shape as INV-S6, whose CLASS lint has held.
+#
+# ── Why a SECOND guard beside INV-ENV ────────────────────────────────
+# INV-ENV (above) already budgets the four STATE SENTENCES. It is a pure string
+# count, and it is blind to the two halves that actually shipped the defect:
+#   1. the PREDICATE — `[[ -d "$_probe" ]]` renders availability without ever
+#      spelling a state sentence, so INV-ENV scored `project show` clean while it
+#      badged a mounted-but-unbindable member `[missing]` for three cycles;
+#   2. the BADGES + the RETIRED REMEDY — `[missing]`, `[unresolved]` and
+#      `cco resolve` are the reserved strings D9 names, and none of them appear in
+#      INV-ENV's vocabulary.
+# INV-ENV answers "is the state spelled in one place"; INV-AVAIL answers "is the
+# state DECIDED in one place". Neither subsumes the other.
+#
+# ── MECHANISM — assignment provenance, not a naive grep (D9, from INV-S6) ──
+# A guard blind to the `local x; x=$(…)` split idiom misses the majority of its
+# class and certifies anyway — that is the recorded INV-S6 lesson, and the very
+# site this unit fixes is written in exactly that idiom:
+#     local _probe; _probe=$(_cco_member_probe_path "$n" "$p")
+#     if [[ -d "$_probe" ]]; then …
+# A grep for `_cco_member_probe_path` on the same line as `[[ -d` finds NOTHING
+# there. So, per file, an awk pass:
+#   1. taints every variable whose RHS names an availability-path resolver or an
+#      already-tainted variable — including the split form;
+#   2. flags an existence predicate ([[ -d/-e/-f/-r/-w … ]]) whose target expands a
+#      tainted variable or calls a resolver directly                    [KIND=PRED]
+#   3. flags a reserved AVAILABILITY string on a non-comment line       [KIND=STR]
+# Taint does not leak across function boundaries (reset at each definition), which
+# is what keeps a same-named local in an unrelated function from false-flagging.
+#
+# TRACKED availability resolver — deliberately EXACTLY ONE: _cco_member_probe_path.
+# Its whole purpose is "where do I look to decide whether this member is available
+# here" (the container mount in operator mode, the index host path on the host), so
+# an existence predicate on its result IS an availability decision, by construction
+# and with no false positives.
+#
+# ⚠ The wider set was tried first and REJECTED, which is worth recording because the
+# obvious next maintainer will try it again: tracking _resolve_project_yml /
+# _index_get_path / _mount_source_for as well flags twelve sites, and every one of
+# them is legitimate — `[[ -f "$project_yml" ]] || die "has no readable
+# project.yml"` runs AFTER the owner already answered `here`, and asks a different
+# question (is the manifest readable), not an availability question. A lint whose
+# hits are mostly legitimate gets allowlisted until it is inert, which is the
+# failure mode D9 exists to avoid. INV-S6 could ban its whole resolver set because
+# behind the ADR-0047 boundary those reads are MEANINGLESS; here they are meaningful.
+# NOT tracked for the same reason: _cco_display_path (a PRESENTATION helper — INV-4
+# host-path hygiene; its result is never probed).
+#
+# RESERVED STRINGS (D9): the two badges and the two notice fragments are absolute —
+# they belong to the owner, full stop. `cco resolve` is different in kind: D2 makes
+# a remedy a function of the PRINT SITE, and the verb is legitimate advice ON THE
+# HOST. So it is flagged only when it appears WITHOUT a host qualifier on the same
+# line, in a file the operator shim can actually reach. That is the rule
+# index.sh:160-164 already implements and D2 generalises.
+_avail_lint_prog() {
+    cat <<'AWK'
+BEGIN {
+  RES="_cco_member_probe_path"
+  STR="\\[missing\\]|\\[unresolved\\]|not mounted in this session|not available at this access scope"
+  QUAL="on your host|on the host|on a terminal|_cco_container_operator"
+  fn="(toplevel)"; nrem=0; ctxaware=0
+}
+function flushfn(  i) {
+  if (!ctxaware) for (i=0;i<nrem;i++) print rem[i]
+  nrem=0; ctxaware=0
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ {
+  flushfn()
+  fn=$0; sub(/\(\).*/,"",fn); for (v in seen) delete seen[v]
+  nrem=0; ctxaware=0
+  next
+}
+/^[ \t]*#/ { next }                                   # comments are exempt (docs quote the vocabulary)
+{
+  line=$0; s=line
+  # 1. taint propagation, including the `local x; x=$(...)` split form
+  while (match(s, /(^|[ \t;])[A-Za-z_][A-Za-z0-9_]*=/)) {
+    seg=substr(s, RSTART, RLENGTH); vn=seg; gsub(/[ \t;]/,"",vn); sub(/=$/,"",vn)
+    rest=substr(s, RSTART+RLENGTH); r=rest; sub(/;.*/,"",r)
+    t=0
+    if (r ~ ("(" RES ")")) t=1
+    else { for (v in seen) if (index(r,"$"v)||index(r,"${"v)) t=1 }
+    if (t && vn!="") seen[vn]=1
+    s=substr(s, RSTART+RLENGTH)
+  }
+  # 2. existence predicate on a tainted/resolver path → the verb is deciding
+  if (line ~ /\[\[[^]]*-[defrw][ \t]+/) {
+    hit=0
+    if (line ~ ("\\$\\(?(" RES ")")) hit=1
+    for (v in seen) if (index(line,"$"v)||index(line,"${"v)) hit=1
+    if (hit) print FILENAME "|" fn "|PRED"
+  }
+  # 3. a reserved availability string outside the owner
+  if (line ~ (STR)) print FILENAME "|" fn "|STR"
+  # 4. the retired remedy, unqualified at a container-reachable print site (D2).
+  #    A line carrying its own qualifier is fine; so is a line inside a function
+  #    that CONSULTS the print site (_cco_container_operator), because such a
+  #    function's host arm is legitimately unqualified — that is the shape
+  #    index.sh:160-164 uses and D2 blesses. Deferred to end-of-function so the
+  #    consult may appear after the message it governs.
+  if (line ~ (QUAL)) ctxaware=1
+  if (line ~ /cco resolve/ && line !~ (QUAL)) rem[nrem++]=FILENAME "|" fn "|REMEDY"
+}
+END { flushfn() }
+AWK
+}
+
+# Echo the VIOLATING hits ("<basename>|<func>|<kind>" per line) found in <libdir>.
+# Empty output = clean.
+_avail_lint_violations() {
+    local libdir="$1" f b prog hf fn kind
+    prog=$(_avail_lint_prog)
+    # EXCLUDED — the owner itself, plus the two layers whose subject is a STORE
+    # BUCKET rather than a named resource (a bucket is never "unresolved"; their
+    # own predicate is governed by INV-S3b/INV-S6, and INV-ENV budgets their
+    # sentence). index.sh is the index PRIMITIVE: it defines _index_get_path and
+    # owns the read-state taxonomy ADR-0056 D6 put there deliberately.
+    local excluded=" access-scope.sh store.sh rename.sh index.sh "
+    # ALLOWLIST — HOST-ONLY verb files. The operator shim REFUSES these in-container
+    # (bin/cco: start|stop|build|new|resolve|sync|init|join|forget|update|clean, plus
+    # project rename/export/import/add and pack/template publish|export), so a
+    # `cco resolve` remedy printed there is read on the host, where it is exactly
+    # right — D2 is a statement about the PRINT SITE, not about the string.
+    local host_only=" cmd-resolve.sh cmd-sync.sh cmd-init.sh cmd-join.sh cmd-forget.sh"
+    host_only+=" cmd-clean.sh cmd-update.sh cmd-config.sh cmd-start.sh migrate.sh"
+    host_only+=" cmd-project-rename.sh cmd-project-export-import.sh cmd-project-add.sh"
+    host_only+=" packs.sh local-paths.sh "
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        case "$excluded"  in *" $b "*) continue ;; esac
+        case "$host_only" in *" $b "*) continue ;; esac
+        while IFS='|' read -r hf fn kind; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_local_availability_decisions() {
+    # 1. The live tree must be clean.
+    local v; v=$(_avail_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || fail "INV-AVAIL: a verb decides availability for itself — an existence predicate on a member/mount/project path [PRED], or a reserved availability string [STR], outside lib/access-scope.sh. Ask _env_member_state/_env_project_state and render with _env_unavailable[_warn] (ADR-0056 D1):"$'\n'"$v"
+
+    # 2. Discrimination (D9, mandatory). A STATIC invariant cannot "fail on reverted
+    #    lib/", so an undemonstrated lint is indistinguishable from an inert one.
+    #    Both arms are planted in a STAGED copy of a NON-allowlisted file.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL self-test: could not stage lib/"; return 1; }
+
+    # 2a. MUST FIRE — and specifically through the SPLIT idiom a naive grep misses:
+    #     the resolver and the predicate are on DIFFERENT lines.
+    printf '\n_lint_probe_avail() {\n    local p\n    p=$(_cco_member_probe_path "$1" "$2")\n    if [[ -d "$p" ]]; then echo here; fi\n}\n' \
+        >> "$tmp/cmd-project-query.sh"
+    local planted; planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-project-query.sh|_lint_probe_avail|PRED"* ]] \
+        || { fail "INV-AVAIL does NOT discriminate: a planted split-idiom availability probe went uncaught (this is the exact shape of the shipped defect):"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2b. MUST FIRE — a reserved string in a container-reachable file.
+    printf '\n_lint_probe_badge() {\n    echo "  x [missing]"\n}\n' >> "$tmp/cmd-template.sh"
+    planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-template.sh|_lint_probe_badge|STR"* ]] \
+        || { fail "INV-AVAIL does NOT discriminate: a planted reserved badge went uncaught"; return 1; }
+
+    # 2c. MUST NOT FIRE — a comment quoting the vocabulary, and an existence
+    #     predicate on a path that is NOT an availability path. Without this arm a
+    #     guard that flags every `[[ -d ]]` in lib/ would also "pass" 2a, and would
+    #     be unusable rather than discriminating.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL self-test: could not re-stage lib/"; return 1; }
+    printf '\n# a doc line about [missing] and "not mounted in this session"\n_lint_probe_ok() {\n    local d="$HOME/somewhere"\n    if [[ -d "$d" ]]; then echo fine; fi\n}\n' \
+        >> "$tmp/cmd-template.sh"
+    planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_ok"* ]] \
+        || { fail "INV-AVAIL over-reaches: a non-availability existence test / a comment quoting the vocabulary was flagged:"$'\n'"$planted"; return 1; }
+    return 0
 }

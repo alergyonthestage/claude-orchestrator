@@ -219,7 +219,9 @@ _pv_validate_stray_paths() {
     local yml="$1" skey sval
     while IFS=$'\t' read -r skey sval; do
         [[ -z "$skey" ]] && continue
-        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path')"
+        # ADR-0056 D2 — host-qualified: `project validate` is container-reachable and
+        # both prescribed verbs (`cco resolve`, `cco project add`) are host-only there.
+        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path'$(_cco_container_operator && printf ' on your host'))"
     done < <(_pv_scan_stray_paths "$yml")
 }
 

@@ -391,3 +391,62 @@ test_project_show_out_of_scope_keeps_scope_wording() {
     assert_refused "$rc" "${CCO_OUTPUT:-}" "not available at this access scope" || return 1
     return 0
 }
+
+# ── ADR-0056 D7 / D-V31-3 (S4): the member badge is asked, not decided ──
+# `project show`'s repos block was the last two-way `[[ -d "$_probe" ]]` test in the
+# codebase, and it is the site the ADR names: a member that is merely NOT MOUNTED
+# rendered `[missing]` plus "run 'cco resolve <p>'" — a remedy the same session
+# refuses at exit 2. Both halves were wrong for one reason: the verb had two answers
+# for three realities. These pin the three-state rendering at the helper level,
+# using the same subshell/stub pattern as the B-DF1 probe tests above (staying out
+# of the dispatcher, whose store-verb trampoline would re-enter the baked cco).
+
+_ps_badge() {  # echoes the badge for a member state; $1=operator yes|no
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/access-scope.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _env_state_badge "$(_env_member_state "$@")"
+    )
+}
+
+test_show_member_bound_but_unmounted_is_not_missing() {
+    # A bound member whose mount is absent in this session: the index HAS a binding,
+    # so it is not `[unresolved]`, and it exists on the machine, so it is not
+    # `[missing]` — it is not mounted here.
+    local out
+    out=$(CCO_WORKDIR=/nonexistent-ws _ps_badge yes "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "[not mounted in this session]" ]] \
+        || fail "ADR-0056 D7: a bound-but-unmounted member must be badged not-mounted, got: '$out'"
+    [[ "$out" != *"[missing]"* ]] \
+        || fail "ADR-0056 D7: the retired [missing] badge came back"
+}
+
+test_show_member_without_binding_is_unresolved() {
+    # INV-F.1: no binding at all → `[unresolved]`, the ONE thing it means.
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_badge yes "my-repo" "")
+    [[ "$out" == "[unresolved]" ]] \
+        || fail "ADR-0056 D7: an unbound member must be badged [unresolved], got: '$out'"
+}
+
+test_show_member_mounted_carries_no_badge() {
+    local ws; ws=$(mktemp -d); mkdir -p "$ws/my-repo"
+    local out
+    out=$(CCO_WORKDIR="$ws" _ps_badge yes "my-repo" "/Users/alex/code/my-repo")
+    rm -rf "$ws"
+    [[ -z "$out" ]] || fail "a present member needs no badge, got: '$out'"
+}
+
+test_show_repos_block_has_no_unqualified_resolve_remedy() {
+    # D2: the `⚠ N reference(s) unresolved` line kept its remedy, but a session
+    # cannot run `cco resolve` — the operator gate refuses it. The in-container arm
+    # must name the host; the host arm must not carry the noise.
+    local src="$REPO_ROOT/lib/cmd-project-query.sh"
+    grep -q "cco resolve \$name' on your host" "$src" \
+        || fail "ADR-0056 D2: project show's unresolved remedy must be host-qualified in a session"
+    grep -q "_cco_container_operator" "$src" \
+        || fail "ADR-0056 D2: project show must BRANCH on the print site, not pick one wording"
+}

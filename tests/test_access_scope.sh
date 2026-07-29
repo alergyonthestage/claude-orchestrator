@@ -791,3 +791,243 @@ test_as_path_claim_helper_attribution() {
     rm -rf "$tmp"
     return 0
 }
+
+# ── ADR-0056 (S4): INV-AVAIL — one owner for availability answers ─────
+# Each test below pins a CONTRACT the ADR states, not the implementation that
+# happens to satisfy it. They are the regression half of the unit: every defect
+# rerouted through lib/access-scope.sh gets a test that reproduces the old answer
+# and then passes on the new one.
+
+# D3 — the widening is a function of what is hidden. The builder is now ONE
+# function; these pin its three rows directly, so a future caller that re-inlines
+# the logic diverges from a tested contract rather than from an intention.
+test_as_widening_builder_projects_only() {
+    _as_source
+    local w; w=$(_env_widening_clause 3 0)
+    [[ "$w" == *"read-all"* ]] || fail "projects-only must offer read-all, got: $w"
+    [[ "$w" != *"read-global"* ]] \
+        || fail "projects-only must NOT name read-global — it reveals no project (ADR-0056 D3), got: $w"
+    return 0
+}
+
+test_as_widening_builder_store_only() {
+    _as_source
+    local w; w=$(_env_widening_clause 0 2)
+    [[ "$w" == *"read-global"* ]] || fail "store-kinds-only must offer read-global, got: $w"
+    [[ "$w" != *"read-all"* ]] \
+        || fail "store-kinds-only need not escalate to read-all (ADR-0056 D3), got: $w"
+    return 0
+}
+
+test_as_widening_builder_mixed_names_both() {
+    _as_source
+    local w; w=$(_env_widening_clause 1 1)
+    [[ "$w" == *"read-global"* && "$w" == *"read-all"* ]] \
+        || fail "a mixed hidden set must name both (ADR-0056 D3), got: $w"
+    return 0
+}
+
+# D3 — the two PER-RESOURCE sites must share the builder's ANSWER, not merely its
+# intent. This is the defect all four review sessions found independently: both
+# offered read-global for a project, the one level that keeps projects hidden.
+test_as_require_visible_project_offers_read_all_not_read_global() {
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    local out rc=0
+    out=$( (_env_require_visible project beta) 2>&1 ) || rc=$?
+    [[ "$rc" -eq 2 ]] || fail "a hidden resource is a policy refusal (exit 2), got rc=$rc"
+    [[ "$out" == *"read-all"* ]] \
+        || fail "a hidden PROJECT must be offered read-all (ADR-0056 D3), got: $out"
+    [[ "$out" != *"read-global"* ]] \
+        || fail "a hidden PROJECT must NOT be offered read-global — it reveals nothing, got: $out"
+    return 0
+}
+
+test_as_unavailable_warn_project_offers_read_all_not_read_global() {
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    local out; out=$(_env_unavailable_warn out-of-scope project beta 2>&1 || true)
+    [[ "$out" == *"read-all"* ]] \
+        || fail "the warn sibling must share the builder's answer (ADR-0056 D3), got: $out"
+    [[ "$out" != *"read-global"* ]] \
+        || fail "the warn sibling still offers read-global for a project, got: $out"
+    return 0
+}
+
+test_as_require_visible_pack_still_offers_read_global() {
+    # The counterweight: a store-resident kind rides G, so read-global IS its
+    # widening. A fix that made everything say read-all would pass the tests above
+    # and be equally wrong.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_PROJECT_PACKS=""
+    local out; out=$( (_env_require_visible pack somepack) 2>&1 ) || true
+    [[ "$out" == *"read-global"* ]] \
+        || fail "a hidden PACK must be offered read-global (ADR-0046 §7: it rides G), got: $out"
+    return 0
+}
+
+# D4 — the refusal must not disclose existence or location below read scope `all`.
+test_as_require_visible_project_is_non_disclosing() {
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha
+    local out; out=$( (_env_require_visible project beta) 2>&1 ) || true
+    [[ "$out" != *"outside this session's project"* ]] \
+        || fail "D-V31-1: the refusal must not assert WHERE the resource is, got: $out"
+    [[ "$out" != *"exists on this machine"* ]] \
+        || fail "D-V31-1: the refusal must not assert THAT the resource exists, got: $out"
+    [[ "$out" == *"not available at this access scope"* ]] \
+        || fail "the shared vocabulary must be preserved, got: $out"
+    return 0
+}
+
+# D4 — the `unknown` arm exists ONLY at read scope `all`.
+test_as_project_state_unknown_only_at_read_all() {
+    _as_source
+    # A stub index with exactly one registered project, and a resolver that never
+    # resolves — so the ONLY thing separating the two scopes is D4's gate.
+    _index_list_projects() { printf 'alpha=/tmp/alpha\n'; }
+    _resolve_project_yml() { return 1; }
+
+    _as_operator read-all
+    export PROJECT_NAME=alpha
+    [[ "$(_env_project_state nosuch)" == "unknown" ]] \
+        || fail "at read scope all an unregistered name must be 'unknown' (ADR-0056 D4), got: $(_env_project_state nosuch)"
+    [[ "$(_env_project_state alpha)" == "not-mounted" ]] \
+        || fail "a REGISTERED but unresolvable project stays not-mounted, got: $(_env_project_state alpha)"
+
+    # Below `all` the arm must NOT materialise — A5 was rejected precisely because
+    # it would turn this into an existence oracle across the scope boundary.
+    _as_operator read-global
+    export PROJECT_NAME=alpha
+    [[ "$(_env_project_state alpha)" == "not-mounted" ]] \
+        || fail "at read-global the unknown arm must not fire, got: $(_env_project_state alpha)"
+    return 0
+}
+
+test_as_unknown_sentence_does_not_claim_existence() {
+    _as_source
+    _as_operator read-all
+    local s; s=$(_env_unavailable_sentence unknown project nosuch)
+    [[ "$s" != *"exists on this machine"* ]] \
+        || fail "the unknown arm exists to STOP that claim (ADR-0056 D4), got: $s"
+    [[ "$s" == *"not registered on this machine"* ]] \
+        || fail "the unknown arm must name the real cause, got: $s"
+    return 0
+}
+
+# D2 — a remedy is a function of the print site.
+test_as_unresolved_remedy_is_host_qualified_in_session() {
+    _as_source
+    _as_operator read-project
+    local s; s=$(_env_unavailable_sentence unresolved repo myrepo)
+    [[ "$s" == *"cco resolve myrepo"* ]] || fail "the remedy must still name the verb, got: $s"
+    [[ "$s" == *"on your host"* ]] \
+        || fail "ADR-0056 D2: 'cco resolve' is host-only in a session, so the in-container sentence must say so, got: $s"
+    return 0
+}
+
+test_as_unresolved_remedy_unqualified_on_host() {
+    _as_source
+    unset CCO_CONTAINER_OPERATOR CCO_CCO_ACCESS
+    local s; s=$(_env_unavailable_sentence unresolved repo myrepo)
+    [[ "$s" == *"cco resolve myrepo"* ]] || fail "host remedy must name the verb, got: $s"
+    [[ "$s" != *"on your host"* ]] \
+        || fail "on the HOST the qualifier is noise — D2 is about the print site, got: $s"
+    return 0
+}
+
+# D5 — the hidden count comes from where enumeration is possible.
+test_as_store_totals_supplement_counts_unenumerable_kinds() {
+    # R-B: at G=none `~/.cco` is not mounted, so the pack loop never iterates —
+    # zero rows, zero _env_note_hidden calls, and the notice was SILENT about packs
+    # that certainly exist. The host-side signal supplies what the session cannot
+    # enumerate. (The reports' "packs are not wired" diagnosis was wrong — they are;
+    # the mount is absent. ADR-0056 D5 records the correction.)
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4,template=2"
+    # Nothing enumerated at all — the G=none shape.
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"hidden by access scope"* ]] \
+        || fail "INV-B: an unenumerable hidden set must still produce the count notice, got: $out"
+    [[ "$out" == *"4 packs"* ]] || fail "the pack count must come from the host signal, got: $out"
+    [[ "$out" == *"2 templates"* ]] || fail "the template count must come from the host signal, got: $out"
+    return 0
+}
+
+test_as_store_totals_subtract_what_was_enumerated() {
+    # The read-project NARROWED mount: 2 of 4 packs are bound and visible, so the
+    # hidden remainder is 2 — not 4 (double counting) and not 0 (the old silence).
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4"
+    _env_note_seen pack; _env_note_seen pack
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"2 packs"* ]] \
+        || fail "hidden = host_total - enumerated (ADR-0056 D5), got: $out"
+    return 0
+}
+
+test_as_store_totals_silent_when_fully_enumerated() {
+    _as_source
+    _as_operator read-all
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=2"
+    _env_note_seen pack; _env_note_seen pack
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ -z "$out" ]] \
+        || fail "a fully enumerated store must produce NO hidden notice, got: $out"
+    return 0
+}
+
+test_as_store_totals_ignored_on_host() {
+    # INV-A: the host is never scoped, and it can always enumerate — a stray signal
+    # must not make `cco list` on the host claim things are hidden.
+    _as_source
+    unset CCO_CONTAINER_OPERATOR CCO_CCO_ACCESS
+    export CCO_STORE_TOTALS="pack=9"
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ -z "$out" ]] || fail "INV-A: no scoping notice on the host, got: $out"
+    return 0
+}
+
+test_as_store_totals_supplement_applied_once() {
+    # _env_flush_hidden_notice is idempotent and several verbs call it on more than
+    # one path; the supplement must not re-add itself and print a second notice.
+    #
+    # ⚠ BOTH flushes must run in ONE shell. Capturing each in its own $( ) would
+    # sandbox the once-flag in a subshell and the test would pass vacuously —
+    # measuring the capture, not the guard. Real callers flush in-process.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=3"
+    local both
+    both=$( { _env_flush_hidden_notice; printf -- '---MARK---\n' >&2; _env_flush_hidden_notice; } 2>&1 )
+    [[ "${both%%---MARK---*}" == *"3 packs"* ]] \
+        || fail "first flush must speak, got: $both"
+    [[ "${both##*---MARK---}" != *"packs"* ]] \
+        || fail "the supplement must be applied ONCE per invocation, got a second notice: $both"
+    return 0
+}
+
+# D1 — the badge vocabulary belongs to the owner too.
+test_as_state_badge_is_owned_and_retires_missing() {
+    _as_source
+    [[ "$(_env_state_badge here)" == "" ]] \
+        || fail "a present member needs no badge, got: $(_env_state_badge here)"
+    [[ "$(_env_state_badge not-mounted)" == "[not mounted in this session]" ]] \
+        || fail "not-mounted badge drifted, got: $(_env_state_badge not-mounted)"
+    [[ "$(_env_state_badge unresolved)" == "[unresolved]" ]] \
+        || fail "unresolved badge drifted, got: $(_env_state_badge unresolved)"
+    # ADR-0056 D7: `[missing]` was a fourth name for a state the classifier had
+    # already named, and it is retired.
+    local st
+    for st in here not-mounted unresolved unknown out-of-scope; do
+        [[ "$(_env_state_badge "$st")" != *"[missing]"* ]] \
+            || fail "the retired [missing] badge came back for state '$st'"
+    done
+    return 0
+}
