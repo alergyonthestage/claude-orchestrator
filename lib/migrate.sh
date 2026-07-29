@@ -572,7 +572,16 @@ _migrate_legacy_repos() {
             if(k=="path")path=val(l); else if(k=="name")name=val(l);
             else if(k=="url")url=val(l); else if(k=="ref")ref=val(l) }
         /^repos:/{r=1;next}
-        r&&/^[^ #]/{flush();r=0}
+        # A top-level comment is NOT the section boundary — it heads the next key,
+        # and skipping it here is what the `#` used to do inside the boundary
+        # class. Spelled as its own rule so the boundary below can be the plain
+        # `/^[^ ]/`: this is a READER (it emits TSV, it never rewrites the file),
+        # so INV-YAML does not govern it, but carrying the insertion-class idiom in
+        # a file the lint scans would make the lint unreadable. Behaviour is
+        # identical to the previous `/^[^ #]/` — a comment line matched no other
+        # rule then either.
+        r&&/^#/{next}
+        r&&/^[^ ]/{flush();r=0}
         r&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
         r&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
         END{flush()}
@@ -607,7 +616,8 @@ _migrate_legacy_mounts() {
         function flush(){ if(source!="" || name!="" || target!="") print name "\t" source "\t" target "\t" ro;
             name=source=target=ro="" }
         /^extra_mounts:/{m=1;next}
-        m&&/^[^ #]/{flush();m=0}
+        m&&/^#/{next}                 # a top-level comment heads the next key — see _migrate_legacy_repos
+        m&&/^[^ ]/{flush();m=0}
         m&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
         m&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
         END{flush()}
@@ -725,11 +735,36 @@ _backfill_pack_llms_urls() {
     done
 }
 
-# Backfill recoverable llms urls into a single pack.yml in place. Rewrites the
-# `llms:` block (normalizing to long form) ONLY when at least one url-less entry
-# is recoverable from a global llms `.cco/source`; otherwise leaves the file
-# untouched. Preserves the block's position; per-entry description/variant are
-# carried through.
+# Backfill recoverable llms urls into a single pack.yml in place, ONLY when at
+# least one url-less entry is recoverable from a global llms `.cco/source`;
+# otherwise the file is left untouched. Preserves the block's position.
+#
+# ⚠ THIS REWRITES A USER-AUTHORED FILE, so it INJECTS and never regenerates.
+# Every line is passed through verbatim; the only lines this function writes are
+# the `    url:` / `    variant:` it adds, plus the one short-form `  - <name>`
+# line of an entry receiving an injection — a scalar list item cannot carry
+# sub-keys, so that entry (and only that entry) is rewritten to `  - name: <n>`,
+# its inline comment carried across. An entry that needs nothing is not touched,
+# short form included.
+#
+# WHAT THIS REPLACES (cycle-1.2 S6, reported by S5). The previous implementation
+# BUFFERED each entry and re-emitted it from parsed values, so every line it had
+# no rule for was silently dropped by its final `inblk { next }` catch-all. Two
+# arms, both observed: an INDENTED comment inside the block matched none of the
+# specific rules and vanished; and a TOP-LEVEL comment did not match the section
+# boundary `/^[^ #]/` either (the class excludes `#`), so it fell through to the
+# same catch-all — taking the header comment of the FOLLOWING key with it. Blank
+# lines and any unrecognised sub-key went the same way. Same CLASS as R-E (the
+# `/^[^ #]/` idiom), a different defect: R-E misplaced content, this destroyed it.
+#
+# INV-YAML, the same buffer-and-flush discipline as `_yml_append_coord`
+# (lib/cmd-project-add.sh:50-81, rule order at :103-113): the trailing run of
+# top-level comment and blank lines is buffered and flushed AFTER the injected
+# lines, so an injection lands at the end of its own entry and never in the middle
+# of the next key's header. The boundary rule therefore tests `/^[^ ]/`, not
+# `/^[^ #]/`: the preceding rule has already consumed top-level comments into the
+# buffer, so excluding `#` there would be exactly the comment-blindness the
+# invariant names. `test_invariant_yaml_section_end_one_spelling` guards this file.
 _backfill_one_pack_llms() {
     local yml="$1"
     local mapf; mapf=$(mktemp)
@@ -752,40 +787,52 @@ _backfill_one_pack_llms() {
 
     local tmp; tmp=$(mktemp)
     awk -v mapf="$mapf" '
-        function flush(   nm) {
-            if (!buffering) return
+        # Close the entry currently open: emit ONLY the sub-fields it is missing
+        # and that are recoverable. Everything the entry already carried was
+        # already printed verbatim as it was read.
+        function closeentry(   nm) {
+            if (!inent) return
             nm=ename
-            print "  - name: " nm
-            if (eurl != "")            print "    url: " eurl
-            else if (nm in burl)       print "    url: " burl[nm]
-            if (edesc != "")           print "    description: " edesc
-            if (evar != "")            print "    variant: " evar
-            else if (nm in bvar && bvar[nm] != "") print "    variant: " bvar[nm]
-            buffering=0; ename=""; eurl=""; evar=""; edesc=""
+            if ((nm in burl) && !ehasurl)                    print "    url: " burl[nm]
+            if ((nm in bvar) && bvar[nm] != "" && !ehasvar)  print "    variant: " bvar[nm]
+            inent=0; ename=""; ehasurl=0; ehasvar=0
         }
+        function flushbuf(   i) { for (i=0; i<nbuf; i++) print buf[i]; nbuf=0 }
         BEGIN {
-            FS="\t"
             while ((getline ml < mapf) > 0) {
                 split(ml, a, "\t"); burl[a[1]]=a[2]; bvar[a[1]]=a[3]
             }
         }
         /^llms:/ { print; inblk=1; next }
-        inblk && /^[^ #]/ { flush(); inblk=0; print; next }
-        inblk && /^  - / {
-            flush()
-            buffering=1
-            line=$0
-            if (line ~ /^  - name:/) sub(/^  - name: */, "", line)
-            else                     sub(/^  - */, "", line)
-            gsub(/["\047]/, "", line); sub(/ *#.*$/, "", line); gsub(/^ +| +$/, "", line)
-            ename=line; next
+        # Rule order matters: the blank arm precedes the comment arm, which
+        # precedes the top-level-key arm, so a whitespace-only line is buffered
+        # and a top-level comment is never mistaken for the section boundary.
+        inblk && /^[[:space:]]*$/ { buf[nbuf++]=$0; next }   # blank → candidate trailing run
+        inblk && /^#/             { buf[nbuf++]=$0; next }   # top-level comment → heads the NEXT key
+        inblk && /^[^ ]/ {                                   # next top-level key ends the block
+            closeentry(); flushbuf(); inblk=0; print; next
         }
-        inblk && /^    url:/         { v=$0; sub(/^    url: */,"",v);         gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); eurl=v; next }
-        inblk && /^    variant:/     { v=$0; sub(/^    variant: */,"",v);     gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); evar=v; next }
-        inblk && /^    description:/ { v=$0; sub(/^    description: */,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); edesc=v; next }
-        inblk { next }
+        inblk && /^  - / {
+            closeentry(); flushbuf()
+            line=$0; nm=line
+            if (line ~ /^  - name:/) sub(/^  - name: */, "", nm)
+            else                     sub(/^  - */, "", nm)
+            gsub(/["\047]/, "", nm); sub(/ *#.*$/, "", nm); gsub(/^ +| +$/, "", nm)
+            ename=nm; inent=1; ehasurl=0; ehasvar=0
+            # A short-form entry is a SCALAR list item and cannot carry sub-keys,
+            # so one that is about to receive an injection must become long form.
+            # Only that entry, and its inline comment travels with it.
+            if (line !~ /^  - name:/ && (nm in burl)) {
+                cmt=""; if (match(line, /[ \t]*#.*$/)) cmt=substr(line, RSTART, RLENGTH)
+                print "  - name: " nm cmt
+            } else print
+            next
+        }
+        inblk && /^    url:/      { flushbuf(); ehasurl=1; print; next }
+        inblk && /^    variant:/  { flushbuf(); ehasvar=1; print; next }
+        inblk                     { flushbuf(); print; next }   # indented → section content, verbatim
         { print }
-        END { flush() }
+        END { closeentry(); flushbuf() }
     ' "$yml" > "$tmp" && mv "$tmp" "$yml"
     rm -f "$mapf"
 }

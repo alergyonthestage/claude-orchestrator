@@ -1171,3 +1171,25 @@ entries:
       exit 0, and is still told that `cco resolve` is the way to populate it. This
       completes ADR-0056 D6, which gave the same treatment to an index that is
       missing outright. Requires `cco build` for the in-session `cco`.
+
+  - id: 58
+    date: "2026-07-29"
+    type: additive
+    title: "cco update no longer strips comments out of a pack's pack.yml"
+    description: >
+      `cco update` backfills a missing llms `url` into an installed pack's
+      pack.yml when it can recover one (ADR-0032 D3). It used to do that by
+      re-emitting the whole `llms:` block from parsed values, which silently
+      DELETED every line it had no rule for: comments indented inside the block,
+      comments at column 0 — including the one heading the key that FOLLOWS the
+      block — blank lines, and any sub-key it did not recognise. pack.yml is a
+      file you write, so this was destroying your own annotations. It now injects
+      instead of regenerating: every line is passed through untouched, and the
+      only lines cco writes are the `url:` / `variant:` it adds, plus the one
+      short-form list item (`- svelte`) that has to become `- name: svelte` to
+      carry them. Entries that need nothing are left byte-identical, short form
+      included. ⚠ If the old backfill already ran on one of your packs, the
+      comments it removed are gone from disk and cco cannot restore them — it
+      never had a copy. Recover them from your pack's own git history if it is
+      versioned. Nothing needs re-running: the backfill is a no-op once a pack's
+      urls are present.

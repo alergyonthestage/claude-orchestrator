@@ -981,15 +981,19 @@ test_invariant_mount_ancestry_image_set() {
 #                            already spreading.)
 #   lib/tags.sh            — the DATA tags registry: same reason, generated and
 #                            never hand-edited (CLAUDE.md, "Framework state").
-#   lib/migrate.sh         — one-shot migrations over user YAML. NOT clean: the
-#                            llms url-recovery rewriter (:773) drops top-level
-#                            comments inside the block outright (`inblk { next }`),
-#                            a DIFFERENT defect from the misplacement this
-#                            invariant names. Allowlisted so the boundary rule is
-#                            not silently claimed over it; reported to the
-#                            maintainer rather than fixed inside S5's scope.
+#
+# ⚠ lib/migrate.sh WAS allowlisted here by S5, and the entry is GONE (S6). It was
+# never an exemption on the merits: S5 recorded it as "NOT clean" because the llms
+# url-recovery rewriter destroyed comments outright, a different defect from the
+# misplacement this invariant names, out of that session's scope. S6 fixed the
+# rewriter — it now injects into a verbatim pass-through under this very
+# buffer-and-flush rule — so the entry stopped being earned and the file is
+# scanned like any other. Its two legacy PARSERS (_migrate_legacy_repos /
+# _migrate_legacy_mounts) spell the boundary `/^[^ ]/` with an explicit `/^#/`
+# skip in front, which is behaviourally identical to what they had and keeps the
+# insertion-class idiom out of a file the lint reads.
 test_invariant_yaml_section_end_one_spelling() {
-    local allow=" cmd-project-add.sh index.sh tags.sh migrate.sh "
+    local allow=" cmd-project-add.sh index.sh tags.sh "
     # An awk rule that (a) tests the top-level section-end idiom, (b) EMITS in its
     # action (`print <something>` — not a bare `print`/`print $0`, which re-emits
     # the boundary line itself — or a flush() of buffered content), and (c) does
