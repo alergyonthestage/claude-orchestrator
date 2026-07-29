@@ -20,6 +20,19 @@ code-grounding, module API).
 > table below is updated to that model; the original two-column form (read-global and
 > read-all merged, `edit-*` omitted) under-specified what the write side already did.
 
+> **Forward note ([ADR-0056](../../configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
+> D3/D4/D5, 2026-07-29):** extended, not superseded — this ADR's read-scope axis becomes the
+> discriminator for two further behaviours. (1) The **`unknown` arm** of the project family is
+> enabled **only at read scope `all`**, where nothing can be hidden by construction and
+> distinguishing therefore creates no existence oracle; below `all` the refusal is reworded to
+> assert nothing (`_env_require_visible`'s *"it is outside this session's project"* disclosed both
+> existence and location). (2) The **widening** a message offers is bound to *what is hidden* —
+> projects-only names `read-all` alone, since `read-global`'s sole difference is that other projects
+> stay hidden. **INV-B** (hidden ≠ absent) gains a host-side count source: a hidden set the session
+> cannot enumerate (packs at `G=none`, where `~/.cco` is not mounted at all) is counted by
+> `cco start` and injected as a session signal, because a count cannot come from a directory that is
+> not there.
+
 ## Context
 
 ADR-0042 made the wrapped `cco` a primary channel and defaulted normal sessions to

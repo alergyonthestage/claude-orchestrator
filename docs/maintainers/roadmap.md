@@ -410,8 +410,8 @@ eight findings close as a consequence. Session-by-session runbook in
 
 | Lane | Deliverable | Closes |
 |---|---|---|
-| **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
-| **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session) | W4-F06 🔴 — **and every Linux session's read path** |
+| **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. **Designed** 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved) — implementation is **S4** | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
+| **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session). **Designed** in the same ADR-0056 — implementation is **S3** | W4-F06 🔴 — **and every Linux session's read path** |
 | **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **Both container probes green** 2026-07-28 — the `:ro` lane and the `Cp=rw`+composing arm across a real restart (plan §7). Residual, host-side: D7 with no packs at all | R-D, R-F |
 | **L4** | **INV-YAML** — one comment-block-aware section boundary + golden-file lint | R-E |
 | **L5** | EXIT-trap sentinel discipline + lint | W2-06, W4-F02 |

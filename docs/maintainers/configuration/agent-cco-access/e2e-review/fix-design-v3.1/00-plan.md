@@ -48,7 +48,7 @@ maintainer's daily work, and it depends on nothing.
 | # | Session | Lane | Produces | Status |
 |---|---|---|---|---|
 | **S1** | Claude Code runtime paths | L3 (**R-D** + **R-F**) | ADR in `environment/decisions/`, Dockerfile + mount-generation fix, INV-MP lint, container probe | ✅ **accepted 2026-07-28** ([ADR-0055](../../../../environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)) — both container probes green (§7): the `:ro` lane, then the `Cp=rw`+composing arm across a real restart. One residual, host-side: D7 with no packs at all |
-| **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ⬜ not started |
+| **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ✅ **accepted 2026-07-29** ([ADR-0056](../../decisions/0056-availability-model-and-index-session-axis.md)) — D1–D9, six alternatives recorded. Two maintainer decisions inside it: R-B's count is host-computed at `cco start` (no new privileged surface), and `absent`-in-session gets **two** causes/sentences. S3 and S4 are unblocked |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
 | **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | ⬜ not started |

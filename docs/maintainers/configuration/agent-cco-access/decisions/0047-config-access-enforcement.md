@@ -14,6 +14,17 @@ internal store" invariant, no-daemon, the dedicated `cco-svc` uid + setuid helpe
 
 **Living design**: [`../design.md`](../design.md) §5 (INV-5), [`design-docker.md`](../../../environment/design/design-docker.md) §1.2.3.
 
+> **Forward note ([ADR-0056](0056-availability-model-and-index-session-axis.md) D5/D8/D9,
+> 2026-07-29):** three touches, none of which changes this ADR's enforcement. (1) The boundary is
+> **deliberately not widened**: ADR-0056 rejected an elevated read op (`store-op count`) for the
+> hidden-set count and moved the count host-side instead, on this ADR's own criterion — a privileged
+> surface is not extended for a cosmetic datum. (2) **INV-S3b's text** in `lib/store.sh`'s header is
+> amended to state its axis as *pre-flight-vs-write × session-vs-host*, dropping the bucket
+> parenthetical that reads as the discriminator but is only an example (misread three times). Text
+> only; the exit-code rule is unchanged. (3) **INV-S6's CLASS lint is the declared model** for the
+> new INV-AVAIL lint, including its two load-bearing properties: assignment-provenance tracking
+> rather than a naive grep, and a planted-violation self-test.
+
 ---
 
 ## Context
