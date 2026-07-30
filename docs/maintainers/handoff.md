@@ -74,26 +74,27 @@ session value into the suite. A count is not a fingerprint; the names are.
 
 ## ⛔ What is owed, in order
 
-1. **`git push`** — `git push origin develop fix/release/cycle-1.2`. Nothing is pushed; `develop` is 22
-   commits ahead of `origin/develop`, plus this branch's commits on top. **This is now the top of the
-   list** — S4's lane is closed (see below) and nothing else in-session is blocking it.
-2. **S3's container probe** — the one probe still fully owed, because the `mv` is host-side:
-   ```
-   mv ~/.local/state/cco/shared/index ~/.local/state/cco/shared/index.probe
-   cco path list ; cco list ; cco list projects ; cco project show claude-orchestrator
-   cco project validate --all
-   mv ~/.local/state/cco/shared/index.probe ~/.local/state/cco/shared/index
-   ```
+**Every command for these gates is now written out, copy-pasteable, in the runbook's [§8](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md).**
+This list says *what* and *why*; §8 says *how*, once.
+
+1. **`git push`** — `git push origin develop fix/release/cycle-1.2` (§8.1). Nothing is pushed;
+   `develop` is 22 commits ahead of `origin/develop`, plus this branch's commits on top. **This is now
+   the top of the list** — S4's lane is closed (see below) and nothing else in-session is blocking it.
+2. **S3's container probe** (§8.3) — the one probe still fully owed, and the only **split** gate: the
+   `mv` is host-side, the observations belong **inside a live session**, so a session can run its half
+   the moment the maintainer moves the index aside.
    ⚠ The path is `state/cco/`*`shared/`*`index` — the pre-S1 `state/cco/index` no longer exists and a
    copy-paste of the older command moves nothing, producing a **false pass**. Partial in-session
    evidence exists (`cco project validate --all` now reports the hidden-project count instead of
    claiming share-ready over zero projects), but the severed-index arm needs the host.
-3. **S6's host-only half** — §10.9e / E6B-04 (pack-rename fan-out, never executed in any round) and
-   `cco remote remove probe-2 && cco remote remove x && cco remote remove probe-3 && cco remote remove probe-3b`.
+3. **S6's host-only half** (§8.4) — §10.9e / E6B-04 (pack-rename fan-out, never executed in any round)
+   and the stale-remote cleanup.
    ⚠ Clear the stale `scratch-pack` and `scratch-a`/`scratch-b` first or the fan-out is ambiguous to read.
-4. **D7 residual from S1** — *"composes with no packs at all"*: needs a project referencing no pack.
-5. Then the **merge into `develop`** and the CLI-surface documentation audit (roadmap step 3), before
-   `develop → main`.
+4. **D7 residual from S1** (§8.5) — *"composes with no packs at all"*: needs a project referencing no pack.
+5. Then, per §8.6: the **CLI-surface documentation audit** (roadmap step 3) — ordered deliberately
+   **before** the merge — then the merge into `develop`, then `develop → main`.
+   📝 The audit is the **only owed item a session can perform end to end**; it needs no probe and no
+   build, so it can run in parallel with the host gates above.
 
 ### Closed on 2026-07-30, after this handoff was first written
 
