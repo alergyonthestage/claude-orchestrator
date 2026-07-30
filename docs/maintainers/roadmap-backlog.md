@@ -1576,6 +1576,19 @@ site) · [ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-
 
 ## FI-41: in a session, *not-mounted* is reported as *unresolved* — and the remedy cannot work
 
+> ✅ **FIXED 2026-07-30** on `fix/release/cycle-1.2` (`1814ba3`, changelog **60**), by the narrow
+> route proposed below and approved by the maintainer: the consumer asks `_env_member_state` and
+> `_env_unavailable` renders, so the sentence *and* the exit code (2 for a session shape, D8) come
+> from one owner; `_project_member_status` is untouched. **INV-AVAIL gained a fourth arm**
+> (`test_invariant_no_status_word_refusals`) for the gap this proved, with both discrimination
+> directions self-tested. Regression: `test_pack_rename_operator_refuses_a_not_mounted_member_without_the_resolve_remedy`
+> fails on the pre-fix tree with the exact shipped message, and its counterweight
+> (`…still_prescribes_resolve_for_an_unbound_member`) is green on both trees. Suite 1617/7 of 1624.
+>
+> ⚠ **The fix makes the refusal honest; it does NOT make the container arm work.** `cco pack rename`
+> still refuses in a session that does not bind a referring project's repos — it now says so
+> correctly. E6B-04 still runs on the host, for the structural reason recorded below.
+
 **Found**: 2026-07-30, running cycle-1.2's **G1/E6B-04** gate. **Severity**: **the refusal is
 unactionable** — the remedy names a verb that will report success and change nothing, so the operator
 loops. Candidate 🔴 against **criterion C** (*"the 'not mounted in this session' vocabulary is used

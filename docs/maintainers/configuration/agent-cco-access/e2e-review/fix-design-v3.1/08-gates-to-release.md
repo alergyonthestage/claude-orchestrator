@@ -121,9 +121,13 @@ cco list packs                                             # confirm scratch-pac
 > probe is the identity, the members resolve, and the census is 0 by construction — and the cascade
 > under test (`lib/store.sh`) is the same code either way. **What changes is only where it runs.**
 >
-> 📋 The refusal that exposed this is logged as **FI-41** (a session reports *not-mounted* as
-> *unresolved* and prints a remedy that cannot work). It is a **candidate 🔴 against criterion C** and
-> belongs to R-A's class — take it to the human gate (G3), do not fix it silently mid-gate.
+> 📋 The refusal that exposed this is **FI-41** — a session reporting *not-mounted* as *unresolved*
+> with a remedy that cannot work. ✅ **Fixed 2026-07-30** (`1814ba3`, changelog 60) on the maintainer's
+> approval: the consumer asks the availability owner, so the sentence and the exit code (2, a session
+> shape) come from one place, and INV-AVAIL gained a fourth arm for the gap it proved.
+> ⚠ **That changes what the refusal SAYS, not whether it refuses.** A session that does not bind a
+> referring project's repos still cannot run this rename — so the four bullets above stand and E6B-04
+> is still a host gate. Do not re-try it in a session expecting the fix to have opened the door.
 
 On the host, from the repo:
 
