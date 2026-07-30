@@ -513,6 +513,119 @@ table below already carried `n/a` in S5's container-probe column. Rule 1's list 
                                 the quote/comment/heredoc stripper never desyncs
 ```
 
+#### S4 container probe — **FAILED, then fixed** — 2026-07-30
+
+The first of the post-build probes, and it did what Rule 1 says a probe is for: it failed on a lane the
+suite had certified green. Provenance `cco whoami` → `image built from: fix/release/cycle-1.2@e27ad6e`
+(the branch tip; `/opt/cco/lib` verified **byte-identical** to the working tree, so the probe is
+observing this block's code and not an older image). Session at the **default** `read-project`, mask
+`access: {claude: all}` in place — irrelevant to this lane, which is a `cco_access` axis, but stated
+because §7 requires it.
+
+```
+1. the signal EXISTS       CCO_STORE_TOTALS=pack=6,template=0,llms=2,remote=0
+                           (in the agent's env, and in /etc/cco/session-access)
+2. and it does NOTHING     cco list packs  →  1 row (core-dev-framework), exit 0
+                           stderr: <empty>          ← R-B, verbatim: 5 packs unaccounted for
+3. cco list (unified)      note: 9 projects, 1 template hidden by access scope
+                           — per-row notes only; NO pack count, though 6-1 are unreachable
+4. A/B, same session       CCO_STORE_ELEVATED=1 cco list packs   (skips the trampoline)
+                           stderr: note: 5 packs, 2 llms hidden by access scope …
+                           → the supplement is CORRECT and REACHABLE; what is missing is the input
+5. root cause              config/cco-svc-helper.c ALLOWED_KEYS[] does not list CCO_STORE_TOTALS
+                           (`strings /usr/local/bin/cco-svc-helper` confirms it in the BAKED binary)
+                           while cmd-start.sh:1837 writes it, under a comment that reads
+                           "Keys mirror the helper's whitelist"
+```
+
+**Mechanism.** Every store-touching read verb `exec`s the setuid helper, which rebuilds the child
+environment **from scratch** (ADR-0047 R2) and copies over whitelisted descriptor keys only. An
+un-whitelisted key is dropped in **silence** — no error, no exit code — so `_env_apply_store_supplement`
+returned at its `CCO_STORE_TOTALS` guard on every real invocation. **D5 shipped inert**, which means
+**R-B shipped unfixed**: the finding S4 was accepted for.
+
+**Why the suite could not see it, and now can.** `tests/test_access_scope.sh:952+` exercises the
+supplement by exporting the signal and calling the consumer in-process — a path that never crosses the
+boundary. The gap is now a static lint over the two source files:
+**INV-DESC** (`test_invariant_descriptor_keys_whitelisted`). It reports `CCO_STORE_TOTALS` on the
+pre-fix tree and is clean on the fixed one, so its discrimination is proved against the **real** defect,
+not only against a plant.
+
+**The same omission had TWO more instances, found by asking where else this signal family is
+registered.** A descriptor key is not one fact in one file — it is a key set that **three** registries
+must agree on, and S4 updated one of them:
+
+| Registry | What it is for | State before |
+|---|---|---|
+| `config/cco-svc-helper.c` `ALLOWED_KEYS[]` | what may cross the privilege boundary | ❌ missing → **D5 inert** |
+| `bin/test`'s ambient-env `unset` | make a self-dev run behave like a host run | ❌ missing → 3 spurious failures |
+| `tests/helpers.sh` `_lane_operator_exports` | the per-lane sanitiser, pinned deterministically | ❌ missing → latent, same leak |
+
+The `bin/test` gap is the one that had already cost a measurement: the real value leaked in and added a
+hidden-count supplement three notice tests never asked for
+(`test_as_hidden_notice_counts_and_stderr`, `test_as_hidden_notice_projects_only_leads_with_read_all`,
+`test_hidden_notice_unchanged`) — **10 failures in-session where 7 were documented**, and the three
+extra were indistinguishable from the host-only set until the names were diffed. The
+`tests/helpers.sh` gap had not fired yet only because `bin/test` unsets globally — which is precisely
+what that file's own comment (c) says a lane must never rely on.
+
+All three are now one lint: **INV-DESC**, two test functions, each arm proved against the **real**
+pre-fix file rather than only a plant (`CCO_STORE_TOTALS` is reported for all three; clean after).
+
+⚠ **Carry-forward, two lessons.** (i) The count-vs-name discipline §2 states for the host-only 7 applies
+to *any* in-session figure: a count alone reads a real regression as environmental noise. (ii) When a
+fix adds a member to an existing family, the question is not "is the new member correct" but **"how many
+registries name this family"** — S9's lower-bound lesson from cycle-1.1, one level up: it holds for
+registries as well as for call sites.
+
+**Ratified and recorded**: ADR-0056's annotation section (D5 entry, 2026-07-30) + changelog **59**.
+
+#### S4 container probe — round 2, after the rebuild — 2026-07-30
+
+The maintainer rebuilt and restarted. ⚠ **Provenance still reads `…@e27ad6e`** because the fix was
+uncommitted at build time — `/opt/cco/BUILD` records a git ref, and a docker build takes the working
+TREE. So the ref was not evidence here and the binary was checked instead:
+`strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS` → present. **Check the artefact, not the
+provenance line, whenever the tree is dirty.**
+
+```
+1. THE LANE IS FIXED       cco list packs → 1 row + note: 5 packs … hidden   ← was silence
+2. and the unified view    cco list       → note: 9 projects, 5 packs, 1 template hidden
+3. ⚠ BUT A FALSE CLAUSE    cco list llms  → note: 6 packs hidden        (llms are all shown)
+                           cco list packs → note: 5 packs, 2 llms hidden (those 2 are shown)
+                           cco path list  → note: 32 paths, 6 packs, 2 llms hidden
+                           cco project show → store counts, on a verb that lists no store
+```
+
+**The second defect, and it was D5's own.** `_env_apply_store_supplement` looped over **every** store
+kind on **every** flush, so each verb's notice carried counts for kinds it had never enumerated. Two
+things made it unmistakable rather than cosmetic: the claims were **false where printed** (`cco list
+llms` shows both llms and called them hidden) — the exact R-A class ADR-0056 exists to end — and the
+**same session answered 6 or 5 to the same question** depending on the verb, because the count is
+total-minus-enumerated and a verb listing llms enumerates no packs. It had never been observable before,
+for the simple reason that until round 1 the supplement never ran at all.
+
+**Ratified 2026-07-30 — a notice is per-invocation, not per-session.** A verb declares the kinds it
+enumerates exhaustively (`_env_store_subject`, in the owner); only those are supplemented; **not
+declaring means no supplement**, so an omission is honest silence instead of a fabricated count — the
+inverse of the shipped default. Four sites declare, and they are exactly the four the new lint names on
+the pre-fix tree: `cmd_pack_list`, `cmd_pack_validate`'s `--all` arm, `_llms_list`, and `cmd_list`
+(all kinds when unified, the requested kind when scoped).
+
+*Rejected*: supplement only kinds with `seen>0` — needs no declaration anywhere, but goes silent exactly
+when nothing was enumerable (a project referencing no packs, an absent mount), which is R-B returning
+through the back door.
+
+**Cover**: three unit tests for the scoping rule (two of them fail on the unscoped code — verified by
+removing the two guard lines and re-running), the five pre-existing D5 tests updated to declare a
+subject (two would otherwise have passed **vacuously**, asserting silence that now has a second possible
+cause), and **INV-AVAIL/D5** — `test_invariant_store_subject_declared_where_counted`, pairing every
+`_env_note_seen` with an `_env_store_subject` in the same function. On the pre-fix tree it names all
+four enumerators; clean after.
+
+⛔ **Owed: one more `cco build`**, then re-run the four commands in step 3 and expect no cross-kind
+clause. The scoping fix lives in `lib/`, which the elevated child reads from the **image**.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
@@ -529,8 +642,8 @@ table below already carried `n/a` in S5's container-probe column. Rule 1's list 
 > plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
 > from a self-dev session must state whether the block was in place.** These two are *not* to be
 > chased inside S1 — the same rule as the seven.
-| S3 | ⬜ | ⬜ **required** | |
-| S4 | ⬜ | ⬜ | |
+| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | ⬜ **still required** — the `mv` is host-side, so no session can run it. Partial in-session evidence only: `cco project validate --all` now reports the hidden-project count instead of claiming share-ready over zero projects | |
+| S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ⚠️ **round 1 FAILED** (D5 inert — the key never crossed the boundary) → fixed; **round 2** confirmed the lane fixed *and* found a second defect (a false cross-kind clause in every notice) → fixed. ⛔ **round 3 owed after the next `cco build`** — the scoping lives in `lib/`, read from the image | 2026-07-30 |
 | S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 
 ---

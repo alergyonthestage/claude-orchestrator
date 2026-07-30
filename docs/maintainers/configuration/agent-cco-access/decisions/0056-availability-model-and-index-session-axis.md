@@ -339,7 +339,7 @@ its consumers:
 
 ---
 
-## Implementation annotations — ratified 2026-07-29 (S3, S4, S5)
+## Implementation annotations — ratified 2026-07-29 (S3, S4, S5) · extended 2026-07-30 (post-build probe)
 
 The decision text above is **not rewritten**; these are forward notes recording where the
 implementation departed from, or reached past, what this ADR decided. Each was raised at
@@ -415,3 +415,76 @@ one.
 **Ratified: closed in S6**, extending the interpretation rather than the classifier — the same shape
 as D6, and for the same reason A3 gives. Left open it would have been a textbook A6 outcome: the
 reported site fixed, its sibling shipped.
+
+### D5 — the host-computed count has to be **whitelisted** to cross the ADR-0047 boundary (found post-build, 2026-07-30)
+
+D5 rejected an elevated `store-op count` (**A1**) and took the count as a host-computed session signal
+instead, *"the pattern `CCO_PROJECT_PACKS` / `CCO_PROJECT_LLMS` already establishes"*. What that pattern
+also entails — and what neither the decision nor S4 stated — is that a signal only reaches the code
+that consumes it if `config/cco-svc-helper.c`'s `ALLOWED_KEYS[]` lists it. Every store-touching read
+verb trampolines through the setuid helper, which rebuilds the child environment **from scratch**
+(ADR-0047 R2) and copies over whitelisted descriptor keys only.
+
+S4 wrote `CCO_STORE_TOTALS` into the trusted descriptor and did not add it to that list, so the helper
+dropped it **in silence** and `_env_apply_store_supplement` returned at its `CCO_STORE_TOTALS` guard on
+every real invocation. Net effect: **R-B shipped unfixed** — in a `read-project` session
+`cco list packs` showed 1 of 6 packs with no notice at all, which is precisely the "the notice stays
+silent about resources that certainly exist" that D5 exists to answer. Found by the post-build
+container probe the runbook's Rule 1 mandates; the suite passed throughout, because a bash test
+exercises the signal by exporting it in-process and never crosses the boundary.
+
+**Ratified: whitelist the key.** It widens what *crosses* the boundary by one read-only cosmetic
+scalar, never what the boundary can *do* — **A1 still holds**, as no new privileged verb exists. The
+alternative of emitting the notice from the unelevated shim after the elevated child returns was
+weighed and rejected: it splits one message across two privilege domains to avoid a datum the
+descriptor is already trusted to carry.
+
+**The class, not just the instance.** A descriptor key is not one fact in one file: it is a key set that
+**three** registries must agree on, and S4 updated one of them. Besides the helper's whitelist, the same
+key was missing from `bin/test`'s ambient-env `unset` list (so a self-dev run inherited the real value
+and three notice tests failed in-container while passing on the host — 10 in-session failures where 7
+were documented) and from `tests/helpers.sh`'s `_lane_operator_exports` sanitiser (latent, and against
+that function's own stated contract). The correspondence is now a static lint —
+`test_invariant_descriptor_keys_whitelisted` + `test_invariant_descriptor_keys_neutralized_in_suite`
+(**INV-DESC**) in `tests/test_invariants.sh`. A static lint is the only lane that can see this class:
+each file looks correct in isolation, the failure mode is silence, and the hermetic suite structurally
+cannot reach the boundary (RC-17 again — its **fifth** recurrence in this cycle's ledger). Every arm
+reports `CCO_STORE_TOTALS` on the corresponding **real** pre-fix file and is clean after, so the
+discrimination is proved against the shipped defect and not only against a plant.
+
+**Generalisable, and worth carrying**: when a fix adds a member to an existing family (here, the third
+host-computed session signal), the review question is not *"is the new member correct"* but *"how many
+registries name this family"*. That is cycle-1.1's S9 lesson — a named list is always a lower bound —
+applied one level up, to registries rather than call sites.
+
+### D5 — the supplement is scoped to the kinds the invocation enumerates (ratified 2026-07-30)
+
+Making D5 live exposed a second defect **in D5 itself**, which no one could have seen while the signal
+was being dropped: `_env_apply_store_supplement` looped over **every** store kind on **every** flush, so
+each verb's notice carried counts for kinds it had never enumerated. `cco list llms` — which shows both
+of the project's llms — announced *"6 packs hidden"*; `cco list packs` announced *"5 packs, 2 llms
+hidden"* about the two llms it was not hiding; `cco path list` and `cco project show` made store claims
+with no store rows on screen at all.
+
+Two things make this more than cosmetic. The clause is **false where it is printed** — the R-A class this
+ADR exists to end, reappearing inside the fix for R-B. And the **same session answers 6 or 5 to the same
+question** depending on the verb, because the supplement is total-minus-enumerated and a verb listing
+llms enumerates no packs.
+
+**Ratified: a total is a fact about the store; a notice is a sentence about what this verb just showed.**
+A verb declares the kinds it enumerates exhaustively (`_env_store_subject`, in the owner file), and only
+declared kinds are supplemented. **Not declaring yields no supplement** — the inverse of the shipped
+default, so an omission is honest silence rather than a fabricated count. Four sites declare, and the new
+lint names exactly those four on the pre-fix tree: `cmd_pack_list`, `cmd_pack_validate --all`,
+`_llms_list`, `cmd_list` (every kind when unified, the requested kind when scoped).
+
+**Rejected — supplement only kinds with `seen>0`.** It needs no declaration anywhere, which is
+attractive, but it goes silent precisely when nothing was enumerable: a project referencing **no** packs
+(D7's residual) or a fully absent mount. That is R-B returning through the back door, and R-B is the
+finding D5 exists to close.
+
+**Guarded by**: `test_invariant_store_subject_declared_where_counted` (**INV-AVAIL/D5**) pairs every
+`_env_note_seen` with an `_env_store_subject` in the same function — an enumerator that counts without
+declaring now has its rows dropped *silently*, which is the one failure mode the new default introduces,
+so it gets a lint. The reverse direction is deliberately **not** linted: declaring without enumerating
+yields the whole total, which is exactly the `G=none` case D5 was written for.

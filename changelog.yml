@@ -1193,3 +1193,41 @@ entries:
       never had a copy. Recover them from your pack's own git history if it is
       versioned. Nothing needs re-running: the backfill is a no-op once a pack's
       urls are present.
+
+  - id: 59
+    date: "2026-07-30"
+    type: additive
+    title: "The 'hidden by access scope' notice now really counts what a session cannot see — and only what the command actually lists"
+    description: >
+      Entry 56 promised that a scoped session tells hidden from absent by
+      counting what it could not enumerate — at `read-project` your `~/.cco` is
+      not mounted, so a count taken by walking a directory is silently zero, and
+      the count is therefore computed on the host at `cco start` and handed to
+      the session. It never arrived. Every store-touching read verb runs behind
+      the privilege boundary via the setuid helper, and that helper rebuilds the
+      environment from scratch and copies over only the keys it whitelists — a
+      list the new count was never added to. So it was dropped without a word,
+      and `cco list packs` in a `read-project` session showed the one pack the
+      project references with NO notice at all, exactly as if the other five did
+      not exist. The key is now whitelisted, so the notice reads e.g. `note: 5
+      packs hidden by access scope (cco_access=read-project) — start a
+      read-global session or run cco on your host.` Nothing about what the
+      boundary permits has changed: the count is a read-only number, there is no
+      new privileged operation, and a session still cannot read the store
+      itself. Requires `cco build` — the helper is compiled into the image. A
+      static invariant (INV-DESC) now fails the suite if any future session
+      signal is written without being whitelisted, since the failure mode is
+      silence on both sides.
+      One more thing changed with it, visible the moment the count started
+      working: a notice now speaks only about the kinds the command you ran
+      actually lists. Before, every read verb appended the counts for every
+      resource kind in the store, so `cco list llms` — which shows you both of
+      your project's llms — also announced "6 packs hidden", and `cco list
+      packs` announced "2 llms hidden" about the two it was not hiding. The
+      numbers disagreed with each other too (6 from one verb, 5 from another),
+      because the count is "how many exist minus how many I just listed" and a
+      command listing llms lists no packs at all. Each command now declares what
+      it enumerates and speaks only for that: `cco list packs` counts packs,
+      `cco list llms` says nothing about packs, `cco list` (everything) counts
+      every kind, and `cco path list` / `cco project show` make no claim about
+      the store at all.
