@@ -623,8 +623,41 @@ cause), and **INV-AVAIL/D5** — `test_invariant_store_subject_declared_where_co
 `_env_note_seen` with an `_env_store_subject` in the same function. On the pre-fix tree it names all
 four enumerators; clean after.
 
-⛔ **Owed: one more `cco build`**, then re-run the four commands in step 3 and expect no cross-kind
-clause. The scoping fix lives in `lib/`, which the elevated child reads from the **image**.
+#### S4 container probe — round 3 — ✅ **PASSED** — 2026-07-30
+
+Provenance `cco whoami` → `image built from: fix/release/cycle-1.2@d01d42a`, and this time the
+**artefact agrees with the line**: `/opt/cco/lib` byte-identical to the working tree, `_env_store_subject`
+present in all four baked files, `CCO_STORE_TOTALS` in the baked helper's strings. Default
+`read-project` session, mask `access: {claude: all}` in place (irrelevant to this axis, stated per §7).
+
+```
+1. cco list packs        1 row  +  note: 5 packs hidden by access scope (…) — start a
+                                  read-global session or run cco on your host.
+                         → the count is right AND there is no llms clause
+2. cco list llms         both rows, stderr EMPTY
+                         → the verb that showed every llms no longer calls any of them hidden
+3. cco list              4 rows +  note: 9 projects, 5 packs, 1 template hidden …
+                         → the unified index still speaks for every kind, and the pack number is
+                           5 (six minus the one bound), not the 6 the unscoped code produced
+4. cco path list         2 rows +  note: 32 paths hidden … (other projects need Po≥ro)
+                         → paths only; no store counts on a verb that lists no store
+5. cco pack validate     ✓ core-dev-framework is valid + note: 5 packs hidden …
+   (the --all arm)       → the fourth declared site, pack only
+6. cco project show      stderr EMPTY
+   (control)             → no store claim from a verb that enumerates no store
+```
+
+Both defects are closed on evidence: **row 1 is R-B fixed** (it was silence in round 1), and **rows 2, 4
+and 6 are the false-clause defect fixed** (they each carried a fabricated cross-kind count in round 2).
+Every number matches the behaviour ratified before the fix was written, so this is a confirmation, not a
+re-specification.
+
+**L1's Rule-1 evidence is complete.** What remains for the lane is the block's single human gate.
+
+📝 Also settled the same day: the stray OAuth authorize URL at `.cco/project.yml:37` (pasted by
+accident, uncommented, inside the pack-schema comment block) was removed host-side — 0 occurrences, and
+the file's residual diff is exactly the intended `access:` block, the `8081→8082` port change and the
+`packs:` entry.
 
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
@@ -643,7 +676,7 @@ clause. The scoping fix lives in `lib/`, which the elevated child reads from the
 > from a self-dev session must state whether the block was in place.** These two are *not* to be
 > chased inside S1 — the same rule as the seven.
 | S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | ⬜ **still required** — the `mv` is host-side, so no session can run it. Partial in-session evidence only: `cco project validate --all` now reports the hidden-project count instead of claiming share-ready over zero projects | |
-| S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ⚠️ **round 1 FAILED** (D5 inert — the key never crossed the boundary) → fixed; **round 2** confirmed the lane fixed *and* found a second defect (a false cross-kind clause in every notice) → fixed. ⛔ **round 3 owed after the next `cco build`** — the scoping lives in `lib/`, read from the image | 2026-07-30 |
+| S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ✅ **PASSED at round 3** — ⚠️ it took three rounds and two builds: **round 1 FAILED** (D5 inert, the key never crossed the boundary) → fixed; **round 2** showed the lane fixed *and* exposed a second defect (a fabricated cross-kind clause in every notice) → fixed; **round 3 green on all six arms**, every number matching the behaviour ratified before the fix was written | 2026-07-30 |
 | S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 
 ---

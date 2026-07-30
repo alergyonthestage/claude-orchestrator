@@ -1,4 +1,4 @@
-# Handoff — the cycle-1.2 host gate has started, and the first probe found two defects
+# Handoff — S4's lane is closed after three probe rounds; the rest of the gate is host-only
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
 > Written 2026-07-30. Supersedes the "implementation block complete" handoff of 2026-07-29.
@@ -7,10 +7,11 @@
 
 The last handoff said the remaining work was **all host-only**. That was right about the gate and wrong
 about the reach: the maintainer ran `cco build`, and from inside the rebuilt session **one of the owed
-probes became runnable** — S4's. It is now **done**, and it is where the news is.
+probes became runnable** — S4's. It is now **done and green**, and it is where the news is.
 
-**S4's `CCO_STORE_TOTALS` probe failed, twice, for two different reasons — both now fixed in-session.**
-`cco build` is what made each failure visible; the suite was green throughout.
+**S4's `CCO_STORE_TOTALS` probe failed twice, for two different reasons, and passed on the third round.**
+Two fixes landed in-session between the rounds; each `cco build` is what made the next failure visible,
+and the suite was green throughout — which is the whole argument for Rule 1.
 
 ```mermaid
 flowchart TD
@@ -22,7 +23,8 @@ flowchart TD
   P2 --> OK["lane FIXED<br/>5 packs hidden"]
   P2 --> D2["defect 2 · false clause<br/>in every verb's notice"]
   D2 --> F2["fix + INV-AVAIL/D5<br/>per-invocation subject"]
-  F2 --> B3["⛔ cco build #3 owed<br/>then re-run the probe"]
+  F2 --> B3["cco build #3"]
+  B3 --> P3["probe round 3<br/>✅ PASSED, 6 arms"]
 ```
 
 ### Defect 1 — D5 was inert: the signal never crossed the boundary
@@ -72,20 +74,10 @@ session value into the suite. A count is not a fingerprint; the names are.
 
 ## ⛔ What is owed, in order
 
-1. **`cco build` (third)**, then re-run S4's probe — expect **no cross-kind clause**:
-   ```
-   cco list packs   # → note: 5 packs hidden …            (and NOTHING about llms)
-   cco list llms    # → no notice at all
-   cco list         # → note: 9 projects, 5 packs, 1 template hidden …
-   cco path list    # → note: N paths hidden …            (no store counts)
-   ```
-   ⚠ **Check the artefact, not the provenance line.** `/opt/cco/BUILD` records a git *ref*; a docker
-   build takes the working *tree*. With the fix uncommitted, round 2's provenance still read `@e27ad6e`
-   while the binary already carried the fix — verified with
-   `strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS`.
-2. **`git push`** — `git push origin develop fix/release/cycle-1.2`. Nothing is pushed; `develop` is 22
-   commits ahead of `origin/develop`, plus this branch's commits on top.
-3. **S3's container probe** — the one probe still fully owed, because the `mv` is host-side:
+1. **`git push`** — `git push origin develop fix/release/cycle-1.2`. Nothing is pushed; `develop` is 22
+   commits ahead of `origin/develop`, plus this branch's commits on top. **This is now the top of the
+   list** — S4's lane is closed (see below) and nothing else in-session is blocking it.
+2. **S3's container probe** — the one probe still fully owed, because the `mv` is host-side:
    ```
    mv ~/.local/state/cco/shared/index ~/.local/state/cco/shared/index.probe
    cco path list ; cco list ; cco list projects ; cco project show claude-orchestrator
@@ -96,25 +88,35 @@ session value into the suite. A count is not a fingerprint; the names are.
    copy-paste of the older command moves nothing, producing a **false pass**. Partial in-session
    evidence exists (`cco project validate --all` now reports the hidden-project count instead of
    claiming share-ready over zero projects), but the severed-index arm needs the host.
-4. **Remove one stray line from `.cco/project.yml`** — line 37 is an OAuth authorize URL pasted by
-   accident, uncommented, inside the pack-schema comment block. Host-only: `.cco` is `:ro` in-session.
-   Approved for removal 2026-07-30; leave the `access:` block and the `8081→8082` port change alone.
-   ```
-   sed -i '' '/oauth\/authorize/d' .cco/project.yml
-   ```
-5. **S6's host-only half** — §10.9e / E6B-04 (pack-rename fan-out, never executed in any round) and
+3. **S6's host-only half** — §10.9e / E6B-04 (pack-rename fan-out, never executed in any round) and
    `cco remote remove probe-2 && cco remote remove x && cco remote remove probe-3 && cco remote remove probe-3b`.
    ⚠ Clear the stale `scratch-pack` and `scratch-a`/`scratch-b` first or the fan-out is ambiguous to read.
-6. **D7 residual from S1** — *"composes with no packs at all"*: needs a project referencing no pack.
-7. Then the **merge into `develop`** and the CLI-surface documentation audit (roadmap step 3), before
+4. **D7 residual from S1** — *"composes with no packs at all"*: needs a project referencing no pack.
+5. Then the **merge into `develop`** and the CLI-surface documentation audit (roadmap step 3), before
    `develop → main`.
+
+### Closed on 2026-07-30, after this handoff was first written
+
+- ✅ **S4's probe, round 3 (third `cco build`) — PASSED on all six arms.** `list packs` counts 5 packs
+  and says nothing about llms · `list llms` emits no notice at all · `list` speaks for every kind
+  (9 projects, 5 packs, 1 template) · `path list` reports paths only · `pack validate --all` is
+  pack-only · `project show` is silent on the store. Every number matches the behaviour ratified before
+  the fix was written, so this confirms rather than re-specifies. Provenance `@d01d42a`, and this time
+  the artefact agreed with the line. **L1's Rule-1 evidence is complete**; the lane awaits only the
+  block's single human gate. Full output in the runbook's §7, round 3.
+- ✅ **The stray OAuth line is out of `.cco/project.yml`** — 0 occurrences; the file's residual diff is
+  exactly the intended `access:` block, the `8081→8082` port change and the `packs:` entry.
 
 ## Non-obvious things worth not rediscovering
 
 - **Never edit `bin/test`, `tests/helpers.sh` or `lib/` while a suite run is in flight.** The runner is
   the script bash is executing; shifting byte offsets under a running shell invalidates the run. This
   cost one full run today — the previous handoff warned about `lib/` only, and the warning is wider.
-- **A dirty tree makes `cco build` provenance misleading, not wrong** — see item 1.
+- **A dirty tree makes `cco build` provenance misleading, not wrong.** `/opt/cco/BUILD` records a git
+  *ref*; a docker build takes the working *tree*. Round 2's line read `@e27ad6e` while the binary already
+  carried an uncommitted fix. Round 3, with everything committed, agreed with the artefact. **Check the
+  artefact whenever the tree is dirty**: `strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS`,
+  `diff -rq /opt/cco/lib lib`.
 - **When a fix adds a member to an existing family, ask how many registries name that family.** Both of
   defect 1's instances were the same omission in different files; cycle-1.1's S9 lesson (a named list is
   a lower bound) applies to registries, not just call sites.
