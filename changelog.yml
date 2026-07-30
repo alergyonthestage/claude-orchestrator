@@ -1231,3 +1231,29 @@ entries:
       `cco list llms` says nothing about packs, `cco list` (everything) counts
       every kind, and `cco path list` / `cco project show` make no claim about
       the store at all.
+
+  - id: 60
+    date: "2026-07-30"
+    type: additive
+    title: "Renaming a pack in a session: a refusal you can act on"
+    description: >
+      If you ran `cco pack rename` inside a session and one of the projects
+      using that pack has a repo the session does not mount, cco refused with
+      "unresolved member(s) … run 'cco resolve' on your host first". Following
+      that advice got you nowhere: on the host those members are already
+      resolved, so `cco resolve` reported success, changed nothing, and the
+      rename refused again the next time — a loop with no exit.
+      The two situations look identical from inside a container and are not.
+      A member can be genuinely unresolved (cco has no path for it on this
+      machine — a real configuration gap you fix with `cco resolve`), or it can
+      be perfectly resolved and simply not bound into THIS session, which no
+      command run inside that session can change. cco now tells them apart and
+      says which one you have: the second case reports that the repo is not
+      mounted in this session, that it exists on this machine, and that the way
+      forward is to run the rename on your host or start a session that mounts
+      it. It also exits 2 (a refusal about the shape of your session) instead of
+      1 (an error in your configuration), so scripts can tell the two apart too.
+      Nothing about when a rename is allowed has changed — only what cco tells
+      you when it is not. The same session was already rendering those members
+      "[not mounted in this session]" in `cco project show`; the rename guard
+      now agrees with it.
