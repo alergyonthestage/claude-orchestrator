@@ -1523,3 +1523,51 @@ Claude Code **2.1.74**, and the installed version is well past it) points every 
 pinned) · ADR-0054/INV-MP (nested mountpoints) ·
 [FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr) (same lane: the
 repo cwd gets a path that works but is not the one that counts).
+
+---
+
+## FI-40: a fail-closed refusal states a count where naming is safe (`pack rename`, unmounted census)
+
+**Found**: 2026-07-30, during cycle-1.2's **G1/E6B-04** gate, from a real refusal in an `edit-all`
+config-editor session. **Severity**: low — nothing is lost and the refusal is correct; it is the
+*remedy* that is unactionable. **Effort**: Low. **Class**: availability vocabulary (R-A's family),
+but on a **refusal**, not on a hidden-by-scope notice — so INV-AVAIL's current subject does not
+cover it.
+
+**What happened.** `cco pack rename scratch-pack scratch-pack-renamed -y` in a session whose
+`cco whoami` reports `edit-all` / `G=rw Pc=rw Po=rw (read: all, write: all)` refused with:
+
+> ✗ Cannot rename pack 'scratch-pack' in this session: **1 project(s)** on this machine are not
+> mounted here, so a packs[] reference they may carry cannot be updated (it would drift). Run
+> 'cco pack rename …' on your host, **or start a session that mounts them**.
+
+**The refusal itself is right, and conservative by construction** — not a defect.
+`lib/cmd-pack.sh:628-631` consumes `_STORE_REFS` from `_store_unmounted_project_count`
+(`lib/store.sh:185-194`), which counts every index project absent from
+`PROJECT_NAME`+`CCO_CONFIG_TARGETS` **regardless of whether it references the pack**. It must be
+conservative: in-container `_project_foreach` only reaches *mounted* projects' `project.yml`, so
+whether an unmounted one carries the reference is **unknowable from inside** — the same
+*"you cannot count what you cannot enumerate"* that produced R-B. Narrowing the census would be the
+silent-drift bug the guard exists to prevent.
+
+**The defect is the message.** It gives a **count** and not the **names**, while the second half of
+its own remedy (*"start a session that mounts them"*) cannot be acted on without knowing which. The
+reader is left to diff `cco list projects` against `cco whoami`'s `editing target` by hand — which
+is exactly the hand-diffing the *count-is-not-a-fingerprint* lesson warns about.
+
+**Naming is safe here, on an axis this project has already ratified.** **D-V31-1** enables the
+`unknown` arm *only at read scope `all`*, with the rationale that **at `all` nothing can be hidden,
+so there is no oracle risk**. The identical argument applies: at read scope `all` (`edit-all`,
+`read-all`) the session may already enumerate every project, so naming leaks nothing. At any narrower
+scope the count must stay a count — `edit-global` is `(rw,rw,none)`, i.e. `Po=none`, and there the
+names *are* out of scope.
+
+**Proposed fix** (needs the human gate — it is user-facing wording *and* a behaviour change):
+have the census return the names alongside the count, and render names when
+`_cco_level_read_scope` is `all`, count otherwise. The single-owner rule applies: the choice belongs
+in `lib/access-scope.sh`, not at the `cmd-pack.sh` print site.
+
+**Related**: ADR-0043 (read-scope symmetry) · ADR-0056 D2 (a remedy is a function of the print
+site) · [ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
+(the census runs on the elevated side) · the sibling observation logged in cycle-1.2's §7 S3 entry
+(a refusal naming the internal `/var/lib/cco-internal/…` path while its remedy is host-side).

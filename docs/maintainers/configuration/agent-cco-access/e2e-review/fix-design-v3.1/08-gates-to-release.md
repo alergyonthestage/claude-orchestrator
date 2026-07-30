@@ -117,8 +117,49 @@ naming the reason. Anything in between is the half-apply, and it is **blocking �
 | 2 | **every** referring `project.yml` re-keyed | **including `scratch-b`'s** — this is the fan-out, and the whole point |
 | 3 | DATA provenance + tags registries re-keyed | `cco list packs`, `cco pack show scratch-pack-renamed` |
 
-Then clean up: `rm -rf /tmp/cco-scratch`, `rm -rf ~/.cco/packs/scratch-pack*`,
-`cco forget scratch-a ; cco forget scratch-b`.
+Then clean up: `rm -rf /tmp/cco-scratch`, `rm -rf ~/.cco/packs/scratch-pack*`, and
+`cco forget <name>` for each scratch project — **using the names you actually gave them**. `cco init`
+defaults to the directory name, so `/tmp/cco-scratch/proj-a` becomes `proj-a`, not `scratch-a`. Read the
+real names off `cco list projects` (or `cco whoami` → `editing target`) rather than off this page.
+
+#### ⚠ If the rename refuses with an unmounted-project census
+
+Observed 2026-07-30 at `edit-all`:
+
+> ✗ Cannot rename pack '…' in this session: **1 project(s)** on this machine are not mounted here, so a
+> packs[] reference they may carry cannot be updated (it would drift). Run 'cco pack rename …' on your
+> host, or start a session that mounts them.
+
+**This is a pass, not a failure** — and worth recording in §7 as such: the fail-closed pre-flight
+(`lib/cmd-pack.sh:628-631` ← `_store_unmounted_project_count`, `lib/store.sh:185-194`) refused **before
+touching any store**, which is RC-3 §3.4 Phase 0 behaving exactly as designed. It is deliberately
+**conservative**: it counts every index project absent from `PROJECT_NAME`+`CCO_CONFIG_TARGETS`
+*regardless* of whether it references the pack, because in-container `_project_foreach` only reaches
+mounted projects' `project.yml` — whether an unmounted one carries the reference is **unknowable from
+inside**. Narrowing the census would reintroduce silent drift.
+
+**Diagnose it — the message gives a count, not a name** (logged as **FI-40**; naming is safe at read
+scope `all` and the message does not yet do it). On the host:
+
+```bash
+cco list projects          # every project on this machine
+cco whoami                 # in the session: the `editing target` list = what IS mounted
+```
+
+The name in the first list and not the second is the census subject. Then:
+
+```bash
+cco project show <name>    # is its path still there? is it resolved?
+```
+
+- **stale** (path gone — e.g. scratch residue from an earlier round, which is why G1.1 clears it
+  *first*): `cco forget <name>`, re-launch the `--all` session, and the census drops to 0. **Prefer this
+  route when it applies** — it keeps E6B-04 on the container arm the gate prescribes.
+- **real but not on this machine** (its repo was never cloned here): do **not** `forget` it and do not
+  `resolve` it just to unblock a probe. Run the rename **on the host** instead: there
+  `_cco_container_operator` is false, the census is 0 by construction, and the fan-out reaches every
+  `project.yml`. The cascade under test (`lib/store.sh`) is the same code either way — what changes is
+  only where it runs, and the three post-conditions above are verifiable identically.
 
 ### G1.4 D7 — the framework view composed with **no packs at all**
 
