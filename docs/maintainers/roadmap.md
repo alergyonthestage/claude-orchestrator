@@ -471,10 +471,14 @@ and [`cli/design/design-cli-environment-awareness.md`](cli/design/design-cli-env
 release whose CLI reference misstates where a verb runs ships the same defect class this cycle was
 about — a message that reads correct and strands the reader.
 
-**4 — Merge `develop → main` + release**, stating the verified platform (below), with the README's
-self-contradiction on Linux corrected first: `README.md:59` says *"functional but not yet thoroughly
-tested"*, `README.md:220` says *"Fully supported"*. The table is stale — it does not even carry the
-OAuth caveat stated 160 lines above it.
+**4 — Merge `develop → main` + release**, stating the verified platform (below).
+✅ **The README's self-contradiction on Linux is fixed** (`9599111`, on the cycle branch): both sites now
+say *partially supported* and both name the same cause — the internal store is mode `0700` for `cco-svc`,
+so in-session index-reading verbs and config writes refuse — plus the OAuth caveat the table used to omit.
+Remaining for this step: the merge itself, then `scripts/release.sh <x.y.z>` from `main` (CI publishes via
+OIDC). ⚠ Verify the housekeeping line in §*Path to release* before acting on it — it still asks to
+validate `npm i -g @claude-orchestrator/cco` on a Mac and to push `--follow-tags` for `0.5.2`, which the
+same section records as already released on 2026-06-30.
 
 **⚠ D-M6 re-scoped — the Linux write-path gate (decided 2026-07-21).** It was classified a hard
 blocking gate. Grounding it in the code changes the classification: `cco-svc` is **uid 900**
