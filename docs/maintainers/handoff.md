@@ -12,10 +12,12 @@ observations from inside a live session** — so it was never host-only, it was 
 under the wrong label is what left both sides waiting for the other. The moment it was read correctly,
 the maintainer ran two `mv`s and the session ran five verbs.
 
-Every host gate in the runbook's **[§8](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**
-is now written out as an executable command with its trap attached, and §8.3 is labelled *split*. Before,
-its command had to be reassembled from three documents — which is exactly where the copy-paste false pass
-comes from (S3's own trap: the pre-S1 `state/cco/index` spelling moves nothing).
+Every remaining gate now lives in one **operational runbook** —
+**[`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)**,
+G0…G6, each command with its trap attached, all the way to the published release. Before, a gate's command
+had to be reassembled from three documents — which is exactly where the copy-paste false pass comes from
+(S3's own trap: the pre-S1 `state/cco/index` spelling moves nothing). The plan's §8 is now a pointer;
+`00-plan.md` stays the design + evidence document, and §7 stays where probe output goes.
 
 ## What changed since the last handoff
 
@@ -88,27 +90,32 @@ session value into the suite. A count is not a fingerprint; the names are.
 
 ## ⛔ What is owed, in order
 
-**Every command for these gates is now written out, copy-pasteable, in the runbook's [§8](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md).**
-This list says *what* and *why*; §8 says *how*, once.
+**The commands live in one file: [`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md).**
+This list says *what* and *why*; the runbook says *how*, once, G0…G6.
 
 **Every probe this cycle owed is now run.** L1, L2 and L3 all have their Rule-1 evidence; L4 and L5
 closed in-session by ruling. What is left is **one never-executed gate (E6B-04), one small residual
 (D7), the human gate, and the release path** — no probe is outstanding on a landed lane.
 
-1. **`git push`** — `git push origin develop fix/release/cycle-1.2` (§8.1). Nothing is pushed;
-   `develop` is 22 commits ahead of `origin/develop`, plus this branch's commits on top. **This is the
-   top of the list** — every in-session blocker is gone.
-2. **S6's host-only half** (§8.4) — §10.9e / E6B-04 (pack-rename fan-out, **never executed in any
-   round**). This is the only remaining item that can still produce a blocking 🔴: it is data-loss if
-   the fan-out half-applies, and a fix for an unreproduced defect is unverified.
+0. ✅ **`git push`** — done 2026-07-30; both refs track origin with no *ahead* marker.
+1. **G1 — S6's host half + D7** (§10.9e / **E6B-04**, pack-rename fan-out, **never executed in any
+   round**). The only remaining item that can still produce a blocking 🔴: data-loss if the fan-out
+   half-applies, and a fix for an unreproduced defect is unverified. **Placed before the merge** — the
+   cycle branch modifies `cmd_pack_rename` itself, so a 🔴 belongs on this branch, not after the merge.
    ⚠ Clear the stale `scratch-pack` and `scratch-a`/`scratch-b` first or the fan-out is ambiguous to read.
-3. **D7 residual from S1** (§8.5) — *"composes with no packs at all"*: needs a project referencing no pack.
-4. **The block's single human gate** — the maintainer relaxed the per-phase gates for S3→S4→S5 down to
-   one gate at the end. This is it.
-5. Then, per §8.6: the **CLI-surface documentation audit** (roadmap step 3) — ordered deliberately
-   **before** the merge — then the merge into `develop`, then `develop → main` + release.
-   📝 The audit is the **only owed item a session can perform end to end**; it needs no probe and no
-   build, so it can run in parallel with the host gates above.
+   💡 `scratch-a` references no pack between `cco init` and the `packs:` edit — **D7 rides that window**,
+   one setup for two gates.
+2. **G2 — the CLI-surface documentation audit** (roadmap step 3). **Sequential after G1**, by the
+   maintainer's decision, so the audit is written knowing G1's outcome. The only owed item a session can
+   perform end to end.
+3. **G3 — the block's single human gate.** The maintainer relaxed the per-phase gates for S3→S4→S5 down to
+   one gate at the end. This is it; the runbook carries its checklist.
+4. **G4/G5/G6 — merge → verify on `develop` → release.** The merge is a **content fast-forward** (both
+   `develop` and `main` contribute a tree identical to their merge-base), so the tree verified on the
+   branch *is* the released tree — but that only holds if the merge itself was performed cleanly, so it is
+   checked by tree hash, and **G5 re-verifies on `develop`** what topology cannot promise: the unmasked
+   suite, the **macOS host suite** (never run on this tree — the largest unknown left), and a `cco build`
+   from `develop` plus a smoke dogfood.
 
 ### Closed on 2026-07-30, after this handoff was first written
 

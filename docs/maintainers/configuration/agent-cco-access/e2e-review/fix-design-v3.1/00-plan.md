@@ -661,7 +661,7 @@ the file's residual diff is exactly the intended `access:` block, the `8081→80
 
 #### S3 container probe — ✅ **PASSED, both arms** — 2026-07-30
 
-The **split** gate of §8.3, run by maintainer and session together: the maintainer moved
+A **split** gate — the shape §5.1 prescribes — run by maintainer and session together: the maintainer moved
 `~/.local/state/cco/shared/index` aside from the host **with this session live**; every observation
 below is from inside that session. Provenance `cco whoami` →
 `image built from: fix/release/cycle-1.2@d01d42a`, `/opt/cco/lib` byte-identical to the working tree.
@@ -751,131 +751,29 @@ wording; changing user-facing text is a human gate, not a sweep.
 
 ---
 
-## 8. Out-of-session gates (host, in order)
+## 8. Out-of-session gates → [`08-gates-to-release.md`](08-gates-to-release.md)
 
-Every gate below is **driven from the host terminal**. The reasons are structural, not habitual: the
-container carries no push credential (`git ls-remote origin` → *Host key verification failed*),
-`cco start|build|forget|resolve` are host-only verbs by classification, and §8.3's `mv` targets a
-bucket the ADR-0047 boundary makes unreachable to the agent user.
+The gates that remain — and the whole path from here to the published release — live in their own
+**operational runbook**, [`08-gates-to-release.md`](08-gates-to-release.md). It is the file to keep open
+at the terminal; this plan stays the *design + evidence* document, and every probe result still goes into
+**§7** above.
 
-⚠ One gate is a **split** one: §8.3's `mv` is host-side but its *observations* belong inside a live
-session. That gate is run by the two together — see the note there.
+Moved there rather than restated here, so there is one home for a command and one place to fix it: a gate
+whose command has to be reassembled from three documents is how a copy-paste false pass happens — S3's own
+trap (the pre-S1 `state/cco/index` spelling, which moves nothing) is exactly that failure.
 
-Paths below are written as `<repo>` / `~`. Never paste a real host path into a commit.
+| Gate | What | Where it runs | State |
+|---|---|---|---|
+| **G0** | `git push origin develop fix/release/cycle-1.2` | host | ✅ done 2026-07-30 |
+| **G1** | S6's host half (**E6B-04**) + **D7**'s residual — one scratch setup serves both | host + an `edit-all` session | ◀ current |
+| **G2** | CLI-surface documentation audit (roadmap step 3) | in-session, **sequential after G1** | owed |
+| **G3** | the block's **single human gate** | maintainer | owed |
+| **G4** | merge → `develop` + the merge tree-hash check | host | owed |
+| **G5** | verification **on `develop`** (unmasked suite · macOS host suite · `cco build` + smoke) | host | owed |
+| **G6** | `develop → main` + `scripts/release.sh` | host | owed |
 
-### 8.1 Push — nothing in this cycle is published yet
-
-State on 2026-07-30: `develop` is **22 commits ahead** of `origin/develop`, with
-`fix/release/cycle-1.2` on top, also unpushed.
-
-```bash
-cd <repo>
-git push origin develop fix/release/cycle-1.2
-```
-
-### 8.2 `cco build` — only when the tree has moved since the last image
-
-Required before S1's, S3's and S4's probes, because `lib/`, `bin/`, `config/` and the `Dockerfile`
-are baked into the image and their edits are invisible in-session until a rebuild. The image in use
-on 2026-07-30 is `fix/release/cycle-1.2@d01d42a` with `diff -rq /opt/cco/lib lib` clean, so the
-remaining probes need **no** new build unless one of those trees changes first.
-
-Record the provenance (`cco whoami` → `image built from:`) alongside every probe.
-⚠ With a dirty tree that line is **misleading, not wrong**: `/opt/cco/BUILD` records a git *ref*
-while docker builds the working *tree*. Check the artefact instead —
-`strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS`, `diff -rq /opt/cco/lib lib`.
-
-### 8.3 S3's severed-index probe — **the one probe still fully owed**
-
-Per §5.1: move the index aside **from the host, with a session live**, then re-run the read verbs
-**inside that session** and confirm each reports a read failure rather than the benign `absent`.
-
-⚠ The path is `state/cco/`**`shared/`**`index`. The pre-S1 `state/cco/index` no longer exists, so a
-copy-paste of the older command moves nothing and yields a **false pass**.
-
-```bash
-# host, with the session already running
-mv ~/.local/state/cco/shared/index ~/.local/state/cco/shared/index.probe
-```
-```bash
-# inside the live session
-cco path list ; cco list ; cco list projects ; cco project show claude-orchestrator
-cco project validate --all
-```
-```bash
-# host — restore, then re-run the same verbs in the session and confirm recovery
-mv ~/.local/state/cco/shared/index.probe ~/.local/state/cco/shared/index
-```
-
-Expected: every verb classifies the index as **unreadable** (a reported read failure with a remedy
-true where it is printed), never *"the path index is empty — nothing is registered on this machine
-yet"* at rc=0, and `project show` renders *index unreadable* distinctly from *not bound*. Partial
-in-session evidence already exists (`cco project validate --all` reports the hidden-project count
-instead of claiming share-ready over zero projects); the severed arm is what is missing. Paste the
-output into §7.
-
-### 8.4 S6's host-only half — cleanup **first**, then E6B-04
-
-⚠ Order matters: clear the stale scratch subjects before the fan-out, or its result is ambiguous to
-read.
-
-```bash
-# 1. host cleanup — stale remotes from earlier rounds
-cco remote remove probe-2 && cco remote remove x && cco remote remove probe-3 && cco remote remove probe-3b
-# 2. host cleanup — stale scratch subjects (see handoff-v3.md §10 step 6)
-rm -rf /tmp/cco-scratch ; rm -rf ~/.cco/packs/scratch-pack*
-cco forget scratch-a ; cco forget scratch-b
-```
-
-Then **E6B-04** (pack-rename fan-out atomicity, never executed in any round) per
-[`handoff-v3.md`](../handoff-v3.md) §7 + §10 step 6: two throwaway projects that both reference
-**one** disposable pack — a single-project setup would pass a half-apply undetected — then
-`cco pack rename <old> <new> -y` inside an `edit-all` session, verifying **all three** post-conditions
-(store dir moved; **both** `project.yml` files re-keyed; DATA provenance/tags re-keyed). Either all of
-it, or none of it plus a non-zero exit naming the reason. Anything in between is blocking.
-
-### 8.5 D7's residual — the view composed with **no packs at all**
-
-**What the arm is.** ADR-0054 D2 built the CACHE `.claude` view *only* when a session injects
-pack/llms children. ADR-0055 D3 adds framework-owned floor entries (`settings.local.json`,
-`workflows/`) as children of the same parent, so D7 **generalises the trigger** to *any*
-framework-owned child — i.e. the view is now composed for **every** `Cp=ro` session, packs or not.
-
-**Why no probe has seen it.** Both of S1's probes ran on `claude-orchestrator`, which adopts
-`core-dev-framework`: the old pack trigger fired, so the composition proved nothing about the new
-half of the trigger. Only the unit tests cover it —
-`tests/test_start_claude_view.sh:226` (`…composed_for_the_write_floor_without_packs`) and `:242`
-(`…committed_tree_survives_composition_without_packs`).
-
-**Procedure.** In a **default** session (`Cp=ro` — do **not** pass `--claude-access all`, and use a
-project with no `access:` override, or the mask decides the outcome instead of the code) on a project
-whose `project.yml` lists **no** pack:
-
-```bash
-# inside the session
-ls -la /workspace/.claude                       # the composed view, not the repo's .cco/claude bound raw
-grep ' /workspace/.claude' /proc/self/mountinfo  # the view mount + its floor children
-touch /workspace/.claude/settings.local.json && echo ok   # floor entry 1 — writable
-mkdir -p /workspace/.claude/workflows && touch /workspace/.claude/workflows/.probe && echo ok
-rm -f /workspace/.claude/workflows/.probe
-```
-
-Expected: the view **is** composed (D7's point), and both floor entries are writable while the rest of
-the tree stays `:ro`. A session that lands on a raw `:ro` `.claude` with no view is the defect.
-
-💡 **Sequence it with §8.4 and pay for one scratch setup, not two.** E6B-04's `proj-a` references no
-pack in the window between `cco init` and the manual `packs:` edit — that is exactly D7's subject.
-Run D7 there first, then add the pack reference and continue with the fan-out.
-
-### 8.6 Then, in order
-
-1. The **CLI-surface documentation audit** (roadmap step 3) — deliberately **before** the merge.
-2. Merge `fix/release/cycle-1.2` → `develop`, per
-   [`.cco/claude/rules/git-workflow.md`](../../../../../../.cco/claude/rules/git-workflow.md).
-   **FI-20** (merges touching `.cco` are host-only) does **not** apply to this branch:
-   `git diff --name-status develop fix/release/cycle-1.2 -- .cco/` is empty. Check that diff before
-   assuming any merge is host-only.
-3. `develop → main` + release (roadmap step 4), stating the verified platform.
+Two probes that used to live in this section are **done** and recorded in §7: S3's severed-index arm plus
+its recovery (a **split** gate — host `mv`, in-session observations), and S4's round 3.
 
 ---
 

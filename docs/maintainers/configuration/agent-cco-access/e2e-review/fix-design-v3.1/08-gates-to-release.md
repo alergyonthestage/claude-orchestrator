@@ -1,0 +1,264 @@
+# Gates to release — operational runbook (cycle-1.2 → merge → release)
+
+> **Operational.** This is the file to keep open at the terminal. It is the **single home** for the
+> remaining gates: §8 of [`00-plan.md`](00-plan.md) points here instead of restating them, and evidence
+> still goes into that plan's **§7 acceptance log**.
+> **Point-in-time** — it dies with this release. Two parts generalise (**G4**'s merge tree-check and
+> **G5/G6**'s release sequence) and are flagged inline as candidates for a long-living runbook under
+> `engineering/guides/`; nothing here should be treated as a standing procedure until it is moved there.
+
+**Sequence decided by the maintainer, 2026-07-30**: G1 **before** the merge, and **G2 sequential after
+G1** — not parallel — so the audit is written knowing G1's outcome. Rationale for the pre-merge
+placement is in G1; the *"verify the exact release state on `develop`"* concern the maintainer raised is
+answered by **G4 + G5** together, and the reason it does not require re-ordering the gates is the
+topology fact recorded in G4.
+
+```mermaid
+flowchart TD
+  G0["G0 · push ✅ done"] --> G1["G1 · D7 + E6B-04<br/>host + edit-all session"]
+  G1 --> G2["G2 · CLI-surface audit<br/>in-session"]
+  G2 --> G3["G3 · the block's single<br/>HUMAN gate"]
+  G3 --> G4["G4 · merge → develop<br/>+ tree check"]
+  G4 --> G5["G5 · verify ON develop<br/>unmasked + host suite + build"]
+  G5 --> G6["G6 · develop → main<br/>+ scripts/release.sh"]
+  G1 -. "🔴 half-apply" .-> FIX["fix on the cycle branch,<br/>not after the merge"]
+  FIX --> G1
+```
+
+---
+
+## 0. Three standing facts, before any command
+
+1. **Where a gate runs is a classification, not a habit.** *Host-only* = the container has no push
+   credential and `cco start|build|forget|resolve` are host-only verbs. *Split* = the privileged step is
+   host-side but the **observations** belong inside a live session (S3's probe was mislabelled host-only
+   and lost a full round to it). *In-session* = needs no host step at all (G2).
+2. **The mask.** The uncommitted `access: {claude: all}` block in `.cco/project.yml` makes every
+   `.claude` tree `rw`. Every suite figure in this cycle was measured **with it ON**; unmasked adds two
+   known failures (`test_update_new_file_added`, `test_update_dry_run`, which write into a tracked-and-`:ro`
+   `defaults/global/.claude/rules/`). **Any figure must state whether the block was in place** — this cycle
+   has been wrong about it four times.
+3. **Provenance with a dirty tree is misleading, not wrong.** `/opt/cco/BUILD` records a git *ref*;
+   docker builds the working *tree*. When the tree is dirty, check the artefact:
+   `strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS`, `diff -rq /opt/cco/lib lib`.
+
+---
+
+## G0 — Push ✅ **done 2026-07-30**
+
+`git push origin develop fix/release/cycle-1.2`. Both refs now track origin with no *ahead* marker.
+
+---
+
+## G1 — S6's host half + D7's residual ◀ **current gate**
+
+**Why before the merge**, in order of force:
+
+- **It is in the acceptance oracle.** Criterion **F** requires *"no half-apply (§7)"*, and
+  [`handoff-v3.md`](../handoff-v3.md) §7 calls E6B-04 a **named gate** — *"a fix for an unreproduced
+  defect is unverified"*. The merge into `develop` is where *"cycle-1.2 accepted"* gets recorded, and
+  **D-V31-4** forbids inferring a release exception instead of writing it down.
+- **The cycle branch modifies the verb under test.** `git diff develop..fix/release/cycle-1.2 --
+  lib/cmd-pack.sh` has hunks **inside `cmd_pack_rename`** — the usage text and the fail-closed pre-flight
+  refusal (`Run 'cco resolve' on your host'`, ADR-0056 D2), which is the `blocked[]` branch E6B-04
+  exercises. A 🔴 therefore belongs on **this branch**: one merge, instead of a second fix branch plus a
+  lane row re-opened after being marked closed.
+- **The hard boundary is the release, not the merge.** The cascade fix under test (`1173f6b`, store
+  cascades routed through `lib/store.sh`) is **already on `develop`** and **not on `main`**, so
+  `develop → main` + npm is the point of no return. Running E6B-04 after the merge is defensible *only*
+  if the acceptance record says **"accepted pending E6B-04"** rather than "accepted".
+
+### G1.1 Cleanup first — or the fan-out is ambiguous to read
+
+```bash
+# stale remotes from earlier rounds
+cco remote remove probe-2 && cco remote remove x && cco remote remove probe-3 && cco remote remove probe-3b
+# stale scratch subjects
+rm -rf /tmp/cco-scratch ; rm -rf ~/.cco/packs/scratch-pack*
+cco forget scratch-a ; cco forget scratch-b
+```
+
+### G1.2 Build the scratch subject — and take D7 for free inside it
+
+The **shape** matters more than the commands: **two** projects referencing **one** pack, so the
+cross-project reference fan-out is actually exercised. A single-project setup passes a half-apply
+undetected. `cco init` is interactive and the pack reference is a manual YAML edit, so adapt as needed.
+
+```bash
+mkdir -p /tmp/cco-scratch/proj-a /tmp/cco-scratch/proj-b
+( cd /tmp/cco-scratch/proj-a && git init -q && cco init )   # name it scratch-a
+( cd /tmp/cco-scratch/proj-b && git init -q && cco init )   # name it scratch-b
+```
+
+💡 **STOP HERE and run D7** — `scratch-a` references no pack in exactly this window, which is D7's
+subject, so one scratch setup serves both gates. Full rationale in G1.4.
+
+```bash
+cco pack create scratch-pack
+# add `scratch-pack` to the packs: list of BOTH projects' .cco/project.yml, then:
+cco resolve scratch-a && cco resolve scratch-b
+cco list packs                                             # confirm scratch-pack is registered
+```
+
+### G1.3 E6B-04 — the pack-rename fan-out, **never executed in any round**
+
+Inside an `edit-all` session (`./bin/cco start config-editor --all`, always by absolute path):
+
+```bash
+cco pack rename scratch-pack scratch-pack-renamed -y
+```
+
+Verify **all three** post-conditions. Either every one of them, **or** none of them plus a non-zero exit
+naming the reason. Anything in between is the half-apply, and it is **blocking 🔴 data-loss**:
+
+| # | Post-condition | Where to look |
+|---|---|---|
+| 1 | the store directory moved | `~/.cco/packs/scratch-pack-renamed` exists, `scratch-pack` gone |
+| 2 | **every** referring `project.yml` re-keyed | **including `scratch-b`'s** — this is the fan-out, and the whole point |
+| 3 | DATA provenance + tags registries re-keyed | `cco list packs`, `cco pack show scratch-pack-renamed` |
+
+Then clean up: `rm -rf /tmp/cco-scratch`, `rm -rf ~/.cco/packs/scratch-pack*`,
+`cco forget scratch-a ; cco forget scratch-b`.
+
+### G1.4 D7 — the framework view composed with **no packs at all**
+
+**What the arm is.** ADR-0054 D2 built the CACHE `.claude` view *only* when a session injects pack/llms
+children. ADR-0055 D3 adds the framework-owned floor entries (`settings.local.json`, `workflows/`) as
+children of the same parent, so **D7 generalises the trigger** to *any* framework-owned child: the view
+is composed for **every** `Cp=ro` session, packs or not.
+
+**Why no probe has seen it.** Both of S1's probes ran on `claude-orchestrator`, which adopts
+`core-dev-framework` — the *old* trigger fired, so the composition observed proved nothing about the new
+half. Only two unit tests cover it: `tests/test_start_claude_view.sh:226` and `:242`.
+
+**Procedure.** A **default** session on a project whose `project.yml` lists **no** pack. Do **not** pass
+`--claude-access all`, and use a project with no `access:` override — otherwise the mask decides the
+outcome instead of the code.
+
+```bash
+# inside the session
+ls -la /workspace/.claude                        # the composed view, not the repo's .cco/claude bound raw
+grep ' /workspace/.claude' /proc/self/mountinfo  # the view mount + its floor children
+touch /workspace/.claude/settings.local.json && echo ok
+mkdir -p /workspace/.claude/workflows && touch /workspace/.claude/workflows/.probe && echo ok
+rm -f /workspace/.claude/workflows/.probe
+```
+
+Expected: the view **is** composed, and both floor entries are writable while the rest of the tree stays
+`:ro`. A session landing on a raw `:ro` `.claude` with no view is the defect.
+
+**Record both results in [`00-plan.md`](00-plan.md) §7** — command and output, not a verdict alone.
+
+---
+
+## G2 — CLI-surface documentation audit (in-session, **after** G1)
+
+Roadmap **step 3**, deliberately before the merge: *a release whose CLI reference misstates where a verb
+runs ships the same defect class this cycle was about.* Sequential after G1 by the maintainer's decision,
+so that if G1 changes a verb's contract the audit sees the final shape.
+
+Scope: every verb declares correctly **which access levels it runs at** and **host vs container**. Two
+surfaces moved in this cycle and the last full audit ([2026-07-02](../../../../cli/reviews/2026-07-02-cli-surface-awareness-review.md))
+predates both — `remote remove|rename` became host-only, and config-editor's `extra_mounts` contract was
+ratified. Subjects, canonical first:
+
+1. [`cli/reference/cli-surface-matrix.md`](../../../../cli/reference/cli-surface-matrix.md) — **check this
+   first**: a wrong row here is inherited by every downstream doc.
+2. [`docs/users/reference/cli.md`](../../../../../users/reference/cli.md) and the user guides.
+3. [`e2e-review/analysis/A1-command-scope-matrix.md`](../analysis/A1-command-scope-matrix.md).
+4. [`cli/design/design-cli-environment-awareness.md`](../../../../cli/design/design-cli-environment-awareness.md).
+
+Autonomy is `review-docs`-class: **objective** drift (a row contradicting the code) is corrected in
+place; anything touching a decision never made stops for the human gate. One open item is already
+queued — the severed-index refusal names the internal `/var/lib/cco-internal/…` path while its remedy is
+host-side and `show_host_paths` is on, so the reader cannot act on the path they were handed
+(§7, S3's entry). **User-facing wording is a human gate, not a sweep.**
+
+---
+
+## G3 — The block's single human gate
+
+The maintainer relaxed the per-phase gates for S3→S4→S5 to **one gate at the end**. This is it. What must
+be on the table:
+
+- [ ] **§7 acceptance log**, four rows: S1 (both arms) · **S3 (both arms)** · **S4 (round 3)** · S5's ruling
+      that closes L4/L5 in-session.
+- [ ] **Suite 1614/7 of 1621, mask ON** — and the 7 identified **name for name** as the host-only set, not
+      by count. *A count is not a fingerprint*: the 10-vs-7 episode began exactly there.
+- [ ] **G1's two results** (E6B-04, D7).
+- [ ] **G2's findings**, split into *corrected in place* vs *needs your decision*.
+- [ ] The **seven ratified deviations** in ADR-0056's *"Implementation annotations"* — already decided,
+      **not** to be re-litigated.
+- [ ] The decision, **written**: `ACCEPTED` / `ACCEPTED with follow-ups` / `NOT ACCEPTED`, into §7 and the
+      roadmap's L1–L5 rows. If accepted with an exception, **the exception is written down** (D-V31-4).
+
+---
+
+## G4 — Merge → `develop`, then verify the merge did nothing extra
+
+> ⚙ **Generalises** — candidate for a long-living release runbook.
+
+Per [`.cco/claude/rules/git-workflow.md`](../../../../../../.cco/claude/rules/git-workflow.md). **FI-20**
+(merges touching `.cco` are host-only) does **not** apply here: `git diff --name-status develop
+fix/release/cycle-1.2 -- .cco/` is empty. Check that diff before assuming any merge is host-only.
+
+**The topology fact that answers "will the merge change the results?" — measured 2026-07-30:**
+
+```
+merge-base(develop, cycle-1.2) = 14779d4
+tree(develop)  == tree(14779d4) == 34803cd…   → develop contributes ZERO changes
+merge-base(main, develop)      = 740f201
+tree(main)     == tree(740f201) == 99e5648…   → main contributes ZERO changes
+```
+
+Both merges are therefore **content fast-forwards**: three-way merging with a base whose tree equals
+*ours* yields *theirs* exactly. So the tree verified on the branch **is** the tree that reaches `develop`,
+and then `main` — the concern is real in general and **void for these two merges specifically**. It stops
+being void the moment anyone commits to `develop` or `main` directly, which the git rules forbid anyway.
+
+**What topology cannot promise is that the merge was performed correctly** — `-X ours`, a hand-resolved
+conflict, or a stray edit would all produce a different tree. So verify it, per merge, in one command:
+
+```bash
+git rev-parse fix/release/cycle-1.2^{tree}   # source
+git rev-parse develop^{tree}                 # after the merge — MUST be identical
+```
+
+Different hashes ⇒ the merge introduced content nobody wrote. **Stop and look**, do not push.
+
+---
+
+## G5 — Verify **on `develop`**: the exact release state
+
+> ⚙ **Generalises** — candidate for a long-living release runbook.
+
+G4 proves the *tree* is the same. This gate covers what a tree identity cannot:
+
+- [ ] **In-container suite, mask OFF.** Every figure in this cycle is masked. Stash the
+      `access: {claude: all}` block, run the suite, and record the honest number — expect the two known
+      unmasked failures on top of the host-only 7.
+- [ ] **Host suite on macOS (bash 3.2 + BSD userland).** Never run on this tree, and it has its own
+      failure families the container cannot see. This is the single largest unknown left in the release.
+- [ ] **`cco build` from `develop`** + `cco whoami` provenance, then a smoke dogfood: start a real
+      session, `cco list`, `cco path list`, `cco project show`.
+- [ ] **npm-pack hygiene** — `scripts/release.sh` runs it as a pre-flight; running it early costs nothing.
+
+A failure here is a fix on a branch off `develop`, never a commit on `develop`.
+
+---
+
+## G6 — `develop → main` + release
+
+> ⚙ **Generalises** — candidate for a long-living release runbook.
+
+1. Merge `develop → main` (content fast-forward per G4; verify the tree hash the same way).
+2. `scripts/release.sh <x.y.z>` from `main` — bumps `package.json` (the single source of truth), runs the
+   local pre-flight gate, commits, tags, pushes. `--full-tests` runs the whole suite locally; the default
+   is the fast read-only publish gate because **CI re-runs the full suite + the read-only `FRAMEWORK_ROOT`
+   gate + hygiene on the tag** before `npm publish --access public` via OIDC (no stored token).
+3. The version number is the **maintainer's call** — `package.json` is at `0.5.2`.
+4. State the **verified platform** in the release notes: macOS verified; Linux partially supported with the
+   internal-store reachability caveat (README already says this consistently in both places since `9599111`).
+
+⚠ CI on the tag is the **last** net, and it fires on `main` — i.e. publicly. G5 exists so that net never
+has to catch anything.
