@@ -659,6 +659,55 @@ accident, uncommented, inside the pack-schema comment block) was removed host-si
 the file's residual diff is exactly the intended `access:` block, the `8081→8082` port change and the
 `packs:` entry.
 
+#### S3 container probe — the severed-index arm — ✅ **PASSED** (recovery arm still pending) — 2026-07-30
+
+The **split** gate of §8.3, run by maintainer and session together: the maintainer moved
+`~/.local/state/cco/shared/index` aside from the host **with this session live**; every observation
+below is from inside that session. Provenance `cco whoami` →
+`image built from: fix/release/cycle-1.2@d01d42a`, `/opt/cco/lib` byte-identical to the working tree.
+Default `read-project` session; the `access: {claude: all}` mask was in place and is irrelevant to this
+axis (stated per §7's rule).
+
+```
+$ cco whoami                            rc=0   ← renders the session's own state, reads no index
+$ cco path list                         rc=1
+$ cco list                              rc=1
+$ cco list projects                     rc=1
+$ cco project show claude-orchestrator  rc=1
+$ cco project validate --all            rc=1
+
+all five failing verbs, identical text:
+  ✗ the cco index at /var/lib/cco-internal/state/cco/shared/index cannot be read: the file is
+    gone. This session was LAUNCHED from the index, so it was readable when the session started
+    and is no longer — the bind has been severed, or the host-side state was removed. No entries
+    were listed — this is NOT an empty index. Run cco on your host to inspect or rebuild it.
+```
+
+Arm by arm, what this actually proves:
+
+- **The session axis, not merely the cause.** The discriminator in the text is *"this session was
+  LAUNCHED from the index"* — the very same missing file is a legitimately benign `absent` on the host.
+  That is ADR-0056's axis, observed rather than inferred.
+- **W4-F06's benign sentence is unreachable from a session.** Pre-S3 it is still there to compare
+  against: `git show develop:lib/index.sh:189` → *"the path index is empty — nothing is registered on
+  this machine yet"*. §10.9d's **rc=0 is now an rc=1 refusal**, and the new text denies the reading
+  explicitly (*"this is NOT an empty index"*).
+- **The remedy is true where it is printed.** *"Run cco on your host"* names the only place a severed
+  bind can be repaired — and deliberately not a verb the session could run.
+- **`cco whoami` at rc=0 is correct, not a leak.** It reports the resolved session descriptor, which
+  crossed the ADR-0047 boundary at start-up and needs no index read. A session must still be able to
+  say what it is while its store is unreachable.
+
+⚠ **Still owed on this lane: the recovery arm** (restore the index host-side, re-run the same five
+verbs, confirm they recover). The index was still severed when this entry was written, so recovery is
+recorded as *not observed* rather than assumed.
+
+📝 **Observation for the CLI-docs audit (roadmap step 3), not a defect claim.** The message names the
+**internal** path `/var/lib/cco-internal/state/cco/shared/index` — the agent's side of the bind, which
+is accurate — while its remedy is host-side, and this session has `show_host_paths: true`. A reader who
+follows the remedy cannot act on the path they were given. Carry it into step 3's pass over refusal
+wording; changing user-facing text is a human gate, not a sweep.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
@@ -675,7 +724,7 @@ the file's residual diff is exactly the intended `access:` block, the `8081→80
 > plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
 > from a self-dev session must state whether the block was in place.** These two are *not* to be
 > chased inside S1 — the same rule as the seven.
-| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | ⬜ **still required** — the `mv` is host-side, so no session can run it. Partial in-session evidence only: `cco project validate --all` now reports the hidden-project count instead of claiming share-ready over zero projects | |
+| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | 🟡 **severed arm PASSED, recovery arm pending** — run as a *split* gate (host `mv`, in-session observations): all five read verbs refuse at **rc=1** with the session-axis cause, and §10.9d's benign rc=0 sentence is unreachable. Restore-and-recover is still unobserved | 2026-07-30 |
 | S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ✅ **PASSED at round 3** — ⚠️ it took three rounds and two builds: **round 1 FAILED** (D5 inert, the key never crossed the boundary) → fixed; **round 2** showed the lane fixed *and* exposed a second defect (a fabricated cross-kind clause in every notice) → fixed; **round 3 green on all six arms**, every number matching the behaviour ratified before the fix was written | 2026-07-30 |
 | S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 
