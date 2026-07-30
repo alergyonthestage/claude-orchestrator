@@ -950,6 +950,9 @@ test_as_store_totals_supplement_counts_unenumerable_kinds() {
     _as_source
     _as_operator read-project
     export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4,template=2"
+    # The verb declares what it enumerates exhaustively; only declared kinds are
+    # supplemented (ratified 2026-07-30 — see test_as_store_subject_* below).
+    _env_store_subject pack template
     # Nothing enumerated at all — the G=none shape.
     local out; out=$(_env_flush_hidden_notice 2>&1)
     [[ "$out" == *"hidden by access scope"* ]] \
@@ -965,6 +968,7 @@ test_as_store_totals_subtract_what_was_enumerated() {
     _as_source
     _as_operator read-project
     export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4"
+    _env_store_subject pack
     _env_note_seen pack; _env_note_seen pack
     local out; out=$(_env_flush_hidden_notice 2>&1)
     [[ "$out" == *"2 packs"* ]] \
@@ -976,6 +980,10 @@ test_as_store_totals_silent_when_fully_enumerated() {
     _as_source
     _as_operator read-all
     export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=2"
+    # The subject IS declared here on purpose: without it the output would be empty
+    # for the wrong reason (no supplement at all) and this test would pass vacuously
+    # while asserting nothing about the arithmetic it names.
+    _env_store_subject pack
     _env_note_seen pack; _env_note_seen pack
     local out; out=$(_env_flush_hidden_notice 2>&1)
     [[ -z "$out" ]] \
@@ -989,6 +997,8 @@ test_as_store_totals_ignored_on_host() {
     _as_source
     unset CCO_CONTAINER_OPERATOR CCO_CCO_ACCESS
     export CCO_STORE_TOTALS="pack=9"
+    # Declared, so silence here proves the HOST guard and not the subject guard.
+    _env_store_subject pack
     local out; out=$(_env_flush_hidden_notice 2>&1)
     [[ -z "$out" ]] || fail "INV-A: no scoping notice on the host, got: $out"
     return 0
@@ -1004,12 +1014,58 @@ test_as_store_totals_supplement_applied_once() {
     _as_source
     _as_operator read-project
     export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=3"
+    _env_store_subject pack
     local both
     both=$( { _env_flush_hidden_notice; printf -- '---MARK---\n' >&2; _env_flush_hidden_notice; } 2>&1 )
     [[ "${both%%---MARK---*}" == *"3 packs"* ]] \
         || fail "first flush must speak, got: $both"
     [[ "${both##*---MARK---}" != *"packs"* ]] \
         || fail "the supplement must be applied ONCE per invocation, got a second notice: $both"
+    return 0
+}
+
+# D5 scoping (ratified 2026-07-30, after the post-build probe) — a notice speaks only
+# about the kinds THIS invocation enumerates exhaustively.
+test_as_store_subject_scopes_the_supplement() {
+    # The shipped defect, at unit level: `cco list packs` enumerates packs and no llms,
+    # so seen(llms)=0 and an unscoped supplement announced every llms on the machine as
+    # hidden — while `cco list llms` in the same session shows them.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4,llms=3"
+    _env_store_subject pack
+    _env_note_seen pack
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"3 packs"* ]] \
+        || fail "the declared kind must still be supplemented, got: $out"
+    [[ "$out" != *"llms"* ]] \
+        || fail "a kind this verb never enumerated must NOT be claimed hidden (the false clause the probe found), got: $out"
+    return 0
+}
+
+test_as_store_subject_absent_means_no_supplement() {
+    # Fail-safe default: not declaring yields silence, never a fabricated count. This
+    # is the direction the shipped code had backwards.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4,llms=3"
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ -z "$out" ]] \
+        || fail "with no declared subject the supplement must stay silent, got: $out"
+    return 0
+}
+
+test_as_store_subject_unified_list_speaks_for_every_kind() {
+    # The other end: `cco list` with no kind DOES enumerate every store kind, so all of
+    # them are legitimately supplemented. Without this arm, a lint-like fix that simply
+    # dropped the supplement would also "pass" the two tests above.
+    _as_source
+    _as_operator read-project
+    export PROJECT_NAME=alpha CCO_STORE_TOTALS="pack=4,llms=3"
+    _env_store_subject pack template llms remote
+    local out; out=$(_env_flush_hidden_notice 2>&1)
+    [[ "$out" == *"4 packs"* && "$out" == *"3 llms"* ]] \
+        || fail "the unified index must supplement every declared kind, got: $out"
     return 0
 }
 

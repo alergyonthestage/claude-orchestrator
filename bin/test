@@ -30,10 +30,17 @@ export CCO_NONINTERACTIVE=1
 # test bucket writes at the REAL session state. Tests that WANT operator mode set
 # the full env themselves (test_operator_shim, test_access_scope). On the host none
 # of these are set, so this is a no-op there.
+#
+# This list is the same signal family the session descriptor carries, so it is kept in
+# step with it by INV-DESC (test_invariant_descriptor_keys_neutralized_in_suite).
+# CCO_STORE_TOTALS is why that lint exists: a real value leaking in from a self-dev
+# session adds a hidden-count SUPPLEMENT the notice tests never asked for, so three of
+# them failed in-container and passed on the host — indistinguishable, from the outside,
+# from the known host-only set.
 unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER \
       CCO_CCO_ACCESS CCO_CLAUDE_ACCESS CCO_SHOW_HOST_PATHS CCO_CONFIG_TARGETS \
       CCO_ACCESS_TRIPLE \
-      PROJECT_NAME CCO_PROJECT_PACKS CCO_PROJECT_LLMS \
+      PROJECT_NAME CCO_PROJECT_PACKS CCO_PROJECT_LLMS CCO_STORE_TOTALS \
       CCO_DATA_HOME CCO_STATE_HOME CCO_CACHE_HOME CCO_CONFIG_DIR \
       CCO_SESSION_CONTEXT CCO_SUBAGENT_CONTEXT 2>/dev/null || true
 

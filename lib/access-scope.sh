@@ -674,6 +674,24 @@ _env_kind_widening() {
 # Format: CCO_STORE_TOTALS="pack=7,template=3,llms=5,remote=2" (absent → no
 # supplement, so a host run and a pre-ADR-0056 container degrade to the old
 # behaviour rather than inventing a number).
+#
+# ⚠ THE SUPPLEMENT IS PER-INVOCATION, NOT PER-SESSION (ratified 2026-07-30, after the
+# post-build probe finally made D5 live — the signal had never crossed the ADR-0047
+# boundary, so none of this ran in production). A total is a fact about the STORE; a
+# notice is a sentence about WHAT THIS VERB JUST SHOWED. Supplementing every store kind
+# on every flush conflated the two and put a false clause in every read verb's notice:
+# `cco list llms` — which shows both of this project's llms — announced "6 packs
+# hidden", while `cco list packs` announced "5 packs, 2 llms hidden" though those 2 llms
+# are exactly the ones it is not hiding. Worse, the same session answered 6 or 5 to the
+# same question depending on which verb was asked, because the number is
+# total-minus-enumerated and a verb that lists llms enumerates no packs at all.
+#
+# So a verb must DECLARE the kinds it enumerates exhaustively (_env_store_subject), and
+# only those are supplemented. Not declaring means no supplement: silence is honest,
+# a fabricated count is not. Rejected alternative: supplement only kinds with seen>0 —
+# it needs no declaration anywhere, but it goes silent exactly when nothing was
+# enumerable (a project referencing no packs, a fully absent mount), which is R-B
+# returning through the back door.
 _ENV_STORE_KINDS="pack template llms remote"
 
 # Kinds the "not mounted in this session" notice can carry (see the flush below):
@@ -713,6 +731,19 @@ _env_note_seen() {
     printf -v "$var" '%d' "$(( cur + 1 ))"
 }
 
+# Declare the store kinds THIS invocation enumerates exhaustively — the only kinds
+# whose host-total supplement it may speak about (ratified 2026-07-30, after the
+# post-build probe; see the block above). Additive, so a verb listing several kinds
+# declares them all. Usage: _env_store_subject <kind>…
+#
+# ⚠ DECLARING IS THE OPT-IN. A verb that does not declare gets NO supplement, which
+# is the honest default: it cannot enumerate a kind's full store, so it has no basis
+# for a claim about that kind. The cost of the reverse default was measured — see the
+# block above — and it was a false sentence in every read verb's notice.
+_env_store_subject() {
+    _ENV_SUBJECT_KINDS="${_ENV_SUBJECT_KINDS:-} $* "
+}
+
 # Fold the unenumerable remainder into the hidden counters, just before the notice
 # is built. Operator-only (INV-A: the host is never scoped and always enumerates).
 # Per kind: supplement = max(0, host_total - enumerated), so it is correct for a
@@ -732,8 +763,12 @@ _env_apply_store_supplement() {
     [[ -n "${CCO_STORE_TOTALS:-}" ]] || return 0
     [[ "${_ENV_SUPPL_DONE:-}" == "1" ]] && return 0
     _ENV_SUPPL_DONE=1
+    # No declared subject → no supplement. See _env_store_subject.
+    [[ -n "${_ENV_SUBJECT_KINDS:-}" ]] || return 0
     local kind total seen svar n i
     for kind in $_ENV_STORE_KINDS; do
+        # Only kinds THIS invocation enumerates exhaustively (D5 scoping).
+        case "${_ENV_SUBJECT_KINDS}" in *" $kind "*) ;; *) continue ;; esac
         total=$(_env_store_total "$kind") || continue
         svar="_ENV_SEEN_${kind}"; seen="${!svar:-0}"
         n=$(( total - seen ))

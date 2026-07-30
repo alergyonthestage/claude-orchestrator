@@ -421,6 +421,12 @@ EOF
     if [[ -z "$kind" || "$kind" == project ]]; then _index_assert_readable; fi
 
     [[ -z "$sort_by" ]] && sort_by="kind"
+    # D5 subject (ratified 2026-07-30): the unified index enumerates EVERY store kind,
+    # so it may speak about all of them; `cco list <kind>` reaching this path (with a
+    # --tag/--sort/--reverse filter) speaks about that one kind only. The bare per-kind
+    # view returned above instead, and each rich lister declares its own subject.
+    if [[ -z "$kind" ]]; then _env_store_subject $_ENV_STORE_KINDS
+    else                      _env_store_subject "$kind"; fi
     local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue

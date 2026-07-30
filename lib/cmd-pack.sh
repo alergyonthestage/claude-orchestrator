@@ -107,6 +107,9 @@ EOF
     printf "${BOLD}%s %-11s %-8s %-8s %-8s %s${NC}\n" \
         "$(_fit_col "NAME" "$namew")" "KNOWLEDGE" "SKILLS" "AGENTS" "RULES" "TAGS"
 
+    # D5: this verb enumerates the pack store exhaustively, so its notice may speak
+    # about packs — and only packs (ratified 2026-07-30).
+    _env_store_subject pack
     for dir in "$PACKS_DIR"/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
@@ -388,6 +391,8 @@ EOF
         _validate_single_pack "$name"
     else
         local has_errors=false
+        # D5 subject: the --all arm sweeps the whole pack store (see cmd_pack_list).
+        _env_store_subject pack
         for dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$dir" ]] && continue
             local pack_name

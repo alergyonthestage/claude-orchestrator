@@ -253,6 +253,9 @@ EOF
 
     printf "${BOLD}%-20s %-10s %-8s %-14s %s${NC}\n" "NAME" "VARIANT" "LINES" "DOWNLOADED" "SOURCE"
 
+    # D5: this verb enumerates the llms bucket exhaustively, so its notice may speak
+    # about llms — and only llms (ratified 2026-07-30).
+    _env_store_subject llms
     for dir in "$LLMS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
         local dname

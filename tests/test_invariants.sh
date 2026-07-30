@@ -1375,3 +1375,284 @@ test_invariant_no_local_availability_decisions() {
         || { fail "INV-AVAIL over-reaches: a non-availability existence test / a comment quoting the vocabulary was flagged:"$'\n'"$planted"; return 1; }
     return 0
 }
+
+# ── INV-DESC — the trusted descriptor's keys cross the boundary ───────
+#
+# THE INVARIANT — every key `cco start` writes into the trusted session descriptor
+# (lib/cmd-start.sh, the block redirected into "$session_descriptor") appears in
+# ALLOWED_KEYS[] in config/cco-svc-helper.c.
+#
+# WHY A LINT AND NOT A COMMENT. The helper builds the elevated child's environment
+# FROM SCRATCH (ADR-0047 R2: never argv, never the caller's env) and copies over only
+# whitelisted descriptor keys. A key the writer emits and the whitelist omits is
+# therefore dropped IN SILENCE: no error, no refusal, no exit code — the elevated cco
+# simply runs without a signal the host believes it sent. Both sides look correct in
+# isolation, which is why the writer's own "Keys mirror the helper's whitelist" comment
+# survived being false.
+#
+# WHY THE SUITE COULD NOT SEE IT. A bash test exercises such a signal by exporting it
+# and calling the consumer in-process (tests/test_access_scope.sh does exactly this for
+# CCO_STORE_TOTALS) — a path that never crosses the setuid boundary, so it passes on a
+# tree where the real path is inert. This is the RC-17 shape: the hermetic lane cannot
+# observe container reality. A STATIC cross-file lint can, because the correspondence
+# it checks is a property of the two source files, not of a running container.
+#
+# THE SHIPPED DEFECT this closes: CCO_STORE_TOTALS (ADR-0056 D5) was written into the
+# descriptor by S4 and never whitelisted, so the "hidden by access scope" notice stayed
+# silent about exactly the resources D5 exists to count — `cco list packs` showed 1 of 6
+# packs with no notice at all. Found by the post-build container probe, not by the suite.
+#
+# DELIBERATELY ONE-DIRECTIONAL: written ⊆ allowed. The reverse (a whitelisted key no
+# writer emits) is dead surface, not a behavioural defect — and failing on it would
+# reject a legitimate two-commit sequence that widens the whitelist before the writer
+# uses it. ADR-0047's minimal-surface argument is served by review, not by this lint.
+
+#
+# SECOND ARM — the same family, the other registry. A descriptor key is also a variable
+# the SUITE must neutralize: `bin/test` unsets the ambient session environment so a
+# self-dev run behaves like a host run (its own comment explains why). A key missing
+# there leaks a REAL session value into every test that reads it — for CCO_STORE_TOTALS,
+# a hidden-count supplement three notice tests never asked for, failing in-container and
+# passing on the host, which is indistinguishable from the known host-only set until
+# someone diffs the names. Same omission class as the whitelist, found the same day: a
+# signal family with more than one registry needs the correspondence linted, not
+# remembered.
+
+# Echo the keys `cco start` writes into the trusted descriptor, one per line. Both arms
+# below read the writer through THIS function, so they can never disagree about what a
+# descriptor key is. Arg: <path to cmd-start.sh> (a path, so the self-tests can read a
+# STAGED copy).
+#
+# The keys are the printf'd KEY= names inside the group redirected into
+# "$session_descriptor": buffer since the opening `{`, emit at the redirect. So a printf
+# anywhere else in the file (the compose stream, another verb) is not a descriptor key,
+# and the block can move without the lint chasing line numbers.
+_desc_lint_written_keys() {
+    local prog
+    prog=$(cat <<'AWK'
+/^[[:space:]]*\{[[:space:]]*$/ { n = 0; next }
+match($0, /printf '[A-Z_][A-Z_0-9]*=/) {
+    k = substr($0, RSTART + 8); sub(/=.*/, "", k); buf[n++] = k
+}
+/^[[:space:]]*\}[[:space:]]*>[[:space:]]*"\$session_descriptor"/ {
+    for (i = 0; i < n; i++) print buf[i]; n = 0
+}
+AWK
+)
+    awk "$prog" "$1"
+}
+
+# Echo the members of <keys> absent from the space-delimited <registry>, one per line.
+# A parse failure on either side must never read as "clean", so it is reported as a hit.
+_desc_lint_absent_from() {
+    local keys="$1" registry="$2" what="$3" k
+    [[ -n "$keys" ]]         || { echo "__NO_DESCRIPTOR_KEYS_PARSED__"; return 0; }
+    [[ "$registry" != "  " ]] || { echo "__NO_${what}_PARSED__"; return 0; }
+    while IFS= read -r k; do
+        [[ -n "$k" ]] || continue
+        case "$registry" in *" $k "*) ;; *) echo "$k" ;; esac
+    done <<< "$keys"
+}
+
+# Descriptor keys missing from the helper's whitelist (empty = clean).
+# Args: <cmd-start.sh> <cco-svc-helper.c>.
+_desc_lint_missing_keys() {
+    local allowed
+    # Whitelist entries: the quoted names in the ALLOWED_KEYS[] initialiser.
+    allowed=" $(sed -n '/ALLOWED_KEYS\[\][[:space:]]*=[[:space:]]*{/,/};/p' "$2" \
+        | grep -o '"[A-Z_][A-Z_0-9]*"' | tr -d '"' | tr '\n' ' ') "
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$allowed" NO_WHITELIST
+}
+
+# Descriptor keys the SUITE RUNNER does not neutralize (empty = clean).
+# Args: <cmd-start.sh> <bin/test>.
+_desc_lint_unneutralized_keys() {
+    local cleared=" " tok
+    # The unset statement: from the `unset` keyword to the redirect that closes it,
+    # keeping only shell-variable-shaped tokens (drops 2>/dev/null, ||, true, \).
+    for tok in $(sed -n '/^unset /,/2>\/dev\/null/p' "$2"); do
+        [[ "$tok" =~ ^[A-Z][A-Z_0-9]*$ ]] && cleared+="$tok "
+    done
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$cleared" NO_UNSET_LIST
+}
+
+# Descriptor keys the OPERATOR LANE sanitiser leaves to chance (empty = clean).
+# Args: <cmd-start.sh> <tests/helpers.sh>.
+#
+# Here "neutralized" is wider than in bin/test: _lane_operator_exports deliberately SETS
+# most of these to a deterministic value (that is the point of a lane) and unsets the
+# rest. Either is fine; what is not fine is a key it never mentions, because then the
+# value comes from whatever session happens to be running — the very leak its own
+# comment (c) says it exists to prevent.
+_desc_lint_unpinned_lane_keys() {
+    local pinned=" " tok region
+    region=$(sed -n '/^_lane_operator_exports()/,/^}/p' "$2")
+    for tok in $(printf '%s' "$region" | tr -c 'A-Za-z0-9_' ' '); do
+        [[ "$tok" =~ ^[A-Z][A-Z_0-9]*$ ]] && pinned+="$tok "
+    done
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$pinned" NO_LANE_REGION
+}
+
+test_invariant_descriptor_keys_whitelisted() {
+    local writer="$REPO_ROOT/lib/cmd-start.sh" helper="$REPO_ROOT/config/cco-svc-helper.c"
+    [[ -f "$writer" && -f "$helper" ]] \
+        || { fail "INV-DESC: descriptor writer or setuid helper not found"; return 1; }
+
+    # 1. The live tree must be clean.
+    local missing; missing=$(_desc_lint_missing_keys "$writer" "$helper")
+    [[ -z "$missing" ]] || { fail "INV-DESC: \`cco start\` writes a descriptor key the setuid helper does not whitelist, so the elevated cco never receives it — silently, and invisibly to a suite that exports the signal in-process. Add it to ALLOWED_KEYS[] in config/cco-svc-helper.c (and rebuild: the helper is compiled into the image):"$'\n'"$missing"; return 1; }
+
+    # 2. Discrimination (D9, mandatory). A static invariant cannot "fail on a reverted
+    #    tree" when both halves of the correspondence move together, so the proof is a
+    #    planted violation — in both directions — over STAGED copies.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$writer" "$tmp/cmd-start.sh"; cp "$helper" "$tmp/helper.c"
+
+    # 2a. MUST FIRE — a new descriptor key that nobody whitelisted: the exact shape of
+    #     the shipped CCO_STORE_TOTALS defect.
+    awk '/^[[:space:]]*\}[[:space:]]*>[[:space:]]*"\$session_descriptor"/ && !done {
+            print "                printf '\''CCO_LINT_PLANT=%s\\n'\'' \"x\""; done = 1
+         } { print }' "$tmp/cmd-start.sh" > "$tmp/planted.sh"
+    grep -q 'CCO_LINT_PLANT' "$tmp/planted.sh" \
+        || { fail "INV-DESC self-test: could not plant a descriptor key — has the descriptor block moved?"; return 1; }
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper.c")
+    [[ "$missing" == *"CCO_LINT_PLANT"* ]] \
+        || { fail "INV-DESC does NOT discriminate: a planted un-whitelisted descriptor key went uncaught (this is the exact shape of the shipped defect):"$'\n'"${missing:-<no hits>}"; return 1; }
+
+    # 2b. MUST NOT FIRE — the same key, now whitelisted. Without this arm a lint that
+    #     flagged every key unconditionally would also "pass" 2a.
+    sed 's/"CCO_CONFIG_TARGETS",/"CCO_LINT_PLANT",\n    "CCO_CONFIG_TARGETS",/' \
+        "$tmp/helper.c" > "$tmp/helper-ok.c"
+    grep -q 'CCO_LINT_PLANT' "$tmp/helper-ok.c" \
+        || { fail "INV-DESC self-test: could not plant a whitelist entry"; return 1; }
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper-ok.c")
+    [[ -z "$missing" ]] \
+        || { fail "INV-DESC over-reaches: a properly whitelisted descriptor key was flagged:"$'\n'"$missing"; return 1; }
+
+    # 2c. MUST NOT FIRE — a printf of a KEY= outside the descriptor group is not a
+    #     descriptor key (the compose stream emits env lines of the same shape).
+    printf '\n_lint_probe_other() {\n    printf '\''CCO_OTHER_PLANT=%%s\\n'\'' "x"\n}\n' \
+        >> "$tmp/planted.sh"
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper-ok.c")
+    [[ "$missing" != *"CCO_OTHER_PLANT"* ]] \
+        || { fail "INV-DESC over-reaches: a printf outside the descriptor group was read as a descriptor key:"$'\n'"$missing"; return 1; }
+    return 0
+}
+
+# ── INV-AVAIL/D5 — counting a store kind means declaring it ───────────
+#
+# THE INVARIANT — a function that calls `_env_note_seen` (it enumerates a store kind,
+# row by row, for the host-total supplement) also calls `_env_store_subject` (it says
+# which kinds its notice may speak about). The two are halves of one statement: seen is
+# "how many I found", subject is "what I was looking for", and the supplement is the
+# difference. A function with only the first half enumerates without declaring, so its
+# rows are counted and then dropped — silently, because the ratified default is silence.
+#
+# WHY THIS SHAPE. The kinds are often variables (`_env_note_seen "$rk"` in the unified
+# lister, `_env_store_subject $_ENV_STORE_KINDS` beside it), so matching kind NAMES
+# statically would be noise. Function-level co-presence is what is checkable, and it is
+# exactly the omission class: an exhaustive enumerator either declares or it does not.
+#
+# ⚠ THE OTHER DIRECTION IS NOT LINTED. Declaring without enumerating is harmless and
+# often right: the supplement is total-minus-seen, so a declared kind with no rows
+# yields the whole total — precisely the G=none case D5 exists for (`cco list packs`
+# with the pack mount absent declares pack and sees nothing). Linting that direction
+# would flag the design.
+_seen_lint_violations() {
+    local libdir="$1" f b prog
+    prog=$(cat <<'AWK'
+/^[_a-zA-Z][_a-zA-Z0-9]*\(\)[[:space:]]*\{/ { fn = $0; sub(/\(\).*/, "", fn); seen = 0; subj = 0 }
+$0 ~ /_env_note_seen/ && $0 !~ /^[[:space:]]*#/     { if (fn != "") seen = 1 }
+$0 ~ /_env_store_subject/ && $0 !~ /^[[:space:]]*#/ { if (fn != "") subj = 1 }
+/^\}/ { if (fn != "" && seen && !subj) print fn; fn = ""; seen = 0; subj = 0 }
+AWK
+)
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        # The owner DEFINES both primitives; its mentions are definitions, not calls.
+        [[ "$b" == "access-scope.sh" ]] && continue
+        awk "$prog" "$f" | sed "s|^|${b}: |"
+    done
+}
+
+test_invariant_store_subject_declared_where_counted() {
+    local v; v=$(_seen_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || { fail "INV-AVAIL/D5: a verb counts enumerated rows (_env_note_seen) without declaring which store kinds its notice may speak about (_env_store_subject), so those rows are counted and then dropped — the supplement stays silent about resources that exist. Declare the subject beside the enumeration loop:"$'\n'"$v"; return 1; }
+
+    # Discrimination, both directions, on a staged copy of a real (non-owner) file.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-D5 self-test: could not stage lib/"; return 1; }
+
+    # MUST FIRE — enumerates, never declares.
+    printf '\n_lint_probe_counts_only() {\n    _env_note_seen pack\n}\n' >> "$tmp/cmd-template.sh"
+    local planted; planted=$(_seen_lint_violations "$tmp")
+    [[ "$planted" == *"_lint_probe_counts_only"* ]] \
+        || { fail "INV-D5 does NOT discriminate: a planted count-without-declare went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # MUST NOT FIRE — the correct pairing.
+    printf '\n_lint_probe_counts_and_declares() {\n    _env_store_subject pack\n    _env_note_seen pack\n}\n' \
+        >> "$tmp/cmd-template.sh"
+    planted=$(_seen_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_counts_and_declares"* ]] \
+        || { fail "INV-D5 over-reaches: a correctly paired enumerator was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
+
+# The second registry: the same descriptor keys must be neutralized by the suite runner.
+# Split from the whitelist arm so a failure names WHICH registry drifted — the remedies
+# are in different files and only one of them needs a rebuild.
+test_invariant_descriptor_keys_neutralized_in_suite() {
+    local writer="$REPO_ROOT/lib/cmd-start.sh" runner="$REPO_ROOT/bin/test"
+    [[ -f "$writer" && -f "$runner" ]] \
+        || { fail "INV-DESC: descriptor writer or test runner not found"; return 1; }
+
+    # 1. The live tree must be clean.
+    local leaked; leaked=$(_desc_lint_unneutralized_keys "$writer" "$runner")
+    [[ -z "$leaked" ]] || { fail "INV-DESC: \`cco start\` writes a descriptor key that bin/test does not unset, so a self-dev run inherits the REAL session's value and tests that read it fail in-container while passing on the host — which reads as one more host-only failure. Add it to the unset list in bin/test:"$'\n'"$leaked"; return 1; }
+
+    # 2. Discrimination. MUST FIRE on a staged runner with one key dropped from the unset
+    #    list — literally the pre-fix state of bin/test for CCO_STORE_TOTALS.
+    #
+    #    The victim is whatever key the writer lists first, so the plant must not depend
+    #    on how THAT key happens to be spelled in the registry: the drop is scoped to the
+    #    registry's own region and confirmed by awk (exit 3 when nothing was removed),
+    #    never by grepping the whole file — a comment naming the key would defeat that,
+    #    and a plant that quietly removes nothing is an inert lint wearing a PASS.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    local victim; victim=$(_desc_lint_written_keys "$writer" | grep -v '^PROJECT_NAME$' | head -1)
+    [[ -n "$victim" ]] || { fail "INV-DESC self-test: no descriptor key to drop"; return 1; }
+    awk -v v="$victim" '
+        /^unset /         { inb = 1 }
+        inb               { if (gsub("(^| )" v "( |$)", " ")) removed = 1 }
+        /2>\/dev\/null/   { inb = 0 }
+                          { print }
+        END               { exit(removed ? 0 : 3) }
+    ' "$runner" > "$tmp/test-runner" \
+        || { fail "INV-DESC self-test: could not drop '$victim' from bin/test's unset list"; return 1; }
+    leaked=$(_desc_lint_unneutralized_keys "$writer" "$tmp/test-runner")
+    [[ "$leaked" == *"$victim"* ]] \
+        || { fail "INV-DESC does NOT discriminate: '$victim' dropped from bin/test's unset list went uncaught:"$'\n'"${leaked:-<no hits>}"; return 1; }
+
+    # 3. The THIRD registry: the operator-lane sanitiser, which by its own comment (c)
+    #    must not rely on the runner. Same key set, wider notion of "handled".
+    local helpers="$REPO_ROOT/tests/helpers.sh"
+    [[ -f "$helpers" ]] || { fail "INV-DESC: tests/helpers.sh not found"; return 1; }
+    local unpinned; unpinned=$(_desc_lint_unpinned_lane_keys "$writer" "$helpers")
+    [[ -z "$unpinned" ]] || { fail "INV-DESC: a descriptor key is neither pinned nor unset by _lane_operator_exports (tests/helpers.sh), so an operator-lane test inherits it from whatever cco session is running — its own comment (c) is the argument against exactly this. Pin it deterministically beside CCO_PROJECT_PACKS:"$'\n'"$unpinned"; return 1; }
+
+    # MUST FIRE on a staged helpers.sh with every mention of the victim removed from the
+    # lane function — whatever form it takes there (an export, an unset, a printf).
+    # The staged file is only ever LINTED, never sourced, so dropping whole lines is safe.
+    awk -v v="$victim" '
+        /^_lane_operator_exports\(\)/ { inb = 1 }
+        inb && /^}/                   { inb = 0 }
+        inb && index($0, v)           { removed = 1; next }
+                                      { print }
+        END                           { exit(removed ? 0 : 3) }
+    ' "$helpers" > "$tmp/helpers.sh" \
+        || { fail "INV-DESC self-test: could not drop '$victim' from _lane_operator_exports"; return 1; }
+    unpinned=$(_desc_lint_unpinned_lane_keys "$writer" "$tmp/helpers.sh")
+    [[ "$unpinned" == *"$victim"* ]] \
+        || { fail "INV-DESC does NOT discriminate: '$victim' dropped from the lane sanitiser went uncaught:"$'\n'"${unpinned:-<no hits>}"; return 1; }
+    return 0
+}
