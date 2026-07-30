@@ -836,11 +836,36 @@ it, or none of it plus a non-zero exit naming the reason. Anything in between is
 
 ### 8.5 D7's residual — the view composed with **no packs at all**
 
-S1's two probes both ran on a project that adopts `core-dev-framework`, so the view would have been
-composed regardless; only `test_claude_view_composed_for_the_write_floor_without_packs` covers that
-arm. Start a default (`Cp=ro`) session for a project whose `project.yml` references **no** pack and
-confirm the framework view is still composed with the functional-write floor
-(`settings.local.json`, `workflows/`) present and writable.
+**What the arm is.** ADR-0054 D2 built the CACHE `.claude` view *only* when a session injects
+pack/llms children. ADR-0055 D3 adds framework-owned floor entries (`settings.local.json`,
+`workflows/`) as children of the same parent, so D7 **generalises the trigger** to *any*
+framework-owned child — i.e. the view is now composed for **every** `Cp=ro` session, packs or not.
+
+**Why no probe has seen it.** Both of S1's probes ran on `claude-orchestrator`, which adopts
+`core-dev-framework`: the old pack trigger fired, so the composition proved nothing about the new
+half of the trigger. Only the unit tests cover it —
+`tests/test_start_claude_view.sh:226` (`…composed_for_the_write_floor_without_packs`) and `:242`
+(`…committed_tree_survives_composition_without_packs`).
+
+**Procedure.** In a **default** session (`Cp=ro` — do **not** pass `--claude-access all`, and use a
+project with no `access:` override, or the mask decides the outcome instead of the code) on a project
+whose `project.yml` lists **no** pack:
+
+```bash
+# inside the session
+ls -la /workspace/.claude                       # the composed view, not the repo's .cco/claude bound raw
+grep ' /workspace/.claude' /proc/self/mountinfo  # the view mount + its floor children
+touch /workspace/.claude/settings.local.json && echo ok   # floor entry 1 — writable
+mkdir -p /workspace/.claude/workflows && touch /workspace/.claude/workflows/.probe && echo ok
+rm -f /workspace/.claude/workflows/.probe
+```
+
+Expected: the view **is** composed (D7's point), and both floor entries are writable while the rest of
+the tree stays `:ro`. A session that lands on a raw `:ro` `.claude` with no view is the defect.
+
+💡 **Sequence it with §8.4 and pay for one scratch setup, not two.** E6B-04's `proj-a` references no
+pack in the window between `cco init` and the manual `packs:` edit — that is exactly D7's subject.
+Run D7 there first, then add the pack reference and continue with the fan-out.
 
 ### 8.6 Then, in order
 
