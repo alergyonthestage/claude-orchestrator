@@ -102,7 +102,30 @@ cco list packs                                             # confirm scratch-pac
 
 ### G1.3 E6B-04 — the pack-rename fan-out, **never executed in any round**
 
-Inside an `edit-all` session (`./bin/cco start config-editor --all`, always by absolute path):
+> ⚠ **Run this on the HOST, not in a session** — corrected 2026-07-30 against
+> [`handoff-v3.md`](../handoff-v3.md) §7 step 2, which prescribes *"in an `edit-all` container
+> session"*. That is **unsatisfiable** for a fan-out of ≥2 referring projects, and the proof is four
+> lines of code, not an opinion:
+>
+> - `pack rename` is gated `_op_write … global` (`bin/cco:490`) → needs **G=rw**;
+> - config-editor `--all` **or** `--cco-access edit-all` forces `config_editor_mode=all`
+>   (`cmd-start.sh:1001`) → G=rw, but that mode mounts **no repos**, so every member reads not-mounted
+>   and the pre-scan refuses;
+> - config-editor with `--project` targets *does* mount their repos, but resolves to
+>   `global=ro,current=rw,others=none` (`cmd-start.sh:1024`) → **G=ro**, refused at exit 2 before it
+>   starts;
+> - a normal session mounts only **its own** project's repos, so with two referring projects one is
+>   always unmounted.
+>
+> No container session can both write the store and bind two referring projects' repos. On the host the
+> probe is the identity, the members resolve, and the census is 0 by construction — and the cascade
+> under test (`lib/store.sh`) is the same code either way. **What changes is only where it runs.**
+>
+> 📋 The refusal that exposed this is logged as **FI-41** (a session reports *not-mounted* as
+> *unresolved* and prints a remedy that cannot work). It is a **candidate 🔴 against criterion C** and
+> belongs to R-A's class — take it to the human gate (G3), do not fix it silently mid-gate.
+
+On the host, from the repo:
 
 ```bash
 cco pack rename scratch-pack scratch-pack-renamed -y

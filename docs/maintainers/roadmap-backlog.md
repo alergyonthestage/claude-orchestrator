@@ -1571,3 +1571,81 @@ in `lib/access-scope.sh`, not at the `cmd-pack.sh` print site.
 site) · [ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
 (the census runs on the elevated side) · the sibling observation logged in cycle-1.2's §7 S3 entry
 (a refusal naming the internal `/var/lib/cco-internal/…` path while its remedy is host-side).
+
+---
+
+## FI-41: in a session, *not-mounted* is reported as *unresolved* — and the remedy cannot work
+
+**Found**: 2026-07-30, running cycle-1.2's **G1/E6B-04** gate. **Severity**: **the refusal is
+unactionable** — the remedy names a verb that will report success and change nothing, so the operator
+loops. Candidate 🔴 against **criterion C** (*"the 'not mounted in this session' vocabulary is used
+wherever it applies"* + *"every refusal names a reason **and a remedy**"*). **Effort**: Low for the
+message, Medium once the lint gap is closed. **Class**: **R-A**, the availability vocabulary — i.e. the
+class cycle-1.2 exists to close, at a site the S4 sweep did not reach.
+
+**Observed.** `./bin/cco start config-editor --all` (`edit-all`, `G=rw Pc=rw Po=rw`):
+
+> ✗ Cannot rename pack 'scratch-pack': **unresolved member(s)** in referencing project(s):
+> proj-a:proj-a proj-b:proj-b. Run **'cco resolve' on your host** first (ADR-0031).
+
+Both projects are fully resolved on that machine — `cco project show proj-a` on the host prints
+`/private/tmp/cco-scratch/proj-a` with no unresolved marker, and **the same verb inside the same
+session renders it correctly**: `[not mounted in this session] [code-only]`. So one session answers
+the same question two different ways, and the refusing answer is the wrong one.
+
+**Mechanism — two vocabularies share one word.**
+
+| Owner | `unresolved` means | Distinguishes *not-mounted*? |
+|---|---|---|
+| `_env_member_state` (`lib/access-scope.sh:931-937`) — the sanctioned availability owner | no binding at all (INV-F.1) | **yes** — `here` / `not-mounted` / `unresolved` |
+| `_project_member_status` (`lib/index.sh:1420-1428`) — index-level ownership | `[[ -n "$repo_path" && -d "$repo_path" ]]` fails | **no** |
+
+`_project_iter_members`' column 2 is *"the path at which the member is INSPECTABLE in the current
+context — the container MOUNT in operator mode"* (`index.sh:1432-1434`). So in any session that does
+not bind a member's repo, the probe fails and the status **collapses to `unresolved`**. The rename
+pre-scan (`lib/cmd-pack.sh:606-620`) branches on that raw status and prints the `cco resolve` remedy.
+
+**Why the INV-AVAIL lint does not catch it — the real gap.** All three arms miss it, each for a good
+reason: `PRED` catches a verb *computing* the predicate itself, and this one does not compute it;
+`STR` matches the **bracket badges** (`[unresolved]`), not the word in prose; and D2's `cco resolve`
+rule is *satisfied* — the line carries its own `_cco_container_operator` qualifier (this cycle put it
+there). **INV-AVAIL guards computation and badges, not the consumption of the wrong owner's
+vocabulary.** That is the meta-root one level out: not *"a predicate every call site computes for
+itself"* but *"a call site reading the right value from the wrong owner"*.
+
+**Blast radius — treat as a lower bound (S9).** `_project_iter_members` is documented as *"the
+ownership-guarded loop shared by `cco join` / `cco forget --purge` / the rename verbs' project.yml
+rewrite"* (`index.sh:1439-1440`). Every consumer branching on `unresolved` inherits the conflation.
+
+**Consequence for E6B-04, proved rather than assumed**: the gate's container arm is **structurally
+unreachable** for a fan-out of ≥2 referring projects.
+
+- `pack rename` is gated `_op_write … global` (`bin/cco:490`) → needs **G=rw**.
+- config-editor `--all` *or* `--cco-access edit-all` forces `config_editor_mode=all`
+  (`cmd-start.sh:1001`) → `edit-all`, but that mode mounts **no repos** → every member reads
+  not-mounted → refused.
+- config-editor with `--project` targets mounts their repos but resolves to
+  `global=ro,current=rw,others=none` (`cmd-start.sh:1024`) → **G=ro** → the write is refused at exit 2
+  before it starts.
+- A normal session mounts only **its own** project's repos, so with two referring projects one of them
+  is always unmounted.
+
+⇒ no container session can simultaneously write the store and bind two referring projects' repos.
+**E6B-04 must run on the host** (where the probe is the identity and the vocabulary is honest), and
+handoff-v3 §7 step 2's *"in an `edit-all` container session"* is unsatisfiable as written.
+
+**Proposed fix — narrow, at the consumer, not at the shared status:**
+
+1. **Do not** change `_project_member_status`'s vocabulary: `join` and `forget --purge` share it, and
+   widening it there is a blast radius nobody has measured.
+2. In the rename pre-scan, classify with **`_env_member_state`** and split the message — `unresolved`
+   keeps the `cco resolve` remedy; `not-mounted` gets the sentence the sibling guard already prints
+   correctly 10 lines below (`cmd-pack.sh:630`): *"Run it on your host, or start a session that mounts
+   them."*
+3. Extend **INV-AVAIL** to the gap it just proved: flag a consumer that branches on
+   `_project_iter_members`' status where the availability owner should be asked.
+
+**Related**: [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
+D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C ·
+[FI-40](#fi-40-a-fail-closed-refusal-states-a-count-where-naming-is-safe-pack-rename-unmounted-census)
+(the sibling guard, same verb, correct sentence but count-only).
