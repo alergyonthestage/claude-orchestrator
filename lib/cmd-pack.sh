@@ -556,8 +556,13 @@ EOF
 # install-provenance + STATE merge base/meta, the per-user tag binding, and the
 # `packs[]` reference in every project that uses it (pack names are globally
 # scoped — unaffected by ADR-0051's per-project index scoping). Strict (ADR-0031
-# D3): refuse if a referencing project has an unresolved member, whose replicated
-# project.yml copy would drift under cco sync's clobber-guard.
+# D3): refuse if a referencing project has a member whose replicated project.yml
+# copy cannot be rewritten from here, since it would drift under cco sync's
+# clobber-guard. That is TWO conditions, not one (FI-41): a member with no binding
+# at all is a configuration error (`cco resolve`, exit 1), while a member bound on
+# this machine but not bound into THIS container is a session shape (run it on the
+# host, exit 2 per D8). Both answers come from _env_member_state, never from the
+# index-level status word, which cannot tell them apart in operator mode.
 cmd_pack_rename() {
     local old="" new="" yes=false
     while [[ $# -gt 0 ]]; do
@@ -601,17 +606,39 @@ EOF
     # for an unresolved member, so `IFS=$'\t' read` would fold the middle field and
     # never see status=unresolved (E6B-04). The enumeration is now non-vacuous
     # in-container (index §3.6), so this guard actually classifies mounted members.
-    local proj unit yml mname mpath mstatus _mrec
-    local -a affected=() blocked=()
+    local proj unit yml mname mpath mstatus _mrec _mstate
+    local -a affected=() blocked=() unmounted=()
     while IFS=$'\t' read -r proj unit yml; do
         _yaml_list_has_ref "$yml" packs "$old" || continue
         affected+=("$proj")
         while IFS= read -r _mrec; do
             [[ -z "$_mrec" ]] && continue
             _peel_tab "$_mrec" mname mpath mstatus
-            [[ "$mstatus" == unresolved ]] && blocked+=("$proj:$mname")
+            [[ "$mstatus" == unresolved ]] || continue
+            # FI-41 — `unresolved` here is _project_member_status's word, and it means
+            # "the probe is not inspectable in THIS context". Column 2 is the container
+            # MOUNT in operator mode (index.sh:1432-1434), so in a session that word
+            # covers TWO realities and this branch used to answer both with `cco
+            # resolve` — advice the host would answer "already resolved", leaving the
+            # operator in a loop. Ask the availability owner instead of re-reading the
+            # index-level vocabulary (ADR-0056 D1): the state, its sentence and its exit
+            # code all come from one place.
+            _mstate=$(_env_member_state "$mname" "$(_index_get_path "$proj" "$mname")")
+            case "$_mstate" in
+                here)        ;;                            # inspectable after all
+                not-mounted) unmounted+=("$mname") ;;
+                *)           blocked+=("$proj:$mname") ;;
+            esac
         done < <(_project_iter_members "$proj")
     done < <(_project_foreach)
+    # Session shape before naming error (D8): a member that merely is not bound here
+    # is not a broken configuration, and its remedy is the host — so it refuses at
+    # exit 2 through the owner, while a genuinely unresolved member still dies at 1.
+    # Naming only the first offender is deliberate: every offender carries the SAME
+    # remedy, so enumerating them adds no action. Whether a refusal may name the whole
+    # set is FI-40's open question, and it belongs to both guards at once — not to
+    # this one alone, pre-empted here.
+    [[ ${#unmounted[@]} -gt 0 ]] && _env_unavailable not-mounted repo "${unmounted[0]}"
     [[ ${#blocked[@]} -gt 0 ]] && \
         # ADR-0056 D2 — a remedy is a function of the print site. `pack rename` is
         # container-reachable at edit-global, and `cco resolve` is host-only there

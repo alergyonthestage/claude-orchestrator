@@ -1376,6 +1376,94 @@ test_invariant_no_local_availability_decisions() {
     return 0
 }
 
+# ── INV-AVAIL/CONSUMER — reading the answer from the wrong owner ──────
+#
+# THE INVARIANT — a verb that turns `_project_iter_members`' / `_project_member_status`'
+# status into a REFUSAL must ask `_env_member_state` first.
+#
+# WHY A SECOND ARM. INV-AVAIL's three arms guard how a verb COMPUTES availability
+# (a probe predicate), and which BADGES it spells. FI-41 shipped through all three
+# untouched: `cco pack rename` computed nothing and spelled no badge — it branched on
+# the index-level word `unresolved` and printed the `cco resolve` remedy. That word
+# means "the probe is not inspectable in THIS context", and column 2 is the container
+# MOUNT in operator mode, so in a session it covers two realities and the remedy fits
+# only one. On the host the same word is honest, which is why every host-only verb
+# file stays allowlisted here exactly as it is for the D2 arm.
+#
+# The meta-root, one level out from the cycle's own: not "a predicate every call site
+# computes for itself" but **a call site reading the right value from the wrong owner**.
+_avail_consumer_lint_violations() {
+    local libdir="$1" f b
+    local prog
+    prog=$(cat <<'AWK'
+BEGIN { fn="(toplevel)"; t=0; br=0; sp=0; ask=0 }
+function flushfn() {
+  if (t && br && sp && !ask) print FILENAME "|" fn "|CONSUMER"
+  t=0; br=0; sp=0; ask=0
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ {
+  flushfn(); fn=$0; sub(/\(\).*/,"",fn); next
+}
+/^[ \t]*#/ { next }
+{
+  if ($0 ~ /_project_iter_members|_project_member_status/)        t=1
+  if ($0 ~ /(==[ \t]*"?unresolved"?)|(^[ \t]*unresolved\))/)      br=1
+  if ($0 ~ /(^|[ \t;&|(])(die|refuse)[ \t"]/)                     sp=1
+  if ($0 ~ /_env_member_state|_env_project_state/)                ask=1
+}
+END { flushfn() }
+AWK
+)
+    # Same exemptions as the D2 arm, for the same reasons: access-scope.sh IS the
+    # owner, index.sh DEFINES the status vocabulary, rename.sh routes the status as a
+    # DATA tag rather than a message, store.sh has its own guard. Host-only verb files
+    # are exempt because the shim refuses them in-container — where `unresolved` cannot
+    # be a not-mounted member, the conflation this arm exists to catch cannot arise.
+    local excluded=" access-scope.sh store.sh rename.sh index.sh "
+    local host_only=" cmd-resolve.sh cmd-sync.sh cmd-init.sh cmd-join.sh cmd-forget.sh"
+    host_only+=" cmd-clean.sh cmd-update.sh cmd-config.sh cmd-start.sh migrate.sh"
+    host_only+=" cmd-project-rename.sh cmd-project-export-import.sh cmd-project-add.sh"
+    host_only+=" packs.sh local-paths.sh "
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        case "$excluded"  in *" $b "*) continue ;; esac
+        case "$host_only" in *" $b "*) continue ;; esac
+        while IFS='|' read -r hf fn kind; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_status_word_refusals() {
+    # 1. The live tree must be clean.
+    local v; v=$(_avail_consumer_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || fail "INV-AVAIL/CONSUMER: a verb refuses on _project_iter_members' status word without asking _env_member_state — in a session that word cannot tell a NOT-MOUNTED member from an unresolved one, so the remedy fits only one of them (FI-41):"$'\n'"$v"
+
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL/CONSUMER self-test: could not stage lib/"; return 1; }
+
+    # 2a. MUST FIRE — the exact shape FI-41 shipped: iterate members, branch on the
+    #     status word, refuse. No _env_member_state anywhere in the function.
+    printf '\n_lint_probe_consumer() {\n    local n p s\n    while IFS=$'"'"'\\t'"'"' read -r n p s; do\n        [[ "$s" == unresolved ]] && die "unresolved member $n. Run '"'"'cco resolve'"'"' on your host first."\n    done < <(_project_iter_members "$1")\n}\n' \
+        >> "$tmp/cmd-pack.sh"
+    local planted; planted=$(_avail_consumer_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-pack.sh|_lint_probe_consumer|CONSUMER"* ]] \
+        || { fail "INV-AVAIL/CONSUMER does NOT discriminate: a planted status-word refusal went uncaught (this is the exact shape of the shipped defect):"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2b. MUST NOT FIRE — the same shape, fixed: the owner is asked. Without this arm
+    #     the guard would flag the remedy as well as the defect, and a lint that cannot
+    #     be satisfied is one somebody deletes.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL/CONSUMER self-test: could not re-stage lib/"; return 1; }
+    printf '\n_lint_probe_fixed() {\n    local n p s st\n    while IFS=$'"'"'\\t'"'"' read -r n p s; do\n        [[ "$s" == unresolved ]] || continue\n        st=$(_env_member_state "$n" "$(_index_get_path "$1" "$n")")\n        [[ "$st" == not-mounted ]] && _env_unavailable not-mounted repo "$n"\n        die "unresolved member $n."\n    done < <(_project_iter_members "$1")\n}\n' \
+        >> "$tmp/cmd-pack.sh"
+    planted=$(_avail_consumer_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_fixed"* ]] \
+        || { fail "INV-AVAIL/CONSUMER over-reaches: the SANCTIONED shape (asks _env_member_state, then refuses) was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
+
 # ── INV-DESC — the trusted descriptor's keys cross the boundary ───────
 #
 # THE INVARIANT — every key `cco start` writes into the trusted session descriptor
