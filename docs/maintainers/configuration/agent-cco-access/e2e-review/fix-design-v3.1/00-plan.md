@@ -659,7 +659,7 @@ accident, uncommented, inside the pack-schema comment block) was removed host-si
 the file's residual diff is exactly the intended `access:` block, the `8081→8082` port change and the
 `packs:` entry.
 
-#### S3 container probe — the severed-index arm — ✅ **PASSED** (recovery arm still pending) — 2026-07-30
+#### S3 container probe — ✅ **PASSED, both arms** — 2026-07-30
 
 The **split** gate of §8.3, run by maintainer and session together: the maintainer moved
 `~/.local/state/cco/shared/index` aside from the host **with this session live**; every observation
@@ -698,9 +698,30 @@ Arm by arm, what this actually proves:
   crossed the ADR-0047 boundary at start-up and needs no index read. A session must still be able to
   say what it is while its store is unreachable.
 
-⚠ **Still owed on this lane: the recovery arm** (restore the index host-side, re-run the same five
-verbs, confirm they recover). The index was still severed when this entry was written, so recovery is
-recorded as *not observed* rather than assumed.
+**The recovery arm — run immediately after, same session, index restored host-side:**
+
+```
+$ cco path list                         rc=0  2 rows + note: 33 paths hidden …
+$ cco list                              rc=0  4 rows + note: 9 projects, 5 packs, 1 template hidden …
+$ cco list projects                     rc=0  1 row  + note: 9 projects hidden …
+$ cco project show claude-orchestrator  rc=0  full render (repos/mounts/packs/docker/status)
+$ cco project validate --all            rc=0  [claude-orchestrator] + note: 9 projects hidden …
+```
+
+Recovery is **not** merely "the error stopped": every verb is back to its **fully scoped** behaviour,
+with the per-invocation notices of S4's round 3 intact and the same numbers — 9 projects / 5 packs /
+1 template, `list llms` still unmentioned by the verbs that do not enumerate it. So the guard added in
+front of these enumerators (`cmd-project-validate.sh:308`, `_index_assert_readable` — *"classify BEFORE
+the loop, so a read failure is never rendered as 'nothing to validate'"*) is proven in **both**
+directions: it refuses when the read fails and gets out of the way when it succeeds. A guard only ever
+tested on the failing side is how a lane ships fail-closed *and* unusable.
+
+📝 `path list` reports **33** paths hidden where round 3 reported 32. The delta is host-side registration
+between the two probes (the count is total−enumerated, so it tracks the real store); the visible rows are
+the same 2. Recorded rather than smoothed over — an unexplained count is how the 10-vs-7 episode started.
+
+⚠ `project validate --all` printing only `[claude-orchestrator]` and the notice is **correct**, not a
+truncation: `_pv_validate_unit` is quiet on a unit with no findings when `--verbose` is absent.
 
 📝 **Observation for the CLI-docs audit (roadmap step 3), not a defect claim.** The message names the
 **internal** path `/var/lib/cco-internal/state/cco/shared/index` — the agent's side of the bind, which
@@ -724,7 +745,7 @@ wording; changing user-facing text is a human gate, not a sweep.
 > plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
 > from a self-dev session must state whether the block was in place.** These two are *not* to be
 > chased inside S1 — the same rule as the seven.
-| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | 🟡 **severed arm PASSED, recovery arm pending** — run as a *split* gate (host `mv`, in-session observations): all five read verbs refuse at **rc=1** with the session-axis cause, and §10.9d's benign rc=0 sentence is unreachable. Restore-and-recover is still unobserved | 2026-07-30 |
+| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | ✅ **PASSED, both arms** — run as a *split* gate (host `mv`, in-session observations). Severed: all five read verbs refuse at **rc=1** with the session-axis cause, and §10.9d's benign rc=0 sentence is unreachable. Restored: all five back at **rc=0** with their fully scoped notices and the same counts as S4's round 3 — the entry guard proven in both directions | 2026-07-30 |
 | S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ✅ **PASSED at round 3** — ⚠️ it took three rounds and two builds: **round 1 FAILED** (D5 inert, the key never crossed the boundary) → fixed; **round 2** showed the lane fixed *and* exposed a second defect (a fabricated cross-kind clause in every notice) → fixed; **round 3 green on all six arms**, every number matching the behaviour ratified before the fix was written | 2026-07-30 |
 | S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 

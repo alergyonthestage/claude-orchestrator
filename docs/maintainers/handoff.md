@@ -1,4 +1,4 @@
-# Handoff — S4's lane closed after three probe rounds; S3's severed arm then passed as a *split* gate
+# Handoff — every probe this cycle owed is now run: S4 green at round 3, S3 green on both arms
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
 > Written 2026-07-30, updated the same day after S3's probe. Supersedes the "implementation block
@@ -91,22 +91,22 @@ session value into the suite. A count is not a fingerprint; the names are.
 **Every command for these gates is now written out, copy-pasteable, in the runbook's [§8](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md).**
 This list says *what* and *why*; §8 says *how*, once.
 
+**Every probe this cycle owed is now run.** L1, L2 and L3 all have their Rule-1 evidence; L4 and L5
+closed in-session by ruling. What is left is **one never-executed gate (E6B-04), one small residual
+(D7), the human gate, and the release path** — no probe is outstanding on a landed lane.
+
 1. **`git push`** — `git push origin develop fix/release/cycle-1.2` (§8.1). Nothing is pushed;
-   `develop` is 22 commits ahead of `origin/develop`, plus this branch's commits on top. **This is now
-   the top of the list** — S4's lane is closed (see below) and nothing else in-session is blocking it.
-2. **S3's container probe** (§8.3) — the one probe still fully owed, and the only **split** gate: the
-   `mv` is host-side, the observations belong **inside a live session**, so a session can run its half
-   the moment the maintainer moves the index aside.
-   ⚠ The path is `state/cco/`*`shared/`*`index` — the pre-S1 `state/cco/index` no longer exists and a
-   copy-paste of the older command moves nothing, producing a **false pass**. Partial in-session
-   evidence exists (`cco project validate --all` now reports the hidden-project count instead of
-   claiming share-ready over zero projects), but the severed-index arm needs the host.
-3. **S6's host-only half** (§8.4) — §10.9e / E6B-04 (pack-rename fan-out, never executed in any round)
-   and the stale-remote cleanup.
+   `develop` is 22 commits ahead of `origin/develop`, plus this branch's commits on top. **This is the
+   top of the list** — every in-session blocker is gone.
+2. **S6's host-only half** (§8.4) — §10.9e / E6B-04 (pack-rename fan-out, **never executed in any
+   round**). This is the only remaining item that can still produce a blocking 🔴: it is data-loss if
+   the fan-out half-applies, and a fix for an unreproduced defect is unverified.
    ⚠ Clear the stale `scratch-pack` and `scratch-a`/`scratch-b` first or the fan-out is ambiguous to read.
-4. **D7 residual from S1** (§8.5) — *"composes with no packs at all"*: needs a project referencing no pack.
+3. **D7 residual from S1** (§8.5) — *"composes with no packs at all"*: needs a project referencing no pack.
+4. **The block's single human gate** — the maintainer relaxed the per-phase gates for S3→S4→S5 down to
+   one gate at the end. This is it.
 5. Then, per §8.6: the **CLI-surface documentation audit** (roadmap step 3) — ordered deliberately
-   **before** the merge — then the merge into `develop`, then `develop → main`.
+   **before** the merge — then the merge into `develop`, then `develop → main` + release.
    📝 The audit is the **only owed item a session can perform end to end**; it needs no probe and no
    build, so it can run in parallel with the host gates above.
 
@@ -121,16 +121,15 @@ This list says *what* and *why*; §8 says *how*, once.
   block's single human gate. Full output in the runbook's §7, round 3.
 - ✅ **The stray OAuth line is out of `.cco/project.yml`** — 0 occurrences; the file's residual diff is
   exactly the intended `access:` block, the `8081→8082` port change and the `packs:` entry.
-- ✅ **S3's probe — the severed-index arm PASSED**, run as the split gate (host `mv`, in-session
-  observations). All five read verbs (`path list`, `list`, `list projects`, `project show`,
-  `project validate --all`) refuse at **rc=1** with the session-axis cause — *"this session was LAUNCHED
-  from the index … this is NOT an empty index"* — and §10.9d's benign rc=0 sentence is unreachable; it is
-  still on `develop` at `lib/index.sh:189` to compare against. `cco whoami` correctly stays **rc=0**: it
-  renders the session descriptor, which crossed the boundary at start-up and needs no index read. Full
-  output in the runbook's §7. **L2 now owes only the recovery arm.**
-  ⚠ **The recovery arm is NOT observed** — the index was still severed when this was written. It needs
-  `mv ~/.local/state/cco/shared/index.probe ~/.local/state/cco/shared/index` on the host, then the same
-  five verbs in a session. **Do not upgrade the row without running it.**
+- ✅ **S3's probe — PASSED on BOTH arms**, run as the split gate (host `mv`, in-session observations), so
+  **L2's Rule-1 evidence is now complete too**. Severed: all five read verbs (`path list`, `list`,
+  `list projects`, `project show`, `project validate --all`) refuse at **rc=1** with the session-axis
+  cause — *"this session was LAUNCHED from the index … this is NOT an empty index"* — and §10.9d's benign
+  rc=0 sentence is unreachable; it is still on `develop` at `lib/index.sh:189` to compare against.
+  `cco whoami` correctly stays **rc=0**: it renders the session descriptor, which crossed the boundary at
+  start-up and needs no index read. Restored: all five back at **rc=0** with their fully scoped notices
+  and the same counts as S4's round 3, so the entry guard is proven in **both** directions — a guard only
+  ever tested on the failing side is how a lane ships fail-closed *and* unusable. Full output in §7.
 - 📝 **One observation logged for the audit, deliberately not fixed** (runbook §7, S3's entry): the
   refusal names the internal `/var/lib/cco-internal/state/cco/shared/index` — accurate, it is the agent's
   side of the bind — while its remedy is host-side and this session has `show_host_paths: true`, so the
