@@ -1,13 +1,27 @@
-# Handoff — S4's lane is closed after three probe rounds; the rest of the gate is host-only
+# Handoff — S4's lane closed after three probe rounds; S3's severed arm then passed as a *split* gate
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
-> Written 2026-07-30. Supersedes the "implementation block complete" handoff of 2026-07-29.
+> Written 2026-07-30, updated the same day after S3's probe. Supersedes the "implementation block
+> complete" handoff of 2026-07-29.
+
+## The one lesson of this session
+
+**"Host-only" was a classification error, and it cost a gate its whole round.** S3's probe sat in the
+owed list as host-only because its `mv` is host-side. But §5.1 asks for the `mv` from the host **and the
+observations from inside a live session** — so it was never host-only, it was **split**, and filing it
+under the wrong label is what left both sides waiting for the other. The moment it was read correctly,
+the maintainer ran two `mv`s and the session ran five verbs.
+
+Every host gate in the runbook's **[§8](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**
+is now written out as an executable command with its trap attached, and §8.3 is labelled *split*. Before,
+its command had to be reassembled from three documents — which is exactly where the copy-paste false pass
+comes from (S3's own trap: the pre-S1 `state/cco/index` spelling moves nothing).
 
 ## What changed since the last handoff
 
 The last handoff said the remaining work was **all host-only**. That was right about the gate and wrong
-about the reach: the maintainer ran `cco build`, and from inside the rebuilt session **one of the owed
-probes became runnable** — S4's. It is now **done and green**, and it is where the news is.
+about the reach — **twice over**: the maintainer ran `cco build` and S4's probe became runnable (below),
+and then S3's turned out to be split rather than host-only, so **its severed arm is now green too**.
 
 **S4's `CCO_STORE_TOTALS` probe failed twice, for two different reasons, and passed on the third round.**
 Two fixes landed in-session between the rounds; each `cco build` is what made the next failure visible,
@@ -107,6 +121,23 @@ This list says *what* and *why*; §8 says *how*, once.
   block's single human gate. Full output in the runbook's §7, round 3.
 - ✅ **The stray OAuth line is out of `.cco/project.yml`** — 0 occurrences; the file's residual diff is
   exactly the intended `access:` block, the `8081→8082` port change and the `packs:` entry.
+- ✅ **S3's probe — the severed-index arm PASSED**, run as the split gate (host `mv`, in-session
+  observations). All five read verbs (`path list`, `list`, `list projects`, `project show`,
+  `project validate --all`) refuse at **rc=1** with the session-axis cause — *"this session was LAUNCHED
+  from the index … this is NOT an empty index"* — and §10.9d's benign rc=0 sentence is unreachable; it is
+  still on `develop` at `lib/index.sh:189` to compare against. `cco whoami` correctly stays **rc=0**: it
+  renders the session descriptor, which crossed the boundary at start-up and needs no index read. Full
+  output in the runbook's §7. **L2 now owes only the recovery arm.**
+  ⚠ **The recovery arm is NOT observed** — the index was still severed when this was written. It needs
+  `mv ~/.local/state/cco/shared/index.probe ~/.local/state/cco/shared/index` on the host, then the same
+  five verbs in a session. **Do not upgrade the row without running it.**
+- 📝 **One observation logged for the audit, deliberately not fixed** (runbook §7, S3's entry): the
+  refusal names the internal `/var/lib/cco-internal/state/cco/shared/index` — accurate, it is the agent's
+  side of the bind — while its remedy is host-side and this session has `show_host_paths: true`, so the
+  reader cannot act on the path they were handed. User-facing wording is a human gate, not a sweep.
+- ✅ **A stale roadmap header corrected**: the index-integrity cluster (ADR-0052) read *"S1+S2+S3 landed;
+  S4 next"* while S4 landed at `50ba8f7` and `feat/index/integrity-hardening` is an ancestor of `develop`
+  (plan rows WS-6/WS-7/N3 all ✅, changelog #48). Status was reported from that file, so it had to be true.
 
 ## Non-obvious things worth not rediscovering
 
