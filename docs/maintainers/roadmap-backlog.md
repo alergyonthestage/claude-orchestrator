@@ -1630,22 +1630,18 @@ itself"* but *"a call site reading the right value from the wrong owner"*.
 ownership-guarded loop shared by `cco join` / `cco forget --purge` / the rename verbs' project.yml
 rewrite"* (`index.sh:1439-1440`). Every consumer branching on `unresolved` inherits the conflation.
 
-**Consequence for E6B-04, proved rather than assumed**: the gate's container arm is **structurally
-unreachable** for a fan-out of ≥2 referring projects.
+**Consequence for E6B-04.** ⚠ **Corrected 2026-07-31** — this entry first claimed the gate's container
+arm was *structurally unreachable*. That was **wrong**: it enumerated the config-editor modes and
+missed that **`--repo <name>` composes with `--all`** (the collector's `--repo` loop runs after the
+mode chain, unconditionally — `cmd-start.sh:1128-1135`), so `--all --repo a --repo b` keeps
+`config_editor_mode=all` (G=rw) *and* binds both repos, and both guards then pass.
 
-- `pack rename` is gated `_op_write … global` (`bin/cco:490`) → needs **G=rw**.
-- config-editor `--all` *or* `--cco-access edit-all` forces `config_editor_mode=all`
-  (`cmd-start.sh:1001`) → `edit-all`, but that mode mounts **no repos** → every member reads
-  not-mounted → refused.
-- config-editor with `--project` targets mounts their repos but resolves to
-  `global=ro,current=rw,others=none` (`cmd-start.sh:1024`) → **G=ro** → the write is refused at exit 2
-  before it starts.
-- A normal session mounts only **its own** project's repos, so with two referring projects one of them
-  is always unmounted.
-
-⇒ no container session can simultaneously write the store and bind two referring projects' repos.
-**E6B-04 must run on the host** (where the probe is the identity and the vocabulary is honest), and
-handoff-v3 §7 step 2's *"in an `edit-all` container session"* is unsatisfiable as written.
+E6B-04 still belongs on the host, for a **different and sharper** reason: `cmd-start.sh:1898` forces
+the repo-path `.cco` overlay `:ro` for the config-editor built-in **regardless of `Pc`** (RC-6 §3.7),
+while the fan-out rewrites exactly that path (`rename.sh:316-318`). A container run would pass both
+guards, move the store, fail every rewrite, and print the documented partial state — output
+indistinguishable at a glance from the half-apply the gate exists to detect, and caused by the mount
+policy rather than the cascade. → **[FI-42](#fi-42-config-editor-has-no-repo-mounting-broad-mode-and-that-is-two-decisions-not-a-missing-flag)**.
 
 **Proposed fix — narrow, at the consumer, not at the shared status:**
 
@@ -1662,3 +1658,52 @@ handoff-v3 §7 step 2's *"in an `edit-all` container session"* is unsatisfiable 
 D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C ·
 [FI-40](#fi-40-a-fail-closed-refusal-states-a-count-where-naming-is-safe-pack-rename-unmounted-census)
 (the sibling guard, same verb, correct sentence but count-only).
+
+---
+
+## FI-42: config-editor has no repo-mounting broad mode — and that is two decisions, not a missing flag
+
+**Found**: 2026-07-31, from a maintainer question while running cycle-1.2's G1 gate. **Severity**: none
+today — nothing is broken; a capability is absent. **Effort**: Low to add a flag, **Medium** to answer
+what the flag implies. **Needs a decision before any code.**
+
+**The current surface, code-grounded** (`lib/cmd-start.sh`):
+
+| Invocation | `.cco` targets | Repos | Triple |
+|---|---|---|---|
+| `--project <name>` (repeatable) | those projects | **their repos** (repo-aware authoring, `:1084-1086`) | `(ro,rw,none)` `:1024` |
+| bare, cwd inside a project | the cwd project | **its repos** (`:1124`) | `(ro,rw,none)` |
+| `--all` / `--cco-access edit-all` | **every** resolvable project | **none** (`:1088-1089`) | `edit-all` `:1023` |
+| bare, outside any project | none (`~/.cco` only) | none | `(rw,none,none)` |
+| `--repo <name>` (repeatable) | — | **adds one repo, in ANY mode** (`:1128-1135`) | unchanged |
+
+So the maintainer's recollection is right on both halves: single-project mode **does** mount the repo,
+and `--all` explicitly does not — *"Repos are an EXPLICIT opt-in (P18 refined, not broken)"* (`:1070`).
+There is **no `--all-repos`**. What does exist, and is easy to miss because the mode chain reads as
+exclusive, is that **`--repo` composes with `--all`**: its loop runs after the chain, unconditionally.
+
+**Why the missing flag is not the whole question.** Adding `--all-repos` would mount the code and still
+not make config authoring work through it, because `cmd-start.sh:1898` forces the repo-path `.cco`
+overlay `:ro` for the config-editor built-in **regardless of `Pc`** (RC-6 §3.7, Change 5). Two coupled
+decisions therefore have to be made together:
+
+1. **Should the built-in ever expose a writable committed `.cco` through the CODE repo path?** §3.7 said
+   no, for a reason that is *weaker but not void* at `--all`: it protects a **foreign** member repo's
+   config when `Po=none`, and at `--all` `Po=rw`. Relaxing it re-opens what §3.7 closed — **two writable
+   paths to the same file** (`/workspace/<name>/.cco/project.yml` and `/workspace/<name>-config/project.yml`,
+   which W3's D-M11 probe showed are the **same inode**), i.e. the duplicate-authoring-path question.
+2. **Or should cross-project rewrites resolve through the `<name>-config` mount instead of the member
+   path?** Tempting — `_resolve_project_yml` is already operator-aware and the fan-out has that path in
+   hand — but the member loop exists because `project.yml` is **replicated across a multi-repo project's
+   members** and every owned copy must be rewritten. Through the config mount only ONE copy is
+   reachable, so this trades a refusal for a partial rewrite unless "which copy is canonical" is settled
+   first (ADR-0024 D2 clobber-guard territory).
+
+**Recommended shape if it is taken up**: answer (1) and (2) in one ADR, not a flag PR. The user-visible
+symptom that motivates it is narrow — *"I cannot rename a pack from a config-editor session"* — and the
+honest workaround (run it on the host) already exists and is what the refusal now says since
+[FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work).
+
+**Related**: ADR-0044 §3 + ADR-0048 (config-editor min-privilege by mode) · RC-6 §3.7
+(`03-config-editor-repos.md`) · ADR-0046 §6 (the deferred multi-repo `Pc` span for normal sessions —
+same underlying question, different lane) · FI-41.

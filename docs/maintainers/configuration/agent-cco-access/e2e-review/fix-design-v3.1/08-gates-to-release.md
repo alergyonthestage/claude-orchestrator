@@ -102,24 +102,34 @@ cco list packs                                             # confirm scratch-pac
 
 ### G1.3 E6B-04 — the pack-rename fan-out, **never executed in any round**
 
-> ⚠ **Run this on the HOST, not in a session** — corrected 2026-07-30 against
-> [`handoff-v3.md`](../handoff-v3.md) §7 step 2, which prescribes *"in an `edit-all` container
-> session"*. That is **unsatisfiable** for a fan-out of ≥2 referring projects, and the proof is four
-> lines of code, not an opinion:
+> ⚠ **Run this on the HOST, not in a session** — against [`handoff-v3.md`](../handoff-v3.md) §7
+> step 2, which prescribes *"in an `edit-all` container session"*.
 >
-> - `pack rename` is gated `_op_write … global` (`bin/cco:490`) → needs **G=rw**;
-> - config-editor `--all` **or** `--cco-access edit-all` forces `config_editor_mode=all`
->   (`cmd-start.sh:1001`) → G=rw, but that mode mounts **no repos**, so every member reads not-mounted
->   and the pre-scan refuses;
-> - config-editor with `--project` targets *does* mount their repos, but resolves to
->   `global=ro,current=rw,others=none` (`cmd-start.sh:1024`) → **G=ro**, refused at exit 2 before it
->   starts;
-> - a normal session mounts only **its own** project's repos, so with two referring projects one is
->   always unmounted.
+> **Correction, 2026-07-31.** An earlier version of this note claimed the container arm was
+> *structurally unreachable*. **It is not**, and the claim was wrong for a specific reason worth
+> keeping: it enumerated the config-editor *modes* and missed that **`--repo <name>` composes with
+> `--all`** — the collector's `--repo` loop runs after the mode chain, unconditionally
+> (`cmd-start.sh:1128-1135`), so `--all --repo proj-a --repo proj-b` keeps `config_editor_mode=all`
+> (G=rw) **and** binds both repos. Both guards then pass: the members probe as mounted, and the
+> unmounted-project census is 0 because every project is a config target.
 >
-> No container session can both write the store and bind two referring projects' repos. On the host the
-> probe is the identity, the members resolve, and the census is 0 by construction — and the cascade
-> under test (`lib/store.sh`) is the same code either way. **What changes is only where it runs.**
+> **It still must not be used for this gate**, for a sharper reason. `cmd-start.sh:1898` forces the
+> repo-path `.cco` overlay **`:ro` for the config-editor built-in regardless of `Pc`** (RC-6 §3.7,
+> Change 5 — the built-in mounts repos to READ code; every writable config path is a dedicated
+> `<name>-config` mount). The fan-out rewrites `<workdir>/<name>/.cco/project.yml`
+> (`rename.sh:316-318`), i.e. exactly that read-only path. So the run would: pass both guards → move
+> the store → **fail every rewrite** → report the documented partial state (`ok` then `die` at exit 1,
+> S2b: *"…but packs[] could not be rewritten in N repo(s)"*).
+>
+> That output is, at a glance, **indistinguishable from the half-apply E6B-04 exists to detect** — and
+> it would be caused by the mount policy, not by the cascade. A gate that cannot tell its own subject
+> from its fixture is worse than an unrun gate. On the host the probe is the identity, the members
+> resolve, the census is 0 by construction, and the cascade under test (`lib/store.sh`) is the same
+> code. **What changes is only where it runs.**
+>
+> 📋 Whether config-editor should offer a repo-mounting broad mode at all (`--all-repos`, or resolving
+> the fan-out through the `<name>-config` mount) is a **design question, logged as FI-42** — it is not
+> a missing flag, it is two coupled decisions. Do not answer it inside this gate.
 >
 > 📋 The refusal that exposed this is **FI-41** — a session reporting *not-mounted* as *unresolved*
 > with a remedy that cannot work. ✅ **Fixed 2026-07-30** (`1814ba3`, changelog 60) on the maintainer's
