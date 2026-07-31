@@ -51,8 +51,10 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 
 ### What this session produced
 
-Six commits — five docs, **one touching `lib/`** (the `cco start --help` text plus two stale
-comments; behaviour unchanged, suite re-run):
+Seven commits — six docs, **one touching `lib/`** (the `cco start --help` text plus two stale
+comments; behaviour unchanged). **Suite re-run on the final tree: 1617 passed / 7 failed of 1624,
+with the `access: {claude: all}` mask ON** — identical to the cycle baseline, and the 7 are the
+host-only set name for name (the six `test_as_*` plus `test_paths_symlink_safe_tool_root`):
 
 - `e0606d1` — `cco start --help` corrected: config-editor is **min-privilege by mode**, not the old
   broad default; `--claude-access` no longer claims `repo` is the default.
