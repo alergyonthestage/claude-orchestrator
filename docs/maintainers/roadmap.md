@@ -532,8 +532,12 @@ deferred with it**.
   [FI-42](roadmap-backlog.md)): a **normal** session is layout 1, so the probe is correct there;
   `edit-project` and `config-editor --project` refuse at the access boundary (`G=rw` required);
   `--all` without `--repo` refuses **before any mutation**. The **only** path reaching the fan-out is
-  `config-editor --all --repo …` — the combination believed unreachable until today — and it exits
-  **declared** (rc 1 + the `failed` paths, S2b contract), not silently. → release known-issue.
+  `config-editor --cco-access edit-all --repo …` and it exits **declared** (rc 1 + the `failed` paths,
+  S2b contract), not silently. → release known-issue.
+  ⚠ **Spelling corrected at G2, 2026-07-31**: the literal `--all --repo …` this entry first named is
+  **refused by `cco start`** (`cmd-start.sh:2687`) — only `--cco-access edit-all`, the unguarded
+  spelling of the same mode, gets through. Verified by running both. The deferral stands unchanged;
+  what changed is which command the release note may name.
 - 🔑 **A result derived while persisting the analysis, which reframes the proposal**: *"the writer
   becomes correct verbatim"* and *soundness in `--all`* are **mutually exclusive** — `--all` exists to
   reach projects whose repos are not mounted, and a repo name is a per-project label (ADR-0051 D2), so

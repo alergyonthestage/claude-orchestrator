@@ -116,9 +116,16 @@ cco list packs                                             # confirm scratch-pac
 > *structurally unreachable*. **It is not**, and the claim was wrong for a specific reason worth
 > keeping: it enumerated the config-editor *modes* and missed that **`--repo <name>` composes with
 > `--all`** — the collector's `--repo` loop runs after the mode chain, unconditionally
-> (`cmd-start.sh:1128-1135`), so `--all --repo proj-a --repo proj-b` keeps `config_editor_mode=all`
-> (G=rw) **and** binds both repos. Both guards then pass: the members probe as mounted, and the
-> unmounted-project census is 0 because every project is a config target.
+> (`cmd-start.sh:1128-1135`), so a mode-`all` session **can** bind repos. Both guards then pass: the
+> members probe as mounted, and the unmounted-project census is 0 because every project is a config
+> target.
+>
+> ⚠ **Re-corrected at G2, 2026-07-31 — the spelling matters.** `--all --repo …` is **refused before
+> launch** (`cmd-start.sh:2687`: *"--all … cannot be combined with --project/--repo"*, exit 1). Only
+> the *other* spelling of the same resolved mode gets through: **`--cco-access edit-all --repo …`**,
+> which the guard does not test. Verified by running both, not by reading. Nothing above changes —
+> E6B-04 was run on the host and passed — but every document that names the invocation must name the
+> reachable one (see G6 step 5 and FI-42).
 >
 > **It still must not be used for this gate**, for a sharper reason. `cmd-start.sh:1898` forces the
 > repo-path `.cco` overlay **`:ro` for the config-editor built-in regardless of `Pc`** (RC-6 §3.7,
@@ -379,16 +386,23 @@ A failure here is a fix on a branch off `develop`, never a commit on `develop`.
 5. **Carry the FI-42 known-issue into the release notes** (decided with step 2b, 2026-07-31). Suggested
    wording, already reduced to what a user can act on:
 
-   > **Known issue** — in a `cco start config-editor --all` session that *also* binds repos with
-   > `--repo`, `cco pack rename` moves the pack in the store and then fails to re-key the referring
-   > `project.yml` files, because the built-in mounts a repo's committed `.cco` read-only. It exits **1**
-   > and **lists the paths it could not rewrite** — nothing is changed silently. Re-run the rename on
-   > your **host** to complete it. Every other route is unaffected: a normal session succeeds, and the
-   > other config-editor modes refuse before changing anything.
+   > **Known issue** — in a `cco start config-editor --cco-access edit-all` session that *also* binds
+   > repos with `--repo`, `cco pack rename` moves the pack in the store and then fails to re-key the
+   > referring `project.yml` files, because the built-in mounts a repo's committed `.cco` read-only. It
+   > exits **1** and **lists the paths it could not rewrite** — nothing is changed silently. Re-run the
+   > rename on your **host** to complete it. Every other route is unaffected: a normal session succeeds,
+   > and the other config-editor modes refuse before changing anything.
 
    ⚠ Two things this wording protects, both learned the hard way: it names the **one** invocation instead
    of implying `pack rename` is broken, and it says the failure is **declared**, so a user meeting it does
    not assume silent corruption. Tracked as [FI-42](../../../../roadmap-backlog.md) → cycle-2.
+
+   ⚠ **The invocation was corrected at G2, 2026-07-31 — do not restore the earlier wording.** It read
+   `config-editor --all` + `--repo`, which **`cco start` refuses** (`cmd-start.sh:2687` rejects `--all`
+   with a narrowing selector). Shipping that sentence would have handed users a command that cannot run,
+   for a bug they can actually hit by the other spelling — the exact defect class this cycle was about.
+   ⚠ **Maintainer sign-off is owed on this sentence** (release-note wording is a human gate); the
+   correction is factual, the phrasing is yours to accept.
 
 ⚠ CI on the tag is the **last** net, and it fires on `main` — i.e. publicly. G5 exists so that net never
 has to catch anything.

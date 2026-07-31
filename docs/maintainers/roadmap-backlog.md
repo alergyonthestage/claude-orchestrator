@@ -1640,8 +1640,11 @@ rewrite"* (`index.sh:1439-1440`). Every consumer branching on `unresolved` inher
 **Consequence for E6B-04.** ⚠ **Corrected 2026-07-31** — this entry first claimed the gate's container
 arm was *structurally unreachable*. That was **wrong**: it enumerated the config-editor modes and
 missed that **`--repo <name>` composes with `--all`** (the collector's `--repo` loop runs after the
-mode chain, unconditionally — `cmd-start.sh:1128-1135`), so `--all --repo a --repo b` keeps
+mode chain, unconditionally — `cmd-start.sh:1128-1135`), so the mode-all + repos combination keeps
 `config_editor_mode=all` (G=rw) *and* binds both repos, and both guards then pass.
+⚠ **Re-corrected at G2, 2026-07-31**: the literal `--all --repo …` spelling is rejected by
+`cmd-start.sh:2687`; the reachable one is `--cco-access edit-all --repo …` (see
+[FI-42](#fi-42-the-packs-fan-out-resolves-its-write-path-by-member-probe-while-its-read-path-is-operator-aware)).
 
 E6B-04 still belongs on the host, for a **different and sharper** reason: `cmd-start.sh:1898` forces
 the repo-path `.cco` overlay `:ro` for the config-editor built-in **regardless of `Pc`** (RC-6 §3.7),
@@ -1687,10 +1690,21 @@ D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C �
 > | normal session, `edit-project` | refused, exit 2 — `pack rename` writes the store, needs `G=rw` (`bin/cco:490`) |
 > | `config-editor --project X` | refused, exit 2 — project mode is `global=ro` (`_config_editor_default_cco`) |
 > | `config-editor --all` (no `--repo`) | refused **before any mutation** by the pre-scan, with FI-41's corrected wording |
-> | `config-editor --all --repo a --repo b` | ⚠ **the only path that reaches the fan-out**: store moved, every rewrite fails on the forced `:ro`, exits **declared** — rc 1 + the `failed` paths listed (S2b contract). Not silent corruption. |
+> | `config-editor --all --repo a --repo b` | **refused before launch** — `cmd-start.sh:2687` rejects `--all` combined with `--project`/`--repo` (*"cannot be combined … (which narrow the scope)"*, exit 1). See the correction below. |
+> | `config-editor --cco-access edit-all --repo a --repo b` | ⚠ **the only path that reaches the fan-out**: store moved, every rewrite fails on the forced `:ro`, exits **declared** — rc 1 + the `failed` paths listed (S2b contract). Not silent corruption. |
 >
-> So the residual exposure is **one built-in, one flag combination** — the one believed unreachable
-> until 2026-07-31 — failing declared and repairably. Carried as a release known-issue.
+> ⚠ **Corrected at G2, 2026-07-31 — the reachable invocation is not the one this entry first named.**
+> `--all` and `--cco-access edit-all` are two spellings of the same resolved mode
+> (`_resolve_config_editor_mode`, `cmd-start.sh:1001`), but **only the first is guarded** against a
+> narrowing selector. So `--all --repo …` dies at the guard, and the route that actually reaches the
+> fan-out is `--cco-access edit-all --repo …`. Verified by running both against the hermetic harness
+> (A refuses rc=1; B launches rc=0 with the repo mounted), not by reading. **This makes the exposure
+> narrower and stranger than recorded — a guard that half-covers its own mode — and it is a fact the
+> cycle-2 topology decision inherits.** Do not fix the asymmetry as a stray guard: which spelling is
+> canonical is part of that decision.
+>
+> So the residual exposure is **one built-in, one flag combination** — failing declared and
+> repairably. Carried as a release known-issue, **whose wording must name the reachable spelling**.
 >
 > 🔑 **A result derived while persisting the analysis, which weakens the topology fix and belongs
 > here**: *"the writer becomes correct verbatim"* and *soundness in `--all`* are **mutually
@@ -1754,11 +1768,14 @@ re-opens what RC-6 §3.7 closed — two writable paths to the same file
 W3's D-M11 probe). Option 1 or 2 avoids that question entirely by using the mount the design already
 designates as *the* authoring path.
 
-**For the record — the corrected premise.** An earlier note here claimed E6B-04's container arm was
-*structurally unreachable*, having enumerated the config-editor modes and missed that **`--repo`
+**For the record — the corrected premise, twice.** An earlier note here claimed E6B-04's container arm
+was *structurally unreachable*, having enumerated the config-editor modes and missed that **`--repo`
 composes with `--all`** (its loop runs after the mode chain, unconditionally — `cmd-start.sh:1128-1135`).
-`--all --repo a --repo b` does keep `mode=all` (G=rw) and bind both repos, and both guards then pass —
-the run fails later, at the `:ro` rewrite. E6B-04 stays a **host** gate either way: a container run
+That correction was itself half wrong (**re-corrected at G2, 2026-07-31**): the collector does compose
+them, but the CLI never lets that pair through — `cmd-start.sh:2687` rejects `--all` with
+`--project`/`--repo`. The composition is reachable only via the *other* spelling of the same mode,
+`--cco-access edit-all --repo a --repo b`, which does keep `mode=all` (G=rw), bind both repos, and pass
+both guards — the run fails later, at the `:ro` rewrite. E6B-04 stays a **host** gate either way: a container run
 would move the store, fail every rewrite and print the documented partial state (`ok` then `die` at
 exit 1, S2b), which at a glance is indistinguishable from the half-apply the gate exists to detect.
 
