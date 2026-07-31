@@ -123,7 +123,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `project show\|validate\|coords` | read:project | ✅ from read-project | bare `project show` at the `/workspace` WORKDIR root resolves the **session project** (`PROJECT_NAME` → flat `/workspace/project.yml`), so cwd-based introspection works from the root as inside a mounted repo dir (**R4**; child-wins: a repo-local `.cco` takes precedence) |
 | `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
-| `remote list` | **removed alias** (ADR-0029) → `cco list remotes` | ⚠ two messages by level: the shim still gates it read:**global** first, so read-project answers *"needs read-global scope"* (exit 2) and only read-global+ reaches the dispatcher's *"was removed — use `cco list remotes`"* (exit 1). The scope arm names a verb that no longer exists; pinned by `test_operator_shim.sh:320` — **documented, not fixed** (G2, 2026-07-31) | — |
+| `remote list` | **removed alias** (ADR-0029) → `cco list remote[s]` | ❌ refused at **every** level with the removal notice (exit 2), like its four siblings in §2.4 — **not** a scope question (FI-45, fixed 2026-07-31; it previously answered *"needs read-global scope"* at read-project, sending the reader to widen access for a verb that does not exist) | — |
 | `config` (bare), `tag` (bare), `repo` (bare), `extra-mount` (bare), `pack\|template\|llms\|project` (bare) | always | ✅ prints sub-usage | — |
 
 ### 2.3 Write — available from the matching edit level (gated by target tree)
@@ -157,8 +157,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `remote remove`, `remote rename` | ✅ | ❌ host-only (**D-V3-1**) | exit 2 |
 | `pack\|template publish\|export`, `project export\|import\|add` | ✅ | ❌ host-only | exit 2 |
 | `project rename` | ✅ | ❌ host-only (re-keys machine-local state) | exit 2 |
-| `pack\|template\|llms\|project list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
-| `remote list` (old subcommand) | (redirect) | ❌ removed too — but reached only at read-global+ (see §2.2) | exit 1 |
+| `pack\|template\|llms\|project\|remote list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
 | `share`, `manifest` | ❌ removed | ❌ removed | exit 2 |
 | unknown top-level verb | error | error ("Run `cco help`") — **not** a host-only misfire | exit 1 |
 | `<cmd> --help` / `-h` | ✅ | ✅ **always** (informational, even for host-only verbs) | — |

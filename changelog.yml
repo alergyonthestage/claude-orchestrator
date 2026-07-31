@@ -1257,3 +1257,23 @@ entries:
       you when it is not. The same session was already rendering those members
       "[not mounted in this session]" in `cco project show`; the rename guard
       now agrees with it.
+
+  - id: 61
+    date: "2026-07-31"
+    type: additive
+    title: "`cco remote list` no longer sends you to widen access for a verb that was removed"
+    description: >
+      `cco remote list` was retired a while ago in favour of `cco list remote`,
+      and running it prints a one-line redirect saying so. Inside a session,
+      though, you only got that redirect if your session already had read-global
+      access or wider. Below that, cco answered something else entirely —
+      "'cco remote list' needs read-global scope or higher … widen it on the
+      host with --cco-access read-global" — which invited you to restart your
+      session at a wider access level in order to reach a command that would
+      then tell you it no longer exists. The advice was not wrong about access;
+      it was pointing at nothing.
+      The redirect is now the same at every access level, exactly like the
+      equivalent `cco pack list` / `cco template list` / `cco llms list` /
+      `cco project list`: one line naming the command that replaced it. Nothing
+      changed about what `cco list remote` shows, or about which access level
+      you need to see remotes — only about being told the truth first.

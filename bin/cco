@@ -437,7 +437,15 @@ _cco_operator_shim() {
         remote)
             case "$sub" in
                 "") return 0 ;;
-                list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
+                # FI-45: `remote list` was REMOVED by ADR-0029 D1 (→ `cco list
+                # remotes`), so it is classified with its four sibling removed
+                # aliases — NOT as a live read verb. It used to be gated
+                # `_op_read_scope global` first, which told a read-project session
+                # to widen its access to reach a verb that would then answer "was
+                # removed": a remedy the reader cannot act on, the very class this
+                # cycle closed elsewhere. The removal notice is now level-
+                # independent, exactly like `pack|template|llms|project list`.
+                list) _op_removed_list remote ;;
                 add) _op_write "remote add" global ;;   # DATA registry only (the --token half is refused in cmd-remote.sh)
                 # D-V3-1: remove/rename join the token verbs as host-only. They
                 # CASCADE into the 0600 STATE token store (store.sh remote-drop/
@@ -525,6 +533,11 @@ _cco_verb_touches_store() {
         path)    [[ "$s" == "list" ]] && return 0 ;;                  # index (host paths)
         repo|extra-mount) [[ "$s" == "rename" ]] && return 0 ;;       # STATE index re-key (project-scoped)
         tag)     case "$s" in add|remove|rm) return 0 ;; esac ;;      # DATA tags.yml write
+        # `remote list` is unreachable here since FI-45 (the shim refuses it as a
+        # removed alias, and `refuse` exits) — kept deliberately, not dead weight:
+        # the classifier answers "would this verb touch the store", and keeping the
+        # honest answer means a future re-classification cannot silently lose the
+        # trampoline. `tests/test_privilege_boundary.sh` pins it.
         remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
         project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
         pack|template|llms) case "$s" in show|validate) return 0 ;; esac ;;  # DATA source provenance

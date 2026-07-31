@@ -1890,6 +1890,22 @@ ADRs may dangle — *"accept, or fix in one pass; do not block the cutover on it
 
 ## FI-45: `cco remote list` answers "widen your access" for a verb that does not exist
 
+> ✅ **FIXED 2026-07-31**, on the maintainer's decision the same day it was raised. `remote list` now
+> refuses with the removal notice at **every** level (exit 2), exactly like its four siblings —
+> `bin/cco`'s `list)` arm moved to `_op_removed_list`. **No new contract**: it copies the shape
+> `pack|template|llms|project list` already had, so the exit-code question below answered itself by
+> precedent (in-container 2 via the shim; host 1 via the dispatcher, unchanged).
+> Regression cover: `test_operator_remote_list_is_a_removed_alias_at_every_level` asserts **both**
+> directions at four levels (the removal is stated; the widening advice is absent) — the defect was
+> that the levels *disagreed*, so one-level cover would not have caught it. The two tests that pinned
+> the old behaviour were rewritten with it. Changelog **61**.
+> 📝 Verified while fixing: the redirect's `cco list remote` (singular) **resolves** — both singular
+> and plural kinds work — so the remedy it hands the reader is one they can actually run.
+> 📝 `_cco_verb_touches_store`'s `remote list` entry is now unreachable (the shim refuses first and
+> `refuse` exits) and was **kept deliberately**, annotated: it answers *"would this verb touch the
+> store"*, and keeping the honest answer means a future re-classification cannot silently lose the
+> trampoline.
+
 **Found**: 2026-07-31, by the **G2** CLI-surface audit
 ([report](cli/reviews/2026-07-31-cli-surface-audit.md) §4).
 **Severity**: low, but it is the *false-remedy* class the whole cycle was about.
@@ -1915,9 +1931,10 @@ notice is level-independent, matching its four siblings. Check the exit code del
 siblings refuse at **2** (policy), the dispatcher's own removal notice is **1** — pick one and state
 why, since D8's taxonomy calls a removed alias a policy refusal.
 
-⚠ **Not fixed inside G2.** `tests/test_operator_shim.sh:320` and `:648` pin the current
-classification (they assert `remote list` under read-project needs read-global), so the change is a
-test edit plus a user-visible message change — a decision, not a doc correction.
+⚠ **Not fixed inside G2** — it was raised instead: `tests/test_operator_shim.sh:320` and `:648` pinned
+the old classification, so the change was a test edit plus a user-visible message change, i.e. a
+decision rather than a doc correction. ✅ **The maintainer took that decision immediately** (see the
+annotation at the top of this entry).
 
 **Related**: ADR-0029 D1 (the `list` unification) · the R9 refusal taxonomy (`bin/cco:392-398`) ·
 [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work) — the

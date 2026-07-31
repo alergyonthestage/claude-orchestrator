@@ -309,17 +309,34 @@ test_operator_path_set_blocked_list_allowed() {
 }
 
 # ── Read scope gating (ADR-0042) ─────────────────────────────────────
-# read-project cannot browse personal-global management namespaces (template
-# reads, remote list); read-global+ can. Unified `cco list` stays open at any
-# read level (the on-demand discovery cornerstone).
+# read-project cannot browse the personal-global management namespace (template
+# reads); read-global+ can. Unified `cco list` stays open at any read level (the
+# on-demand discovery cornerstone). `remote list` used to be named here too — see
+# the FI-45 test below for why it is not a scope question at all.
 
 test_operator_read_project_gates_global_namespaces() {
     lane_cco read-project template show foo
     [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
         || fail "'template show' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
-    lane_cco read-project remote list
-    [[ $OP_RC -ne 0 && "$OP_OUT" == *"read-global scope"* ]] \
-        || fail "'remote list' under read-project must need read-global, got rc=$OP_RC: $OP_OUT"
+    return 0
+}
+
+# FI-45: `remote list` is deliberately NOT in the test above — it is a REMOVED
+# alias (ADR-0029 D1), not a global-namespace read. Its refusal must therefore be
+# the same at every read level: telling a read-project session to widen its access
+# would send it to a verb that does not exist. Both directions are asserted,
+# because the defect was precisely that the two levels disagreed.
+test_operator_remote_list_is_a_removed_alias_at_every_level() {
+    local lvl
+    for lvl in read-project read-global read-all edit-all; do
+        lane_cco "$lvl" remote list
+        # 'cco list remote' — the singular the redirect uses; both forms resolve
+        # (verified), so the remedy it hands the user is one they can run.
+        [[ $OP_RC -ne 0 && "$OP_OUT" == *"was removed"* && "$OP_OUT" == *"cco list remote"* ]] \
+            || fail "'remote list' at $lvl must report the removal, got rc=$OP_RC: $OP_OUT"
+        [[ "$OP_OUT" != *"read-global scope"* ]] \
+            || fail "'remote list' at $lvl must NOT advise widening access for a removed verb: $OP_OUT"
+    done
     return 0
 }
 
@@ -645,7 +662,7 @@ test_operator_no_silent_exit2() {
     lane_cco read-project config validate;       _b6_assert host-only
     lane_cco edit-all path set foo /bar;         _b6_assert host-only
     lane_cco read-project template show foo;     _b6_assert read-global
-    lane_cco read-project remote list;           _b6_assert read-global
+    lane_cco read-project remote list;           _b6_assert "was removed"   # FI-45: removed alias, not a scope refusal
     lane_cco_seeded edit-project alpha tag add p1 x;   _b6_assert "needs G=rw"
     lane_cco_seeded edit-project alpha tag add beta x; _b6_assert "needs Po=rw"
     lane_cco_seeded read-project alpha tag add alpha x; _b6_assert "needs Pc=rw"
