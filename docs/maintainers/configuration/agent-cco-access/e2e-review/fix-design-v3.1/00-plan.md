@@ -729,6 +729,65 @@ is accurate — while its remedy is host-side, and this session has `show_host_p
 follows the remedy cannot act on the path they were given. Carry it into step 3's pass over refusal
 wording; changing user-facing text is a human gate, not a sweep.
 
+#### G1 — E6B-04 (host) and D7 (session) — ✅ **BOTH PASSED** — 2026-07-31
+
+**E6B-04 — the pack-rename fan-out, executed for the first time in any round.** Host run, two throwaway
+projects (`proj-a`, `proj-b`) both referencing one disposable pack.
+
+```
+$ ./bin/cco pack rename scratch-pack scratch-pack-renamed -y
+  • packs/scratch-pack/ → packs/scratch-pack-renamed/ (+ pack.yml name:)
+  • DATA install-provenance + STATE merge base/meta + per-user tags
+  • packs[] reference in project(s): proj-a proj-b
+✓ Renamed pack 'scratch-pack' → 'scratch-pack-renamed'.
+⚠ Commit + push … : /private/tmp/cco-scratch/proj-a , /private/tmp/cco-scratch/proj-b
+```
+
+| # | Post-condition | Verdict |
+|---|---|---|
+| 1 | store dir moved | ✅ `~/.cco/packs/scratch-pack-renamed` present (agents/knowledge/rules/skills/pack.yml), `scratch-pack` **gone** |
+| 2 | **every** referring `project.yml` re-keyed | ✅ **both** — `proj-a` *and* `proj-b` read `- name: scratch-pack-renamed`. Re-confirmed from a second vantage: `cco pack show` → *"Used by projects: proj-a, proj-b"*, a reverse lookup over the refs |
+| 3 | DATA provenance + STATE meta + tags re-keyed | ⚠️ **vacuous on this fixture** — see below |
+
+**Post-condition 2 is the gate.** It is the cross-project fan-out — the thing v2 only ever *inferred*
+from a non-firing guard and code order, and the reason §7 called this a named gate. It is now observed:
+the second project's copy was re-keyed, not just the one hosting the rename. **No `failed` tag appeared**
+(the S2b partial-application arm printed nothing), and both repos were listed for commit — so the write
+side reported completion for every affected copy, which is the half-apply detector.
+
+⚠️ **Post-condition 3 proves less than it looks, and the difference is recorded rather than smoothed.**
+The subject was created with `cco pack create`, so it carries **no install provenance** (`cco pack update`
+on such a pack dies with *"created locally — no remote source to update from"*), **no tags** (the TAGS
+column reads `—`) and no sync fingerprint. The `sidecar-rekey` op ran and did not fail — and it is
+fail-closed, so a broken store would have refused before the CONFIG dir moved — but it had **nothing to
+move**. A stronger fixture tags the pack (and installs it from a remote) *before* renaming. This does not
+weaken the gate: the never-executed question was the fan-out, and the fan-out answered.
+
+**D7 — the framework view composed with no packs at all.** Default session on `stai-sicuro`
+(`Packs: (none)`), provenance `image built from: fix/release/cycle-1.2@31aec5a`.
+
+```
+$ cco whoami        →  claude_access: none   ·   Cr=ro Cp=ro Cg=ro Co=ro
+$ ls -la /workspace/.claude
+    agents  CLAUDE.md  rules  settings.json  settings.local.json  skills  workflows
+$ grep ' /workspace/.claude' /proc/self/mountinfo
+    /workspace/.claude              ← .cache/cco/projects/stai-sicuro/claude-view      ro
+    /workspace/.claude/{skills,CLAUDE.md,agents,settings.json,rules} ← <repo>/.cco/claude  ro
+    /workspace/.claude/settings.local.json ← state/…/local-settings/workspace.json      rw
+    /workspace/.claude/workflows           ← state/…/projects/stai-sicuro/workflows     rw
+$ touch …/settings.local.json && echo ok                     → ok
+$ mkdir -p …/workflows && touch …/workflows/.probe && echo ok → ok
+```
+
+The view **is** composed for a project that adopts no pack — D7's whole claim, and the arm both of S1's
+probes were blind to because `claude-orchestrator` adopts `core-dev-framework`. Both floor entries are
+`rw` while every authored child stays `ro`.
+
+📌 **Stronger than the runbook asked for.** The probe was specified at the default (`Cp=ro`); this session
+ran at **`claude_access: none`** — the narrowest authoring level there is, all four axes `ro` — and the
+functional-write floor still held. INV-FLOOR promises the floor *regardless* of the authoring axis, and
+this is that promise observed at its hardest point rather than at its default.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |

@@ -50,7 +50,14 @@ flowchart TD
 
 ---
 
-## G1 — S6's host half + D7's residual ◀ **current gate**
+## G1 — S6's host half + D7's residual ✅ **PASSED 2026-07-31**
+
+> Evidence in [`00-plan.md`](00-plan.md) §7 (*G1 — E6B-04 and D7*). E6B-04's fan-out re-keyed **both**
+> referring projects with no `failed` tag; D7's view composed for a pack-less project with both floor
+> entries writable — observed at `claude_access: none`, harder than the specified default.
+> ⚠ **Residual cleanup, if not already done**: `rm -rf /tmp/cco-scratch`, `rm -rf ~/.cco/packs/scratch-pack*`,
+> `cco forget proj-a`, `cco forget proj-b`, and the four stale remotes of G1.1
+> (`probe-2`, `x`, `probe-3`, `probe-3b`).
 
 **Why before the merge**, in order of force:
 
@@ -229,7 +236,11 @@ Expected: the view **is** composed, and both floor entries are writable while th
 
 ---
 
-## G2 — CLI-surface documentation audit (in-session, **after** G1)
+## G2 — CLI-surface documentation audit (in-session)
+
+> ⏸ **DEFERRED by the maintainer, 2026-07-31**, behind the config-mount-topology analysis (roadmap
+> step **2b**). G1's two refusals exposed a design question big enough to change what the CLI surface
+> *should say* — auditing the documentation of a surface that may move is work done twice.
 
 Roadmap **step 3**, deliberately before the merge: *a release whose CLI reference misstates where a verb
 runs ships the same defect class this cycle was about.* Sequential after G1 by the maintainer's decision,
