@@ -414,9 +414,9 @@ accepted; the verdict, what was on the table, and the follow-ups are written int
 (*release exceptions are written down, never inferred*). The follow-ups are **FI-42** (ships as the
 release known-issue, runbook G6) · **FI-43** · **FI-40**, all three deferred to cycle-2 by the step-2b
 decision; ADR-0046 §6 was ratified in place rather than deferred. **G1's residual host cleanup is
-done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31** — see step 3 below. ▶ What remains:
-**G4** merge → **G5** verify on `develop` → **G6** release (whose step 5 carries a corrected,
-sign-off-pending known-issue sentence).
+done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31**, and both items it raised are closed —
+see step 3 below. ▶ What remains is **host-side only**: **G4** merge → **G5** verify on `develop` →
+**G6** release (whose step 5 carries the **approved** known-issue sentence).
 
 | Lane | Deliverable | Closes |
 |---|---|---|
@@ -578,11 +578,13 @@ there:
 
 ✅ **3 — CLI-surface documentation audit — DONE 2026-07-31 (gate G2).** Report:
 [`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
-Eight objective drifts corrected in place; **two items owed to the maintainer** — the corrected
-**release-note sentence** (G6 step 5: the known-issue named `--all --repo …`, which `cco start`
-refuses; the reachable spelling is `--cco-access edit-all --repo …`) and
-[FI-45](roadmap-backlog.md) (`remote list` tells a user to widen access for a **removed** verb;
-pinned by two tests, so a decision rather than a doc fix). ⚠ The largest find was outside the
+Eight objective drifts corrected in place; the **two items it raised are both closed the same day** —
+the corrected **release-note sentence** is **approved** (G6 step 5: the known-issue had named
+`--all --repo …`, which `cco start` refuses; the reachable spelling is `--cco-access edit-all
+--repo …`), and **[FI-45](roadmap-backlog.md) is FIXED** (`remote list` no longer tells a user to
+widen access for a **removed** verb — it refuses with the removal notice at every level, like its four
+siblings; changelog 61). ⚠ FI-45 lands `bin/cco` **after** G3's acceptance — recorded as a
+post-acceptance in-cycle fix in the plan's §7, the treatment FI-41 got. ⚠ The largest find was outside the
 matrix: the **config-editor user guide** still documented the pre-ADR-0048 access model and
 advertised three verbs project mode refuses — while the built-in's own agent-facing rules were
 correct. *Original scope, for the record:* verify

@@ -81,6 +81,13 @@ flagged for maintainer sign-off** rather than treated as a settled edit.
 
 ## 4. Left as shipped, recorded not fixed
 
+> **Forward annotation (same day, after this report was written).** The maintainer took both items
+> immediately: the release-note sentence is **approved** in the corrected form, and **FI-45 was
+> FIXED** — `remote list` now refuses with the removal notice at every level, like its four siblings
+> (`bin/cco` + rewritten tests + changelog 61). The audit's *decision* not to fix it inside G2 still
+> stands as written: it was a decision to raise, not to defer. This section is left in its original
+> form — it records what the audit chose, which is the part worth keeping.
+
 - **`remote list` answers two different things by level.** At `read-project` the shim's scope gate
   fires first (*"needs read-global scope"*, exit 2) — advising a user to widen access for a verb
   that **does not exist**; at `read-global+` the dispatcher's *"was removed — use `cco list
@@ -101,7 +108,7 @@ remove|rename` host-only statements and its `cco remote list` removal note · th
 
 ## 6. Residual
 
-None blocking. Two items for the maintainer: the release-note sentence (§3) and the `remote list`
-message inconsistency (§4). Both are recorded where the work lives — the
-[gates runbook](../../configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
-and [FI-45](../../roadmap-backlog.md) respectively.
+**None.** The two items this audit raised for the maintainer — the release-note sentence (§3) and the
+`remote list` message inconsistency (§4) — were both decided the same day: the sentence approved, and
+FI-45 fixed. See the annotation in §4 and the plan's §7, which records FI-45 as a **post-acceptance**
+change to `bin/cco` rather than letting a later reader infer it.

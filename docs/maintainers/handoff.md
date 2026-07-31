@@ -32,14 +32,14 @@ documentation audit — is DONE**. Report:
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list only points at it.
 
-- [ ] **▶ OWED BY YOU (1) — sign off the release-note sentence.** G6 step 5's known-issue wording was
-      **factually wrong** and is corrected: it named `cco start config-editor --all --repo …`, an
-      invocation `cco start` **refuses**. The reachable one is `--cco-access edit-all --repo …`. The
-      correction is factual; the phrasing is yours.
-- [ ] **▶ OWED BY YOU (2) — decide [FI-45](roadmap-backlog.md)**: `cco remote list` at `read-project`
-      says *"widen your access to read-global"*, and at read-global+ says *"was removed"*. Its four
-      sibling removed aliases refuse at the shim before any scope test. One `case` arm — but it edits
-      a user-visible message and **two pinned tests**, so G2 did not touch it.
+- [x] ✅ **Release-note sentence — APPROVED 2026-07-31** in its corrected form (only the named
+      invocation changed from the shape G3 accepted). Runbook G6 step 5 carries it; **ship it
+      verbatim**.
+- [x] ✅ **[FI-45](roadmap-backlog.md) — FIXED 2026-07-31** on your decision: `cco remote list`
+      refuses with the removal notice at every level, like its four siblings. No new contract
+      (it copies their shape); changelog 61. ⚠ It lands `bin/cco` **after** G3's acceptance —
+      recorded in the plan's §7 as a post-acceptance in-cycle fix (the FI-41 treatment), and it
+      gets its verification from **G5's suite run on `develop`**.
 - [ ] **G4** — merge → `develop`, then verify the merge did nothing extra (tree-hash check).
 - [ ] **G5** — verify **on `develop`**: the unmasked suite, and the **macOS host suite on this tree**
       (never run — the largest unknown left).
@@ -53,10 +53,11 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 
 ### What this session produced
 
-Seven commits — six docs, **one touching `lib/`** (the `cco start --help` text plus two stale
-comments; behaviour unchanged). **Suite re-run on the final tree: 1617 passed / 7 failed of 1624,
-with the `access: {claude: all}` mask ON** — identical to the cycle baseline, and the 7 are the
-host-only set name for name (the six `test_as_*` plus `test_paths_symlink_safe_tool_root`):
+Ten commits — eight docs and **two touching code**: the `cco start --help` text (plus two stale
+comments; behaviour unchanged) and **FI-45's one-arm shim fix**. **Suite on the final tree: 1618
+passed / 7 failed of 1625, with the `access: {claude: all}` mask ON.** The arithmetic closes with no
+slack: the cycle baseline 1617/7 of 1624 **+1** = FI-45's regression test. The 7 are the host-only set
+name for name (the six `test_as_*` plus `test_paths_symlink_safe_tool_root`):
 
 - `e0606d1` — `cco start --help` corrected: config-editor is **min-privilege by mode**, not the old
   broad default; `--claude-access` no longer claims `repo` is the default.
@@ -68,6 +69,11 @@ host-only set name for name (the six `test_as_*` plus `test_paths_symlink_safe_t
 - `eb1dec5` — G2's record: report, gate status, roadmap step 3, **FI-45**.
 - `e0a591f` — **FI-44 class B**: 15 links to consumed handoffs de-linked; class D closed as *not a
   defect*.
+- `93c1470` — **FI-45 fixed** (the only code change beyond the help text): `remote list` refuses as a
+  removed alias at every level. Regression cover asserts **both** directions at four levels, because
+  the defect was that the levels disagreed.
+- `49d7da9` + the docs commits after it — the sign-off, the post-acceptance record in the plan's §7,
+  and the three stale gate rows in its §8 table.
 
 ### Decisions taken (rationale lives in the linked documents, not here)
 
