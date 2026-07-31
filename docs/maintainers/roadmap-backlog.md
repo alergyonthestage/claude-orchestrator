@@ -1661,49 +1661,105 @@ D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C �
 
 ---
 
-## FI-42: config-editor has no repo-mounting broad mode — and that is two decisions, not a missing flag
+## FI-42: the packs[] fan-out resolves its WRITE path by member probe, while its READ path is operator-aware
 
-**Found**: 2026-07-31, from a maintainer question while running cycle-1.2's G1 gate. **Severity**: none
-today — nothing is broken; a capability is absent. **Effort**: Low to add a flag, **Medium** to answer
-what the flag implies. **Needs a decision before any code.**
+**Found**: 2026-07-31, from two maintainer questions about config-editor's repo mounting.
+**Severity**: a capability that exists in the session is unreachable — `cco pack rename` refuses in a
+config-editor session although the files it must rewrite are mounted **and writable** there.
+**Effort**: Low for single-repo projects; **Medium** because the multi-member case needs a decision.
+**Supersedes this entry's first framing**, which asked for an `--all-repos` flag. That framing was
+built on a wrong premise (recorded below, because the premise is the interesting part).
 
-**The current surface, code-grounded** (`lib/cmd-start.sh`):
+**The maintainer's question, which is the finding**: *if `config-editor --all` already mounts every
+project's `.cco`, the `project.yml` files are already writable — so why does the rename need the repo
+mounted at all?* It does not. Code-grounded:
 
-| Invocation | `.cco` targets | Repos | Triple |
-|---|---|---|---|
-| `--project <name>` (repeatable) | those projects | **their repos** (repo-aware authoring, `:1084-1086`) | `(ro,rw,none)` `:1024` |
-| bare, cwd inside a project | the cwd project | **its repos** (`:1124`) | `(ro,rw,none)` |
-| `--all` / `--cco-access edit-all` | **every** resolvable project | **none** (`:1088-1089`) | `edit-all` `:1023` |
-| bare, outside any project | none (`~/.cco` only) | none | `(rw,none,none)` |
-| `--repo <name>` (repeatable) | — | **adds one repo, in ANY mode** (`:1128-1135`) | unchanged |
+- `_config_editor_mount_ro pc` → at `edit-all` `pc=rw` → the `<name>-config` mounts are **rw**
+  (`cmd-start.sh:1044-1054`).
+- `_resolve_operator_project_yml` layout 2 returns `<workdir>/<name>-config/project.yml` for a
+  config-editor target (`cmd-resolve.sh:134-138`).
+- `_rename_fanout_projectyml`'s **outer** loop already receives exactly that path from
+  `_project_foreach`, and reads it: `_yaml_list_has_ref "$yml" packs "$old"` (`rename.sh:304-305`).
+- Its **inner** loop then writes a *different* file: `$path/.cco/project.yml`, where `$path` is the
+  member **probe** (`rename.sh:316-318`) — absent in `--all` mode, and `:ro` when the repo is mounted
+  (`cmd-start.sh:1898`, RC-6 §3.7).
 
-So the maintainer's recollection is right on both halves: single-project mode **does** mount the repo,
-and `--all` explicitly does not — *"Repos are an EXPLICIT opt-in (P18 refined, not broken)"* (`:1070`).
-There is **no `--all-repos`**. What does exist, and is easy to miss because the mode chain reads as
-exclusive, is that **`--repo` composes with `--all`**: its loop runs after the chain, unconditionally.
+So the verb reads the writable copy and writes the unwritable one. **INV-F** — *"resolve through the
+operator-aware pair, not the host-only index resolver"* — was applied to the readers; this writer
+escapes it. Same shape as [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work),
+one layer over: there a consumer read availability from the wrong owner, here a writer resolves a path
+from the wrong locator.
 
-**Why the missing flag is not the whole question.** Adding `--all-repos` would mount the code and still
-not make config authoring work through it, because `cmd-start.sh:1898` forces the repo-path `.cco`
-overlay `:ro` for the config-editor built-in **regardless of `Pc`** (RC-6 §3.7, Change 5). Two coupled
-decisions therefore have to be made together:
+**What is NOT a bug, and is the decision to make.** The member loop exists for a real reason:
+`project.yml` is **replicated across a multi-repo project's owned members** (`_project_member_status`
+→ `synced` / `divergent`), and every owned copy must be re-keyed or the project drifts under `cco
+sync`'s clobber-guard. The `<name>-config` mount exposes exactly **one** copy — the unit dir's. For a
+single-repo project the two coincide, which is precisely why the maintainer's case *feels* like it
+should already work: it could. For a multi-repo project, rewriting through the config mount reaches
+one copy and silently leaves the others.
 
-1. **Should the built-in ever expose a writable committed `.cco` through the CODE repo path?** §3.7 said
-   no, for a reason that is *weaker but not void* at `--all`: it protects a **foreign** member repo's
-   config when `Po=none`, and at `--all` `Po=rw`. Relaxing it re-opens what §3.7 closed — **two writable
-   paths to the same file** (`/workspace/<name>/.cco/project.yml` and `/workspace/<name>-config/project.yml`,
-   which W3's D-M11 probe showed are the **same inode**), i.e. the duplicate-authoring-path question.
-2. **Or should cross-project rewrites resolve through the `<name>-config` mount instead of the member
-   path?** Tempting — `_resolve_project_yml` is already operator-aware and the fan-out has that path in
-   hand — but the member loop exists because `project.yml` is **replicated across a multi-repo project's
-   members** and every owned copy must be rewritten. Through the config mount only ONE copy is
-   reachable, so this trades a refusal for a partial rewrite unless "which copy is canonical" is settled
-   first (ADR-0024 D2 clobber-guard territory).
+**Two options, both needing the human gate:**
 
-**Recommended shape if it is taken up**: answer (1) and (2) in one ADR, not a flag PR. The user-visible
-symptom that motivates it is narrow — *"I cannot rename a pack from a config-editor session"* — and the
-honest workaround (run it on the host) already exists and is what the refusal now says since
-[FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work).
+1. **Write through the reachable config mount, and be honest about the rest** — re-key every copy the
+   session can reach, then report (not silently skip) the owned members it cannot, with the
+   not-mounted vocabulary FI-41 just installed. Turns a blanket refusal into a partial-but-declared
+   application. ⚠ It moves `cco pack rename` from all-or-nothing to all-or-declared-partial, which is
+   a contract change, not an implementation detail.
+2. **Keep refusing when any owned copy is unreachable** (today's behaviour), but refuse for the *right*
+   reason — the unreachable **copies**, not the unmounted repos — and say so. Cheapest, honest, and
+   leaves the capability gap open for single-repo projects where nothing is actually unreachable.
 
-**Related**: ADR-0044 §3 + ADR-0048 (config-editor min-privilege by mode) · RC-6 §3.7
-(`03-config-editor-repos.md`) · ADR-0046 §6 (the deferred multi-repo `Pc` span for normal sessions —
-same underlying question, different lane) · FI-41.
+⚠ **Not a flag.** An `--all-repos` widener would mount the code and still not help: the built-in forces
+the repo-path `.cco` overlay `:ro` regardless of `Pc` (`cmd-start.sh:1898`), and relaxing *that*
+re-opens what RC-6 §3.7 closed — two writable paths to the same file
+(`/workspace/<n>/.cco/project.yml` and `/workspace/<n>-config/project.yml` are the **same inode**, per
+W3's D-M11 probe). Option 1 or 2 avoids that question entirely by using the mount the design already
+designates as *the* authoring path.
+
+**For the record — the corrected premise.** An earlier note here claimed E6B-04's container arm was
+*structurally unreachable*, having enumerated the config-editor modes and missed that **`--repo`
+composes with `--all`** (its loop runs after the mode chain, unconditionally — `cmd-start.sh:1128-1135`).
+`--all --repo a --repo b` does keep `mode=all` (G=rw) and bind both repos, and both guards then pass —
+the run fails later, at the `:ro` rewrite. E6B-04 stays a **host** gate either way: a container run
+would move the store, fail every rewrite and print the documented partial state (`ok` then `die` at
+exit 1, S2b), which at a glance is indistinguishable from the half-apply the gate exists to detect.
+
+**Related**: ADR-0044 §3 + ADR-0048 · RC-6 §3.7 (`03-config-editor-repos.md`) · ADR-0046 §6 (deferred
+multi-repo `Pc` span — same underlying question) · ADR-0024 D2 (clobber-guard / which copy is
+canonical) · FI-41 · [FI-43](#fi-43---repo-mounts-the-code-rw-while-its-stated-purpose-is-to-read-it).
+
+---
+
+## FI-43: `--repo` mounts the code **rw** while its stated purpose is to READ it
+
+**Found**: 2026-07-31, same conversation. **Severity**: none observed — a coherence question between a
+documented behaviour and the rationale of the decision that shaped it. **Effort**: Low (a flag), but
+the question is whether it should be the user's choice at all.
+
+**What is true today** (`cmd-start.sh:2164-2166` and the overlays that follow):
+
+| Layer | Mode in a config-editor session | Source |
+|---|---|---|
+| the repo **body** `/workspace/<name>` | **rw** — `_compose_vol` with no `ro` argument | help text says *"(rw; repeatable)"* |
+| its committed `<repo>/.cco` | **`:ro`**, forced for the built-in regardless of `Pc` | `:1898` (RC-6 §3.7) |
+| its native `<repo>/.claude` | `:ro` when `Cr=ro` — which config-editor resolves | ADR-0048 (claude triple) |
+
+There is **no per-repo mode syntax**: `--repo <name>` takes a bare name (`:2565`). `--mount` accepts
+`:ro|:rw` (`:2558`) but that is the user-mount flag, a different surface.
+
+**The tension.** RC-6 §3.7's rationale for forcing `.cco` to `:ro` states that *"the config-editor
+built-in mounts its target's repos to READ code, not to author config"*. If the purpose is to read,
+the body being rw is a wider grant than the rationale claims — an agent in a config-authoring session
+can rewrite source. Conversely the current default is convenient exactly when the user is doing both.
+Either reading is defensible; what is not is that the two live in different files and disagree.
+
+**Worth checking against real uses of `--repo` before deciding** — the flag is a *cross-project
+reference* mount (`_index_get_path_any`, `:1132`), so its use cases are (a) look at a repo while
+authoring another project's config, (b) reach a repo whose project is not a target. Neither needs
+write. A third — "fix the code while I am in here" — is real but is arguably a normal session's job.
+
+**Options**: leave as-is and align §3.7's wording · default `:ro` with an opt-in `--repo <name>:rw` ·
+follow an existing axis instead of inventing one (e.g. `Cr`, already `ro` here). **Decide before
+touching it** — the default is user-visible and currently documented as rw.
+
+**Related**: RC-6 §3.7 · ADR-0042 §8 (repos are an explicit opt-in) · ADR-0048 · FI-42.
