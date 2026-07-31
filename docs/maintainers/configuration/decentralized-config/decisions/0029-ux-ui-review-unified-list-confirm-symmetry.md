@@ -4,7 +4,7 @@
 **Deciders**: maintainer + UX-UI review (step 4)
 **Context docs**: `../reviews/27-06-2026-ux-ui-review.md` (findings UX-1…UX-9 + the help audit);
 `../design.md` §7 (command table — centre of gravity); the launcher
-[`../ux-ui-review-handoff.md`](../ux-ui-review-handoff.md)
+`../ux-ui-review-handoff.md` (consumed)
 **Related ADRs**: **0023 (command surface & UX — D1 refined here)**, 0018 (sharing 2×2),
 0021 (lifecycle — `forget`, orphan `config validate`), 0016 (taxonomy — `project coords`),
 0011/0015 (tags → DATA, `cco list`/`cco tag` surface)

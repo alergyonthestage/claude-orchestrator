@@ -3,7 +3,7 @@
 > **✅ PHASE II DONE (2026-07-09).** Implemented on `feat/config-access/e2e-review` in 6
 > atomic commits `3d77c8d`→`81f191d` + dogfood fix `98de9b1`; suite 1169→1174/0; dogfooded
 > on the Mac (boundary confirmed: `cat ~/.local/state/cco/index` → EACCES). See the
-> [implementation-handoff §5 Phase II](implementation-handoff.md) "Landed" note and the
+> implementation-handoff §5 Phase II (consumed) "Landed" note and the
 > [pre-revalidation backlog](../e2e-review/pre-revalidation-backlog.md) for details + the
 > pending maintainer check-in + dogfood bug B-DF1. **Next session: Phase III — see
 > [`phase-III-kickoff.md`](phase-III-kickoff.md).** This doc is kept as the Phase II record.
@@ -12,7 +12,7 @@
 > fresh, dedicated-context session. Phase I (the `(G,Pc,Po)` model) is **done + merged
 > into the working tree**; this phase builds the enforcement on top of it.
 >
-> **Master plan**: [`implementation-handoff.md`](implementation-handoff.md) (read §1
+> **Master plan**: `implementation-handoff.md` — consumed (read §1
 > operating constraints + §5 Phase II). **Design**:
 > [ADR-0047](../decisions/0047-config-access-enforcement.md) (the whole ADR — it is the
 > spec). **Model it enforces**: [ADR-0046](../decisions/0046-unified-cco-access-model.md)
@@ -113,4 +113,4 @@ shell `cat`-ing the index → **EACCES** (parent traversal); the helper reads it
 → **S2** (Phase III per-command A1 fixes: tag B5, `path list` scoping, whoami+ triple render,
 B6 hint invariant + Phase IV config-editor/tutorial presets, ADR-0044) → **S3** (Phase V
 registry ADR-0045 + B1–B4, Phase VI migrations/changelog/**DOC5 cutover**/`cco build`) →
-**e2e v2 acceptance**. See [`implementation-handoff.md`](implementation-handoff.md) §4/§5.
+**e2e v2 acceptance**. See `implementation-handoff.md` (consumed) §4/§5.

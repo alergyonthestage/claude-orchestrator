@@ -1840,9 +1840,9 @@ mechanical. **Class**: a documented rule violated at scale, not a set of typos.
 | Class | Count | Disposition |
 |---|---|---|
 | **A — wrong path, target exists** | 11 | ✅ **FIXED 2026-07-31**: `docs/maintainers/roadmap.md` + `roadmap-backlog.md` spelled `../configuration/…` / `../cli/…` / `../engineering/…` (as link targets) although the file's own directory *is* `docs/maintainers/` (`docs/configuration` etc. do not exist); plus `handoff-v3.1.md` missing one `../`. Purely mechanical, verified target-by-target. |
-| **B — target gone: consumed ephemeral handoffs** | ~9 | **OPEN** — the subject of this entry. |
+| **B — target gone: consumed ephemeral handoffs** | 15 link instances in 8 files | ✅ **FIXED 2026-07-31** (in parallel with G2, on the maintainer's instruction) — de-linked, prose kept, each marked *(consumed)*. Re-derived from the audit, not from this list: the ~9 estimate counted distinct handoffs, the repair touched 15 links. |
 | **C — `docs/archive/**`** | 7 | **Leave.** Archived docs are frozen; `documentation-lifecycle.md` explicitly accepts dangling back-references in frozen material. |
-| **D — literal `url` placeholders (a link target left as the word *url*)** | 2 | **OPEN**, trivial: `configuration/llms/analysis/analysis-001-llms.md`, `configuration/decentralized-config/documentation-reorganization-plan.md`. |
+| **D — literal `url` placeholders (a link target left as the word *url*)** | 3 | ✅ **CLOSED 2026-07-31 — not a defect.** All three are `` `[name](url)` `` **inside code spans**, illustrating the llms.txt link *format*; the surrounding prose even calls them *"format placeholders"*. "Fixing" them would corrupt a format example. The finding was the **audit script's**, not the docs'. |
 
 **Class B is the finding.** Immutable ADRs and reviews link *forward* to handoffs that have since been
 consumed and deleted — e.g. `0029-…` → `../ux-ui-review-handoff.md`, `0030-…` →
@@ -1863,15 +1863,24 @@ not "find the new path" — there is no new path.
 domain's* file. Pointing at it would replace a dead link with a **wrong** one, which is worse: a reader
 follows it and is silently misinformed. The audit script flags this as `RESOLVABLE`; it is not.
 
-**Proposed fix** (needs a decision, because it edits **immutable** documents): drop the hyperlink and
-keep the prose — *the implementation handoff* as a link → *"the implementation handoff (consumed)"* as plain prose — so the
-historical record still says a handoff existed without pretending it is readable. The alternative,
-re-pointing each link at the roadmap/ADR that absorbed the handoff's content, is more informative but
-requires reading each one to know what absorbed it, and it edits history to say something it did not say.
+✅ **Applied fix (2026-07-31)**: the hyperlink is dropped and the prose kept — *the implementation
+handoff* as a link → *"`implementation-handoff.md` (consumed)"* as plain prose — so the historical
+record still says a handoff existed without pretending it is readable. Nothing else in those documents
+was touched, which is what keeps the edit compatible with their immutability: it removes a broken
+promise, it does not restate a decision. The alternative — re-pointing each link at the roadmap/ADR
+that absorbed the handoff — was rejected: it requires reading each one to know what absorbed it, and it
+edits history to say something it did not say.
+
+Files: ADRs `0029` · `0030` · `0031` · `0034`, reviews `27-06-2026-refactoring-review` ·
+`27-06-2026-ux-ui-review`, kickoffs `hardening-v2/phase-II` · `phase-III`.
 
 **Prevention is the durable half**: the audit is a ~20-line script over `](…)` links. A repo-wide
 dangling-link check belongs in the suite as a docs lint — it would have caught class A the day it
 appeared, and it makes the rule above enforceable instead of aspirational.
+⚠ **Two things the lint must do, both learned by running it**: (a) **skip inline code spans**, or it
+reports the `` `[name](url)` `` format examples of class D — and this very entry — as broken forever;
+(b) **never auto-repair by basename**, per the trap above. A lint that cries wolf on its own
+documentation gets muted, which is worse than not having it.
 
 **Related**: the pack rule `documentation.md` (`core-dev-framework`) — the ephemeral-link rule ·
 [`.claude/rules/documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md) (frozen

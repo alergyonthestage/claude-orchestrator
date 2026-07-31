@@ -3,7 +3,7 @@
 **Status**: Accepted (2026-06-29) — pre-merge **dogfooding follow-up D** (host e2e of `cave-flow`)
 **Deciders**: maintainer + dogfooding session
 **Context docs**: the handoff
-[`../cd-list-rename-handoff.md`](../cd-list-rename-handoff.md) (symptom, code map, test plan);
+`../cd-list-rename-handoff.md` (consumed) (symptom, code map, test plan);
 `../../roadmap.md` §"Dogfooding findings"
 **Related ADRs**: **0024 D1 (project identity = `project.yml` `name:` = index key)**, 0021 (lifecycle —
 `forget`/`init --migrate`), 0023 D1/D3 (`cco project` namespace), 0018 D2 (projects ride their
