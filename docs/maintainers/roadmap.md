@@ -491,6 +491,26 @@ operator-aware — the concrete defect this topology question explains),
 Output: an analysis document, then **the maintainer's decision** — implementation scope, and whether any
 of it ships in this release, are decided at that gate, not assumed here.
 
+✅ **The analysis is DONE and persisted (2026-07-31)** — [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md),
+direction approved at the gate. Its load-bearing result: the proposal is structurally **"delete
+layout 2"**, and under it FI-42's fan-out writer becomes correct **verbatim** — a fix by removing a
+special case. Four blockers, each a decision and none fatal: **(a)** INV-MP — `/workspace/<repo>` as a
+passed-through ancestor is materialised root-owned and `test_invariant_mount_ancestry_owned` would
+fail, so a framework-owned scaffold (ADR-0054 D2's mechanism) is mandatory; **(b)** ADR-0051 homonyms
+— sound in project mode (names are 1:1 within a project), **unsound in `--all`**, where N×M
+collisions are the expected case and today's *mount-the-first, announce-the-second* arm would
+silently author the wrong project's config; **(c)** no ADR states which of N replicated copies is
+canonical in-session — today glob order decides; **(d)** a `.cco`-only stub trips three dir-test
+predicates into *absent-reported-as-present*, landing on **`cco project show`**, the very verb the
+proposal designates as the mapping surface. Supersessions required: **RC-6 §3.7** (its rule survives,
+its rationale becomes false; its `Po=none` gain needs role-aware per-member modes) and **ADR-0046 §6**
+— which the analysis shows a **normal** `edit-project` session already ships unenforced
+(`cmd-start.sh:1885-1887`), so §6 should be settled in the same ADR, not re-deferred. On `cco sync`:
+the topology removes reachability only — the blocking prerequisite is that `sync-meta` never crosses
+INV-STATE, so `synced`/`divergent`/one-config-repo are **indistinguishable in-session today**. FI-40
+is topology-independent and can ship either side of the gate. ▶ Next: the maintainer's decision on the
+six open questions in §8 of the analysis, then an ADR.
+
 **3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
 cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
