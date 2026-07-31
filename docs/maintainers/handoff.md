@@ -45,7 +45,7 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
       (never run — the largest unknown left).
 - [ ] **G6** — `develop → main` + release, carrying the FI-42 known-issue (wording above).
 - [ ] **Host-side, owed**: `git push origin fix/release/cycle-1.2` — measured 2026-07-31:
-      the branch is **8 ahead of `origin/fix/release/cycle-1.2`** (7 from this session), and
+      the branch is **12 ahead of `origin/fix/release/cycle-1.2`** (11 from this session), and
       **`develop` is level with `origin/develop`** (0 ahead) — so `develop` needs no push, contrary to
       earlier handoffs. Re-measure rather than trusting any number written here.
 
@@ -53,7 +53,7 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 
 ### What this session produced
 
-Ten commits — eight docs and **two touching code**: the `cco start --help` text (plus two stale
+Eleven commits — nine docs and **two touching code**: the `cco start --help` text (plus two stale
 comments; behaviour unchanged) and **FI-45's one-arm shim fix**. **Suite on the final tree: 1618
 passed / 7 failed of 1625, with the `access: {claude: all}` mask ON.** The arithmetic closes with no
 slack: the cycle baseline 1617/7 of 1624 **+1** = FI-45's regression test. The 7 are the host-only set
