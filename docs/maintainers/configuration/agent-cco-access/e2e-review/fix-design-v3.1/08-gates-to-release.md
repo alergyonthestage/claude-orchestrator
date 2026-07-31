@@ -243,8 +243,26 @@ Expected: the view **is** composed, and both floor entries are writable while th
 
 ---
 
-## G2 — CLI-surface documentation audit (in-session)
+## G2 — CLI-surface documentation audit (in-session) ✅ **DONE 2026-07-31**
 
+> ✅ **Ran and completed 2026-07-31.** Report:
+> [`cli/reviews/2026-07-31-cli-surface-audit.md`](../../../../cli/reviews/2026-07-31-cli-surface-audit.md).
+> **Eight drifts corrected in place** (both handed findings + six the audit found), **one release
+> artefact corrected**, **two items left for you**:
+>
+> 1. 🔴 **The release known-issue named an invocation `cco start` refuses** — `--all --repo …` is
+>    rejected at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …`.
+>    G6 step 5's wording is corrected below; **the sentence is release-facing and owes your
+>    sign-off**.
+> 2. **`remote list` answers *"widen your access"* for a removed verb** — documented as shipped,
+>    logged as [FI-45](../../../../roadmap-backlog.md); the fix is pinned by two tests and changes a
+>    user-visible message, so it is a decision, not a sweep.
+>
+> The largest find was **not** in the matrix: the **config-editor user guide** was still describing
+> the pre-ADR-0048 model and advertising three verbs that project mode refuses — while the built-in's
+> own agent-facing rules were correct. A sweep that checks the machine-read surface and stops there
+> passes it.
+>
 > ▶ **UNBLOCKED 2026-07-31 — the deferral is lifted.** It was deferred behind the
 > config-mount-topology analysis (roadmap step **2b**) because auditing a surface that may move is work
 > done twice. **Step 2b is now closed**: the maintainer decided the topology does **not** change in this

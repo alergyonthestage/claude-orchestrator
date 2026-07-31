@@ -414,7 +414,9 @@ accepted; the verdict, what was on the table, and the follow-ups are written int
 (*release exceptions are written down, never inferred*). The follow-ups are **FI-42** (ships as the
 release known-issue, runbook G6) · **FI-43** · **FI-40**, all three deferred to cycle-2 by the step-2b
 decision; ADR-0046 §6 was ratified in place rather than deferred. **G1's residual host cleanup is
-done.** ▶ What remains: **G2** (audit, in-session) → G4 merge → G5 verify on `develop` → G6 release.
+done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31** — see step 3 below. ▶ What remains:
+**G4** merge → **G5** verify on `develop` → **G6** release (whose step 5 carries a corrected,
+sign-off-pending known-issue sentence).
 
 | Lane | Deliverable | Closes |
 |---|---|---|
@@ -574,7 +576,16 @@ there:
   already surfaced one thing nobody had seen (a repo name is per-project, so a repo-keyed mount cannot
   address several projects at once).
 
-**3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
+✅ **3 — CLI-surface documentation audit — DONE 2026-07-31 (gate G2).** Report:
+[`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
+Eight objective drifts corrected in place; **two items owed to the maintainer** — the corrected
+**release-note sentence** (G6 step 5: the known-issue named `--all --repo …`, which `cco start`
+refuses; the reachable spelling is `--cco-access edit-all --repo …`) and
+[FI-45](roadmap-backlog.md) (`remote list` tells a user to widen access for a **removed** verb;
+pinned by two tests, so a decision rather than a doc fix). ⚠ The largest find was outside the
+matrix: the **config-editor user guide** still documented the pre-ADR-0048 access model and
+advertised three verbs project mode refuses — while the built-in's own agent-facing rules were
+correct. *Original scope, for the record:* verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
 cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
 `extra_mounts` contract was ratified — and the last full audit

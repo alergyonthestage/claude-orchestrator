@@ -1876,3 +1876,40 @@ appeared, and it makes the rule above enforceable instead of aspirational.
 **Related**: the pack rule `documentation.md` (`core-dev-framework`) — the ephemeral-link rule ·
 [`.claude/rules/documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md) (frozen
 ADRs may dangle — *"accept, or fix in one pass; do not block the cutover on it"*).
+
+---
+
+## FI-45: `cco remote list` answers "widen your access" for a verb that does not exist
+
+**Found**: 2026-07-31, by the **G2** CLI-surface audit
+([report](cli/reviews/2026-07-31-cli-surface-audit.md) §4).
+**Severity**: low, but it is the *false-remedy* class the whole cycle was about.
+**Effort**: Low — one `case` arm; the cost is the pinned test + a changed user-visible message.
+
+**The two answers.** `cco remote list` was removed by ADR-0029 D1 (→ `cco list remotes`), and
+`cmd-remote.sh:471-472` dies with that redirect. But the operator shim still classifies it as a live
+**read-global** verb (`bin/cco:440`, `_op_read_scope global "remote list"`), and that gate fires
+**first**. So in a session:
+
+| Level | What the user is told | Exit |
+|---|---|---|
+| `read-project` | *"'cco remote list' needs read-global scope or higher … Widen it on the host with `--cco-access read-global`."* | 2 |
+| `read-global` + | *"'cco remote list' was removed — use 'cco list remotes' (ADR-0029)."* | 1 |
+
+The first message sends a user to restart their session at a wider access level **to reach a verb
+that will then tell them it does not exist**. Its sibling removed aliases (`pack|template|llms|project
+list`) are refused by the shim itself via `_op_removed_list`, before any scope test — which is the
+right shape and the one `remote list` misses.
+
+**Direction (verify at design)**: move `remote list` to the `_op_removed_list` arm so the removal
+notice is level-independent, matching its four siblings. Check the exit code deliberately: the
+siblings refuse at **2** (policy), the dispatcher's own removal notice is **1** — pick one and state
+why, since D8's taxonomy calls a removed alias a policy refusal.
+
+⚠ **Not fixed inside G2.** `tests/test_operator_shim.sh:320` and `:648` pin the current
+classification (they assert `remote list` under read-project needs read-global), so the change is a
+test edit plus a user-visible message change — a decision, not a doc correction.
+
+**Related**: ADR-0029 D1 (the `list` unification) · the R9 refusal taxonomy (`bin/cco:392-398`) ·
+[FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work) — the
+same class (a remedy the reader cannot act on), one layer down.
