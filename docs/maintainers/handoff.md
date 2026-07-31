@@ -44,8 +44,10 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 - [ ] **G5** — verify **on `develop`**: the unmasked suite, and the **macOS host suite on this tree**
       (never run — the largest unknown left).
 - [ ] **G6** — `develop → main` + release, carrying the FI-42 known-issue (wording above).
-- [ ] **Host-side, owed**: `git push origin develop fix/release/cycle-1.2` — the branch is **20
-      commits ahead** of origin.
+- [ ] **Host-side, owed**: `git push origin fix/release/cycle-1.2` — measured 2026-07-31:
+      the branch is **8 ahead of `origin/fix/release/cycle-1.2`** (7 from this session), and
+      **`develop` is level with `origin/develop`** (0 ahead) — so `develop` needs no push, contrary to
+      earlier handoffs. Re-measure rather than trusting any number written here.
 
 ## Context
 
