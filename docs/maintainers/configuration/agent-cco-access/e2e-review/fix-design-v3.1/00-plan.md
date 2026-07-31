@@ -808,6 +808,35 @@ this is that promise observed at its hardest point rather than at its default.
 | S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ✅ **PASSED at round 3** — ⚠️ it took three rounds and two builds: **round 1 FAILED** (D5 inert, the key never crossed the boundary) → fixed; **round 2** showed the lane fixed *and* exposed a second defect (a fabricated cross-kind clause in every notice) → fixed; **round 3 green on all six arms**, every number matching the behaviour ratified before the fix was written | 2026-07-30 |
 | S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
 
+#### G3 — the block's single human gate: **ACCEPTED with follow-ups** (2026-07-31)
+
+The maintainer took the gate on **2026-07-31** and **passed it**. Recorded here per the runbook's
+requirement that the decision be *written*, and per **D-V31-4** (*release exceptions are written down,
+never inferred*).
+
+**Verdict: `ACCEPTED with follow-ups`.** Plain `ACCEPTED` would be inaccurate — three findings are
+carried out of the cycle by an explicit decision, and one of them ships as a known-issue:
+
+| Follow-up | Disposition |
+|---|---|
+| [FI-42](../../../../roadmap-backlog.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --all --repo …`), failing **declared** (rc 1 + the `failed` paths). |
+| [FI-43](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — a sub-question of the topology decision, not a standalone flag. No exposure: the current `rw` default is documented as such. |
+| [FI-40](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — topology-independent, deferred only to keep the release tree unchanged. |
+| ADR-0046 §6 | **Ratified in place** 2026-07-31 (annotation on the ADR), not deferred. |
+
+**What the gate had on the table**: the four §7 acceptance rows (S1 both arms · S3 both arms · S4
+round 3 · S5's ruling) · **suite 1617/7 of 1624, mask ON**, the 7 identified name-for-name as the
+host-only set · **G1's two results** (E6B-04's fan-out re-keying both `project.yml` copies, with its
+third post-condition recorded **vacuous**; D7 composing at `claude_access: none`) · step 2b's
+decision · the seven ratified deviations in ADR-0056's annotations, **not** re-litigated.
+
+**G1's residual host cleanup is done** (`/tmp/cco-scratch`, `~/.cco/packs/scratch-pack*`,
+`cco forget proj-a proj-b`, and the four stale remotes `probe-2` · `x` · `probe-3` · `probe-3b`),
+confirmed by the maintainer 2026-07-31.
+
+⚠ **The lanes' status follows from this gate**: L1, L2, L4 and L5 were each *"awaiting the block's
+single human gate"* — they are now **accepted**, and the roadmap rows say so. L3 was already accepted.
+
 ---
 
 ## 8. Out-of-session gates → [`08-gates-to-release.md`](08-gates-to-release.md)

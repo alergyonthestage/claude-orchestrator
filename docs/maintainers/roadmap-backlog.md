@@ -1141,7 +1141,7 @@ start around it. **Effort**: Low (review) + Med if the post-install unification 
 
 ## FI-31: pack/llms child mounts have no mountpoint stub → `cco start` fails on a `:ro` `/workspace/.claude`
 
-**Status**: ✅ **FIXED 2026-07-26** — [ADR-0054](../configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
+**Status**: ✅ **FIXED 2026-07-26** — [ADR-0054](configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
 + implementation + 9 tests, changelog #51 (see Resolution). Reproduced on the host the same day
 (maintainer, project `cave-ensemble` after `cco pack import` + `cco project add pack
 core-dev-framework`); it blocked pack adoption at the **default** access level.
@@ -1809,3 +1809,53 @@ follow an existing axis instead of inventing one (e.g. `Cr`, already `ro` here).
 touching it** — the default is user-visible and currently documented as rw.
 
 **Related**: RC-6 §3.7 · ADR-0042 §8 (repos are an explicit opt-in) · ADR-0048 · FI-42.
+
+---
+
+## FI-44: historical docs link to ephemeral handoffs, so the links dangle by construction
+
+**Found**: 2026-07-31, from a repo-wide relative-link audit run while closing step 2b.
+**Severity**: none functional — dead links in maintainer docs. **Effort**: Low, but **editorial**, not
+mechanical. **Class**: a documented rule violated at scale, not a set of typos.
+
+**What the audit found.** 40 dangling relative links across 19 files in `docs/`. They split cleanly:
+
+| Class | Count | Disposition |
+|---|---|---|
+| **A — wrong path, target exists** | 11 | ✅ **FIXED 2026-07-31**: `docs/maintainers/roadmap.md` + `roadmap-backlog.md` spelled `../configuration/…` / `../cli/…` / `../engineering/…` (as link targets) although the file's own directory *is* `docs/maintainers/` (`docs/configuration` etc. do not exist); plus `handoff-v3.1.md` missing one `../`. Purely mechanical, verified target-by-target. |
+| **B — target gone: consumed ephemeral handoffs** | ~9 | **OPEN** — the subject of this entry. |
+| **C — `docs/archive/**`** | 7 | **Leave.** Archived docs are frozen; `documentation-lifecycle.md` explicitly accepts dangling back-references in frozen material. |
+| **D — literal `url` placeholders (a link target left as the word *url*)** | 2 | **OPEN**, trivial: `configuration/llms/analysis/analysis-001-llms.md`, `configuration/decentralized-config/documentation-reorganization-plan.md`. |
+
+**Class B is the finding.** Immutable ADRs and reviews link *forward* to handoffs that have since been
+consumed and deleted — e.g. `0029-…` → `../ux-ui-review-handoff.md`, `0030-…` →
+`../migration-completeness-fix-handoff.md`, `0031-…` → `../cd-list-rename-handoff.md`, `0034-…` →
+`../s3-join-forget-handoff.md`, the two `27-06-2026-*` reviews, and both `hardening-v2/phase-*-kickoff.md`
+→ `implementation-handoff.md`.
+
+This is exactly what the pack rule **`documentation.md`** forbids (`core-dev-framework`, referenced by
+name — a relative link to a pack-supplied rule dangles by construction, which is this entry's own
+lesson applied to itself): *"A living or
+historical doc **never links to** an ephemeral one — the handoff links **out** to the roadmap/ADRs/design
+it references, never the reverse, so nothing dangles when it is deleted."* The links dangle **because
+the rule was broken when they were written**, not because anything later went wrong. So the repair is
+not "find the new path" — there is no new path.
+
+⚠ **Do not repair class B by basename search.** `hardening-v2/phase-II-kickoff.md`'s
+`implementation-handoff.md` resolves by basename to `naming/implementation-handoff.md` — a *different
+domain's* file. Pointing at it would replace a dead link with a **wrong** one, which is worse: a reader
+follows it and is silently misinformed. The audit script flags this as `RESOLVABLE`; it is not.
+
+**Proposed fix** (needs a decision, because it edits **immutable** documents): drop the hyperlink and
+keep the prose — *the implementation handoff* as a link → *"the implementation handoff (consumed)"* as plain prose — so the
+historical record still says a handoff existed without pretending it is readable. The alternative,
+re-pointing each link at the roadmap/ADR that absorbed the handoff's content, is more informative but
+requires reading each one to know what absorbed it, and it edits history to say something it did not say.
+
+**Prevention is the durable half**: the audit is a ~20-line script over `](…)` links. A repo-wide
+dangling-link check belongs in the suite as a docs lint — it would have caught class A the day it
+appeared, and it makes the rule above enforceable instead of aspirational.
+
+**Related**: the pack rule `documentation.md` (`core-dev-framework`) — the ephemeral-link rule ·
+[`.claude/rules/documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md) (frozen
+ADRs may dangle — *"accept, or fix in one pass; do not block the cutover on it"*).

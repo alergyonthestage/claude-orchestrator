@@ -55,9 +55,9 @@ flowchart TD
 > Evidence in [`00-plan.md`](00-plan.md) §7 (*G1 — E6B-04 and D7*). E6B-04's fan-out re-keyed **both**
 > referring projects with no `failed` tag; D7's view composed for a pack-less project with both floor
 > entries writable — observed at `claude_access: none`, harder than the specified default.
-> ⚠ **Residual cleanup, if not already done**: `rm -rf /tmp/cco-scratch`, `rm -rf ~/.cco/packs/scratch-pack*`,
-> `cco forget proj-a`, `cco forget proj-b`, and the four stale remotes of G1.1
-> (`probe-2`, `x`, `probe-3`, `probe-3b`).
+> ✅ **Residual cleanup DONE 2026-07-31** (confirmed by the maintainer): `/tmp/cco-scratch`,
+> `~/.cco/packs/scratch-pack*`, `cco forget proj-a` / `proj-b`, and the four stale remotes of G1.1
+> (`probe-2`, `x`, `probe-3`, `probe-3b`). Nothing from this gate is left on the host.
 
 **Why before the merge**, in order of force:
 
@@ -276,10 +276,21 @@ host-side and `show_host_paths` is on, so the reader cannot act on the path they
 
 ---
 
-## G3 — The block's single human gate
+## G3 — The block's single human gate ✅ **PASSED 2026-07-31 — `ACCEPTED with follow-ups`**
 
-The maintainer relaxed the per-phase gates for S3→S4→S5 to **one gate at the end**. This is it. What must
-be on the table:
+> ✅ **Taken and passed by the maintainer on 2026-07-31.** The verdict, the table of follow-ups and what
+> was on the table are written into the plan's **§7 acceptance log** — that is the record, this section
+> is now the historical checklist of what the gate covered. **G1's residual host cleanup is also done**
+> (scratch projects, `scratch-pack*`, the four stale remotes).
+>
+> **Follow-ups carried out of the cycle**: [FI-42](../../../../roadmap-backlog.md) (→ the **release
+> known-issue**, G6 step 5) · [FI-43](../../../../roadmap-backlog.md) ·
+> [FI-40](../../../../roadmap-backlog.md) — all three deferred to **cycle-2** by the step-2b decision.
+> ADR-0046 §6 was **ratified in place**, not deferred. Lanes L1/L2/L4/L5 move from *landed* to
+> **accepted** in the roadmap; L3 already was.
+
+The maintainer relaxed the per-phase gates for S3→S4→S5 to **one gate at the end**. This is it. What was
+on the table:
 
 - [ ] **§7 acceptance log**, four rows: S1 (both arms) · **S3 (both arms)** · **S4 (round 3)** · S5's ruling
       that closes L4/L5 in-session.
