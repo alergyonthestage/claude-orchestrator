@@ -1,181 +1,138 @@
-# Handoff — S2 accepted; S3 → S4 → S5 are approved to run as one implementation block
+# Handoff — **every in-session item is done; what remains is host-side**
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
-> Written 2026-07-29, after cycle-1.2 **S2** was accepted.
+> Written 2026-07-31. Supersedes the handoff of 2026-07-31 (*"one in-session item stands between here
+> and the merge"*). That item — **G2** — is done, and so is FI-44's parallel task.
+> The gates live in the
+> [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md),
+> the plan in the [roadmap](roadmap.md). This file says where we stopped and how to start.
 
 ## Methodology / where we are
 
-Branch **`fix/release/cycle-1.2`** off `develop` (which is level with `origin/develop`).
-**20 commits, nothing pushed.** Tip `b1f20ef`.
+**Cycle-1.2 is ACCEPTED** (G3, 2026-07-31, `ACCEPTED with follow-ups`) and **G2 — the CLI-surface
+documentation audit — is DONE**. Report:
+[`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
 
-**Design is closed for this cycle.** S1 (lane L3) and S2 (lanes L1+L2) are both accepted:
-
-- **S1** — [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md),
-  accepted 2026-07-28, both container probes green.
-- **S2** — [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md),
-  accepted 2026-07-29, design-only. D1–D9 plus six recorded alternatives.
-
-The phase is now **Implementation**. The next session runs **S3 → S4 → S5** as one block.
-
-### The HITL dial for the next session — read this before asking for a gate
-
-The maintainer **explicitly relaxed** the per-phase gates for the implementation block on
-2026-07-29. Per `.claude/rules/workflow.md`, delegation is a per-session dial, so this is a
-legitimate setting, and it is recorded here rather than inferred:
-
-- **One human gate only**, at the **end** of the whole block (after S3, S4 and S5 are implemented
-  and verified). Do **not** stop for a gate between S3 and S4, or between S4 and S5.
-- What is **not** relaxed, because it is not a gate: *"anything touching future extensibility,
-  system capabilities, UI/UX, or user-visible flows stops and asks, even mid-implementation."*
-  ADR-0056 settles the user-visible wording, so this should not fire — but if the implementation
-  discovers a decision the ADR does not cover, **stop and raise it**. A decision never made is not
-  covered by a relaxed gate.
-
-```mermaid
-flowchart LR
-  S3["S3 · index session/host axis<br/>lane L2"]
-  S4["S4 · INV-AVAIL sweep + CLASS lint<br/>lane L1"]
-  S5["S5 · INV-YAML + EXIT sentinel<br/>lanes L4+L5 · parallel"]
-  HITL["single human gate"]
-  HOST["host-side probes<br/>(cannot run in-session)"]
-  S3 --> S4 --> HOST --> HITL
-  S5 --> HOST
-```
+**No session can advance this release further, and nothing is owed by you first.** The two decisions
+G2 raised were taken on 2026-07-31 (the release-note sentence approved, FI-45 fixed). G4 (merge),
+G5 (verify on `develop`) and G6 (release) are all host-side.
 
 ## How to resume
 
-1. Confirm the ground: `git log --oneline -1` → `b1f20ef` on `fix/release/cycle-1.2`.
-2. Read **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)**
-   in full. It is the reference for **both** the implementation and the verification of S3 and S4 —
-   D6/D7 for S3, D1–D5/D9 for S4. It is **not** the reference for S5 (see below).
-3. Establish the suite baseline before touching anything, and **state whether
-   `access: {claude: all}` was on** when you record the number (see *Context*).
-4. Launch S3. Then S4. S5 may start at any time, in parallel, in its own worktree.
-
-### Orchestration approved for the next session
-
-Each `S*` runs **in its own session with dedicated context** — a subagent per unit, or a workflow.
-This was requested explicitly, so the general "do not use subagents unless asked" preference does
-**not** apply to this block.
-
-| Unit | Order | Isolation | Why |
-|---|---|---|---|
-| **S3** | first | main branch | Shares `lib/cmd-project-query.sh` with S4 |
-| **S4** | after S3 | main branch | Same file: S4 rewrites `:249-253`, S3 rewrites `:301` + the index guard. **Parallelising these two would collide** |
-| **S5** | any time | **separate worktree** | Touches `cmd-project-add.sh`, `cmd-init.sh`, `cmd-join.sh`, `bin/cco` — no overlap with S3/S4. Per `git-practices.md`, parallel work goes in a worktree |
-
-Each unit is **verified, and corrected if needed, before the next begins**. In-session that means:
-the suite, the unit's own regression test, and the unit's lint self-test — **not** a probe (below).
+1. **If you are the maintainer at a host terminal**: open the
+   [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
+   at **G4** and work down. Nothing blocks it: G2's two items are closed, and G6 step 5 already
+   carries the **approved** known-issue sentence — ship it verbatim.
+2. **If you are a session**: there is no in-session work left on this release. Do not start G4/G5/G6.
+   The next *design* subject is **cycle-2** (config multiplicity, divergence awareness & mount
+   topology) — start from
+   [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
+   §3.3 and §8, and note the new fact G2 added to it (below).
 
 ## Tasks
 
-Status lives in the [roadmap](roadmap.md) §B2-next (lanes L1–L5) and in §2 of the runbook; this list
-points at them, it does not fork them.
+The [roadmap](roadmap.md) is the single source of truth for status; this list only points at it.
 
-- [ ] **S3** — index-health session/host axis (**R-C** 🔴) → lane **L2**. Reference: ADR-0056 **D6 +
-      D7**. Owes a regression test reproducing §10.9d. **Owes a host-side container probe it cannot
-      run itself.**
-- [ ] **S4** — INV-AVAIL sweep + CLASS lint (**R-A**, **R-B** 🔴) → lane **L1**. Reference: ADR-0056
-      **D1–D5** for the model, **D9** for the lint.
-- [ ] **S5** — INV-YAML + EXIT-trap sentinel → lanes **L4 + L5**. Reference is **not** ADR-0056 —
-      see *Context*.
-- [ ] **S6** — close-out: §10.9e/E6B-04 (never executed in any round), host cleanup of the stale
-      remotes/projects, README platform contradiction (`:59` vs `:220`).
-- [ ] **D7 residual from S1** — *"composes with no packs at all"*. Needs a project referencing **no**
-      pack, so it is **host-side**. Only
-      `test_claude_view_composed_for_the_write_floor_without_packs` covers it today.
-- [ ] **Host-side, the maintainer's** (FI-20 — merges touching `.cco` are host-only): `git push` this
-      branch, then the merge into `develop`.
-- [ ] **[FI-37](roadmap-backlog.md)**, **[FI-38](roadmap-backlog.md)** — filed, not scheduled.
-- [ ] **[FI-39](roadmap-backlog.md)** — Claude Code memory state cco does not persist. **One ADR,
-      after this cycle** — scheduled by the maintainer, not open for re-litigation.
+- [x] ✅ **Release-note sentence — APPROVED 2026-07-31** in its corrected form (only the named
+      invocation changed from the shape G3 accepted). Runbook G6 step 5 carries it; **ship it
+      verbatim**.
+- [x] ✅ **[FI-45](roadmap-backlog.md) — FIXED 2026-07-31** on your decision: `cco remote list`
+      refuses with the removal notice at every level, like its four siblings. No new contract
+      (it copies their shape); changelog 61. ⚠ It lands `bin/cco` **after** G3's acceptance —
+      recorded in the plan's §7 as a post-acceptance in-cycle fix (the FI-41 treatment), and it
+      gets its verification from **G5's suite run on `develop`**.
+- [ ] **G4** — merge → `develop`, then verify the merge did nothing extra (tree-hash check).
+- [ ] **G5** — verify **on `develop`**: the unmasked suite, and the **macOS host suite on this tree**
+      (never run — the largest unknown left).
+- [ ] **G6** — `develop → main` + release, carrying the FI-42 known-issue (wording above).
+- [ ] **Host-side, owed**: `git push origin fix/release/cycle-1.2` — measured 2026-07-31:
+      the branch is **12 ahead of `origin/fix/release/cycle-1.2`** (11 from this session), and
+      **`develop` is level with `origin/develop`** (0 ahead) — so `develop` needs no push, contrary to
+      earlier handoffs. Re-measure rather than trusting any number written here.
 
 ## Context
 
-### What this session decided
+### What this session produced
 
-**S2's ADR — [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)**,
-accepted design-only. Do not restate it; read it. Two decisions inside it were taken by the
-maintainer during the design and are **not open for re-litigation**:
+Eleven commits — nine docs and **two touching code**: the `cco start --help` text (plus two stale
+comments; behaviour unchanged) and **FI-45's one-arm shim fix**. **Suite on the final tree: 1618
+passed / 7 failed of 1625, with the `access: {claude: all}` mask ON.** The arithmetic closes with no
+slack: the cycle baseline 1617/7 of 1624 **+1** = FI-45's regression test. The 7 are the host-only set
+name for name (the six `test_as_*` plus `test_paths_symlink_safe_tool_root`):
 
-1. **R-B's hidden-set count is computed host-side at `cco start`** and carried as a session signal.
-   An elevated read op (`store-op count`) in the setuid helper was **rejected**: ADR-0047's boundary
-   is not widened for a cosmetic datum. Accepted cost — the count is a session-start snapshot.
-2. **`absent`-in-session gets two causes and two sentences**, split by probing the parent's
-   traversability: a severed bind versus an unreachable store (the native-Linux default).
+- `e0606d1` — `cco start --help` corrected: config-editor is **min-privilege by mode**, not the old
+  broad default; `--claude-access` no longer claims `repo` is the default.
+- `2e5e54e` — the **canonical CLI-surface matrix** re-derived from the shim (4 wrong rows), plus the
+  living design doc and a forward annotation on the A1 analysis.
+- `b40b9e0` — **user docs**: the config-editor guide was still pre-ADR-0048; `cli.md`'s one
+  self-contradicting line.
+- `bb875d3` — the **release known-issue named an invocation `cco start` refuses** (4 documents).
+- `eb1dec5` — G2's record: report, gate status, roadmap step 3, **FI-45**.
+- `e0a591f` — **FI-44 class B**: 15 links to consumed handoffs de-linked; class D closed as *not a
+  defect*.
+- `93c1470` — **FI-45 fixed** (the only code change beyond the help text): `remote list` refuses as a
+  removed alias at every level. Regression cover asserts **both** directions at four levels, because
+  the defect was that the levels disagreed.
+- `49d7da9` + the docs commits after it — the sign-off, the post-acceptance record in the plan's §7,
+  and the three stale gate rows in its §8 table.
 
-Forward notes were written **into** ADR-0043 and ADR-0047, not merely listed in ADR-0056 — that was
-S1's review lesson (*annotate the ADR that owns the thing you changed*), applied.
+### Decisions taken (rationale lives in the linked documents, not here)
 
-### Three qualifications on "the design is the reference" — the next session must not assume otherwise
+- **G2's autonomy was applied as written**: objective drift corrected in place (8 items), anything
+  touching user-facing wording or a pinned test raised instead of swept (2 items).
+- **FI-44 class B repaired in the conservative form** proposed in the entry — de-link, keep prose,
+  mark *(consumed)* — because it removes a broken promise without restating a decision, which is what
+  makes it compatible with editing immutable documents.
+- **FI-44 class D closed as a false positive**, not fixed: the three "placeholders" are
+  `` `[name](url)` `` inside **code spans**, illustrating the llms.txt format.
 
-The maintainer asked whether design and ADR are settled and serve as the reference for
-implementation and verification. **For S3 and S4: yes.** Three qualifications, each load-bearing:
+### Open questions that need the human
 
-1. **S5 is not covered by ADR-0056.** Its reference is the runbook
-   [§6](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) plus
-   [`invariant-gap-audit.md`](engineering/analysis/invariant-gap-audit.md) §4, which state INV-YAML,
-   its rule, its four-verb surface and its test shape. That is design-level and sufficient — S5
-   needs **no ADR**, and the runbook's "Produces" column does not ask for one.
-2. **ADR-0056 defines the model, not the site list.** D9 and the runbook both say it: **S4 must
-   enumerate its sites by grepping the reserved strings.** The named list
-   (`cmd-project-query.sh:249-253`, `access-scope.sh:688`/`:785`, the `project coords` lane,
-   `cmd-pack.sh`'s validate remedy) is a **lower bound** — cycle-1.1's S9 established that a named
-   file list always is.
-3. **Verification cannot be completed in-session, and no agent can fix that.** Cycle-1.2 **Rule 1**:
-   suite-green is not acceptance for S1, S3 **and S5**. S3's acceptance needs a probe in a real
-   container after `cco build`, and `cco start` is refused in-session. So the block's in-session
-   verification (suite + regression tests + lint self-tests) is real but **not sufficient** for S3.
-   The probes belong to the single final gate, run from the maintainer's host.
-
-### Open question to settle at S5's start — do not guess it
-
-Rule 1 lists **S5** among the units that suite-green cannot accept, and the roadmap lists lane
-**L4** in the same warning — yet §6.1's own *Test* line specifies a **golden-file round trip**,
-which is a suite test. Either the golden-file test is sufficient for L4 and Rule 1's list is too
-broad, or INV-YAML additionally owes a real invocation of `cco project add|init|join` against a
-project.yml with full comment furniture. **Ask the maintainer which**, at S5's start. Note that
-those verbs are write verbs: a `read-project` session is refused, so a real-invocation check is
-host-side too.
+**None.** The two G2 raised were both decided on 2026-07-31 — see the ✅ rows in *Tasks*.
 
 ### Non-obvious things worth not rediscovering
 
-- **`lib/index.sh` has no elevated read path.** Only writes cross the setuid helper
-  (`store.sh:246,314`). That asymmetry is *why* ADR-0056 D5 had to move the count host-side — it was
-  not a preference.
-- **`_index_read_state` must stay mechanical.** Its optional file argument lets the reconcile probe
-  classify *arbitrary* index files with the same classifier, so the session axis lives in
-  `_index_assert_readable` (D6). Putting it in the classifier would break a second, unrelated
-  consumer.
-- **Any suite figure from a self-dev session must state whether `access: {claude: all}` was on.**
-  The block is still uncommitted in `.cco/project.yml` and is currently **on**. With it on,
-  `test_update_new_file_added` and `test_update_dry_run` pass; with it off they fail, because they
-  write into `defaults/global/.claude/rules/`, tracked *and* `:ro` when `Cr=ro`. The unmasked figure
-  is **1551 passed / 9 failed of 1560**; seven of the nine are the long-standing host-only set.
-  **This mask has now cost three wrong numbers in this cycle.**
-- **`cco start` runs host-side.** Edits to `lib/` change behaviour on the next start with no rebuild;
-  Dockerfile edits need `cco build`. Record provenance (`cco whoami` → `image built from:`) with any
-  probe.
-- ⚠ **S3's probe path is `~/.local/state/cco/`*`shared/`*`index`.** The pre-S1 `state/cco/index` no
-  longer exists; a copy-paste of the older command moves nothing and produces a **false pass**.
-- **The W4 report's diagnosis of R-B is wrong**, and ADR-0056 D5 records the correction: packs *are*
-  wired into the scope layer (`cmd-pack.sh:116` calls `_env_note_hidden`, `:134` flushes). The real
-  cause is that at `G=none` the store is not mounted, so the loop never iterates.
-- The working tree carries three untracked paths that are **not** this cycle's (`tmp`,
-  `to-verify-guides-docs.md`, `.claude/worktrees/`) and an uncommitted `.cco/project.yml` that also
-  contains a port change (`8081` → `8082`) beside the access block. **Leave them alone unless asked.**
+- 🔑 **`--all` and `--cco-access edit-all` are two spellings of one config-editor mode, and only the
+  first is guarded.** `cmd-start.sh:2687` rejects `--all` with `--project`/`--repo`; the same guard
+  never tests `cli_cco_access`. So the *unguarded* spelling is the one that reaches FI-42's fan-out.
+  Annotated at the guard. **Do not fix it as a stray guard** — which spelling is canonical belongs to
+  the cycle-2 topology decision, and cycle-2 inherits this fact.
+- 🔑 **Three times this cycle, a confident classification derived by reading code was refuted by
+  running it** (S7's dead fix site, S8's unreachable remedy, now this). G2's every behavioural claim
+  was probed against the hermetic harness. `tests/helpers.sh`'s `setup_cco_env` +
+  `_lane_operator_exports` give you a host run and an operator-lane run in ~10 lines — cheaper than
+  the re-derivation they replace.
+- ⚠ **The machine-read surface being right does not mean the human one is.** The config-editor's own
+  agent-facing rules (`internal/config-editor/.claude/`) were **correct**; the user guide next to
+  them was two ADRs stale and advertised three verbs the session refuses. Check both, always.
+- ⚠ **A docs-link lint must skip inline code spans**, or it reports FI-44's own text — and every
+  `[name](url)` format example — as broken forever. Recorded in FI-44.
+- **The mask.** `access: {claude: all}` is uncommitted in `.cco/project.yml`; every suite figure in
+  this cycle was measured with it **ON**. **State the mask state with any number.**
+- **A count is not a fingerprint**: identify failing tests by name, never by how many there are.
+- **Never edit `lib/`, `bin/test` or `tests/helpers.sh` while a suite run is in flight.**
+- **Store-touching verbs in a session run the image-baked cco**, so `lib/` edits stay invisible
+  in-session until `cco build`. On the **host**, `./bin/cco` reads the working tree.
+- The working tree carries three untracked paths that are not this cycle's (`tmp`,
+  `to-verify-guides-docs.md`, `.claude/worktrees/`) and one intentional uncommitted diff
+  (`.cco/project.yml`). **Leave them alone unless asked.** ⚠ `.claude/worktrees/` holds full copies
+  of the repo — exclude it from every repo-wide grep or you will "find" stale text that is not in the
+  tree (it happened during this audit).
+- `tests/test_start_dry_run.sh:1740` and `:1762` contain literal conflict markers as **fixture
+  content** — a repo-wide grep for merge markers flags them as false positives.
 
 ## Reference documents
 
-- [Roadmap](roadmap.md) — §B2-next, lanes L1–L5 (SSOT for status) · [backlog](roadmap-backlog.md)
-- [Cycle-1.2 runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — §1 the
-  two governing rules · §2 session map · §5 S3/S4 · **§6 S5** · §7 acceptance log · §8 host-only gates
-- [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
-  — **the reference for S3 and S4**
-- [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) — what S1
-  decided
-- [ADR-0043](cli/decisions/0043-unified-cli-environment-access-scope.md) and
-  [ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) — both
-  carry forward notes from ADR-0056
-- [`engineering/analysis/invariant-gap-audit.md`](engineering/analysis/invariant-gap-audit.md) — §2
-  Gap A (S4), §4 Gap C (**S5's reference**)
+- [Roadmap](roadmap.md) — G3's verdict + lanes L1–L5 · step 2b closed + the **cycle-2 entry** ·
+  **step 3 (G2) closed** · step 4 (release) ·
+  [backlog](roadmap-backlog.md) — FI-40/42/43 (deferred to cycle-2), **FI-44 (B done, D closed)**,
+  **FI-45 (new, needs your decision)**
+- [Gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) —
+  G0…G6; **G2 done with two owed items**, **G6 step 5** carries the corrected known-issue
+- [G2 audit report](cli/reviews/2026-07-31-cli-surface-audit.md) — method, the 8 corrections, the
+  release-artefact finding, and what was verified correct
+- [CLI-surface matrix](cli/reference/cli-surface-matrix.md) — the canonical verb table, re-derived
+- [Config mount topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) —
+  **cycle-2 starts here**, §3.3 (four blockers) and §8 (six questions)
+- [Cycle-1.2 plan](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — §7 the
+  acceptance log

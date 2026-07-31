@@ -909,7 +909,7 @@ EOF
                 _owner="$proj"
                 [[ -z "$_owner" ]] && _owner=$(_path_claim_lookup "$name" "$_claimed")
                 if ! _env_in_scope path "$name" "$_owner"; then
-                    hidden=$((hidden + 1)); continue
+                    hidden=$((hidden + 1)); _env_note_hidden path; continue
                 fi
                 # show_host_paths gate (S1b): render logical names only when host
                 # paths are masked for this session. The malformed-path check is
@@ -933,20 +933,25 @@ EOF
                 | awk '{ i=index($0,"="); if (i>0) printf "__unscoped__\t%s\t%s\n", substr($0,1,i-1), substr($0,i+1) }')
             if [[ $count -eq 0 && $hidden -eq 0 ]]; then
                 # Reached only for a genuinely empty index — _index_assert_readable
-                # above has already ruled out "the read failed". The sentence is
-                # shared and context-aware: in a session it must NOT say "run cco
-                # resolve", a verb the operator gate refuses there (R3).
-                info "$(_index_empty_sentence)"
+                # above has already ruled out "the read failed". The report is
+                # shared and context-aware: on the host it is the benign sentence
+                # (which must NOT say "run cco resolve" in a session, R3); IN A
+                # SESSION it is a refusal, because a session is launched from the
+                # index and cannot legitimately see it hold zero rows (ADR-0056 D6,
+                # extended in S6).
+                _index_report_empty
             elif [[ $malformed -gt 0 ]]; then
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi
-            if [[ $hidden -gt 0 ]]; then
-                # Hidden path entries belong to OTHER projects (owner ≠ a current
-                # project), which are visible only at Po≥ro — i.e. read-all, NOT
-                # read-global (read-global still hides other projects; A1 §2.2).
-                printf 'note: %s path entr%s hidden by access scope (cco_access=%s) — start a read-all session or run cco on your host to see everything.\n' \
-                    "$hidden" "$([[ $hidden -eq 1 ]] && printf y || printf ies)" "$(_env_access)" >&2
-            fi
+            # ADR-0056 D3 / INV-AVAIL: this site used to build the whole notice
+            # itself, and INV-ENV ratified that second spelling as a standing
+            # exception — "the hidden-COUNT notice for path entries, which must say
+            # read-all where the shared notice says read-global; reconciling the
+            # shared one is V4-F-V4-03 / Q-C3". That reconciliation is now done: the
+            # shared builder gets the projects-only case right, and `path` rides Po
+            # exactly as a project does. So the exception is SPENT rather than
+            # re-ratified — the rows are noted and the one shared notice speaks.
+            _env_flush_hidden_notice
             ;;
         *)
             die "Unknown path command: $sub. Use 'cco path set' or 'cco path list'."

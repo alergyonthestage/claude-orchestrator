@@ -172,6 +172,12 @@ Arguments:
 
 Options:
   --from <repo>        Pick which member's <repo>/.cco to use (Case-C divergence source)
+  --project <name>     config-editor only: target <name>'s .cco/ + its repos (rw;
+                       repeatable). Also selects config-editor's project mode
+  --repo <name>        config-editor only: also mount repo <name> (rw; repeatable)
+  --all                config-editor only: explicit widener — every resolvable
+                       project's .cco/ (no code repos, edit-all). Cannot be
+                       combined with --project/--repo
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -231,7 +237,8 @@ Examples:
   cco start my-saas --port 9090:9090
   cco start my-saas --dry-run
   cco start tutorial                 # built-in tutorial (see below)
-  cco start config-editor            # built-in config editor (mounts ~/.cco rw)
+  cco start config-editor            # built-in config editor (bare: edits ~/.cco)
+  cco start config-editor --project x  # edit x's .cco + its repos (~/.cco read-only)
 ```
 
 **Source selection & resolution**: from a repo dir, `cco start` uses the invoking repo's
@@ -392,8 +399,9 @@ permissive** than the cco-concordant default is honored with a one-line note —
 **Wrapped `cco` in-session** (when `cco_access` != `none`): read verbs (`cco list`,
 `cco … show`, `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
 `cco project coords`) run inside the container; edit levels also allow the path-free
-write verbs (`cco tag`, `cco remote add|remove`, `cco pack|template|llms create|update|…`,
-`cco config save`). **Output is scoped to the access level** (ADR-0043): at `read-project`
+write verbs (`cco tag`, `cco remote add`, `cco pack|template|llms create|update|…`,
+`cco config save`, and `cco repo|extra-mount rename` at `Pc=rw`). **Output is scoped to the
+access level** (ADR-0043): at `read-project`
 the read verbs show only the current project and the packs/llms it references —
 templates, other projects, and unreferenced packs are hidden, with a count-only
 "hidden by access scope" notice on stderr telling you how to widen (`read-global`/`read-all`,

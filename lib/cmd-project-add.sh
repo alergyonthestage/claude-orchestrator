@@ -47,6 +47,36 @@ _yml_section_has_name() {
     ' "$file"
 }
 
+# ── INV-YAML — the ONE spelling of "where does a YAML section end" ────
+#
+# THE RULE (invariant-gap-audit.md §4 / cycle-1.2 runbook §6.1). Scanning a
+# section for its insertion point, buffer the trailing run of TOP-LEVEL comment
+# and blank lines; on reaching the next top-level key, emit the new entry BEFORE
+# the buffered run, then flush the run verbatim. INDENTED lines (including
+# indented commented examples like `  # - name: my-repo`) are section content:
+# they flush the buffer and are printed, so the new entry lands AFTER them.
+#
+# WHY, and what it replaces. The previous detector ended a section at "the first
+# top-level line that is not a comment" (`/^[^ #]/`). A top-level comment
+# therefore did NOT close the section: the scan fell through with in_sec still
+# set and the insertion point slid PAST the whole comment block, landing after
+# the NEXT section's header comment. On a project.yml scaffolded from
+# templates/project/base/project.yml — where extra_mounts/packs/llms/github/
+# browser all ship commented out — a second `cco project add repo` landed its
+# entry immediately before `docker:`, ~65 lines below `repos:`. Observed live on
+# the maintainer's `cave-ensemble` project (R-E).
+#
+# The `#` in that character class was defensive: it stopped a top-level comment
+# from terminating the section early. It traded one misplacement for a worse one
+# — a comment block contiguous with the following key is THAT key's header by
+# universal YAML convention, not the previous section's footer.
+#
+# ONE SPELLING. This function is the single implementation; the four verbs that
+# add a coordinate (`cco project add {repo,mount,llms,pack}`, `cco init`,
+# `cco join`) all reach the boundary through here. A second insertion-class
+# implementation of the idiom fails `test_invariant_yaml_section_end_one_spelling`
+# in tests/test_invariants.sh, which records the allowlist and its reasons.
+#
 # Append a coordinate entry to <section> of a project.yml/pack.yml. <name> is
 # the entry's name:; remaining args are "key=value" 4-space sub-fields (empty
 # values skipped). Creates the section if absent; upgrades a "section: []" stub.
@@ -67,11 +97,20 @@ _yml_append_coord() {
             { print }
         ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     elif grep -q "^${section}:" "$file" 2>/dev/null; then
+        # Rule order matters: the blank-line arm precedes the top-level-key arm so
+        # a whitespace-only line is buffered, never mistaken for a key.
         CCO_BLK="$block" awk -v sec="$section" '
-            $0 == sec":" { in_sec=1; print; next }
-            in_sec && /^[^ #]/ { if (!ins) { print ENVIRON["CCO_BLK"]; ins=1 } in_sec=0; print; next }
+            function flushbuf(   i) { for (i = 0; i < nbuf; i++) print buf[i]; nbuf = 0 }
+            $0 == sec":"                { in_sec=1; print; next }
+            in_sec && /^[[:space:]]*$/  { buf[nbuf++] = $0; next }   # blank → candidate trailing run
+            in_sec && /^#/              { buf[nbuf++] = $0; next }   # top-level comment → candidate
+            in_sec && /^[^ #]/ {                                     # next top-level key ends the section
+                if (!ins) { print ENVIRON["CCO_BLK"]; ins=1 }
+                flushbuf(); in_sec=0; print; next
+            }
+            in_sec                      { flushbuf(); print; next }  # indented → section content
             { print }
-            END { if (in_sec && !ins) print ENVIRON["CCO_BLK"] }
+            END { if (in_sec && !ins) { print ENVIRON["CCO_BLK"]; ins=1 } flushbuf() }
         ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
     else
         { printf '\n%s:\n' "$section"; printf '%s\n' "$block"; } >> "$file"

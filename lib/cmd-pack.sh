@@ -107,12 +107,16 @@ EOF
     printf "${BOLD}%s %-11s %-8s %-8s %-8s %s${NC}\n" \
         "$(_fit_col "NAME" "$namew")" "KNOWLEDGE" "SKILLS" "AGENTS" "RULES" "TAGS"
 
+    # D5: this verb enumerates the pack store exhaustively, so its notice may speak
+    # about packs — and only packs (ratified 2026-07-30).
+    _env_store_subject pack
     for dir in "$PACKS_DIR"/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
         # Output scoping (ADR-0043): show only packs referenced by the current
         # project at read-project (the read-project mount already narrows to
         # these; routing through the layer makes it intentional + uniform).
+        _env_note_seen pack   # D5: enumerated rows, for the host-total supplement
         if ! _env_in_scope pack "$name"; then _env_note_hidden pack; continue; fi
 
         local pack_yml="$dir/pack.yml"
@@ -165,7 +169,14 @@ EOF
 
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
-    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at packs/$name/"
+    # INV-AVAIL (ADR-0056 D1), the sibling of the `pack validate` site: in scope but
+    # absent from the mount is NOT-MOUNTED. The comment above _env_require_visible
+    # already anticipated "the narrowed mount hides them" — the scope refusal covers
+    # an out-of-scope pack, and this covers the in-scope-but-unbound one.
+    if [[ ! -d "$pack_dir" ]]; then
+        if _cco_container_operator; then _env_unavailable not-mounted pack "$name"; fi
+        die "Pack '$name' not found at packs/$name/"
+    fi
 
     # Name
     local yml_name=""
@@ -368,15 +379,26 @@ EOF
     if [[ -n "$name" ]]; then
         # Output scoping (ADR-0043): refuse out-of-scope packs with a scope message.
         _env_require_visible pack "$name"
-        [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
+        # INV-AVAIL (ADR-0056 D1/D5): in scope but absent from the mount is the
+        # NOT-MOUNTED state, not "not found". At G=none `~/.cco` is not bound at
+        # all, so this raw probe answered "Pack 'X' not found" for a pack that
+        # certainly exists — hidden rendered as absent, the managed rule's exact
+        # inverse. Ask the owner for the sentence, the remedy and the exit code.
+        if [[ ! -d "$PACKS_DIR/$name" ]]; then
+            if _cco_container_operator; then _env_unavailable not-mounted pack "$name"; fi
+            die "Pack '$name' not found"
+        fi
         _validate_single_pack "$name"
     else
         local has_errors=false
+        # D5 subject: the --all arm sweeps the whole pack store (see cmd_pack_list).
+        _env_store_subject pack
         for dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")
             # Output scoping (ADR-0043): only validate packs in the session's scope.
+            _env_note_seen pack   # D5: enumerated rows, for the host-total supplement
             if ! _env_in_scope pack "$pack_name"; then _env_note_hidden pack; continue; fi
             if ! _validate_single_pack "$pack_name"; then
                 has_errors=true
@@ -534,8 +556,13 @@ EOF
 # install-provenance + STATE merge base/meta, the per-user tag binding, and the
 # `packs[]` reference in every project that uses it (pack names are globally
 # scoped — unaffected by ADR-0051's per-project index scoping). Strict (ADR-0031
-# D3): refuse if a referencing project has an unresolved member, whose replicated
-# project.yml copy would drift under cco sync's clobber-guard.
+# D3): refuse if a referencing project has a member whose replicated project.yml
+# copy cannot be rewritten from here, since it would drift under cco sync's
+# clobber-guard. That is TWO conditions, not one (FI-41): a member with no binding
+# at all is a configuration error (`cco resolve`, exit 1), while a member bound on
+# this machine but not bound into THIS container is a session shape (run it on the
+# host, exit 2 per D8). Both answers come from _env_member_state, never from the
+# index-level status word, which cannot tell them apart in operator mode.
 cmd_pack_rename() {
     local old="" new="" yes=false
     while [[ $# -gt 0 ]]; do
@@ -548,7 +575,8 @@ Usage: cco pack rename <old> <new>
 Rename a knowledge pack, re-keying it across the CONFIG store (packs/<name>/ +
 pack.yml name:), the machine-local DATA/STATE sidecars, the per-user tags, and the
 packs[] reference in every project that uses it. Every referencing project must be
-resolved on this machine (run 'cco resolve' first). After renaming, commit + push
+resolved on this machine
+(run 'cco resolve' on your host first). After renaming, commit + push
 the updated .cco/project.yml in each changed repo and run 'cco sync'.
 
 Options:
@@ -578,19 +606,45 @@ EOF
     # for an unresolved member, so `IFS=$'\t' read` would fold the middle field and
     # never see status=unresolved (E6B-04). The enumeration is now non-vacuous
     # in-container (index §3.6), so this guard actually classifies mounted members.
-    local proj unit yml mname mpath mstatus _mrec
-    local -a affected=() blocked=()
+    local proj unit yml mname mpath mstatus _mrec _mstate
+    local -a affected=() blocked=() unmounted=()
     while IFS=$'\t' read -r proj unit yml; do
         _yaml_list_has_ref "$yml" packs "$old" || continue
         affected+=("$proj")
         while IFS= read -r _mrec; do
             [[ -z "$_mrec" ]] && continue
             _peel_tab "$_mrec" mname mpath mstatus
-            [[ "$mstatus" == unresolved ]] && blocked+=("$proj:$mname")
+            [[ "$mstatus" == unresolved ]] || continue
+            # FI-41 — `unresolved` here is _project_member_status's word, and it means
+            # "the probe is not inspectable in THIS context". Column 2 is the container
+            # MOUNT in operator mode (index.sh:1432-1434), so in a session that word
+            # covers TWO realities and this branch used to answer both with `cco
+            # resolve` — advice the host would answer "already resolved", leaving the
+            # operator in a loop. Ask the availability owner instead of re-reading the
+            # index-level vocabulary (ADR-0056 D1): the state, its sentence and its exit
+            # code all come from one place.
+            _mstate=$(_env_member_state "$mname" "$(_index_get_path "$proj" "$mname")")
+            case "$_mstate" in
+                here)        ;;                            # inspectable after all
+                not-mounted) unmounted+=("$mname") ;;
+                *)           blocked+=("$proj:$mname") ;;
+            esac
         done < <(_project_iter_members "$proj")
     done < <(_project_foreach)
+    # Session shape before naming error (D8): a member that merely is not bound here
+    # is not a broken configuration, and its remedy is the host — so it refuses at
+    # exit 2 through the owner, while a genuinely unresolved member still dies at 1.
+    # Naming only the first offender is deliberate: every offender carries the SAME
+    # remedy, so enumerating them adds no action. Whether a refusal may name the whole
+    # set is FI-40's open question, and it belongs to both guards at once — not to
+    # this one alone, pre-empted here.
+    [[ ${#unmounted[@]} -gt 0 ]] && _env_unavailable not-mounted repo "${unmounted[0]}"
     [[ ${#blocked[@]} -gt 0 ]] && \
-        die "Cannot rename pack '$old': unresolved member(s) in referencing project(s): ${blocked[*]}. Run 'cco resolve' first (ADR-0031)."
+        # ADR-0056 D2 — a remedy is a function of the print site. `pack rename` is
+        # container-reachable at edit-global, and `cco resolve` is host-only there
+        # (the operator gate refuses it at exit 2), so the unqualified form told the
+        # agent to run a verb this same session rejects.
+        die "Cannot rename pack '$old': unresolved member(s) in referencing project(s): ${blocked[*]}. Run 'cco resolve'$(_cco_container_operator && printf ' on your host') first (ADR-0031)."
 
     # ── Fail-closed pre-flight (RC-3 §3.4 Phase 0) ──────────────────────
     # Crossing #1: the DATA/STATE sidecar re-key must be writable BEFORE any store is

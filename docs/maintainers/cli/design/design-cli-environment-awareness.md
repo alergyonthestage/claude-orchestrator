@@ -234,7 +234,9 @@ This is a second, orthogonal dimension enforced by a single shared layer
   filter alone cannot stop a raw `cat` of the internal store — confidentiality is enforced by a
   **privilege boundary** (a `cco-svc`-owned mode-0700 real-FS parent the `claude` user cannot
   traverse + a setuid helper enforcing `(G,Pc,Po)`). This layer scopes *output* on top of that
-  boundary. (Design-intent; not yet implemented.)
+  boundary. **Shipped** — the boundary is live in-session (hardening-v2; the suite's host-only
+  failures are that boundary refusing the test fixtures). *(The "design-intent, not yet
+  implemented" note was cleared at G2, 2026-07-31.)*
 - **Layer API.** `_env_in_scope <kind> <name> [owner]` (0/1), `_env_note_hidden <kind>`,
   `_env_flush_hidden_notice` (stderr), `_env_require_visible <kind> <name>` (graceful "not
   available at this scope" for `show`/detail verbs). Commands call these; they never re-derive
@@ -254,8 +256,9 @@ Any new or changed verb MUST answer, and wire, the following:
    > host-only trigger. Sharing-repo fetches — `pack|template|llms install|update|import` —
    > are **write** verbs, allowed at an edit level (they clone public sharing repos into the
    > mounted store); only credential/remote-git ops stay host-only (`config push|pull`,
-   > `remote set-token|remove-token`). Token-authed fetches simply degrade in-container (the
-   > token bucket is never mounted), they are not refused by the shim.
+   > `remote set-token|remove-token`, and — since **D-V3-1** — `remote remove|rename`, which
+   > cascade into the same 0600 token store). Token-authed fetches simply degrade in-container
+   > (the token bucket is never mounted), they are not refused by the shim.
 2. **Wire it into `_cco_operator_shim`** with that classification (default-deny — an
    unclassified verb is refused in-container).
 3. If it **resolves host paths** → it is host-only; rely on the resolver guard and add the

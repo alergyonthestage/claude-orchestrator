@@ -163,6 +163,25 @@ EOF
         esac
     done
 
+    # Read-path honesty (ADR-0056 D6/D7), same discipline as `project list` /
+    # `project validate --all` / `cco list`: the scan enumerates the STATE index
+    # through _project_foreach, and an unreadable (or, in a session, an absent)
+    # index would yield ZERO records — rendered below as the reassuring "no url
+    # coordinates to check" at exit 0. Classify BEFORE the scan.
+    _index_assert_readable
+
+    # INV-AVAIL (ADR-0056 D1). A NAMED unit gets the shared classifier's answer, in
+    # the shared vocabulary, at the shared exit code. This lane answered a hidden or
+    # misspelt <name> with "No url coordinates to check" at exit 0 — the one place
+    # in the `project` family where an unavailable target is not a refusal, so an
+    # agent could not tell "this project has no url-bearing resources" from "this
+    # project is not visible to you" from "you typed it wrong". Its siblings
+    # (`project show`, `project validate`) both refuse at exit 2.
+    if [[ -n "$only" ]]; then
+        local _ost; _ost=$(_env_project_state "$only")
+        [[ "$_ost" == here ]] || _env_unavailable "$_ost" project "$only"
+    fi
+
     local recs; recs=$(_coords_scan "$only")
     if [[ -z "$recs" ]]; then
         info "No url coordinates to check — none of your projects reference a url-bearing repo/mount/llms/pack."

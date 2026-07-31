@@ -4,7 +4,7 @@
 pushed from the maintainer's Mac) · **Method**: `engineering/guides/review-playbooks.md` §4
 (symmetry/learnability · no duplicate paths · completeness/reachability · destructive-confirm ·
 simple onboarding · inform-before-act) · **Launcher**:
-[`../ux-ui-review-handoff.md`](../ux-ui-review-handoff.md).
+`../ux-ui-review-handoff.md` (consumed).
 
 **Scope**: the user-facing CLI surface — `bin/cco` (dispatcher + `usage()`), every subcommand in
 `lib/cmd-*.sh` (+ `lib/tags.sh`, `lib/migrate.sh`, `lib/remote.sh`), and the user reference
@@ -124,7 +124,7 @@ pull is fast-forward-only with abort + reconcile instructions — `cmd-config.sh
 7. **Ph.7 ✅** (the doc-resync commit) — `docs/users/reference/cli.md` + `CLAUDE.md` + design.md §7
    re-sync; roadmap step 4 → done; handoffs bannered.
 
-Ph.4–Ph.7 launcher: [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md).
+Ph.4–Ph.7 launcher: `../ux-ui-fixes-handoff.md` (consumed).
 
 ## Resolution log
 
@@ -136,7 +136,7 @@ Ph.4–Ph.7 launcher: [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md).
   resolve --help` were **already complete** (audit 1a/1b were false positives — not changed). The
   keystone breaking change (`cco list`) is in.
 - *2026-06-27* — **Ph.4–Ph.7 handed off** to a fresh session via
-  [`../ux-ui-fixes-handoff.md`](../ux-ui-fixes-handoff.md); non-TTY-without-`-y` → **die** confirmed.
+  `../ux-ui-fixes-handoff.md` (consumed); non-TTY-without-`-y` → **die** confirmed.
   Baseline for the continuation = **928/0**; next free ADR = 0030 (none expected).
 - *2026-06-27* — **Ph.4–Ph.7 implemented & committed** (`f61cb39`/`0eec1e4`/`4c0430f` + the Ph.7
   doc commit), suite **928/0 → 943/0** (green per step; +6 confirm-contract tests, +7 symmetry

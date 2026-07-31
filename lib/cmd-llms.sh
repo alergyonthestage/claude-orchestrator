@@ -253,6 +253,9 @@ EOF
 
     printf "${BOLD}%-20s %-10s %-8s %-14s %s${NC}\n" "NAME" "VARIANT" "LINES" "DOWNLOADED" "SOURCE"
 
+    # D5: this verb enumerates the llms bucket exhaustively, so its notice may speak
+    # about llms — and only llms (ratified 2026-07-30).
+    _env_store_subject llms
     for dir in "$LLMS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
         local dname
@@ -261,6 +264,7 @@ EOF
         # Output scoping (ADR-0043): the CACHE llms bucket is mounted whole at
         # every read level, so scope its OUTPUT to the current project's
         # referenced llms at read-project (INV-B count for the notice).
+        _env_note_seen llms   # D5: enumerated rows, for the host-total supplement
         if ! _env_in_scope llms "$dname"; then _env_note_hidden llms; continue; fi
 
         local var="?" lines="?" downloaded="?" source_url="?"

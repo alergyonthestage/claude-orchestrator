@@ -219,7 +219,9 @@ _pv_validate_stray_paths() {
     local yml="$1" skey sval
     while IFS=$'\t' read -r skey sval; do
         [[ -z "$skey" ]] && continue
-        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path')"
+        # ADR-0056 D2 — host-qualified: `project validate` is container-reachable and
+        # both prescribed verbs (`cco resolve`, `cco project add`) are host-only there.
+        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path'$(_cco_container_operator && printf ' on your host'))"
     done < <(_pv_scan_stray_paths "$yml")
 }
 
@@ -297,6 +299,13 @@ EOF
 
     if [[ "$all" == true ]]; then
         [[ -n "$target" ]] && die "'cco project validate --all' takes no project name."
+        # Read-path honesty (ADR-0056 D6/D7): --all enumerates the STATE index, and
+        # _index_list_projects feeds a process substitution whose status is
+        # discarded — so an unreadable (or, in a session, an absent) index would
+        # validate ZERO projects and return the share-ready exit 0. Same entry-guard
+        # discipline as `project list` / `path list` / `cco list`: classify BEFORE
+        # the loop, so a read failure is never rendered as "nothing to validate".
+        _index_assert_readable
         local proj yml cco_dir first=true
         while IFS='=' read -r proj _; do
             [[ -z "$proj" ]] && continue

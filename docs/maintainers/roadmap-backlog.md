@@ -1141,7 +1141,7 @@ start around it. **Effort**: Low (review) + Med if the post-install unification 
 
 ## FI-31: pack/llms child mounts have no mountpoint stub → `cco start` fails on a `:ro` `/workspace/.claude`
 
-**Status**: ✅ **FIXED 2026-07-26** — [ADR-0054](../configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
+**Status**: ✅ **FIXED 2026-07-26** — [ADR-0054](configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
 + implementation + 9 tests, changelog #51 (see Resolution). Reproduced on the host the same day
 (maintainer, project `cave-ensemble` after `cco pack import` + `cco project add pack
 core-dev-framework`); it blocked pack adoption at the **default** access level.
@@ -1523,3 +1523,419 @@ Claude Code **2.1.74**, and the installed version is well past it) points every 
 pinned) · ADR-0054/INV-MP (nested mountpoints) ·
 [FI-37](#fi-37-no-working-workflow-save-path-in-the-repo-lane-repoclaude-axis-cr) (same lane: the
 repo cwd gets a path that works but is not the one that counts).
+
+---
+
+## FI-40: a fail-closed refusal states a count where naming is safe (`pack rename`, unmounted census)
+
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31**, with the rest of the step-2b block. The
+> [topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) §7 confirms it
+> is **topology-independent** — the census counts a *name* set (`store.sh:185-194`), so no mount
+> change affects it and it could have shipped on either side of the gate. It is deferred purely to
+> keep the release tree unchanged: it is user-facing wording **and** a behaviour change, i.e. code
+> plus a suite re-run, on a cycle whose gates are already green. Nothing blocks it in cycle-2.
+
+**Found**: 2026-07-30, during cycle-1.2's **G1/E6B-04** gate, from a real refusal in an `edit-all`
+config-editor session. **Severity**: low — nothing is lost and the refusal is correct; it is the
+*remedy* that is unactionable. **Effort**: Low. **Class**: availability vocabulary (R-A's family),
+but on a **refusal**, not on a hidden-by-scope notice — so INV-AVAIL's current subject does not
+cover it.
+
+**What happened.** `cco pack rename scratch-pack scratch-pack-renamed -y` in a session whose
+`cco whoami` reports `edit-all` / `G=rw Pc=rw Po=rw (read: all, write: all)` refused with:
+
+> ✗ Cannot rename pack 'scratch-pack' in this session: **1 project(s)** on this machine are not
+> mounted here, so a packs[] reference they may carry cannot be updated (it would drift). Run
+> 'cco pack rename …' on your host, **or start a session that mounts them**.
+
+**The refusal itself is right, and conservative by construction** — not a defect.
+`lib/cmd-pack.sh:628-631` consumes `_STORE_REFS` from `_store_unmounted_project_count`
+(`lib/store.sh:185-194`), which counts every index project absent from
+`PROJECT_NAME`+`CCO_CONFIG_TARGETS` **regardless of whether it references the pack**. It must be
+conservative: in-container `_project_foreach` only reaches *mounted* projects' `project.yml`, so
+whether an unmounted one carries the reference is **unknowable from inside** — the same
+*"you cannot count what you cannot enumerate"* that produced R-B. Narrowing the census would be the
+silent-drift bug the guard exists to prevent.
+
+**The defect is the message.** It gives a **count** and not the **names**, while the second half of
+its own remedy (*"start a session that mounts them"*) cannot be acted on without knowing which. The
+reader is left to diff `cco list projects` against `cco whoami`'s `editing target` by hand — which
+is exactly the hand-diffing the *count-is-not-a-fingerprint* lesson warns about.
+
+**Naming is safe here, on an axis this project has already ratified.** **D-V31-1** enables the
+`unknown` arm *only at read scope `all`*, with the rationale that **at `all` nothing can be hidden,
+so there is no oracle risk**. The identical argument applies: at read scope `all` (`edit-all`,
+`read-all`) the session may already enumerate every project, so naming leaks nothing. At any narrower
+scope the count must stay a count — `edit-global` is `(rw,rw,none)`, i.e. `Po=none`, and there the
+names *are* out of scope.
+
+**Proposed fix** (needs the human gate — it is user-facing wording *and* a behaviour change):
+have the census return the names alongside the count, and render names when
+`_cco_level_read_scope` is `all`, count otherwise. The single-owner rule applies: the choice belongs
+in `lib/access-scope.sh`, not at the `cmd-pack.sh` print site.
+
+**Related**: ADR-0043 (read-scope symmetry) · ADR-0056 D2 (a remedy is a function of the print
+site) · [ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
+(the census runs on the elevated side) · the sibling observation logged in cycle-1.2's §7 S3 entry
+(a refusal naming the internal `/var/lib/cco-internal/…` path while its remedy is host-side).
+
+---
+
+## FI-41: in a session, *not-mounted* is reported as *unresolved* — and the remedy cannot work
+
+> ✅ **FIXED 2026-07-30** on `fix/release/cycle-1.2` (`1814ba3`, changelog **60**), by the narrow
+> route proposed below and approved by the maintainer: the consumer asks `_env_member_state` and
+> `_env_unavailable` renders, so the sentence *and* the exit code (2 for a session shape, D8) come
+> from one owner; `_project_member_status` is untouched. **INV-AVAIL gained a fourth arm**
+> (`test_invariant_no_status_word_refusals`) for the gap this proved, with both discrimination
+> directions self-tested. Regression: `test_pack_rename_operator_refuses_a_not_mounted_member_without_the_resolve_remedy`
+> fails on the pre-fix tree with the exact shipped message, and its counterweight
+> (`…still_prescribes_resolve_for_an_unbound_member`) is green on both trees. Suite 1617/7 of 1624.
+>
+> ⚠ **The fix makes the refusal honest; it does NOT make the container arm work.** `cco pack rename`
+> still refuses in a session that does not bind a referring project's repos — it now says so
+> correctly. E6B-04 still runs on the host, for the structural reason recorded below.
+
+**Found**: 2026-07-30, running cycle-1.2's **G1/E6B-04** gate. **Severity**: **the refusal is
+unactionable** — the remedy names a verb that will report success and change nothing, so the operator
+loops. Candidate 🔴 against **criterion C** (*"the 'not mounted in this session' vocabulary is used
+wherever it applies"* + *"every refusal names a reason **and a remedy**"*). **Effort**: Low for the
+message, Medium once the lint gap is closed. **Class**: **R-A**, the availability vocabulary — i.e. the
+class cycle-1.2 exists to close, at a site the S4 sweep did not reach.
+
+**Observed.** `./bin/cco start config-editor --all` (`edit-all`, `G=rw Pc=rw Po=rw`):
+
+> ✗ Cannot rename pack 'scratch-pack': **unresolved member(s)** in referencing project(s):
+> proj-a:proj-a proj-b:proj-b. Run **'cco resolve' on your host** first (ADR-0031).
+
+Both projects are fully resolved on that machine — `cco project show proj-a` on the host prints
+`/private/tmp/cco-scratch/proj-a` with no unresolved marker, and **the same verb inside the same
+session renders it correctly**: `[not mounted in this session] [code-only]`. So one session answers
+the same question two different ways, and the refusing answer is the wrong one.
+
+**Mechanism — two vocabularies share one word.**
+
+| Owner | `unresolved` means | Distinguishes *not-mounted*? |
+|---|---|---|
+| `_env_member_state` (`lib/access-scope.sh:931-937`) — the sanctioned availability owner | no binding at all (INV-F.1) | **yes** — `here` / `not-mounted` / `unresolved` |
+| `_project_member_status` (`lib/index.sh:1420-1428`) — index-level ownership | `[[ -n "$repo_path" && -d "$repo_path" ]]` fails | **no** |
+
+`_project_iter_members`' column 2 is *"the path at which the member is INSPECTABLE in the current
+context — the container MOUNT in operator mode"* (`index.sh:1432-1434`). So in any session that does
+not bind a member's repo, the probe fails and the status **collapses to `unresolved`**. The rename
+pre-scan (`lib/cmd-pack.sh:606-620`) branches on that raw status and prints the `cco resolve` remedy.
+
+**Why the INV-AVAIL lint does not catch it — the real gap.** All three arms miss it, each for a good
+reason: `PRED` catches a verb *computing* the predicate itself, and this one does not compute it;
+`STR` matches the **bracket badges** (`[unresolved]`), not the word in prose; and D2's `cco resolve`
+rule is *satisfied* — the line carries its own `_cco_container_operator` qualifier (this cycle put it
+there). **INV-AVAIL guards computation and badges, not the consumption of the wrong owner's
+vocabulary.** That is the meta-root one level out: not *"a predicate every call site computes for
+itself"* but *"a call site reading the right value from the wrong owner"*.
+
+**Blast radius — treat as a lower bound (S9).** `_project_iter_members` is documented as *"the
+ownership-guarded loop shared by `cco join` / `cco forget --purge` / the rename verbs' project.yml
+rewrite"* (`index.sh:1439-1440`). Every consumer branching on `unresolved` inherits the conflation.
+
+**Consequence for E6B-04.** ⚠ **Corrected 2026-07-31** — this entry first claimed the gate's container
+arm was *structurally unreachable*. That was **wrong**: it enumerated the config-editor modes and
+missed that **`--repo <name>` composes with `--all`** (the collector's `--repo` loop runs after the
+mode chain, unconditionally — `cmd-start.sh:1128-1135`), so the mode-all + repos combination keeps
+`config_editor_mode=all` (G=rw) *and* binds both repos, and both guards then pass.
+⚠ **Re-corrected at G2, 2026-07-31**: the literal `--all --repo …` spelling is rejected by
+`cmd-start.sh:2687`; the reachable one is `--cco-access edit-all --repo …` (see
+[FI-42](#fi-42-the-packs-fan-out-resolves-its-write-path-by-member-probe-while-its-read-path-is-operator-aware)).
+
+E6B-04 still belongs on the host, for a **different and sharper** reason: `cmd-start.sh:1898` forces
+the repo-path `.cco` overlay `:ro` for the config-editor built-in **regardless of `Pc`** (RC-6 §3.7),
+while the fan-out rewrites exactly that path (`rename.sh:316-318`). A container run would pass both
+guards, move the store, fail every rewrite, and print the documented partial state — output
+indistinguishable at a glance from the half-apply the gate exists to detect, and caused by the mount
+policy rather than the cascade. → **[FI-42](#fi-42-config-editor-has-no-repo-mounting-broad-mode-and-that-is-two-decisions-not-a-missing-flag)**.
+
+**Proposed fix — narrow, at the consumer, not at the shared status:**
+
+1. **Do not** change `_project_member_status`'s vocabulary: `join` and `forget --purge` share it, and
+   widening it there is a blast radius nobody has measured.
+2. In the rename pre-scan, classify with **`_env_member_state`** and split the message — `unresolved`
+   keeps the `cco resolve` remedy; `not-mounted` gets the sentence the sibling guard already prints
+   correctly 10 lines below (`cmd-pack.sh:630`): *"Run it on your host, or start a session that mounts
+   them."*
+3. Extend **INV-AVAIL** to the gap it just proved: flag a consumer that branches on
+   `_project_iter_members`' status where the availability owner should be asked.
+
+**Related**: [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
+D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C ·
+[FI-40](#fi-40-a-fail-closed-refusal-states-a-count-where-naming-is-safe-pack-rename-unmounted-census)
+(the sibling guard, same verb, correct sentence but count-only).
+
+---
+
+## FI-42: the packs[] fan-out resolves its WRITE path by member probe, while its READ path is operator-aware
+
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31**, after the [config mount topology
+> analysis](configuration/agent-cco-access/analysis/config-mount-topology.md). **Not** because it is
+> unimportant: **the fix cannot be taken without taking the contract decision below** (all-or-nothing
+> vs all-or-declared-partial), and that decision is the subject of the cycle-2 session. Fixing the
+> writer now would settle the contract *by implementation* — the decision-never-made the workflow's
+> golden rule forbids. Secondary cost: `lib/rename.sh` is the surface **E6B-04** validates, and that
+> gate ran for the first time in any round on 2026-07-31; touching it invalidates the evidence and
+> costs a full host round (`cco build` + re-run) on a cycle whose only remaining work is verification.
+>
+> **Reachability, established before deferring** (this is what makes the deferral safe):
+>
+> | Invocation | Behaviour today |
+> |---|---|
+> | normal session, `edit-global` | **works** — a normal session *is* layout 1, member `.cco` is rw (`cmd-start.sh:1885-1887`), so the probe is correct by construction |
+> | normal session, `edit-project` | refused, exit 2 — `pack rename` writes the store, needs `G=rw` (`bin/cco:490`) |
+> | `config-editor --project X` | refused, exit 2 — project mode is `global=ro` (`_config_editor_default_cco`) |
+> | `config-editor --all` (no `--repo`) | refused **before any mutation** by the pre-scan, with FI-41's corrected wording |
+> | `config-editor --all --repo a --repo b` | **refused before launch** — `cmd-start.sh:2687` rejects `--all` combined with `--project`/`--repo` (*"cannot be combined … (which narrow the scope)"*, exit 1). See the correction below. |
+> | `config-editor --cco-access edit-all --repo a --repo b` | ⚠ **the only path that reaches the fan-out**: store moved, every rewrite fails on the forced `:ro`, exits **declared** — rc 1 + the `failed` paths listed (S2b contract). Not silent corruption. |
+>
+> ⚠ **Corrected at G2, 2026-07-31 — the reachable invocation is not the one this entry first named.**
+> `--all` and `--cco-access edit-all` are two spellings of the same resolved mode
+> (`_resolve_config_editor_mode`, `cmd-start.sh:1001`), but **only the first is guarded** against a
+> narrowing selector. So `--all --repo …` dies at the guard, and the route that actually reaches the
+> fan-out is `--cco-access edit-all --repo …`. Verified by running both against the hermetic harness
+> (A refuses rc=1; B launches rc=0 with the repo mounted), not by reading. **This makes the exposure
+> narrower and stranger than recorded — a guard that half-covers its own mode — and it is a fact the
+> cycle-2 topology decision inherits.** Do not fix the asymmetry as a stray guard: which spelling is
+> canonical is part of that decision.
+>
+> So the residual exposure is **one built-in, one flag combination** — failing declared and
+> repairably. Carried as a release known-issue, **whose wording must name the reachable spelling**.
+>
+> 🔑 **A result derived while persisting the analysis, which weakens the topology fix and belongs
+> here**: *"the writer becomes correct verbatim"* and *soundness in `--all`* are **mutually
+> exclusive**. `--all` exists to reach projects whose repos are **not** mounted, and repo names are
+> per-project labels (ADR-0051 D2) — so `--all` structurally needs a project-keyed component.
+> `<project>--<repo>` is layout 2 under another name (the fan-out would still have to compose the
+> path → no verbatim fix); a mode-split keeps the verbatim property only in project mode, where it
+> already works today via the same-inode second bind (D-M11). **The topology's residual value is UX —
+> host/session path parity — not FI-42's correctness.**
+
+**Found**: 2026-07-31, from two maintainer questions about config-editor's repo mounting.
+**Severity**: a capability that exists in the session is unreachable — `cco pack rename` refuses in a
+config-editor session although the files it must rewrite are mounted **and writable** there.
+**Effort**: Low for single-repo projects; **Medium** because the multi-member case needs a decision.
+**Supersedes this entry's first framing**, which asked for an `--all-repos` flag. That framing was
+built on a wrong premise (recorded below, because the premise is the interesting part).
+
+**The maintainer's question, which is the finding**: *if `config-editor --all` already mounts every
+project's `.cco`, the `project.yml` files are already writable — so why does the rename need the repo
+mounted at all?* It does not. Code-grounded:
+
+- `_config_editor_mount_ro pc` → at `edit-all` `pc=rw` → the `<name>-config` mounts are **rw**
+  (`cmd-start.sh:1044-1054`).
+- `_resolve_operator_project_yml` layout 2 returns `<workdir>/<name>-config/project.yml` for a
+  config-editor target (`cmd-resolve.sh:134-138`).
+- `_rename_fanout_projectyml`'s **outer** loop already receives exactly that path from
+  `_project_foreach`, and reads it: `_yaml_list_has_ref "$yml" packs "$old"` (`rename.sh:304-305`).
+- Its **inner** loop then writes a *different* file: `$path/.cco/project.yml`, where `$path` is the
+  member **probe** (`rename.sh:316-318`) — absent in `--all` mode, and `:ro` when the repo is mounted
+  (`cmd-start.sh:1898`, RC-6 §3.7).
+
+So the verb reads the writable copy and writes the unwritable one. **INV-F** — *"resolve through the
+operator-aware pair, not the host-only index resolver"* — was applied to the readers; this writer
+escapes it. Same shape as [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work),
+one layer over: there a consumer read availability from the wrong owner, here a writer resolves a path
+from the wrong locator.
+
+**What is NOT a bug, and is the decision to make.** The member loop exists for a real reason:
+`project.yml` is **replicated across a multi-repo project's owned members** (`_project_member_status`
+→ `synced` / `divergent`), and every owned copy must be re-keyed or the project drifts under `cco
+sync`'s clobber-guard. The `<name>-config` mount exposes exactly **one** copy — the unit dir's. For a
+single-repo project the two coincide, which is precisely why the maintainer's case *feels* like it
+should already work: it could. For a multi-repo project, rewriting through the config mount reaches
+one copy and silently leaves the others.
+
+**Two options, both needing the human gate:**
+
+1. **Write through the reachable config mount, and be honest about the rest** — re-key every copy the
+   session can reach, then report (not silently skip) the owned members it cannot, with the
+   not-mounted vocabulary FI-41 just installed. Turns a blanket refusal into a partial-but-declared
+   application. ⚠ It moves `cco pack rename` from all-or-nothing to all-or-declared-partial, which is
+   a contract change, not an implementation detail.
+2. **Keep refusing when any owned copy is unreachable** (today's behaviour), but refuse for the *right*
+   reason — the unreachable **copies**, not the unmounted repos — and say so. Cheapest, honest, and
+   leaves the capability gap open for single-repo projects where nothing is actually unreachable.
+
+⚠ **Not a flag.** An `--all-repos` widener would mount the code and still not help: the built-in forces
+the repo-path `.cco` overlay `:ro` regardless of `Pc` (`cmd-start.sh:1898`), and relaxing *that*
+re-opens what RC-6 §3.7 closed — two writable paths to the same file
+(`/workspace/<n>/.cco/project.yml` and `/workspace/<n>-config/project.yml` are the **same inode**, per
+W3's D-M11 probe). Option 1 or 2 avoids that question entirely by using the mount the design already
+designates as *the* authoring path.
+
+**For the record — the corrected premise, twice.** An earlier note here claimed E6B-04's container arm
+was *structurally unreachable*, having enumerated the config-editor modes and missed that **`--repo`
+composes with `--all`** (its loop runs after the mode chain, unconditionally — `cmd-start.sh:1128-1135`).
+That correction was itself half wrong (**re-corrected at G2, 2026-07-31**): the collector does compose
+them, but the CLI never lets that pair through — `cmd-start.sh:2687` rejects `--all` with
+`--project`/`--repo`. The composition is reachable only via the *other* spelling of the same mode,
+`--cco-access edit-all --repo a --repo b`, which does keep `mode=all` (G=rw), bind both repos, and pass
+both guards — the run fails later, at the `:ro` rewrite. E6B-04 stays a **host** gate either way: a container run
+would move the store, fail every rewrite and print the documented partial state (`ok` then `die` at
+exit 1, S2b), which at a glance is indistinguishable from the half-apply the gate exists to detect.
+
+**Related**: ADR-0044 §3 + ADR-0048 · RC-6 §3.7 (`03-config-editor-repos.md`) · ADR-0046 §6 (deferred
+multi-repo `Pc` span — same underlying question) · ADR-0024 D2 (clobber-guard / which copy is
+canonical) · FI-41 · [FI-43](#fi-43---repo-mounts-the-code-rw-while-its-stated-purpose-is-to-read-it).
+
+---
+
+## FI-43: `--repo` mounts the code **rw** while its stated purpose is to READ it
+
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31.** The
+> [topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) §5 established
+> that this is **a sub-question of the topology decision, not a standalone flag**: if the mount
+> topology moves, `--repo`'s contract is restated anyway, and option (ii) — body `:ro`, config rw —
+> is exactly what would make RC-6 §3.7's rationale *true* rather than merely re-worded. Deciding it
+> first would fix the cheaper half of a question whose expensive half is still open. No exposure: the
+> current default is documented as `rw`, so nothing is misstated in the release.
+
+**Found**: 2026-07-31, same conversation. **Severity**: none observed — a coherence question between a
+documented behaviour and the rationale of the decision that shaped it. **Effort**: Low (a flag), but
+the question is whether it should be the user's choice at all.
+
+**What is true today** (`cmd-start.sh:2164-2166` and the overlays that follow):
+
+| Layer | Mode in a config-editor session | Source |
+|---|---|---|
+| the repo **body** `/workspace/<name>` | **rw** — `_compose_vol` with no `ro` argument | help text says *"(rw; repeatable)"* |
+| its committed `<repo>/.cco` | **`:ro`**, forced for the built-in regardless of `Pc` | `:1898` (RC-6 §3.7) |
+| its native `<repo>/.claude` | `:ro` when `Cr=ro` — which config-editor resolves | ADR-0048 (claude triple) |
+
+There is **no per-repo mode syntax**: `--repo <name>` takes a bare name (`:2565`). `--mount` accepts
+`:ro|:rw` (`:2558`) but that is the user-mount flag, a different surface.
+
+**The tension.** RC-6 §3.7's rationale for forcing `.cco` to `:ro` states that *"the config-editor
+built-in mounts its target's repos to READ code, not to author config"*. If the purpose is to read,
+the body being rw is a wider grant than the rationale claims — an agent in a config-authoring session
+can rewrite source. Conversely the current default is convenient exactly when the user is doing both.
+Either reading is defensible; what is not is that the two live in different files and disagree.
+
+**Worth checking against real uses of `--repo` before deciding** — the flag is a *cross-project
+reference* mount (`_index_get_path_any`, `:1132`), so its use cases are (a) look at a repo while
+authoring another project's config, (b) reach a repo whose project is not a target. Neither needs
+write. A third — "fix the code while I am in here" — is real but is arguably a normal session's job.
+
+**Options**: leave as-is and align §3.7's wording · default `:ro` with an opt-in `--repo <name>:rw` ·
+follow an existing axis instead of inventing one (e.g. `Cr`, already `ro` here). **Decide before
+touching it** — the default is user-visible and currently documented as rw.
+
+**Related**: RC-6 §3.7 · ADR-0042 §8 (repos are an explicit opt-in) · ADR-0048 · FI-42.
+
+---
+
+## FI-44: historical docs link to ephemeral handoffs, so the links dangle by construction
+
+**Found**: 2026-07-31, from a repo-wide relative-link audit run while closing step 2b.
+**Severity**: none functional — dead links in maintainer docs. **Effort**: Low, but **editorial**, not
+mechanical. **Class**: a documented rule violated at scale, not a set of typos.
+
+**What the audit found.** 40 dangling relative links across 19 files in `docs/`. They split cleanly:
+
+| Class | Count | Disposition |
+|---|---|---|
+| **A — wrong path, target exists** | 11 | ✅ **FIXED 2026-07-31**: `docs/maintainers/roadmap.md` + `roadmap-backlog.md` spelled `../configuration/…` / `../cli/…` / `../engineering/…` (as link targets) although the file's own directory *is* `docs/maintainers/` (`docs/configuration` etc. do not exist); plus `handoff-v3.1.md` missing one `../`. Purely mechanical, verified target-by-target. |
+| **B — target gone: consumed ephemeral handoffs** | 15 link instances in 8 files | ✅ **FIXED 2026-07-31** (in parallel with G2, on the maintainer's instruction) — de-linked, prose kept, each marked *(consumed)*. Re-derived from the audit, not from this list: the ~9 estimate counted distinct handoffs, the repair touched 15 links. |
+| **C — `docs/archive/**`** | 7 | **Leave.** Archived docs are frozen; `documentation-lifecycle.md` explicitly accepts dangling back-references in frozen material. |
+| **D — literal `url` placeholders (a link target left as the word *url*)** | 3 | ✅ **CLOSED 2026-07-31 — not a defect.** All three are `` `[name](url)` `` **inside code spans**, illustrating the llms.txt link *format*; the surrounding prose even calls them *"format placeholders"*. "Fixing" them would corrupt a format example. The finding was the **audit script's**, not the docs'. |
+
+**Class B is the finding.** Immutable ADRs and reviews link *forward* to handoffs that have since been
+consumed and deleted — e.g. `0029-…` → `../ux-ui-review-handoff.md`, `0030-…` →
+`../migration-completeness-fix-handoff.md`, `0031-…` → `../cd-list-rename-handoff.md`, `0034-…` →
+`../s3-join-forget-handoff.md`, the two `27-06-2026-*` reviews, and both `hardening-v2/phase-*-kickoff.md`
+→ `implementation-handoff.md`.
+
+This is exactly what the pack rule **`documentation.md`** forbids (`core-dev-framework`, referenced by
+name — a relative link to a pack-supplied rule dangles by construction, which is this entry's own
+lesson applied to itself): *"A living or
+historical doc **never links to** an ephemeral one — the handoff links **out** to the roadmap/ADRs/design
+it references, never the reverse, so nothing dangles when it is deleted."* The links dangle **because
+the rule was broken when they were written**, not because anything later went wrong. So the repair is
+not "find the new path" — there is no new path.
+
+⚠ **Do not repair class B by basename search.** `hardening-v2/phase-II-kickoff.md`'s
+`implementation-handoff.md` resolves by basename to `naming/implementation-handoff.md` — a *different
+domain's* file. Pointing at it would replace a dead link with a **wrong** one, which is worse: a reader
+follows it and is silently misinformed. The audit script flags this as `RESOLVABLE`; it is not.
+
+✅ **Applied fix (2026-07-31)**: the hyperlink is dropped and the prose kept — *the implementation
+handoff* as a link → *"`implementation-handoff.md` (consumed)"* as plain prose — so the historical
+record still says a handoff existed without pretending it is readable. Nothing else in those documents
+was touched, which is what keeps the edit compatible with their immutability: it removes a broken
+promise, it does not restate a decision. The alternative — re-pointing each link at the roadmap/ADR
+that absorbed the handoff — was rejected: it requires reading each one to know what absorbed it, and it
+edits history to say something it did not say.
+
+Files: ADRs `0029` · `0030` · `0031` · `0034`, reviews `27-06-2026-refactoring-review` ·
+`27-06-2026-ux-ui-review`, kickoffs `hardening-v2/phase-II` · `phase-III`.
+
+**Prevention is the durable half**: the audit is a ~20-line script over `](…)` links. A repo-wide
+dangling-link check belongs in the suite as a docs lint — it would have caught class A the day it
+appeared, and it makes the rule above enforceable instead of aspirational.
+⚠ **Two things the lint must do, both learned by running it**: (a) **skip inline code spans**, or it
+reports the `` `[name](url)` `` format examples of class D — and this very entry — as broken forever;
+(b) **never auto-repair by basename**, per the trap above. A lint that cries wolf on its own
+documentation gets muted, which is worse than not having it.
+
+**Related**: the pack rule `documentation.md` (`core-dev-framework`) — the ephemeral-link rule ·
+[`.claude/rules/documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md) (frozen
+ADRs may dangle — *"accept, or fix in one pass; do not block the cutover on it"*).
+
+---
+
+## FI-45: `cco remote list` answers "widen your access" for a verb that does not exist
+
+> ✅ **FIXED 2026-07-31**, on the maintainer's decision the same day it was raised. `remote list` now
+> refuses with the removal notice at **every** level (exit 2), exactly like its four siblings —
+> `bin/cco`'s `list)` arm moved to `_op_removed_list`. **No new contract**: it copies the shape
+> `pack|template|llms|project list` already had, so the exit-code question below answered itself by
+> precedent (in-container 2 via the shim; host 1 via the dispatcher, unchanged).
+> Regression cover: `test_operator_remote_list_is_a_removed_alias_at_every_level` asserts **both**
+> directions at four levels (the removal is stated; the widening advice is absent) — the defect was
+> that the levels *disagreed*, so one-level cover would not have caught it. The two tests that pinned
+> the old behaviour were rewritten with it. Changelog **61**.
+> 📝 Verified while fixing: the redirect's `cco list remote` (singular) **resolves** — both singular
+> and plural kinds work — so the remedy it hands the reader is one they can actually run.
+> 📝 `_cco_verb_touches_store`'s `remote list` entry is now unreachable (the shim refuses first and
+> `refuse` exits) and was **kept deliberately**, annotated: it answers *"would this verb touch the
+> store"*, and keeping the honest answer means a future re-classification cannot silently lose the
+> trampoline.
+
+**Found**: 2026-07-31, by the **G2** CLI-surface audit
+([report](cli/reviews/2026-07-31-cli-surface-audit.md) §4).
+**Severity**: low, but it is the *false-remedy* class the whole cycle was about.
+**Effort**: Low — one `case` arm; the cost is the pinned test + a changed user-visible message.
+
+**The two answers.** `cco remote list` was removed by ADR-0029 D1 (→ `cco list remotes`), and
+`cmd-remote.sh:471-472` dies with that redirect. But the operator shim still classifies it as a live
+**read-global** verb (`bin/cco:440`, `_op_read_scope global "remote list"`), and that gate fires
+**first**. So in a session:
+
+| Level | What the user is told | Exit |
+|---|---|---|
+| `read-project` | *"'cco remote list' needs read-global scope or higher … Widen it on the host with `--cco-access read-global`."* | 2 |
+| `read-global` + | *"'cco remote list' was removed — use 'cco list remotes' (ADR-0029)."* | 1 |
+
+The first message sends a user to restart their session at a wider access level **to reach a verb
+that will then tell them it does not exist**. Its sibling removed aliases (`pack|template|llms|project
+list`) are refused by the shim itself via `_op_removed_list`, before any scope test — which is the
+right shape and the one `remote list` misses.
+
+**Direction (verify at design)**: move `remote list` to the `_op_removed_list` arm so the removal
+notice is level-independent, matching its four siblings. Check the exit code deliberately: the
+siblings refuse at **2** (policy), the dispatcher's own removal notice is **1** — pick one and state
+why, since D8's taxonomy calls a removed alias a policy refusal.
+
+⚠ **Not fixed inside G2** — it was raised instead: `tests/test_operator_shim.sh:320` and `:648` pinned
+the old classification, so the change was a test edit plus a user-visible message change, i.e. a
+decision rather than a doc correction. ✅ **The maintainer took that decision immediately** (see the
+annotation at the top of this entry).
+
+**Related**: ADR-0029 D1 (the `list` unification) · the R9 refusal taxonomy (`bin/cco:392-398`) ·
+[FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work) — the
+same class (a remedy the reader cannot act on), one layer down.

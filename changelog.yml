@@ -1051,3 +1051,229 @@ entries:
       migration: an existing transcripts bucket is repaired in place at the
       next `cco start`, without losing history. Requires `cco build`; see
       ADR-0055.
+
+  - id: 53
+    date: "2026-07-29"
+    type: additive
+    title: "In-session cco refuses index-reading verbs it cannot answer, instead of reporting an empty index"
+    description: >
+      A cco session is LAUNCHED from the machine-local path index, so inside a
+      session a missing index can never mean "nothing is registered on this
+      machine yet" — it means the bind was severed, the host-side state was
+      removed, or the internal store is unreachable. Until now the index-reading
+      verbs (`cco list`, `cco list projects`, `cco path list`, `cco project
+      list`, `cco project validate --all`) reported that state as an EMPTY index
+      at exit 0, and `cco project show` rendered a fabricated card — mounts that
+      were bound and readable badged `[unresolved]`, and a repo host path
+      silently downgraded to its container path. Those verbs now refuse at entry
+      with a message naming the real cause and a remedy that works where it is
+      printed (`cco resolve` is host-only in a session and is never prescribed
+      there). `cco project show` renders no card at all rather than a fabricated
+      one, and `[unresolved]` now means exactly one thing: the index holds no
+      binding for that member. On the host nothing changes — a machine with
+      nothing registered yet legitimately has no index file, and still says so.
+      USER-VISIBLE REGRESSION, deliberate: on native Linux the internal store is
+      unreachable from a session by construction (0700 buckets owned by the
+      elevated identity), so these verbs begin refusing there instead of
+      answering confidently and wrongly. Native Linux support is scheduled for
+      cycle-2; until then, run cco on your host. Requires `cco build`; see
+      ADR-0056 (D6, D7).
+
+  - id: 54
+    date: "2026-07-29"
+    type: additive
+    title: "'cco project add' no longer drops the new entry into the next section"
+    description: >
+      Adding a coordinate (`cco project add repo|mount|llms|pack`, and the
+      first repo written by `cco init` / `cco join`) decided where a section
+      of `project.yml` ends by looking for the first top-level line that is
+      not a comment. A comment block therefore did not close the section, so
+      the new entry slid PAST it and landed after the NEXT section's header
+      comment. On a project.yml scaffolded from the shipped template — where
+      `extra_mounts`, `packs`, `llms`, `github` and `browser` all ship
+      commented out — a second `cco project add repo` put its entry under the
+      "Docker options" banner, immediately above `docker:`. A section now
+      ends at the next top-level key, with the trailing run of top-level
+      comment and blank lines treated as that key's header: the new entry is
+      emitted before it. Indented commented examples (`  # - name: my-repo`)
+      are section content, so the entry lands after them, still inside its
+      own section. Nothing to migrate — YAML reads an already-misplaced entry
+      as part of the intended section, so existing files stay correct; move
+      the entry by hand if you want the file to read straight again.
+      Requires `cco build` for the in-session `cco`.
+
+  - id: 55
+    date: "2026-07-29"
+    type: additive
+    title: "No more '✗ cco exited unexpectedly' on runs that did not fail"
+    description: >
+      cco arms an exit trap that reports a crash unless the run marked itself
+      complete, so that a `set -e`/`set -u` violation or a syntax error is
+      never silent. Two ordinary paths forgot the mark. `cco project` and
+      `cco pack` with no subcommand printed their group help, exited 0, and
+      then printed "✗ cco exited unexpectedly (exit 0)" underneath it. And a
+      mistyped `--cco-access` got the crash line appended to its perfectly
+      correct refusal — the refusal is raised inside a subshell, whose mark
+      never reached the parent. Both are fixed: every deliberate exit now
+      goes through one primitive, so the trap speaks only for real crashes —
+      which is the point, since a warning users learn to ignore stops working
+      as a warning. Requires `cco build` for the in-session `cco`.
+
+  - id: 56
+    date: "2026-07-29"
+    type: additive
+    title: "One owner for availability answers — hidden is no longer reported as missing"
+    description: >
+      cco used to render "I cannot see X from here" as "X is not there", and
+      computed the remedy without regard to where the message was printed. Every
+      verb now ASKS the shared availability layer instead of deciding for itself,
+      so one vocabulary covers the three realities: a resource that is here, one
+      that exists but is not bound into this session, and one that is not
+      resolved at all. Concretely: `cco project show` badges a bound-but-unmounted
+      member `[not mounted in this session]` instead of `[missing]`, and the same
+      for a config-editor target's dropped extra_mounts and for packs it cannot
+      see; the retired `[missing]` badge is gone. The widening a message offers is
+      now derived from WHAT WAS HIDDEN — a hidden project offers `read-all`
+      (`read-global` is precisely the level that keeps other projects hidden, so
+      naming it revealed nothing), a hidden pack/template/remote offers
+      `read-global`. A message printed inside a session no longer prescribes
+      `cco resolve`, which is host-only there; it says to run it on your host.
+      `cco project coords <name>` now refuses an out-of-scope or unknown unit like
+      its `project show`/`project validate` siblings, instead of answering "no url
+      coordinates to check" at exit 0. At `read-all` a misspelt project name is
+      reported as not registered rather than "it exists on this machine" — that
+      arm is deliberately NOT enabled at narrower scopes, where it would turn
+      `project show` into an existence oracle across the access boundary.
+      Hidden-resource COUNTS are now correct for packs/templates/remotes even when
+      the personal store is not mounted at all (the common case at
+      `cco_access=read-project`): the count is computed host-side at `cco start`
+      and carried into the session. It is a snapshot taken at session start — a
+      pack installed on the host mid-session is not reflected, which is harmless
+      because the session could not see it either way. Requires `cco build`; see
+      ADR-0056 (D1-D5, D7).
+
+  - id: 57
+    date: "2026-07-29"
+    type: additive
+    title: "An empty path index inside a session is now a refusal, not a cheerful rc=0"
+    description: >
+      A session is launched FROM cco's machine-local index, so inside a session
+      that index can never legitimately be empty — if it looks empty, the view is
+      broken, not the machine. Until now `cco path list` and `cco list project`
+      answered "the path index is empty — nothing is registered on this machine
+      yet. Run cco on your host to populate it." at exit 0, which is false exactly
+      where it was printed: the session came from that index. Both verbs now
+      refuse (exit 1) with a message that names the real cause — the index is
+      readable but holds no entries, so it has been emptied, replaced or rebuilt
+      since the session started — and a remedy you can act on, which is to inspect
+      or rebuild it from your host. ON THE HOST nothing changes: a machine with
+      nothing registered yet legitimately has an empty index, still says so at
+      exit 0, and is still told that `cco resolve` is the way to populate it. This
+      completes ADR-0056 D6, which gave the same treatment to an index that is
+      missing outright. Requires `cco build` for the in-session `cco`.
+
+  - id: 58
+    date: "2026-07-29"
+    type: additive
+    title: "cco update no longer strips comments out of a pack's pack.yml"
+    description: >
+      `cco update` backfills a missing llms `url` into an installed pack's
+      pack.yml when it can recover one (ADR-0032 D3). It used to do that by
+      re-emitting the whole `llms:` block from parsed values, which silently
+      DELETED every line it had no rule for: comments indented inside the block,
+      comments at column 0 — including the one heading the key that FOLLOWS the
+      block — blank lines, and any sub-key it did not recognise. pack.yml is a
+      file you write, so this was destroying your own annotations. It now injects
+      instead of regenerating: every line is passed through untouched, and the
+      only lines cco writes are the `url:` / `variant:` it adds, plus the one
+      short-form list item (`- svelte`) that has to become `- name: svelte` to
+      carry them. Entries that need nothing are left byte-identical, short form
+      included. ⚠ If the old backfill already ran on one of your packs, the
+      comments it removed are gone from disk and cco cannot restore them — it
+      never had a copy. Recover them from your pack's own git history if it is
+      versioned. Nothing needs re-running: the backfill is a no-op once a pack's
+      urls are present.
+
+  - id: 59
+    date: "2026-07-30"
+    type: additive
+    title: "The 'hidden by access scope' notice now really counts what a session cannot see — and only what the command actually lists"
+    description: >
+      Entry 56 promised that a scoped session tells hidden from absent by
+      counting what it could not enumerate — at `read-project` your `~/.cco` is
+      not mounted, so a count taken by walking a directory is silently zero, and
+      the count is therefore computed on the host at `cco start` and handed to
+      the session. It never arrived. Every store-touching read verb runs behind
+      the privilege boundary via the setuid helper, and that helper rebuilds the
+      environment from scratch and copies over only the keys it whitelists — a
+      list the new count was never added to. So it was dropped without a word,
+      and `cco list packs` in a `read-project` session showed the one pack the
+      project references with NO notice at all, exactly as if the other five did
+      not exist. The key is now whitelisted, so the notice reads e.g. `note: 5
+      packs hidden by access scope (cco_access=read-project) — start a
+      read-global session or run cco on your host.` Nothing about what the
+      boundary permits has changed: the count is a read-only number, there is no
+      new privileged operation, and a session still cannot read the store
+      itself. Requires `cco build` — the helper is compiled into the image. A
+      static invariant (INV-DESC) now fails the suite if any future session
+      signal is written without being whitelisted, since the failure mode is
+      silence on both sides.
+      One more thing changed with it, visible the moment the count started
+      working: a notice now speaks only about the kinds the command you ran
+      actually lists. Before, every read verb appended the counts for every
+      resource kind in the store, so `cco list llms` — which shows you both of
+      your project's llms — also announced "6 packs hidden", and `cco list
+      packs` announced "2 llms hidden" about the two it was not hiding. The
+      numbers disagreed with each other too (6 from one verb, 5 from another),
+      because the count is "how many exist minus how many I just listed" and a
+      command listing llms lists no packs at all. Each command now declares what
+      it enumerates and speaks only for that: `cco list packs` counts packs,
+      `cco list llms` says nothing about packs, `cco list` (everything) counts
+      every kind, and `cco path list` / `cco project show` make no claim about
+      the store at all.
+
+  - id: 60
+    date: "2026-07-30"
+    type: additive
+    title: "Renaming a pack in a session: a refusal you can act on"
+    description: >
+      If you ran `cco pack rename` inside a session and one of the projects
+      using that pack has a repo the session does not mount, cco refused with
+      "unresolved member(s) … run 'cco resolve' on your host first". Following
+      that advice got you nowhere: on the host those members are already
+      resolved, so `cco resolve` reported success, changed nothing, and the
+      rename refused again the next time — a loop with no exit.
+      The two situations look identical from inside a container and are not.
+      A member can be genuinely unresolved (cco has no path for it on this
+      machine — a real configuration gap you fix with `cco resolve`), or it can
+      be perfectly resolved and simply not bound into THIS session, which no
+      command run inside that session can change. cco now tells them apart and
+      says which one you have: the second case reports that the repo is not
+      mounted in this session, that it exists on this machine, and that the way
+      forward is to run the rename on your host or start a session that mounts
+      it. It also exits 2 (a refusal about the shape of your session) instead of
+      1 (an error in your configuration), so scripts can tell the two apart too.
+      Nothing about when a rename is allowed has changed — only what cco tells
+      you when it is not. The same session was already rendering those members
+      "[not mounted in this session]" in `cco project show`; the rename guard
+      now agrees with it.
+
+  - id: 61
+    date: "2026-07-31"
+    type: additive
+    title: "`cco remote list` no longer sends you to widen access for a verb that was removed"
+    description: >
+      `cco remote list` was retired a while ago in favour of `cco list remote`,
+      and running it prints a one-line redirect saying so. Inside a session,
+      though, you only got that redirect if your session already had read-global
+      access or wider. Below that, cco answered something else entirely —
+      "'cco remote list' needs read-global scope or higher … widen it on the
+      host with --cco-access read-global" — which invited you to restart your
+      session at a wider access level in order to reach a command that would
+      then tell you it no longer exists. The advice was not wrong about access;
+      it was pointing at nothing.
+      The redirect is now the same at every access level, exactly like the
+      equivalent `cco pack list` / `cco template list` / `cco llms list` /
+      `cco project list`: one line naming the command that replaced it. Nothing
+      changed about what `cco list remote` shows, or about which access level
+      you need to see remotes — only about being told the truth first.

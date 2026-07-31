@@ -1,6 +1,9 @@
 # CLI surface matrix — command × environment × access scope
 
-> **Status**: Approved reference (2026-07-07). The single-screen view of the whole `cco`
+> **Status**: Approved reference (2026-07-07), **re-audited against the code 2026-07-31**
+> (release gate **G2** — [runbook](../../configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md),
+> report in [`../reviews/2026-07-31-cli-surface-audit.md`](../reviews/2026-07-31-cli-surface-audit.md)).
+> The single-screen view of the whole `cco`
 > verb surface: for each verb, its behaviour on the **host** vs **in-container**
 > (container-operator mode), and how availability + output vary by **`cco_access`**.
 >
@@ -113,20 +116,21 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 |---|---|---|---|
 | `list` (unified) | read:project | ✅ from read-project | scoped per kind (§3); count-only stderr notice when filtered |
 | `list projects\|packs\|llms` | read:project | ✅ from read-project | project-class (§3) |
-| `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class — empty+notice below read-global |
+| `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class. ⚠ The **kind-specific** form is a *refusal* below read-global (exit 2, `'cco list template' is not available at this access scope`), **not** an empty list: the count-only notice is what the **unified** `cco list` emits for the same hidden kind (verified 2026-07-31, G2) |
 | `docs` | always | ✅ from read-project | — (refused at `none`, R6) |
 | `help`, `--help`/`-h`, `--version`/`-v` | always | ✅ | help is scope-aware (§4) |
 | `whoami` | always | ✅ from read-project | session-state introspection (F4); listed in in-container `help` (B1). **Identity-first layout (R1)**: a `Session` block (identity / editing target / code repos) precedes `Access`, so config-editor's synthetic envelope vs its editing targets and whether code repos are mounted are explicit. **Deduplicated access (R2)**: `level` names the PRESET (else `custom (global=…)` carrying the granular form once) and `triple` is the explicit `(G,Pc,Po)` + read/write scope — no byte-identical rows; privilege-boundary note retained ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `project show\|validate\|coords` | read:project | ✅ from read-project | bare `project show` at the `/workspace` WORKDIR root resolves the **session project** (`PROJECT_NAME` → flat `/workspace/project.yml`), so cwd-based introspection works from the root as inside a mounted repo dir (**R4**; child-wins: a repo-local `.cco` takes precedence) |
 | `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
-| `remote list` | read:**global** | ✅ from **read-global** | global-class |
-| `config` (bare), `tag` (bare), `pack\|template\|llms\|project` (bare) | always | ✅ prints sub-usage | — |
+| `remote list` | **removed alias** (ADR-0029) → `cco list remote[s]` | ❌ refused at **every** level with the removal notice (exit 2), like its four siblings in §2.4 — **not** a scope question (FI-45, fixed 2026-07-31; it previously answered *"needs read-global scope"* at read-project, sending the reader to widen access for a verb that does not exist) | — |
+| `config` (bare), `tag` (bare), `repo` (bare), `extra-mount` (bare), `pack\|template\|llms\|project` (bare) | always | ✅ prints sub-usage | — |
 
 ### 2.3 Write — available from the matching edit level (gated by target tree)
 
 | Verb | Class (target tree) | Available from | Notes |
 |---|---|---|---|
+| `repo rename`, `extra-mount rename` | write:**project** (`<repo>/.cco/project.yml` + the STATE index membership/binding) | **edit-project** | the **only** wrapped verbs that write the current project tree (ADR-0050 D7). Cwd-first, `--move-dir` on `repo rename`; the index half crosses the ADR-0047 boundary, so they trampoline through the setuid helper (`_cco_verb_touches_store`). Refuse at a read level with the `Pc=rw` message |
 | `tag add\|remove` | write:global (DATA registry) | by target axis | gated by the **tagged resource's axis** (B5): project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all). Ownership predicate is config-editor-aware (`_env_is_current_project`) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `config save` | write:global (`~/.cco`) | edit-global | clear "needs edit-global" msg on ro mount at edit-project (CLI-surface F3) |
 | `remote add` | write:global (DATA registry) | edit-global | DATA-only, so it stays in-container. `remote add --token` refuses the **token half** (secret stays host-side) |
@@ -134,10 +138,14 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `template create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
 | `llms create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
 
-> **No project-tree writes exist as wrapped verbs.** Editing a `<repo>/.cco/project.yml`
-> in an edit-project session is done by writing the **mounted file directly** (rw mount),
-> not via a `cco` write verb; the shim's `write:project` gate exists for completeness /
-> future verbs. The managed rule `cco-config-interaction.md` governs the edit safety.
+> **Project-tree writes: two wrapped verbs, everything else is a direct file edit.**
+> `repo rename` and `extra-mount rename` (ADR-0050 D7) are the wrapped `write:project`
+> verbs — they exist because a rename must re-key the **STATE index** alongside
+> `project.yml`, which no file edit can do. Every *other* `<repo>/.cco/project.yml` change
+> in an edit-project session is made by writing the **mounted file directly** (rw mount).
+> The managed rule `cco-config-interaction.md` governs the edit safety.
+> *(Corrected at G2, 2026-07-31: this note previously read "no project-tree writes exist as
+> wrapped verbs", true when it was written and falsified by ADR-0050.)*
 
 ### 2.4 Host-only writes / network-credential / removed
 
@@ -149,7 +157,7 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `remote remove`, `remote rename` | ✅ | ❌ host-only (**D-V3-1**) | exit 2 |
 | `pack\|template publish\|export`, `project export\|import\|add` | ✅ | ❌ host-only | exit 2 |
 | `project rename` | ✅ | ❌ host-only (re-keys machine-local state) | exit 2 |
-| `pack\|template\|project list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
+| `pack\|template\|llms\|project\|remote list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
 | `share`, `manifest` | ❌ removed | ❌ removed | exit 2 |
 | unknown top-level verb | error | error ("Run `cco help`") — **not** a host-only misfire | exit 1 |
 | `<cmd> --help` / `-h` | ✅ | ✅ **always** (informational, even for host-only verbs) | — |

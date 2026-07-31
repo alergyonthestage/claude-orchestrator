@@ -20,6 +20,15 @@
 > design-intent** only, never ahead of code.
 >
 > **Tracking**: [`../pre-revalidation-backlog.md`](../pre-revalidation-backlog.md) (A1 = D3).
+>
+> **Forward annotation (G2 audit, 2026-07-31).** Checked against the shipped shim; the text below is
+> **not** rewritten (it is history). Two rows have since been overtaken, and the living
+> [CLI-surface matrix](../../../../cli/reference/cli-surface-matrix.md) carries the current truth:
+> §2.3's *"no wrapped project-config write verb exists"* was falsified by **ADR-0050 D7** —
+> `repo rename` / `extra-mount rename` are wrapped `write:project` verbs (they must re-key the STATE
+> index, which a file edit cannot); and `path list`'s ⏳ output-scoping has landed (RC-4). Everything
+> else re-verified as stated — including §2.2's `list templates|remotes` row, which is **more**
+> accurate than the matrix's was: the kind-specific form *refuses* below `G≥ro`.
 
 ---
 

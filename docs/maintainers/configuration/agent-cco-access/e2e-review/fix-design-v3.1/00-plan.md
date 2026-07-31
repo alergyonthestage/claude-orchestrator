@@ -26,11 +26,22 @@ cycle-2 (**FI-33…FI-36**).
 
 ## 1. Two rules that govern every session in this cycle
 
-**Rule 1 — suite-green is not acceptance for S1, S3 and S5.** The hermetic lane cannot observe
+**Rule 1 — suite-green is not acceptance for S1 and S3.** The hermetic lane cannot observe
 mount-time or container-context reality; that is RC-17, and this cycle contains its **fourth**
-recurrence. Those three sessions are accepted on a **probe in a real container after `cco build`**,
+recurrence. Those two sessions are accepted on a **probe in a real container after `cco build`**,
 pasted into §7's acceptance log. If you find yourself writing *"tests pass"* as the evidence for a
 mount or context behaviour, stop — you are about to repeat the exact mistake the review names.
+
+> **Corrected 2026-07-29 — S5 was in this list and should not have been.** The maintainer ruled
+> that the **golden-file round trip IS sufficient acceptance for L4** (and the two arm tests for L5):
+> S5 closes **in-session**, with no host-side probe. The rule's own criterion is what settles it —
+> S5's surface is neither mount-time nor container-context. `_yml_append_coord` rewrites a file the
+> suite can hand it, and the EXIT trap's misfire is observable from any `bin/cco` invocation; both
+> defects reproduce identically on host and in session. The design input agrees and always did:
+> `invariant-gap-audit.md` §5 names items **2, 3 and 4** as the ones invisible to the suite, and
+> deliberately not item 5 (INV-YAML). §7's session table likewise already carried `n/a` in S5's
+> container-probe column — Rule 1's list was the outlier, and it was simply too broad. The roadmap's
+> lane-L4 warning is corrected in step. Recorded in §7's acceptance log.
 
 **Rule 2 — design gate before implementation.** S2 is design-only and ends at a human gate. S1 has an
 internal gate (design → approve → implement) marked in its brief. Per
@@ -51,7 +62,7 @@ maintainer's daily work, and it depends on nothing.
 | **S2** | The availability model — **design only** | L1 + L2 (**R-A** + **R-C**) | one ADR in `configuration/agent-cco-access/decisions/`; **no code** | ✅ **accepted 2026-07-29** ([ADR-0056](../../decisions/0056-availability-model-and-index-session-axis.md)) — D1–D9, six alternatives recorded. Two maintainer decisions inside it: R-B's count is host-computed at `cco start` (no new privileged surface), and `absent`-in-session gets **two** causes/sentences. S3 and S4 are unblocked |
 | **S3** | Index-health session/host axis | L2 (**R-C** 🔴) | `index.sh` taxonomy + the `[unresolved]` conflation, container probe | ⬜ not started |
 | **S4** | INV-AVAIL sweep | L1 (**R-A** 🔴, **R-B** 🔴) | one owner for availability answers + CLASS lint | ⬜ not started |
-| **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | ⬜ not started |
+| **S5** | Two small classes | L4 (**R-E**) + L5 (**R-G**) | INV-YAML + golden-file lint; EXIT-trap sentinel + lint | 🟡 **landed 2026-07-29** on `fix/cycle-1.2/s5-inv-yaml` (own worktree, no ADR — see §6). Both lanes close **in-session** per the Rule-1 correction in §1; evidence in §7 |
 | **S6** | Close-out | — | §10.9e/E6B-04, host cleanup, re-acceptance, README platform fix | ⬜ not started |
 
 **Dependency**: S2 must precede S3 and S4 (it defines the states and the owner they both implement).
@@ -294,6 +305,28 @@ as one spelling plus a lint rather than a local patch.
 full comment furniture — the only form that catches placement, since a YAML parse would call every
 variant equivalent.
 
+> **Landed 2026-07-29** (`fix/cycle-1.2/s5-inv-yaml`, commit `71ee8e7`). Three notes.
+>
+> - **The scale of the defect on a scaffolded project**, measured rather than assumed: on the shipped
+>   base template a second `cco project add repo` put its entry at **line 114**, 68 lines below
+>   `repos:` (line 46) and immediately above `docker:` — because `extra_mounts`, `packs`, `llms`,
+>   `github` and `browser` all ship commented out, so `docker:` is the first top-level *key* after
+>   `repos:`. The golden fixture is `tests/golden/project-add-base-template.yml`.
+> - **The lint's class is INSERTION, not the raw idiom.** `/^[^ #]/` occurs ~40 times across `lib/`,
+>   and all but a handful are READERS. For a reader the rule is unobservable — a top-level comment run
+>   holds no `  - name:` line, so treating it as inside the section reads the same set. The flagged
+>   shape is therefore an awk section-end rule that *emits* at the boundary **and does not `exit`
+>   there*; the `exit` clause is what separates a rewriter (must copy the rest of the file) from a
+>   parser that has found its answer. A lint over every reader would be ~40 lines of noise on day one,
+>   and noise gets silenced rather than heeded.
+> - **`lib/index.sh` is allowlisted as the runbook says — and so are `lib/tags.sh` and
+>   `lib/migrate.sh`**, which the runbook did not name. `tags.sh` is the same case as `index.sh`
+>   (generated DATA registry, no comments). `migrate.sh` is **not clean**: its `llms` url-recovery
+>   rewriter (`:773`) drops top-level comments inside the block outright (`inblk { next }`) — a
+>   *different* defect from the misplacement INV-YAML names, in a one-shot migration. It is
+>   allowlisted **with that reason recorded in the lint** rather than silently, and reported to the
+>   maintainer instead of being fixed inside S5's scope.
+
 ### 6.2 EXIT-trap sentinel (**R-G**)
 
 `bin/cco:8`'s trap fires unless `_cco_completed=true` (`:534,541,542,568,711`). The group-help paths
@@ -304,6 +337,23 @@ mistyping `--cco-access`. After S2 taught this codebase that a `✓` must not su
 surviving a correct refusal is the same defect read backwards, and it masks real crashes.
 
 Fix the sentinel discipline, then add the lint that no early exit path skips it.
+
+> **Landed 2026-07-29** (`fix/cycle-1.2/s5-inv-yaml`, commit `e468b01`). Two notes.
+>
+> - **The discipline is one primitive, not a patch per site.** `_cco_exit <code>` joins `die` (1) and
+>   `refuse` (2) in `lib/colors.sh`, and every raw shell `exit` outside those three is gone — the two
+>   group-help arms, the five that already set the sentinel inline (a spelling the lint cannot verify),
+>   and the **eleven** `|| exit $?` propagation sites in `cmd-start.sh`. Arm 2's mechanism is not
+>   specific to `--cco-access`: the *claude*-access resolver at `:395-399` has the identical shape, so
+>   the fix covers both resolvers.
+> - **Only shell exits count.** The ~70 `exit` tokens in `lib/` are almost all awk program text, which
+>   terminates awk, not cco. The lint strips quoted regions, comments and heredoc bodies before
+>   matching. Four hazards each produced a false positive while it was written and are handled
+>   explicitly: the close-literal-reopen quote token (`llms.sh`, `paths.sh`), an apostrophe in a prose
+>   comment, a heredoc body (`cco update --help` prints the literal text *"(… exit 0)"*), and a
+>   heredoc delimiter that is itself quoted. The quote character is passed via `awk -v` because an
+>   `"\x27"` escape is a gawk extension that would silently not fire on the BSD awk this project
+>   targets.
 
 ---
 
@@ -420,6 +470,324 @@ second, unrelated hole — eight agents declare `memory: user`, whose target `~/
 bound nowhere and dies with the `--rm` container — are filed together as
 **[FI-39](../../../../roadmap-backlog.md)**, to be settled in one ADR **after** this cycle.
 
+#### S5 — the Rule-1 ruling, and what closes L4/L5 in-session — 2026-07-29
+
+**Maintainer ruling, 2026-07-29 (recorded, not re-litigated): the golden-file round trip IS
+sufficient acceptance for L4.** S5 closes **in-session**, with no host-side probe; §1's Rule 1 named
+S5 and has been corrected, as has the roadmap's lane-L4 warning. The rule's own criterion is what
+settles it — S5's surface is neither mount-time nor container-context. `_yml_append_coord` rewrites a
+file the suite can hand it, and the EXIT trap's misfire is observable from any `bin/cco` invocation;
+both defects reproduce identically on host and in session, so a container adds no observation the
+hermetic lane lacks. The design input agreed from the start: `invariant-gap-audit.md` §5 names items
+**2, 3 and 4** as invisible to the suite and deliberately excludes item 5 (INV-YAML), and the session
+table below already carried `n/a` in S5's container-probe column. Rule 1's list was the outlier.
+
+**What was measured instead** (branch `fix/cycle-1.2/s5-inv-yaml`, three commits `71ee8e7`,
+`e468b01`, `a167fd6`):
+
+```
+1. R-E, the defect reproduced   two `cco project add repo` on the shipped base template:
+                                pre-fix `beta` landed at line 114 — past the
+                                `# ── Extra mounts` banner (line 54), immediately above
+                                `docker:` — 68 lines below its own `repos:` (line 46)
+2. R-E, the fix                 same run, post-fix: line 53, inside `repos:`, after the
+                                indented commented examples. Golden fixture:
+                                tests/golden/project-add-base-template.yml
+3. R-E regression proof         3 of the 5 new tests FAIL on the pre-fix code:
+                                golden round trip · placement-by-rule · the EOF arm
+4. R-G arm 1                    pre-fix `cco project` → help, exit 0, then
+                                "✗ cco exited unexpectedly (exit 0)". Post-fix: gone
+5. R-G arm 2                    pre-fix `--cco-access read-projekt` → the correct refusal
+                                WITH the crash line appended. Post-fix: refusal only
+6. R-G regression proof         both arm tests FAIL on the pre-fix tree
+7. lint discrimination          against a STAGED copy of the real tree with only the fixed
+                                sources reverted, not a synthetic fixture:
+                                INV-EXIT  → 18 sites: bin/cco:534,541,542,569,631,677,712
+                                            + cmd-start.sh:360-365,395-399
+                                            (631/677 = arm 1; the eleven = arm 2)
+                                INV-YAML  → 1 site: cmd-project-add.sh:72, the defect line
+                                Both lints also carry in-test plants in BOTH directions
+                                (must fire / must NOT fire), so neither can go inert.
+8. no lint dead zone            a raw `exit 0` appended to EVERY scanned file (bin/cco,
+                                lib/*.sh, migrations/*/*.sh) is detected in all of them —
+                                the quote/comment/heredoc stripper never desyncs
+```
+
+#### S4 container probe — **FAILED, then fixed** — 2026-07-30
+
+The first of the post-build probes, and it did what Rule 1 says a probe is for: it failed on a lane the
+suite had certified green. Provenance `cco whoami` → `image built from: fix/release/cycle-1.2@e27ad6e`
+(the branch tip; `/opt/cco/lib` verified **byte-identical** to the working tree, so the probe is
+observing this block's code and not an older image). Session at the **default** `read-project`, mask
+`access: {claude: all}` in place — irrelevant to this lane, which is a `cco_access` axis, but stated
+because §7 requires it.
+
+```
+1. the signal EXISTS       CCO_STORE_TOTALS=pack=6,template=0,llms=2,remote=0
+                           (in the agent's env, and in /etc/cco/session-access)
+2. and it does NOTHING     cco list packs  →  1 row (core-dev-framework), exit 0
+                           stderr: <empty>          ← R-B, verbatim: 5 packs unaccounted for
+3. cco list (unified)      note: 9 projects, 1 template hidden by access scope
+                           — per-row notes only; NO pack count, though 6-1 are unreachable
+4. A/B, same session       CCO_STORE_ELEVATED=1 cco list packs   (skips the trampoline)
+                           stderr: note: 5 packs, 2 llms hidden by access scope …
+                           → the supplement is CORRECT and REACHABLE; what is missing is the input
+5. root cause              config/cco-svc-helper.c ALLOWED_KEYS[] does not list CCO_STORE_TOTALS
+                           (`strings /usr/local/bin/cco-svc-helper` confirms it in the BAKED binary)
+                           while cmd-start.sh:1837 writes it, under a comment that reads
+                           "Keys mirror the helper's whitelist"
+```
+
+**Mechanism.** Every store-touching read verb `exec`s the setuid helper, which rebuilds the child
+environment **from scratch** (ADR-0047 R2) and copies over whitelisted descriptor keys only. An
+un-whitelisted key is dropped in **silence** — no error, no exit code — so `_env_apply_store_supplement`
+returned at its `CCO_STORE_TOTALS` guard on every real invocation. **D5 shipped inert**, which means
+**R-B shipped unfixed**: the finding S4 was accepted for.
+
+**Why the suite could not see it, and now can.** `tests/test_access_scope.sh:952+` exercises the
+supplement by exporting the signal and calling the consumer in-process — a path that never crosses the
+boundary. The gap is now a static lint over the two source files:
+**INV-DESC** (`test_invariant_descriptor_keys_whitelisted`). It reports `CCO_STORE_TOTALS` on the
+pre-fix tree and is clean on the fixed one, so its discrimination is proved against the **real** defect,
+not only against a plant.
+
+**The same omission had TWO more instances, found by asking where else this signal family is
+registered.** A descriptor key is not one fact in one file — it is a key set that **three** registries
+must agree on, and S4 updated one of them:
+
+| Registry | What it is for | State before |
+|---|---|---|
+| `config/cco-svc-helper.c` `ALLOWED_KEYS[]` | what may cross the privilege boundary | ❌ missing → **D5 inert** |
+| `bin/test`'s ambient-env `unset` | make a self-dev run behave like a host run | ❌ missing → 3 spurious failures |
+| `tests/helpers.sh` `_lane_operator_exports` | the per-lane sanitiser, pinned deterministically | ❌ missing → latent, same leak |
+
+The `bin/test` gap is the one that had already cost a measurement: the real value leaked in and added a
+hidden-count supplement three notice tests never asked for
+(`test_as_hidden_notice_counts_and_stderr`, `test_as_hidden_notice_projects_only_leads_with_read_all`,
+`test_hidden_notice_unchanged`) — **10 failures in-session where 7 were documented**, and the three
+extra were indistinguishable from the host-only set until the names were diffed. The
+`tests/helpers.sh` gap had not fired yet only because `bin/test` unsets globally — which is precisely
+what that file's own comment (c) says a lane must never rely on.
+
+All three are now one lint: **INV-DESC**, two test functions, each arm proved against the **real**
+pre-fix file rather than only a plant (`CCO_STORE_TOTALS` is reported for all three; clean after).
+
+⚠ **Carry-forward, two lessons.** (i) The count-vs-name discipline §2 states for the host-only 7 applies
+to *any* in-session figure: a count alone reads a real regression as environmental noise. (ii) When a
+fix adds a member to an existing family, the question is not "is the new member correct" but **"how many
+registries name this family"** — S9's lower-bound lesson from cycle-1.1, one level up: it holds for
+registries as well as for call sites.
+
+**Ratified and recorded**: ADR-0056's annotation section (D5 entry, 2026-07-30) + changelog **59**.
+
+#### S4 container probe — round 2, after the rebuild — 2026-07-30
+
+The maintainer rebuilt and restarted. ⚠ **Provenance still reads `…@e27ad6e`** because the fix was
+uncommitted at build time — `/opt/cco/BUILD` records a git ref, and a docker build takes the working
+TREE. So the ref was not evidence here and the binary was checked instead:
+`strings /usr/local/bin/cco-svc-helper | grep CCO_STORE_TOTALS` → present. **Check the artefact, not the
+provenance line, whenever the tree is dirty.**
+
+```
+1. THE LANE IS FIXED       cco list packs → 1 row + note: 5 packs … hidden   ← was silence
+2. and the unified view    cco list       → note: 9 projects, 5 packs, 1 template hidden
+3. ⚠ BUT A FALSE CLAUSE    cco list llms  → note: 6 packs hidden        (llms are all shown)
+                           cco list packs → note: 5 packs, 2 llms hidden (those 2 are shown)
+                           cco path list  → note: 32 paths, 6 packs, 2 llms hidden
+                           cco project show → store counts, on a verb that lists no store
+```
+
+**The second defect, and it was D5's own.** `_env_apply_store_supplement` looped over **every** store
+kind on **every** flush, so each verb's notice carried counts for kinds it had never enumerated. Two
+things made it unmistakable rather than cosmetic: the claims were **false where printed** (`cco list
+llms` shows both llms and called them hidden) — the exact R-A class ADR-0056 exists to end — and the
+**same session answered 6 or 5 to the same question** depending on the verb, because the count is
+total-minus-enumerated and a verb listing llms enumerates no packs. It had never been observable before,
+for the simple reason that until round 1 the supplement never ran at all.
+
+**Ratified 2026-07-30 — a notice is per-invocation, not per-session.** A verb declares the kinds it
+enumerates exhaustively (`_env_store_subject`, in the owner); only those are supplemented; **not
+declaring means no supplement**, so an omission is honest silence instead of a fabricated count — the
+inverse of the shipped default. Four sites declare, and they are exactly the four the new lint names on
+the pre-fix tree: `cmd_pack_list`, `cmd_pack_validate`'s `--all` arm, `_llms_list`, and `cmd_list`
+(all kinds when unified, the requested kind when scoped).
+
+*Rejected*: supplement only kinds with `seen>0` — needs no declaration anywhere, but goes silent exactly
+when nothing was enumerable (a project referencing no packs, an absent mount), which is R-B returning
+through the back door.
+
+**Cover**: three unit tests for the scoping rule (two of them fail on the unscoped code — verified by
+removing the two guard lines and re-running), the five pre-existing D5 tests updated to declare a
+subject (two would otherwise have passed **vacuously**, asserting silence that now has a second possible
+cause), and **INV-AVAIL/D5** — `test_invariant_store_subject_declared_where_counted`, pairing every
+`_env_note_seen` with an `_env_store_subject` in the same function. On the pre-fix tree it names all
+four enumerators; clean after.
+
+#### S4 container probe — round 3 — ✅ **PASSED** — 2026-07-30
+
+Provenance `cco whoami` → `image built from: fix/release/cycle-1.2@d01d42a`, and this time the
+**artefact agrees with the line**: `/opt/cco/lib` byte-identical to the working tree, `_env_store_subject`
+present in all four baked files, `CCO_STORE_TOTALS` in the baked helper's strings. Default
+`read-project` session, mask `access: {claude: all}` in place (irrelevant to this axis, stated per §7).
+
+```
+1. cco list packs        1 row  +  note: 5 packs hidden by access scope (…) — start a
+                                  read-global session or run cco on your host.
+                         → the count is right AND there is no llms clause
+2. cco list llms         both rows, stderr EMPTY
+                         → the verb that showed every llms no longer calls any of them hidden
+3. cco list              4 rows +  note: 9 projects, 5 packs, 1 template hidden …
+                         → the unified index still speaks for every kind, and the pack number is
+                           5 (six minus the one bound), not the 6 the unscoped code produced
+4. cco path list         2 rows +  note: 32 paths hidden … (other projects need Po≥ro)
+                         → paths only; no store counts on a verb that lists no store
+5. cco pack validate     ✓ core-dev-framework is valid + note: 5 packs hidden …
+   (the --all arm)       → the fourth declared site, pack only
+6. cco project show      stderr EMPTY
+   (control)             → no store claim from a verb that enumerates no store
+```
+
+Both defects are closed on evidence: **row 1 is R-B fixed** (it was silence in round 1), and **rows 2, 4
+and 6 are the false-clause defect fixed** (they each carried a fabricated cross-kind count in round 2).
+Every number matches the behaviour ratified before the fix was written, so this is a confirmation, not a
+re-specification.
+
+**L1's Rule-1 evidence is complete.** What remains for the lane is the block's single human gate.
+
+📝 Also settled the same day: the stray OAuth authorize URL at `.cco/project.yml:37` (pasted by
+accident, uncommented, inside the pack-schema comment block) was removed host-side — 0 occurrences, and
+the file's residual diff is exactly the intended `access:` block, the `8081→8082` port change and the
+`packs:` entry.
+
+#### S3 container probe — ✅ **PASSED, both arms** — 2026-07-30
+
+A **split** gate — the shape §5.1 prescribes — run by maintainer and session together: the maintainer moved
+`~/.local/state/cco/shared/index` aside from the host **with this session live**; every observation
+below is from inside that session. Provenance `cco whoami` →
+`image built from: fix/release/cycle-1.2@d01d42a`, `/opt/cco/lib` byte-identical to the working tree.
+Default `read-project` session; the `access: {claude: all}` mask was in place and is irrelevant to this
+axis (stated per §7's rule).
+
+```
+$ cco whoami                            rc=0   ← renders the session's own state, reads no index
+$ cco path list                         rc=1
+$ cco list                              rc=1
+$ cco list projects                     rc=1
+$ cco project show claude-orchestrator  rc=1
+$ cco project validate --all            rc=1
+
+all five failing verbs, identical text:
+  ✗ the cco index at /var/lib/cco-internal/state/cco/shared/index cannot be read: the file is
+    gone. This session was LAUNCHED from the index, so it was readable when the session started
+    and is no longer — the bind has been severed, or the host-side state was removed. No entries
+    were listed — this is NOT an empty index. Run cco on your host to inspect or rebuild it.
+```
+
+Arm by arm, what this actually proves:
+
+- **The session axis, not merely the cause.** The discriminator in the text is *"this session was
+  LAUNCHED from the index"* — the very same missing file is a legitimately benign `absent` on the host.
+  That is ADR-0056's axis, observed rather than inferred.
+- **W4-F06's benign sentence is unreachable from a session.** Pre-S3 it is still there to compare
+  against: `git show develop:lib/index.sh:189` → *"the path index is empty — nothing is registered on
+  this machine yet"*. §10.9d's **rc=0 is now an rc=1 refusal**, and the new text denies the reading
+  explicitly (*"this is NOT an empty index"*).
+- **The remedy is true where it is printed.** *"Run cco on your host"* names the only place a severed
+  bind can be repaired — and deliberately not a verb the session could run.
+- **`cco whoami` at rc=0 is correct, not a leak.** It reports the resolved session descriptor, which
+  crossed the ADR-0047 boundary at start-up and needs no index read. A session must still be able to
+  say what it is while its store is unreachable.
+
+**The recovery arm — run immediately after, same session, index restored host-side:**
+
+```
+$ cco path list                         rc=0  2 rows + note: 33 paths hidden …
+$ cco list                              rc=0  4 rows + note: 9 projects, 5 packs, 1 template hidden …
+$ cco list projects                     rc=0  1 row  + note: 9 projects hidden …
+$ cco project show claude-orchestrator  rc=0  full render (repos/mounts/packs/docker/status)
+$ cco project validate --all            rc=0  [claude-orchestrator] + note: 9 projects hidden …
+```
+
+Recovery is **not** merely "the error stopped": every verb is back to its **fully scoped** behaviour,
+with the per-invocation notices of S4's round 3 intact and the same numbers — 9 projects / 5 packs /
+1 template, `list llms` still unmentioned by the verbs that do not enumerate it. So the guard added in
+front of these enumerators (`cmd-project-validate.sh:308`, `_index_assert_readable` — *"classify BEFORE
+the loop, so a read failure is never rendered as 'nothing to validate'"*) is proven in **both**
+directions: it refuses when the read fails and gets out of the way when it succeeds. A guard only ever
+tested on the failing side is how a lane ships fail-closed *and* unusable.
+
+📝 `path list` reports **33** paths hidden where round 3 reported 32. The delta is host-side registration
+between the two probes (the count is total−enumerated, so it tracks the real store); the visible rows are
+the same 2. Recorded rather than smoothed over — an unexplained count is how the 10-vs-7 episode started.
+
+⚠ `project validate --all` printing only `[claude-orchestrator]` and the notice is **correct**, not a
+truncation: `_pv_validate_unit` is quiet on a unit with no findings when `--verbose` is absent.
+
+📝 **Observation for the CLI-docs audit (roadmap step 3), not a defect claim.** The message names the
+**internal** path `/var/lib/cco-internal/state/cco/shared/index` — the agent's side of the bind, which
+is accurate — while its remedy is host-side, and this session has `show_host_paths: true`. A reader who
+follows the remedy cannot act on the path they were given. Carry it into step 3's pass over refusal
+wording; changing user-facing text is a human gate, not a sweep.
+
+#### G1 — E6B-04 (host) and D7 (session) — ✅ **BOTH PASSED** — 2026-07-31
+
+**E6B-04 — the pack-rename fan-out, executed for the first time in any round.** Host run, two throwaway
+projects (`proj-a`, `proj-b`) both referencing one disposable pack.
+
+```
+$ ./bin/cco pack rename scratch-pack scratch-pack-renamed -y
+  • packs/scratch-pack/ → packs/scratch-pack-renamed/ (+ pack.yml name:)
+  • DATA install-provenance + STATE merge base/meta + per-user tags
+  • packs[] reference in project(s): proj-a proj-b
+✓ Renamed pack 'scratch-pack' → 'scratch-pack-renamed'.
+⚠ Commit + push … : /private/tmp/cco-scratch/proj-a , /private/tmp/cco-scratch/proj-b
+```
+
+| # | Post-condition | Verdict |
+|---|---|---|
+| 1 | store dir moved | ✅ `~/.cco/packs/scratch-pack-renamed` present (agents/knowledge/rules/skills/pack.yml), `scratch-pack` **gone** |
+| 2 | **every** referring `project.yml` re-keyed | ✅ **both** — `proj-a` *and* `proj-b` read `- name: scratch-pack-renamed`. Re-confirmed from a second vantage: `cco pack show` → *"Used by projects: proj-a, proj-b"*, a reverse lookup over the refs |
+| 3 | DATA provenance + STATE meta + tags re-keyed | ⚠️ **vacuous on this fixture** — see below |
+
+**Post-condition 2 is the gate.** It is the cross-project fan-out — the thing v2 only ever *inferred*
+from a non-firing guard and code order, and the reason §7 called this a named gate. It is now observed:
+the second project's copy was re-keyed, not just the one hosting the rename. **No `failed` tag appeared**
+(the S2b partial-application arm printed nothing), and both repos were listed for commit — so the write
+side reported completion for every affected copy, which is the half-apply detector.
+
+⚠️ **Post-condition 3 proves less than it looks, and the difference is recorded rather than smoothed.**
+The subject was created with `cco pack create`, so it carries **no install provenance** (`cco pack update`
+on such a pack dies with *"created locally — no remote source to update from"*), **no tags** (the TAGS
+column reads `—`) and no sync fingerprint. The `sidecar-rekey` op ran and did not fail — and it is
+fail-closed, so a broken store would have refused before the CONFIG dir moved — but it had **nothing to
+move**. A stronger fixture tags the pack (and installs it from a remote) *before* renaming. This does not
+weaken the gate: the never-executed question was the fan-out, and the fan-out answered.
+
+**D7 — the framework view composed with no packs at all.** Default session on `stai-sicuro`
+(`Packs: (none)`), provenance `image built from: fix/release/cycle-1.2@31aec5a`.
+
+```
+$ cco whoami        →  claude_access: none   ·   Cr=ro Cp=ro Cg=ro Co=ro
+$ ls -la /workspace/.claude
+    agents  CLAUDE.md  rules  settings.json  settings.local.json  skills  workflows
+$ grep ' /workspace/.claude' /proc/self/mountinfo
+    /workspace/.claude              ← .cache/cco/projects/stai-sicuro/claude-view      ro
+    /workspace/.claude/{skills,CLAUDE.md,agents,settings.json,rules} ← <repo>/.cco/claude  ro
+    /workspace/.claude/settings.local.json ← state/…/local-settings/workspace.json      rw
+    /workspace/.claude/workflows           ← state/…/projects/stai-sicuro/workflows     rw
+$ touch …/settings.local.json && echo ok                     → ok
+$ mkdir -p …/workflows && touch …/workflows/.probe && echo ok → ok
+```
+
+The view **is** composed for a project that adopts no pack — D7's whole claim, and the arm both of S1's
+probes were blind to because `claude-orchestrator` adopts `core-dev-framework`. Both floor entries are
+`rw` while every authored child stays `ro`.
+
+📌 **Stronger than the runbook asked for.** The probe was specified at the default (`Cp=ro`); this session
+ran at **`claude_access: none`** — the narrowest authoring level there is, all four axes `ro` — and the
+functional-write floor still held. INV-FLOOR promises the floor *regardless* of the authoring axis, and
+this is that promise observed at its hardest point rather than at its default.
+
 | Session | Suite | Container probe | Date |
 |---|---|---|---|
 | baseline | ⚠️ **1533/7 — measured under the mask** (see note) | n/a | 2026-07-28 |
@@ -436,25 +804,81 @@ bound nowhere and dies with the `--rm` container — are filed together as
 > plan already warns that the mask hides R-F, and it hid a suite number too. **Any figure recorded
 > from a self-dev session must state whether the block was in place.** These two are *not* to be
 > chased inside S1 — the same rule as the seven.
-| S3 | ⬜ | ⬜ **required** | |
-| S4 | ⬜ | ⬜ | |
-| S5 | ⬜ | n/a | |
+| S3 | ✅ **1614/7 of 1621** (same tree as S4's row — ⚠️ mask ON) | ✅ **PASSED, both arms** — run as a *split* gate (host `mv`, in-session observations). Severed: all five read verbs refuse at **rc=1** with the session-axis cause, and §10.9d's benign rc=0 sentence is unreachable. Restored: all five back at **rc=0** with their fully scoped notices and the same counts as S4's round 3 — the entry guard proven in both directions | 2026-07-30 |
+| S4 | ✅ **1614/7 of 1621** — ⚠️ **measured with the mask ON**. Closes on the baseline with no slack: 1608/7 of 1615 **+6** (2 INV-DESC · 1 INV-AVAIL/D5 · 3 scoping). The 7 are the known host-only set, name for name | ✅ **PASSED at round 3** — ⚠️ it took three rounds and two builds: **round 1 FAILED** (D5 inert, the key never crossed the boundary) → fixed; **round 2** showed the lane fixed *and* exposed a second defect (a fabricated cross-kind clause in every notice) → fixed; **round 3 green on all six arms**, every number matching the behaviour ratified before the fix was written | 2026-07-30 |
+| S5 | ✅ **1562/7, total 1569** — ⚠️ **measured with the mask ON** (`access: {claude: all}` active for this session). The 7 are the known host-only set, unchanged: the six `test_as_*` plus `test_paths_symlink_safe_tool_root`. Baseline for the same mask state was **1553/7 of 1560**; the delta is exactly the **+9** tests S5 adds | n/a — see the ruling above | 2026-07-29 |
+
+#### G3 — the block's single human gate: **ACCEPTED with follow-ups** (2026-07-31)
+
+The maintainer took the gate on **2026-07-31** and **passed it**. Recorded here per the runbook's
+requirement that the decision be *written*, and per **D-V31-4** (*release exceptions are written down,
+never inferred*).
+
+**Verdict: `ACCEPTED with follow-ups`.** Plain `ACCEPTED` would be inaccurate — three findings are
+carried out of the cycle by an explicit decision, and one of them ships as a known-issue:
+
+| Follow-up | Disposition |
+|---|---|
+| [FI-42](../../../../roadmap-backlog.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --cco-access edit-all --repo …`; ⚠ *the `--all --repo` spelling written here at the gate is refused by `cco start` — corrected at G2, see below*), failing **declared** (rc 1 + the `failed` paths). |
+| [FI-43](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — a sub-question of the topology decision, not a standalone flag. No exposure: the current `rw` default is documented as such. |
+| [FI-40](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — topology-independent, deferred only to keep the release tree unchanged. |
+| ADR-0046 §6 | **Ratified in place** 2026-07-31 (annotation on the ADR), not deferred. |
+
+**What the gate had on the table**: the four §7 acceptance rows (S1 both arms · S3 both arms · S4
+round 3 · S5's ruling) · **suite 1617/7 of 1624, mask ON**, the 7 identified name-for-name as the
+host-only set · **G1's two results** (E6B-04's fan-out re-keying both `project.yml` copies, with its
+third post-condition recorded **vacuous**; D7 composing at `claude_access: none`) · step 2b's
+decision · the seven ratified deviations in ADR-0056's annotations, **not** re-litigated.
+
+**G1's residual host cleanup is done** (`/tmp/cco-scratch`, `~/.cco/packs/scratch-pack*`,
+`cco forget proj-a proj-b`, and the four stale remotes `probe-2` · `x` · `probe-3` · `probe-3b`),
+confirmed by the maintainer 2026-07-31.
+
+⚠ **The lanes' status follows from this gate**: L1, L2, L4 and L5 were each *"awaiting the block's
+single human gate"* — they are now **accepted**, and the roadmap rows say so. L3 was already accepted.
+
+#### G2 — CLI-surface documentation audit: **DONE** (2026-07-31), and what it changed *after* acceptance
+
+Report: [`cli/reviews/2026-07-31-cli-surface-audit.md`](../../../../cli/reviews/2026-07-31-cli-surface-audit.md).
+Eight objective drifts corrected in place. Two items went to the maintainer; **both were decided the
+same day**, and one of them lands code **after** G3 — recorded here rather than inferred (D-V31-4):
+
+| Item | Disposition |
+|---|---|
+| The **release known-issue named an invocation `cco start` refuses** — `--all --repo …` dies at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …` (both probed) | ✅ **Corrected and approved** in the G3-accepted shape — only the named command changed. Runbook G6 step 5 carries the signed-off sentence. |
+| [**FI-45**](../../../../roadmap-backlog.md) — `cco remote list` told a read-project session to widen its access to reach a **removed** verb | ✅ **FIXED** (`bin/cco` + 2 rewritten tests + 1 new one, changelog 61). **This is a post-acceptance change to `bin/cco`**, taken deliberately: it copies the shape four sibling removed aliases already have, so it adds **no contract** — and shipping a known false remedy in the release that exists to close that class was the worse option. |
+
+⚠ **What the post-acceptance fix costs, stated rather than assumed**: G3's verdict was recorded on a
+tree that did not contain it. The change is confined to one `case` arm in the shim's `remote` branch
+and its tests; **G5 re-runs the full suite on `develop`**, which is where it gets its verification.
+G1's and G3's evidence is unaffected — neither exercised `remote list`. Precedent: **FI-41** was fixed
+in-cycle after the G1 gate surfaced it.
 
 ---
 
-## 8. Out-of-session gates (host, in order)
+## 8. Out-of-session gates → [`08-gates-to-release.md`](08-gates-to-release.md)
 
-Everything below needs the **host** terminal; a session cannot do any of it.
+The gates that remain — and the whole path from here to the published release — live in their own
+**operational runbook**, [`08-gates-to-release.md`](08-gates-to-release.md). It is the file to keep open
+at the terminal; this plan stays the *design + evidence* document, and every probe result still goes into
+**§7** above.
 
-1. `git push` — `develop` is currently level with `origin/develop`; the cycle branch and every merge
-   are pushed from the Mac.
-2. `cco build` — **required before S1's, S3's and S4's probes**. `lib/` and `Dockerfile` are baked
-   into the image, so their edits are invisible in-session until a rebuild. Record the provenance
-   (`cco whoami` → `image built from:`) alongside each probe.
-3. Merges into `develop` — per [`.cco/claude/rules/git-workflow.md`](../../../../../../.cco/claude/rules/git-workflow.md),
-   and note **FI-20**: merges touching `.cco` are host-only.
-4. After the cycle: the **CLI-surface documentation audit** (roadmap step 3), then
-   `develop → main` + release (step 4).
+Moved there rather than restated here, so there is one home for a command and one place to fix it: a gate
+whose command has to be reassembled from three documents is how a copy-paste false pass happens — S3's own
+trap (the pre-S1 `state/cco/index` spelling, which moves nothing) is exactly that failure.
+
+| Gate | What | Where it runs | State |
+|---|---|---|---|
+| **G0** | `git push origin develop fix/release/cycle-1.2` | host | ✅ done 2026-07-30 |
+| **G1** | S6's host half (**E6B-04**) + **D7**'s residual — one scratch setup serves both | host + an `edit-all` session | ✅ passed 2026-07-31 |
+| **G2** | CLI-surface documentation audit (roadmap step 3) | in-session, **sequential after G1** | ✅ done 2026-07-31 |
+| **G3** | the block's **single human gate** | maintainer | ✅ **`ACCEPTED with follow-ups`** 2026-07-31 |
+| **G4** | merge → `develop` + the merge tree-hash check | host | ◀ next |
+| **G5** | verification **on `develop`** (unmasked suite · macOS host suite · `cco build` + smoke) | host | owed |
+| **G6** | `develop → main` + `scripts/release.sh` | host | owed |
+
+Two probes that used to live in this section are **done** and recorded in §7: S3's severed-index arm plus
+its recovery (a **split** gate — host `mv`, in-session observations), and S4's round 3.
 
 ---
 

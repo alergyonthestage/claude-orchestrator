@@ -941,3 +941,169 @@ YML
     grep -q '~'      "$idx" && fail "index must not store a tilde path" || true
     grep -qF '$HOME' "$idx" && fail "index must not store a literal \$HOME" || true
 }
+
+# ── The backfill rewrites a USER-AUTHORED file (cycle-1.2 S6) ──────────
+#
+# THE DEFECT (found by S5 reading the awk, reproduced empirically). The previous
+# implementation BUFFERED each llms entry and re-emitted it from parsed values, so
+# any line it had no rule for hit its final `inblk { next }` catch-all and was
+# DROPPED. Two arms, both observed on one file:
+#   • an INDENTED comment inside the block matched none of the specific rules;
+#   • a TOP-LEVEL comment did not match the section boundary `/^[^ #]/` either
+#     (the class excludes `#`), so the block never closed there and the comment —
+#     which by YAML convention heads the FOLLOWING key — went the same way.
+# Blank lines and unrecognised sub-keys were lost with them. Same CLASS as R-E,
+# a different defect: R-E MISPLACED content, this DESTROYED it.
+#
+# THE RULE these assert (runbook §6.1 / INV-YAML, the discipline `_yml_append_coord`
+# implements): comments survive, indented and top-level, in their original
+# positions. Nothing is regenerated — the only lines the backfill may write are
+# the sub-fields it injects, plus the one short-form list item that has to become
+# long form to carry them (a scalar item cannot take sub-keys).
+#
+# ⚠ Derived from that rule, not from the implementation: the assertions are on
+# what must SURVIVE and where the injection must LAND, never on the emitted field
+# order, which the rule does not constrain.
+
+# Emit the lines `diff` reports as REMOVED from <before> relative to <after>.
+# Deletion is the whole subject here, so it is asserted directly rather than
+# through a golden file that would also pin things the rule says nothing about.
+_backfill_removed_lines() {
+    diff "$1" "$2" | sed -n 's/^< //p'
+}
+
+# The headline reproduction: all four shapes on one file. Everything except the
+# short-form list item must survive — asserted as "diff removed exactly one line",
+# which no amount of coincidental substring matching can satisfy.
+# ⚠ FAILS on pre-fix: four lines are removed instead of one.
+test_backfill_pack_llms_deletes_no_line_it_did_not_have_to_rewrite() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
+    local yml="$tmpdir/pack.yml"
+    cat > "$yml" <<'YML'
+name: p
+llms:
+  # the svelte reference — kept here on purpose
+  - svelte
+    # an indented note about svelte
+
+# the next key is docker
+docker:
+  mount_socket: false
+YML
+    cp "$yml" "$tmpdir/before.yml"
+    _backfill_one_pack_llms "$yml"
+
+    local removed; removed=$(_backfill_removed_lines "$tmpdir/before.yml" "$yml")
+    [[ "$removed" == "  - svelte" ]] \
+        || fail "the backfill may only rewrite the short-form list item; it also removed:"$'\n'"$removed"
+
+    # Named individually too, so a failure says WHICH shape regressed.
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        grep -qxF "$line" "$yml" \
+            || fail "a comment was destroyed by the backfill: '$line'"
+    done <<'EOF'
+  # the svelte reference — kept here on purpose
+    # an indented note about svelte
+# the next key is docker
+EOF
+    # And the backfill actually happened — otherwise "nothing was deleted" is
+    # trivially true of a function that did nothing.
+    local got; got=$(yml_get_llms "$yml" | sed 's/\t/|/g')
+    [[ "$got" == "svelte||full|https://svelte.dev/llms.txt" ]] \
+        || fail "the url/variant must still be backfilled, got: $got"
+}
+
+# The buffer-and-flush half of the rule, isolated. A trailing run of blank and
+# top-level comment lines heads the NEXT key, so an injection must land BEFORE it
+# — inside its own entry. Landing after it would put a `    url:` line under
+# someone else's header, which is R-E's misplacement in a new place.
+# ⚠ FAILS on pre-fix: the run is deleted outright, so there is nothing to land
+# before.
+test_backfill_pack_llms_injects_before_the_trailing_comment_run() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "react" "https://react.dev/llms.txt"
+    local yml="$tmpdir/pack.yml"
+    cat > "$yml" <<'YML'
+name: p
+llms:
+  - name: react
+    description: React docs
+
+# ── Docker ──────────
+docker:
+  mount_socket: false
+YML
+    _backfill_one_pack_llms "$yml"
+
+    # Line numbers, not substrings: "before" is a claim about ORDER.
+    local n_url n_comment n_key
+    n_url=$(grep -n '^    url: https://react.dev/llms.txt$' "$yml" | cut -d: -f1)
+    n_comment=$(grep -n '^# ── Docker ' "$yml" | cut -d: -f1)
+    n_key=$(grep -n '^docker:$' "$yml" | cut -d: -f1)
+    [[ -n "$n_url" ]]     || fail "the url was not injected at all: $(cat "$yml")"
+    [[ -n "$n_comment" ]] || fail "the top-level comment heading 'docker:' was destroyed: $(cat "$yml")"
+    [[ -n "$n_key" ]]     || fail "the following top-level key was lost: $(cat "$yml")"
+    [[ "$n_url" -lt "$n_comment" ]] \
+        || fail "the injection landed AFTER the comment run that heads the next key (line $n_url vs $n_comment): $(cat "$yml")"
+    [[ "$n_comment" -lt "$n_key" ]] \
+        || fail "the comment must still head its own key (line $n_comment vs $n_key): $(cat "$yml")"
+}
+
+# The same boundary at EOF, where there is no following key to close the block —
+# the arm that only `END` can reach. The trailing comment must still survive and
+# still follow the injection.
+test_backfill_pack_llms_closes_the_block_at_eof_without_losing_comments() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "react" "https://react.dev/llms.txt"
+    local yml="$tmpdir/pack.yml"
+    printf 'name: p\nllms:\n  - react\n\n# trailing note, nothing follows it\n' > "$yml"
+    _backfill_one_pack_llms "$yml"
+
+    grep -qxF '# trailing note, nothing follows it' "$yml" \
+        || fail "a trailing top-level comment at EOF was destroyed: $(cat "$yml")"
+    local n_url n_comment
+    n_url=$(grep -n '^    url: ' "$yml" | cut -d: -f1)
+    n_comment=$(grep -n '^# trailing note' "$yml" | cut -d: -f1)
+    [[ -n "$n_url" ]] || fail "the url was not injected at EOF: $(cat "$yml")"
+    [[ "$n_url" -lt "$n_comment" ]] \
+        || fail "the EOF injection must still precede the trailing run: $(cat "$yml")"
+}
+
+# An entry that needs NOTHING must come out byte-identical, comments and short
+# form included — the backfill injects, it does not normalize. Guards the other
+# direction: a "fix" that rewrote every entry could preserve comments and still
+# churn a user's file.
+test_backfill_pack_llms_leaves_an_entry_it_does_not_touch_verbatim() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
+    local yml="$tmpdir/pack.yml"
+    cat > "$yml" <<'YML'
+name: p
+llms:
+  - svelte
+  - name: tailwind
+    # pinned to our fork on purpose
+    url: https://custom/t.txt
+YML
+    _backfill_one_pack_llms "$yml"
+
+    local removed; removed=$(_backfill_removed_lines <(cat <<'YML'
+name: p
+llms:
+  - svelte
+  - name: tailwind
+    # pinned to our fork on purpose
+    url: https://custom/t.txt
+YML
+) "$yml")
+    [[ "$removed" == "  - svelte" ]] \
+        || fail "only the entry being backfilled may be rewritten; also removed:"$'\n'"$removed"
+    grep -qxF '    # pinned to our fork on purpose' "$yml" \
+        || fail "a comment inside an untouched entry was destroyed: $(cat "$yml")"
+    local got; got=$(yml_get_llms "$yml" | sed 's/\t/|/g' | tr '\n' ';')
+    [[ "$got" == "svelte||full|https://svelte.dev/llms.txt;tailwind|||https://custom/t.txt;" ]] \
+        || fail "the custom url must survive and svelte must be backfilled, got: $got"
+}

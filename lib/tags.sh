@@ -421,6 +421,12 @@ EOF
     if [[ -z "$kind" || "$kind" == project ]]; then _index_assert_readable; fi
 
     [[ -z "$sort_by" ]] && sort_by="kind"
+    # D5 subject (ratified 2026-07-30): the unified index enumerates EVERY store kind,
+    # so it may speak about all of them; `cco list <kind>` reaching this path (with a
+    # --tag/--sort/--reverse filter) speaks about that one kind only. The bare per-kind
+    # view returned above instead, and each rich lister declares its own subject.
+    if [[ -z "$kind" ]]; then _env_store_subject $_ENV_STORE_KINDS
+    else                      _env_store_subject "$kind"; fi
     local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
@@ -433,6 +439,10 @@ EOF
         else
             # Output scoping (ADR-0043): in operator mode, hide resources outside the
             # session's access scope and count them for the trailing notice (INV-B).
+            # D5: every ENUMERATED row is counted, shown or hidden — the shared
+            # layer derives what the mount could not show at all as
+            # host_total - seen (see _env_apply_store_supplement).
+            _env_note_seen "$rk"
             if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
             tkind=$(_list_tag_kind "$rk"); tags=""
             [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")

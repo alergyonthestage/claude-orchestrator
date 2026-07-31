@@ -58,9 +58,9 @@ on a Mac (then `git push --follow-tags` to publish `0.5.2`).
 | # | Workstream | When | Gating? | Handoff |
 |---|---|---|---|---|
 | **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
-| **B** | **config-editor/tutorial access scope** → generalized into a **session config capability model**. **✅ DESIGN DONE (2026-07-01)** on `feat/config-access/capability-model`: two axes (A `.cco`, B `.claude`) + read surface (R1 self-info, R2 global-read) + managed floor; three knobs (`claude_access`, `cco_access` granular `edit-project/global/all`, `show_host_paths` default on); wrapped-`cco` in-container (whitelist + container-operator mode, tokens host-only, no logic duplication); caller-context signal (D8); built-ins as presets; config-editor `--all`/`--project` (only `<repo>/.cco`). **ADR-0036** (model) + **ADR-0041** (R1) Accepted; config-editor + tutorial design docs rewritten. **Implementation COMPLETE (2026-07-01) on `feat/config-access/capability-model`** — **all 7 steps done**: (1) caller-context signal D8; (2) three-knob access resolution + precedence + `--enable-config-edit` alias; (3) Axis-B/Axis-A mount generation driven by the knobs (generalized `_committed_ro`); (4) **wrapped-`cco` shim + container-operator mode** (`_cco_container_operator` guard, whitelist/blocklist in `bin/cco`, Dockerfile bake to `/opt/cco`, bucket mounts DATA/CACHE-per-level + STATE index-only ro + tokens/secret-file masking; changelog #29; ships R2); (5) **built-in presets** (config-editor `all`/`edit-all` + `--all`/repeatable `--project`, tutorial `none`/`read`, both emitting the operator env; built-in docs rewritten to the wrapped-`cco` model; changelog #30; also fixed a pre-existing tutorial-mount bug — `source:`→name-based); (6) **R1 self-info (ADR-0041)** — unified `workspace.yml` absorbs `packs.md` (`knowledge`+`llms` sections) + gated `path_map` (`show_host_paths` default on); net cut (no dual-emit), all consumers migrated (hooks + `init-workspace`); changelog #31; doc-sweep. Suite **1095/1** (the 1 fail pre-existing env-only). **R1-D5 completeness gate PASSED via live host dogfood (2026-07-01)**: after `./bin/cco build && ./bin/cco start` from the branch, the container's baked hook renders `knowledge`/`llms` from the new `workspace.yml` (no `packs.md`), `path_map` carries the real host path, and `.cco` is `:ro` under `cco_access=none` (edit-protection confirmed). (7) **docs polish + host cleanup** — stale committed `.cco/claude/packs.md` removed via `git rm` on host (dead file, no migration needed); grep-audit confirms no `packs.md` survives in shipped code beyond the intentional `rm -f` stale-cleanup; forward-annotation added to `adr-0014` (→ ADR-0041 R1). **All 7 steps done — only release housekeeping remains: merge into `develop` + push (both from the Mac).** Additive. | post-merge, on `develop` | No (additive) | design brief: [`config-editor-access-design-handoff.md`](../configuration/decentralized-config/config-editor-access-design-handoff.md) · impl: [`config-access-capability-model-impl-handoff.md`](../configuration/decentralized-config/config-access-capability-model-impl-handoff.md) |
-| **B2** | **agent ↔ cco access & context** — follow-on to B, surfaced by host dogfooding. Reframes agent awareness + config read/write as a **three-level model** (A hook context injection / B wrapped-`cco` + read scoping / C managed rules) and **retires the `workspace.yml` file**. **✅ DESIGN APPROVED (2026-07-02)** — [ADR-0042](../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) + [design](../configuration/agent-cco-access/design.md). Ratified decisions: normal default `cco_access=read-project` (was none); full symmetric read scoping (`read-project/global/all`); config-editor **broad default** + `--project` repo-aware + `--repo`; `cco docs` at any read level; descriptions single-sourced in `project.yml` (optional `repos[]/extra_mounts[].description`), rendered into injected context (no file, no round-trip); `init-workspace` split (keeps CLAUDE.md, drops workspace.yml write-back). **Corrects a step-7 error**: legacy projects carry stale committed generated files (`workspace.yml`/`packs.md`/`scheduled_tasks.lock`) in `<repo>/.cco/claude/` → **migration 014 + `.gitignore`** required (the earlier "no migration needed" was wrong). Additive schema (changelog #32) + cleanup migration. **✅ IMPL + REVIEW COMPLETE (2026-07-02)** (7 steps + 4.5, dependency-first; stacked on B; only merge→develop + push from the Mac remain). **Step 1 ✅ DONE (2026-07-02, `0e6bc87`)**: symmetric read scoping (`read-project/global/all`, `read`→read-all alias), normal + tutorial default `read-project`, operator shim gates `template`/`remote list` behind `read-global`, scope-aware `usage()` in container-operator mode. **Step 2 ✅ DONE (2026-07-02, `8183b4a`)**: Level-A hook injection replaces `workspace.yml` (net cut) — session-info computed host-side, injected as `CCO_SESSION_CONTEXT`/`CCO_SUBAGENT_CONTEXT` env (base64) via new `lib/session-context.sh`; `lib/workspace.sh` retired; hooks decode+merge; `:ro` overlay gone; `init-workspace` reads injected context/`project.yml`, Step-6 write-back dropped; INV-2/3/4 honored; tests on the new parity surface; suite `1100/1` (pre-existing env-only fail). `read-project` mount-narrowing still open (re-eval with Step 4). **Steps 3–7 + 4.5 ✅ ALL DONE (2026-07-02)**: (3 `a098719`) `repos[]/extra_mounts[].description` rendered into Level A (changelog #32); (4 `9e4535f`) config-editor broad-default + `--project`(repo-aware)/`--repo` + **`read-project` mount-narrowing to referenced packs**; (4.5 `62a166b`) **`lib/access-scope.sh`** — unified env & access-scope layer scoping read-verb OUTPUT ([ADR-0043](../cli/decisions/0043-unified-cli-environment-access-scope.md); `CCO_PROJECT_PACKS/LLMS` membership signals; count-only stderr notice; changelog #33); (5 `027c345`) managed `cco-config-interaction.md` (access-conditional) + Level-A read-project awareness; (6 `61c8503`) **migration 014** purges committed generated artifacts + `.gitignore` (single-source writer `_cco_write_project_gitignore`); (7 `c022b04`) docs cutover + `workspace.yml`-file retirement. **✅ CORRECTNESS REVIEW DONE (2026-07-02, commits `d8e6848..b33f458`)** — 5-domain cross-verified; no blockers; 2 MAJOR fixed (INV-B llms name-leak; stale `project.yml`/template access model) + MINORs (changelog #34). Suite **1128/1** (pre-existing env-only fail). **CODE/DOCS COMPLETE — only merge → `develop` + push (both branches, from the Mac) remain.** | post-merge, on `develop` (stacks on B) | No (additive) | [design](../configuration/agent-cco-access/design.md) |
-| **C** | **npm packaging & distribution** — ship `cco` as an npm package. **ADR-0037 + design doc.** **✅ IMPLEMENTED 2026-06-30** on `feat/packaging/npm-distribution` (suite **1036/0**): `package.json` `@claude-orchestrator/cco` + `files` allowlist (`npm pack` clean 182 files; Linux `npm i -g` validated); `USER_CONFIG_DIR` **split** → STATE runtime (read-only `FRAMEWORK_ROOT` fix D5); **read-only publish-gate test** (`tests/test_readonly_framework.sh`, caught+fixed a cp-mode refresh bug); `docs/users`-only via allowlist; **`cco docs`** (D9, changelog #25); **`cco update` provenance-aware** (D8, changelog #26); `scripts/release.sh` + `check-pack-hygiene.sh` + CI `release.yml` (publish on tag **or manual `workflow_dispatch`**, via OIDC) + Pages `pages.yml`. settings.json decomposition resolved (D10). **✅ RELEASED 2026-06-30: `0.5.1` published to npm via CI OIDC trusted publishing — no stored token; the earlier NPM_TOKEN plan was replaced by OIDC trusted publishing (debug handoff removed after release).** **Follow-on `0.5.2` (2026-06-30)**: user-facing npm-install docs cutover (README/installation/cli/project-setup → `npm i -g` primary, clone demoted to "from source"; CONTRIBUTING gains local-dev + release/publishing) + top-level `cco --version`/`-v` and `--help`/`-h` (FI-11, changelog #27); `main`/`develop` reconciled, tag `v0.5.2` cut locally (push from the Mac publishes). Deferred: image-tag-by-version (v1 keeps `:latest`); macOS `npm i -g` validation (on a Mac). | post-merge, on `develop` | **Release gate** | [ADR-0037](../engineering/decisions/0037-npm-packaging-distribution.md) · [design](../engineering/design/packaging-distribution.md) · (handoffs removed — released) |
+| **B** | **config-editor/tutorial access scope** → generalized into a **session config capability model**. **✅ DESIGN DONE (2026-07-01)** on `feat/config-access/capability-model`: two axes (A `.cco`, B `.claude`) + read surface (R1 self-info, R2 global-read) + managed floor; three knobs (`claude_access`, `cco_access` granular `edit-project/global/all`, `show_host_paths` default on); wrapped-`cco` in-container (whitelist + container-operator mode, tokens host-only, no logic duplication); caller-context signal (D8); built-ins as presets; config-editor `--all`/`--project` (only `<repo>/.cco`). **ADR-0036** (model) + **ADR-0041** (R1) Accepted; config-editor + tutorial design docs rewritten. **Implementation COMPLETE (2026-07-01) on `feat/config-access/capability-model`** — **all 7 steps done**: (1) caller-context signal D8; (2) three-knob access resolution + precedence + `--enable-config-edit` alias; (3) Axis-B/Axis-A mount generation driven by the knobs (generalized `_committed_ro`); (4) **wrapped-`cco` shim + container-operator mode** (`_cco_container_operator` guard, whitelist/blocklist in `bin/cco`, Dockerfile bake to `/opt/cco`, bucket mounts DATA/CACHE-per-level + STATE index-only ro + tokens/secret-file masking; changelog #29; ships R2); (5) **built-in presets** (config-editor `all`/`edit-all` + `--all`/repeatable `--project`, tutorial `none`/`read`, both emitting the operator env; built-in docs rewritten to the wrapped-`cco` model; changelog #30; also fixed a pre-existing tutorial-mount bug — `source:`→name-based); (6) **R1 self-info (ADR-0041)** — unified `workspace.yml` absorbs `packs.md` (`knowledge`+`llms` sections) + gated `path_map` (`show_host_paths` default on); net cut (no dual-emit), all consumers migrated (hooks + `init-workspace`); changelog #31; doc-sweep. Suite **1095/1** (the 1 fail pre-existing env-only). **R1-D5 completeness gate PASSED via live host dogfood (2026-07-01)**: after `./bin/cco build && ./bin/cco start` from the branch, the container's baked hook renders `knowledge`/`llms` from the new `workspace.yml` (no `packs.md`), `path_map` carries the real host path, and `.cco` is `:ro` under `cco_access=none` (edit-protection confirmed). (7) **docs polish + host cleanup** — stale committed `.cco/claude/packs.md` removed via `git rm` on host (dead file, no migration needed); grep-audit confirms no `packs.md` survives in shipped code beyond the intentional `rm -f` stale-cleanup; forward-annotation added to `adr-0014` (→ ADR-0041 R1). **All 7 steps done — only release housekeeping remains: merge into `develop` + push (both from the Mac).** Additive. | post-merge, on `develop` | No (additive) | design brief: [`config-editor-access-design-handoff.md`](configuration/decentralized-config/config-editor-access-design-handoff.md) · impl: [`config-access-capability-model-impl-handoff.md`](configuration/decentralized-config/config-access-capability-model-impl-handoff.md) |
+| **B2** | **agent ↔ cco access & context** — follow-on to B, surfaced by host dogfooding. Reframes agent awareness + config read/write as a **three-level model** (A hook context injection / B wrapped-`cco` + read scoping / C managed rules) and **retires the `workspace.yml` file**. **✅ DESIGN APPROVED (2026-07-02)** — [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) + [design](configuration/agent-cco-access/design.md). Ratified decisions: normal default `cco_access=read-project` (was none); full symmetric read scoping (`read-project/global/all`); config-editor **broad default** + `--project` repo-aware + `--repo`; `cco docs` at any read level; descriptions single-sourced in `project.yml` (optional `repos[]/extra_mounts[].description`), rendered into injected context (no file, no round-trip); `init-workspace` split (keeps CLAUDE.md, drops workspace.yml write-back). **Corrects a step-7 error**: legacy projects carry stale committed generated files (`workspace.yml`/`packs.md`/`scheduled_tasks.lock`) in `<repo>/.cco/claude/` → **migration 014 + `.gitignore`** required (the earlier "no migration needed" was wrong). Additive schema (changelog #32) + cleanup migration. **✅ IMPL + REVIEW COMPLETE (2026-07-02)** (7 steps + 4.5, dependency-first; stacked on B; only merge→develop + push from the Mac remain). **Step 1 ✅ DONE (2026-07-02, `0e6bc87`)**: symmetric read scoping (`read-project/global/all`, `read`→read-all alias), normal + tutorial default `read-project`, operator shim gates `template`/`remote list` behind `read-global`, scope-aware `usage()` in container-operator mode. **Step 2 ✅ DONE (2026-07-02, `8183b4a`)**: Level-A hook injection replaces `workspace.yml` (net cut) — session-info computed host-side, injected as `CCO_SESSION_CONTEXT`/`CCO_SUBAGENT_CONTEXT` env (base64) via new `lib/session-context.sh`; `lib/workspace.sh` retired; hooks decode+merge; `:ro` overlay gone; `init-workspace` reads injected context/`project.yml`, Step-6 write-back dropped; INV-2/3/4 honored; tests on the new parity surface; suite `1100/1` (pre-existing env-only fail). `read-project` mount-narrowing still open (re-eval with Step 4). **Steps 3–7 + 4.5 ✅ ALL DONE (2026-07-02)**: (3 `a098719`) `repos[]/extra_mounts[].description` rendered into Level A (changelog #32); (4 `9e4535f`) config-editor broad-default + `--project`(repo-aware)/`--repo` + **`read-project` mount-narrowing to referenced packs**; (4.5 `62a166b`) **`lib/access-scope.sh`** — unified env & access-scope layer scoping read-verb OUTPUT ([ADR-0043](cli/decisions/0043-unified-cli-environment-access-scope.md); `CCO_PROJECT_PACKS/LLMS` membership signals; count-only stderr notice; changelog #33); (5 `027c345`) managed `cco-config-interaction.md` (access-conditional) + Level-A read-project awareness; (6 `61c8503`) **migration 014** purges committed generated artifacts + `.gitignore` (single-source writer `_cco_write_project_gitignore`); (7 `c022b04`) docs cutover + `workspace.yml`-file retirement. **✅ CORRECTNESS REVIEW DONE (2026-07-02, commits `d8e6848..b33f458`)** — 5-domain cross-verified; no blockers; 2 MAJOR fixed (INV-B llms name-leak; stale `project.yml`/template access model) + MINORs (changelog #34). Suite **1128/1** (pre-existing env-only fail). **CODE/DOCS COMPLETE — only merge → `develop` + push (both branches, from the Mac) remain.** | post-merge, on `develop` (stacks on B) | No (additive) | [design](configuration/agent-cco-access/design.md) |
+| **C** | **npm packaging & distribution** — ship `cco` as an npm package. **ADR-0037 + design doc.** **✅ IMPLEMENTED 2026-06-30** on `feat/packaging/npm-distribution` (suite **1036/0**): `package.json` `@claude-orchestrator/cco` + `files` allowlist (`npm pack` clean 182 files; Linux `npm i -g` validated); `USER_CONFIG_DIR` **split** → STATE runtime (read-only `FRAMEWORK_ROOT` fix D5); **read-only publish-gate test** (`tests/test_readonly_framework.sh`, caught+fixed a cp-mode refresh bug); `docs/users`-only via allowlist; **`cco docs`** (D9, changelog #25); **`cco update` provenance-aware** (D8, changelog #26); `scripts/release.sh` + `check-pack-hygiene.sh` + CI `release.yml` (publish on tag **or manual `workflow_dispatch`**, via OIDC) + Pages `pages.yml`. settings.json decomposition resolved (D10). **✅ RELEASED 2026-06-30: `0.5.1` published to npm via CI OIDC trusted publishing — no stored token; the earlier NPM_TOKEN plan was replaced by OIDC trusted publishing (debug handoff removed after release).** **Follow-on `0.5.2` (2026-06-30)**: user-facing npm-install docs cutover (README/installation/cli/project-setup → `npm i -g` primary, clone demoted to "from source"; CONTRIBUTING gains local-dev + release/publishing) + top-level `cco --version`/`-v` and `--help`/`-h` (FI-11, changelog #27); `main`/`develop` reconciled, tag `v0.5.2` cut locally (push from the Mac publishes). Deferred: image-tag-by-version (v1 keeps `:latest`); macOS `npm i -g` validation (on a Mac). | post-merge, on `develop` | **Release gate** | [ADR-0037](engineering/decisions/0037-npm-packaging-distribution.md) · [design](engineering/design/packaging-distribution.md) · (handoffs removed — released) |
 | **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
 | **E** | **Native Claude Code install** — replace the deprecated `npm install -g @anthropic-ai/claude-code` with the official native installer run at first start, into a persistent CACHE-backed mount so Claude auto-updates in-place (no rebuild). Re-implements Rares' `#B2` onto develop's XDG/decentralized architecture. **✅ done + host e2e validated (2026-06-29)** on `feat/docker/native-claude-install` (commits `ebe0e1b` impl+tests, `5f6b975` docs): install home → CACHE `claude-install/{bin,share}` bind-mounted to `~/.local`; config knob `~/.cco/claude-version` (default `latest`, knob outranks the baked default); re-pin via channel marker; `cco build --no-cache` resets the cache; `cco clean --all` leaves it untouched (regression test). **No migration** (purely additive). ADR-0039, changelog #24. Suite **1022/0**. **▶ ready to merge `feat/docker/native-claude-install → develop`.** | **post-merge, FIRST — ✅ done** | No (additive) | (handoff removed — done + resolved) |
 
@@ -408,18 +408,36 @@ inferred (so W1-01/W2-02 and W4-F01 are 🔴 despite being pre-existing).
 eight findings close as a consequence. Session-by-session runbook in
 **[`e2e-review/fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**.
 
+✅ **G3 — the block's single human gate: `ACCEPTED with follow-ups` (2026-07-31).** All five lanes are
+accepted; the verdict, what was on the table, and the follow-ups are written into the plan's
+[§7 acceptance log](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) per D-V31-4
+(*release exceptions are written down, never inferred*). The follow-ups are **FI-42** (ships as the
+release known-issue, runbook G6) · **FI-43** · **FI-40**, all three deferred to cycle-2 by the step-2b
+decision; ADR-0046 §6 was ratified in place rather than deferred. **G1's residual host cleanup is
+done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31**, and both items it raised are closed —
+see step 3 below. ▶ What remains is **host-side only**: **G4** merge → **G5** verify on `develop` →
+**G6** release (whose step 5 carries the **approved** known-issue sentence).
+
 | Lane | Deliverable | Closes |
 |---|---|---|
-| **L1** | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. **Designed** 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved) — implementation is **S4** | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
-| **L2** | index-health **session-vs-host axis** (`absent` is never benign in a session). **Designed** in the same ADR-0056 — implementation is **S3** | W4-F06 🔴 — **and every Linux session's read path** |
-| **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **Both container probes green** 2026-07-28 — the `:ro` lane and the `Cp=rw`+composing arm across a real restart (plan §7). Residual, host-side: D7 with no packs at all | R-D, R-F |
-| **L4** | **INV-YAML** — one comment-block-aware section boundary + golden-file lint | R-E |
-| **L5** | EXIT-trap sentinel discipline + lint | W2-06, W4-F02 |
+| **L1** ✅ **accepted** (G3, 2026-07-31) | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. Designed 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved); **implemented by S4** 2026-07-29, merged into the cycle branch. The sweep enumerated **five sites the ADR's table did not name** — the largest being `tags.sh:287-313`, i.e. `cco list` itself, which at `G=none` counted nothing at all (that *is* R-B, and it is bigger than the `pack validate` site the ADR named). D5's host-side count ships as `CCO_STORE_TOTALS`. ⚠ **Its post-build probe RAN 2026-07-30 and FAILED — `cco build` had been done, and D5 was inert: `config/cco-svc-helper.c`'s `ALLOWED_KEYS[]` never listed the key S4 writes into the descriptor, so the setuid helper dropped it in silence and R-B was still live (`cco list packs` → 1 of 6 packs, no notice).** Fixed the same day: the key is whitelisted, and the correspondence across all **three** registries of that signal family is now the **INV-DESC** lint — the helper's whitelist, `bin/test`'s ambient-env unset list (the second instance of the same omission, which was inflating the in-session failure count from 7 to 10), and `tests/helpers.sh`'s per-lane sanitiser (the third, latent). Ratified in ADR-0056's annotations + changelog 59. **Round 2 of the probe (after the rebuild) confirmed the lane fixed — `5 packs hidden` where there had been silence — and found a second defect, D5's own**: the supplement looped over EVERY store kind on EVERY flush, so `cco list llms` claimed *"6 packs hidden"* while showing all llms, `cco list packs` claimed *"2 llms hidden"* about the two it was showing, and the same session answered 6 or 5 to the same question depending on the verb. Ratified fix (2026-07-30): a notice is **per-invocation** — a verb declares the kinds it enumerates exhaustively and only those are supplemented, with **no declaration ⇒ no supplement** so an omission is honest silence; guarded by **INV-AVAIL/D5**, which names exactly the four enumerators on the pre-fix tree. ✅ **Probe round 3 (3rd build) PASSED on all six arms** — `list packs` counts 5 packs and says nothing about llms · `list llms` no notice at all · `list` speaks for every kind · `path list` no store counts · `pack validate --all` pack-only · `project show` silent on the store. Every number matches what was ratified before the fix was written, so **L1's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31. **▶ A fourth INV-AVAIL arm landed 2026-07-30 (`1814ba3`, changelog 60, [FI-41](roadmap-backlog.md))**, found by the G1 gate rather than by the sweep: `cco pack rename` refused on `_project_member_status`' `unresolved` — a word that in operator mode covers *both* an unbound member and one merely not bound into this container — and prescribed `cco resolve`, which the host answers *"already resolved"*. It shipped through all three original arms untouched (no predicate computed, no badge spelled, and D2's qualifier already present), so the invariant now also guards **which owner a refusal reads its answer from**, not only how a verb computes it. Fixed at the consumer; `_project_member_status` untouched (`join`/`forget --purge` share it) | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
+| **L2** ✅ **accepted** (G3, 2026-07-31) | index-health **session-vs-host axis** (`absent` is never benign in a session). Designed in the same ADR-0056; **implemented by S3** 2026-07-29, merged into the cycle branch. `_index_read_state` stays byte-unchanged (A3); the axis lives in `_index_assert_readable`, split into two causes by parent traversability. Regression cover written **independently from the ADR** by a separate tester (`tests/test_index_session_axis.sh`, 12 tests; 7 of them fail on the pre-S3 tree). **S6 extended it**: a *zero-row* index in a session reached the same §10.9d sentence at rc=0 from a different cause, and is now refused too. ✅ **Container probe COMPLETE — both arms PASSED 2026-07-30**, run as a *split* gate (the `mv` host-side with a session live, the observations from inside it). **Severed**: `path list`, `list`, `list projects`, `project show`, `project validate --all` all refuse at **rc=1** naming the session axis (*"this session was LAUNCHED from the index … this is NOT an empty index"*), while pre-S3 `develop:lib/index.sh:189` still carries the benign *"nothing is registered on this machine yet"* it replaced. **Restored**: all five back at **rc=0** with their fully scoped per-invocation notices and the same counts as S4's round 3 — so the entry guard (`_index_assert_readable`) is proven to refuse on failure *and* to get out of the way on success. **L2's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31 | W4-F06 🔴 — **and every Linux session's read path** |
+| **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **All three container probes green**: the `:ro` lane and the `Cp=rw`+composing arm 2026-07-28, and **D7's pack-less arm 2026-07-31** — a project adopting no pack still gets the composed view with both floor entries writable, observed at `claude_access: none` (all four axes `ro`), i.e. harder than the specified default. **L3 has no residual** | R-D, R-F |
+| **L4** ✅ **accepted** (G3, 2026-07-31) | **INV-YAML** — one comment-block-aware section boundary + golden-file lint. Landed 2026-07-29 on `fix/cycle-1.2/s5-inv-yaml` (S5): `_yml_append_coord` buffers the trailing top-level comment/blank run and emits before it; golden-file round trip against the shipped base template + an insertion-class CLASS lint. **No ADR** — the runbook's Produces column does not ask for one. Accepted at G3, 2026-07-31 | R-E |
+| **L5** ✅ **accepted** (G3, 2026-07-31) | EXIT-trap sentinel discipline + lint. Landed 2026-07-29 on the same branch: one exit primitive (`_cco_exit`, beside `die`/`refuse`), both arms covered by tests (group help on exit 0; the crash notice glued to a well-formed `--cco-access` refusal), plus a lint that no raw shell `exit` bypasses the sentinel | W2-06, W4-F02 |
 
-⚠ **L2, L3 and L4 cannot be accepted on suite-green** — the hermetic lane is blind to mount-time and
+⚠ **L2 and L3 cannot be accepted on suite-green** — the hermetic lane is blind to mount-time and
 container-context reality by construction. Each needs a probe in a **real container after
 `cco build`**, recorded in the acceptance log. This is **RC-17's fourth recurrence** (RC-17, the R1
 mount shape, FI-31, now R-D).
+
+> **Corrected 2026-07-29 — L4 was named here and should not have been.** The maintainer ruled that
+> the **golden-file round trip is sufficient acceptance for L4**, and L4/L5 close in-session with no
+> host-side probe. Neither lane is mount-time or container-context: `_yml_append_coord` rewrites a
+> file the suite can hand it, and the EXIT-trap misfire is observable from any `bin/cco` run — both
+> reproduce identically on host and in session. `invariant-gap-audit.md` §5 already scoped the
+> probe requirement to items 2, 3 and 4, excluding INV-YAML. Runbook §1 corrected in step; ruling
+> logged in its §7.
 
 **Execution plan for the remaining implementation, approved 2026-07-29.** S3 → S4 → S5 run as **one
 block**, each unit in a **session with dedicated context** (a subagent per unit, or a workflow), each
@@ -430,14 +448,146 @@ parallelising them would collide. **S5 runs in parallel in its own worktree** �
 relaxed the per-phase gates for this block to a **single human gate at the end**; what is *not*
 relaxed is the standing rule that a decision the design never made stops for a human, mid-block or
 not. ⚠ In-session verification (suite + regression tests + lint self-tests) is **not** acceptance for
-L2 or L4 — the probes those lanes owe are host-side and belong to that final gate.
+**L2** — the probe that lane owes is host-side and belongs to that final gate. **L4 and L5 do close
+in-session** (ruling of 2026-07-29, above).
+
+**S6 — close-out, in-session half landed 2026-07-29.** Three items, all ratified by the maintainer
+before implementation: (a) a **zero-row index in a session** is non-benign, extending L2's rule to the
+sibling cause the independent tester found — the same §10.9d sentence at rc=0, reached past the entry
+guard; (b) `lib/migrate.sh` `_backfill_one_pack_llms` **destroyed comments in a user-authored
+`pack.yml`** (both indented and top-level — same *class* as R-E, but R-E misplaces and this deletes),
+now fixed with S5's buffer-and-flush discipline, which earned `migrate.sh` its way **off** the INV-YAML
+lint allowlist; (c) the **README platform contradiction** (`:59` vs `:220`), sharpened by ADR-0056 —
+native Linux now refuses index-reading verbs by construction, and the release cannot state a platform
+until that is said plainly.
 
 Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`roadmap-backlog.md`](roadmap-backlog.md)).
-Still never executed in any round: **§10.9e / E6B-04** (pack-rename fan-out atomicity). Host cleanup
-owed: remotes `probe-2`, `x`, `probe-3`, `probe-3b`, plus the stale `scratch-pack` and
-`scratch-a`/`scratch-b`.
+✅ **S6's host-only half is DONE (2026-07-31)** — **§10.9e / E6B-04** ran for the first time in any
+round, on the host, and **passed**: two projects referencing one pack, and the rename re-keyed **both**
+`project.yml` copies with no `failed` tag (v2 had only ever *inferred* the half-apply from a non-firing
+guard). ⚠ One arm is recorded as **vacuous**: the subject was `cco pack create`d, so it carried no
+provenance, no tags and no sync fingerprint — the sidecar re-key had nothing to move. A stronger fixture
+tags and installs the pack first. Evidence in the runbook's §7. Residual host cleanup (scratch projects +
+the four stale remotes) is listed in [`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) G1.
 
-**3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
+**2b — Config mount topology & multi-repo config editing** (analysis → decision, **next session**;
+ordered *before* step 3 by the maintainer, 2026-07-31). Two refusals in the G1 gate exposed a question
+larger than either of them, and auditing the CLI's documentation before it is settled would document a
+surface that may move.
+
+The subject: **how a project's committed config is mounted, and by which path a verb reaches it.**
+Today the config-editor mounts each target's `.cco` at `/workspace/<name>-config`, one per *project* —
+so a **multi-repo** project exposes exactly one copy, while `project.yml` is replicated across owned
+members and may be `synced`, `divergent`, or deliberately hosted in a single repo. The maintainer's
+proposal to weigh: mount every involved repo's `.cco` **at the path it would occupy in a real repo**
+(`/workspace/<repo>/.cco`, without the rest of the repo), so there is never a second path to the same
+file, with the project→repo mapping surfaced to the agent through `cco project show`.
+
+What the analysis must weigh, per the maintainer:
+- **impact on the current system** — what changes, what it touches, what breaks;
+- **ADR conformance** — which decisions it honours (ADR-0024 D2 reach + clobber-guard, ADR-0044 §3 /
+  ADR-0048 min-privilege by mode, RC-6 §3.7's single-authoring-path rule, ADR-0046 §6's deferred
+  multi-repo `Pc` span) and which it would *supersede*, explicitly;
+- **UX correctness across the real launch modes** — mono-repo vs multi-repo, config-editor vs tutorial
+  vs standard project, a project with config editing enabled, config-editor with `--repo` / `--mount`;
+- **`cco sync` in-container**, which the three config modes (divergent / synced / one-config-repo) make
+  a first-class need rather than a host-only convenience.
+
+Open findings that feed it and should not be re-derived:
+[FI-42](roadmap-backlog.md) (the fan-out's write path is resolved by member probe while its read path is
+operator-aware — the concrete defect this topology question explains),
+[FI-43](roadmap-backlog.md) (`--repo` mounts the code `rw` while §3.7's rationale says *read*),
+[FI-40](roadmap-backlog.md) (a refusal stating a count where naming is safe).
+Output: an analysis document, then **the maintainer's decision** — implementation scope, and whether any
+of it ships in this release, are decided at that gate, not assumed here.
+
+✅ **The analysis is DONE and persisted (2026-07-31)** — [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md),
+direction approved at the gate. Its load-bearing result: the proposal is structurally **"delete
+layout 2"**, and under it FI-42's fan-out writer becomes correct **verbatim** — a fix by removing a
+special case. Four blockers, each a decision and none fatal: **(a)** INV-MP — `/workspace/<repo>` as a
+passed-through ancestor is materialised root-owned and `test_invariant_mount_ancestry_owned` would
+fail, so a framework-owned scaffold (ADR-0054 D2's mechanism) is mandatory; **(b)** ADR-0051 homonyms
+— sound in project mode (names are 1:1 within a project), **unsound in `--all`**, where N×M
+collisions are the expected case and today's *mount-the-first, announce-the-second* arm would
+silently author the wrong project's config; **(c)** no ADR states which of N replicated copies is
+canonical in-session — today glob order decides; **(d)** a `.cco`-only stub trips three dir-test
+predicates into *absent-reported-as-present*, landing on **`cco project show`**, the very verb the
+proposal designates as the mapping surface. Supersessions required: **RC-6 §3.7** (its rule survives,
+its rationale becomes false; its `Po=none` gain needs role-aware per-member modes) and **ADR-0046 §6**
+— which the analysis shows a **normal** `edit-project` session already ships unenforced
+(`cmd-start.sh:1885-1887`), so §6 should be settled in the same ADR, not re-deferred. On `cco sync`:
+the topology removes reachability only — the blocking prerequisite is that `sync-meta` never crosses
+INV-STATE, so `synced`/`divergent`/one-config-repo are **indistinguishable in-session today**. FI-40
+is topology-independent and can ship either side of the gate.
+
+✅ **STEP 2b IS CLOSED — the maintainer's decision, 2026-07-31: release at the current state; the whole
+block moves to cycle-2.** Nothing about the mount topology ships in this release, and **FI-42 is
+deferred with it**.
+
+- **Why FI-42 is not fixed first** (the decisive reason, not the cheapest): the fix *cannot be taken
+  without taking the contract decision it carries* — all-or-nothing vs all-or-declared-partial — and
+  that decision is exactly what the cycle-2 session is for. Implementing now would settle a contract
+  by implementation. Secondary: `lib/rename.sh` is the surface **E6B-04** validates, and that gate ran
+  for the first time in any round today; touching it invalidates the evidence and buys a full host
+  round on a cycle whose only remaining work is verification.
+- **Why deferring is safe** — reachability was established before deciding (table in
+  [FI-42](roadmap-backlog.md)): a **normal** session is layout 1, so the probe is correct there;
+  `edit-project` and `config-editor --project` refuse at the access boundary (`G=rw` required);
+  `--all` without `--repo` refuses **before any mutation**. The **only** path reaching the fan-out is
+  `config-editor --cco-access edit-all --repo …` and it exits **declared** (rc 1 + the `failed` paths,
+  S2b contract), not silently. → release known-issue.
+  ⚠ **Spelling corrected at G2, 2026-07-31**: the literal `--all --repo …` this entry first named is
+  **refused by `cco start`** (`cmd-start.sh:2687`) — only `--cco-access edit-all`, the unguarded
+  spelling of the same mode, gets through. Verified by running both. The deferral stands unchanged;
+  what changed is which command the release note may name.
+- 🔑 **A result derived while persisting the analysis, which reframes the proposal**: *"the writer
+  becomes correct verbatim"* and *soundness in `--all`* are **mutually exclusive** — `--all` exists to
+  reach projects whose repos are not mounted, and a repo name is a per-project label (ADR-0051 D2), so
+  `--all` structurally needs a project-keyed component. **The topology's residual value is UX (host /
+  session path parity), not FI-42's correctness.**
+- ✅ **Landed here, docs-only**: the [ADR-0046 §6 ratification annotation](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)
+  — the *normal* session already ships `include_member_configs: true`'s span unenforced, so the
+  config-editor built-in is the **stricter** of the two; the shipped behaviour is ratified, the
+  rewrite of §6 belongs to cycle-2.
+- ⏸ **Deferred to cycle-2**: [FI-42](roadmap-backlog.md) · [FI-43](roadmap-backlog.md) (a
+  *sub-question* of the topology decision, not a standalone flag) · [FI-40](roadmap-backlog.md)
+  (topology-independent; deferred only to keep the release tree unchanged).
+
+**⏭ CYCLE-2 — config multiplicity, divergence awareness & mount topology** (analysis → design, one
+session, subject fixed by the maintainer 2026-07-31). ⚠ **The subject is wider than the mount
+topology, and the topology is downstream of it.** The prior question is that **a session does not know
+how many config copies exist for a project, nor whether they diverge** — the analysis grounds this
+mechanically: `sync-meta` never crosses **INV-STATE**, so `_sync_is_divergent` always returns false and
+every owned member reports `synced`. The question is not badly answered, it is **unaskable**. From
+there:
+
+- **config-editor is the config-authoring tool** and must therefore *know* a project's sync/divergence
+  state and let the user handle it **explicitly** (which implies `cco sync`, or a successor, being
+  reachable in that session — and its blocking prerequisite is the STATE crossing, not the mounts).
+- **A standard session is right to see only the config of the project it was started from** (which
+  repo hosted the launch — already documented at length in the design). The two modes have different
+  needs, and today's single mechanism serves both by accident.
+- **Then, and only then, the topology**: validate or discard the two-path model
+  (`/workspace/<name>-config` vs `/workspace/<repo>/.cco`) against real use cases and user intent,
+  with the four blockers and the six open questions of
+  [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
+  §3.3/§8 as ready-made input. ⚠ Start from the analysis: it is *not* a dead end even if the topology
+  is discarded — it either validates the current design or names what is wrong with it, and it has
+  already surfaced one thing nobody had seen (a repo name is per-project, so a repo-keyed mount cannot
+  address several projects at once).
+
+✅ **3 — CLI-surface documentation audit — DONE 2026-07-31 (gate G2).** Report:
+[`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
+Eight objective drifts corrected in place; the **two items it raised are both closed the same day** —
+the corrected **release-note sentence** is **approved** (G6 step 5: the known-issue had named
+`--all --repo …`, which `cco start` refuses; the reachable spelling is `--cco-access edit-all
+--repo …`), and **[FI-45](roadmap-backlog.md) is FIXED** (`remote list` no longer tells a user to
+widen access for a **removed** verb — it refuses with the removal notice at every level, like its four
+siblings; changelog 61). ⚠ FI-45 lands `bin/cco` **after** G3's acceptance — recorded as a
+post-acceptance in-cycle fix in the plan's §7, the treatment FI-41 got. ⚠ The largest find was outside the
+matrix: the **config-editor user guide** still documented the pre-ADR-0048 access model and
+advertised three verbs project mode refuses — while the built-in's own agent-facing rules were
+correct. *Original scope, for the record:* verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
 cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
 `extra_mounts` contract was ratified — and the last full audit
@@ -451,10 +601,14 @@ and [`cli/design/design-cli-environment-awareness.md`](cli/design/design-cli-env
 release whose CLI reference misstates where a verb runs ships the same defect class this cycle was
 about — a message that reads correct and strands the reader.
 
-**4 — Merge `develop → main` + release**, stating the verified platform (below), with the README's
-self-contradiction on Linux corrected first: `README.md:59` says *"functional but not yet thoroughly
-tested"*, `README.md:220` says *"Fully supported"*. The table is stale — it does not even carry the
-OAuth caveat stated 160 lines above it.
+**4 — Merge `develop → main` + release**, stating the verified platform (below).
+✅ **The README's self-contradiction on Linux is fixed** (`9599111`, on the cycle branch): both sites now
+say *partially supported* and both name the same cause — the internal store is mode `0700` for `cco-svc`,
+so in-session index-reading verbs and config writes refuse — plus the OAuth caveat the table used to omit.
+Remaining for this step: the merge itself, then `scripts/release.sh <x.y.z>` from `main` (CI publishes via
+OIDC). ⚠ Verify the housekeeping line in §*Path to release* before acting on it — it still asks to
+validate `npm i -g @claude-orchestrator/cco` on a Mac and to push `--follow-tags` for `0.5.2`, which the
+same section records as already released on 2026-06-30.
 
 **⚠ D-M6 re-scoped — the Linux write-path gate (decided 2026-07-21).** It was classified a hard
 blocking gate. Grounding it in the code changes the classification: `cco-svc` is **uid 900**
@@ -504,7 +658,7 @@ axis-2 lacks a global-config install target + per-scope install + single-resourc
 source/meta tracking (gaps G1–G7); recommended vehicle = a new **`config` resource kind**
 (`cco config install/publish/update [--scope global|project] [--pick]`), pending a **resource-taxonomy
 analysis** first. Full reference:
-[`opinionated-extraction-and-update-refactor-handoff.md`](../engineering/opinionated-extraction-and-update-refactor-handoff.md).
+[`opinionated-extraction-and-update-refactor-handoff.md`](engineering/opinionated-extraction-and-update-refactor-handoff.md).
 ADR-0040, additive, **non-gating**.
 
 #### D — `cco project save` (project-config versioning helper) — design notes
@@ -534,7 +688,7 @@ via the helper, optionally add a commit **trailer** (e.g. `Cco-Save: true`) and 
 vs trailer-based history; whether to offer `--amend`/message templating; interaction with a multi-repo
 project (commit `.cco/` in the invoking repo only, or fan out to config-bearing repos like `--sync`?).
 
-**⚠ Integration with agent↔cco access (B2, [ADR-0042](../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)).**
+**⚠ Integration with agent↔cco access (B2, [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)).**
 B2 designs/references `cco project save` **as if it already exists**: the Level-C config-interaction
 rule tells edit-level agents to version config atomically with `cco project save`, and it is expected to
 be reachable via wrapped-`cco`. When D is designed/built, **verify the fit with the agent↔cco model**:
@@ -563,12 +717,12 @@ All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
 
 ## What's next
 
-### Index-integrity hardening (ADR-0052) — 4-session plan ▶ ACTIVE (S1 + S2 + S3 ✅ landed; S4 next)
+### Index-integrity hardening (ADR-0052) — 4-session plan ✅ **COMPLETE** (S1–S4 landed, merged into `develop`)
 
 **Branch**: `feat/index/integrity-hardening` (from `develop`). **Decision**:
-[ADR-0052](../configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
+[ADR-0052](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
 **Plan detail** (WS-1..7, file anchors, tests):
-[`index-integrity/00-plan.md`](../configuration/decentralized-config/index-integrity/00-plan.md).
+[`index-integrity/00-plan.md`](configuration/decentralized-config/index-integrity/00-plan.md).
 **Why**: the host e2e-review v3.1 §10.6 incident — the path index moved location + schema and the two
 transitions were conflated, causing data loss (N1: migration 017 "new wins" `rm -f`s the legacy
 index), no hot-path reconcile (N2), silent version divergence (FI-16), extra_mount residue (FI-23),
@@ -584,8 +738,11 @@ unreadable/malformed state; F1/F2 critical). Suite **1481/7**. **S2 done**: WS-2
 + WS-3 residue absorption + the shared `_index_rehome_dump` classifier landed `5e43863`, docs `2ab5edf`.
 Suite **1493/7** (+12). **S3 done**: WS-4 extra_mount re-home (host-only `_index_rehome_extra_mounts`
 enrichment + `config validate --fix` re-home lane) + WS-5 malformed-lane doctor landed `564040e`, docs
-`8dde097`. Suite **1498/7** (+5). **S4 start → [`index-integrity/S4-handoff.md`](../configuration/decentralized-config/index-integrity/S4-handoff.md)**
-(dev-sandbox WS-6 + N3 `q`/Exit abort + docs cutover WS-7 — the cluster's single changelog + FI flips).
+`8dde097`. Suite **1498/7** (+5). **S4 done**: WS-6 developer sandbox (`--dev-sandbox` isolated XDG root) + N3
+(`q`/Exit propagates rc=2 so `cco start` aborts) + WS-7 docs cutover (changelog **#48**, FI-16/22/23
+flips, living-doc sweep) — `50ba8f7`. **▶ Cluster COMPLETE 2026-07-23** and `feat/index/integrity-hardening`
+is an ancestor of `develop`; both session handoffs retired. Detail:
+[`index-integrity/00-plan.md`](configuration/decentralized-config/index-integrity/00-plan.md).
 
 ```mermaid
 flowchart LR
@@ -600,7 +757,7 @@ flowchart LR
 | **S1 — Version-gate foundations** | WS-1 | `CCO_INDEX_VERSION` single source + `_latest_index_version`; `_cco_version_gate` in `_cco_first_run` (after `_cco_bootstrap_roots`, before flatten/backup) `disk>supported → die` on **all** verbs; `_cco_in_container`==0 fix. Tests: `test_version_gate.sh`. | ADR-0052 §1; FI-16 mutation-order; ADR-0051 D6 (index self-upgrade, not `migrations/`) | — |
 | **S2 — Reconcile + residue** ✅ **DONE (2026-07-23, `5e43863`)** | WS-2, WS-3 | `_index_reconcile_legacy_location` non-destructive **merge**, wired into `_cco_first_run` (NON-interactive N2 backstop — a prompt would block any command) **and** migration 017 (INTERACTIVE, replaces its `rm -f` = N1; conflict prompts only on a TTY, else keep both + warn, never delete); residue absorption in `_index_migrate_if_needed` (v2 file with stray `paths:`, re-entrancy-guarded). Shared **PURE** `_index_rehome_dump` classifier now drives the rewrite + reconcile + residue. Tests: `test_index_reconcile.sh` (8) + `test_index.sh` (+4) → suite **1493/7**; no `test_migrate*` "new wins" assertion existed to drop. | ADR-0052 §2/§3; ADR-0051 D6 losslessness; ADR-0017 D2 (non-destructive / no-prune); ADR-0047 (host-only) | S1 |
 | **S3 — Scoping + doctor** ✅ **DONE (2026-07-23, `564040e`)** | WS-4, WS-5 | extra_mount re-home under the declaring project: host-only `_index_rehome_extra_mounts` enrichment (additive to the PURE `_index_rehome_dump`, keyed off `yml_get_mount_coords`) in the v1→v2 migration + `config validate --fix` re-home lane (`_cv_detect_fi23_residue` → `_cv_prune_record` fi23_rehome arm, its OWN confirm — a re-home MOVES, it never deletes); index-focused doctor: malformed (non-absolute) index values reported **separately** (`_CV_MALFORMED`), **never pruned**, orphan prune keeps the two-phase sync-class confirm. Both re-home sites use the operator-aware `_resolve_project_yml` (INV-F.3). Tests landed in `test_index.sh` (+3) + `test_config_validate.sh` (+2) → suite **1498/7**. | ADR-0052 §4/§5; ADR-0051 D2 (no global-default layer); ADR-0021 Dec.5 (sync-class two-phase) | S2 |
-| **S4 — Dev-sandbox + docs cutover** | WS-6, WS-7 | `CCO_DEV_SANDBOX` toggle redirecting `CCO_STATE/CACHE/DATA_HOME` to an isolated root + optional seed-copy + `cco whoami` indicator (off by default, no behaviour change); N3 `q`/Exit abort; changelog; **flip FI-16/22/23 to landed + record N1/N2/N3**; living-doc sweep (root `CLAUDE.md` STATE bucket, `design.md`, `cli.md`). Tests: `test_dev_sandbox.sh`. | ADR-0052 §6/§7; `paths.sh` XDG resolution; `.claude/rules/update-system.md` + `documentation-lifecycle.md` | S1, S3 |
+| **S4 — Dev-sandbox + docs cutover** ✅ **DONE (2026-07-23, `50ba8f7`)** | WS-6, WS-7 | `CCO_DEV_SANDBOX` toggle redirecting `CCO_STATE/CACHE/DATA_HOME` to an isolated root + optional seed-copy + `cco whoami` indicator (off by default, no behaviour change); N3 `q`/Exit abort; changelog; **flip FI-16/22/23 to landed + record N1/N2/N3**; living-doc sweep (root `CLAUDE.md` STATE bucket, `design.md`, `cli.md`). Tests: `test_dev_sandbox.sh`. | ADR-0052 §6/§7; `paths.sh` XDG resolution; `.claude/rules/update-system.md` + `documentation-lifecycle.md` | S1, S3 |
 
 **Launch pointers** (paste to start each session in turn):
 - S1 → *"Esegui Sessione 1 del piano index-integrity (roadmap §Index-integrity; ADR-0052 §1; 00-plan WS-1): design+verifica-ADR/correttezza → implementa → test."*
@@ -895,7 +1052,7 @@ confirm before scheduling. None blocks the v1 merge.
 - **Close shipped-surface gaps** — `cco template update` (symmetric twin of `cco pack
   update`); make `cco pack update` a 3-way merge (currently overwrites local edits).
 - **Language rule → context injection (agent↔cco access follow-up)** — surfaced by B2
-  ([ADR-0042](../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md),
+  ([ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md),
   design §9 deferral). Today the user's language preference is delivered via the
   template-interpolation mechanism (`.claude/rules/language.md`). Candidate to move into the
   Level A/C injection model so it is delivered like other managed awareness, dropping the

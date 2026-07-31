@@ -236,8 +236,37 @@ repos** each carrying a **divergent** (non-synced) `<repo>/.cco`.
 > mounted in this session", D-M2), not silently skipped (INV-M4), and two `--project` targets binding
 > the same repo NAME mount the first and announce the second (D-M9/Q-7). The duplicate authoring path
 > (a target's `.cco` reachable at both `/workspace/<t>-config` and `/workspace/<repo>/.cco`) is
-> accepted for cycle 1 (D-M9/Q-8; the ADR-0046 §6 `:ro` re-overlay note stays deferred). See
+> accepted for cycle 1 (D-M9/Q-8; the ADR-0046 §6 `:ro` re-overlay note stays deferred; see the
+> 2026-07-31 ratification annotation below, which records that the *normal* session shipped the wide
+> span all along). See
 > `…/fix-design-v2/03-config-editor-repos.md`.
+
+> **Ratification annotation — the shipped span, ratified by the maintainer 2026-07-31**
+> (roadmap step 2b; the decision text above is **not** rewritten). Surfaced by the
+> [config mount topology analysis](../analysis/config-mount-topology.md) §4.
+>
+> **§6's default was never enforced for a normal session.** `cmd-start.sh:1885-1887` sets
+> `_committed_ro=""` whenever `Pc=rw`, for **every** member repo it mounts — so a normal
+> `edit-project` session already covers all member repos' `<repo>/.cco` at the resolved `Pc`, i.e.
+> `include_member_configs: true`'s span, without the flag. The code says so itself: the comment at
+> `:1889-1897` contrasts the built-in's *"rw span is exact"* with the normal session's, cross-referring
+> the deferral at `:2218-2230`.
+>
+> **The asymmetry this produces is the opposite of what the documents imply**: the config-editor
+> built-in — the *config-authoring* tool — is the **stricter** of the two, because RC-6 §3.7 forces its
+> repo-path `.cco` overlay `:ro` regardless of `Pc` (`:1898`), while an ordinary session gets the wide
+> span for free.
+>
+> **Ratified**: the shipped behaviour is the intended one — `Pc=rw` spans every member repo's
+> `<repo>/.cco` in a normal session. Enforcing §6's literal default would **narrow** a behaviour users
+> already have, breaking multi-repo authoring. `include_member_configs` is therefore re-read as a
+> prospective **restrictor**, not a widener that is already needed; it is unimplemented, so nothing
+> depends on the old reading today.
+>
+> ⚠ **Not a supersession.** Rewriting §6 to match, and deciding whether the built-in's stricter span is
+> right or an accident of RC-6, belongs to the **cycle-2** analysis/design session on config
+> multiplicity and mount topology. This annotation exists so that session starts from *what is true*
+> instead of re-deriving the divergence.
 
 ### 7. The resolver — `(G, Pc, Po)` as the single source
 

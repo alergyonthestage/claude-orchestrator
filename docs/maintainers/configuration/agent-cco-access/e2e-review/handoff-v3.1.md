@@ -53,7 +53,7 @@ Same set as `handoff-v3.md` §1, plus, for this round:
 1. [`results/consolidated-review-v3.md`](results/consolidated-review-v3.md) — the verdict this cycle answers.
 2. [`fix-design-v3/00-plan.md`](fix-design-v3/00-plan.md) — §2 (S1's shape), §6 (S5 + INV-S3b), §11 (what S9 recorded).
 3. [`fix-design-v3/RESUME-HANDOFF-s9.md`](fix-design-v3/RESUME-HANDOFF-s9.md) — §2 "five things to understand", §6 do-not-re-litigate.
-4. [ADR-0047](decisions/0047-config-access-enforcement.md) — the 2026-07-21 forward annotation is this cycle's contract.
+4. [ADR-0047](../decisions/0047-config-access-enforcement.md) — the 2026-07-21 forward annotation is this cycle's contract.
 5. `design-docker.md` §1.2.2.1 — why the bind is a directory and why the parent is `cco-svc`-owned.
 
 ---

@@ -636,7 +636,10 @@ _get_repo_head() {
 # PROJECT_NAME is UNSET, not left alone, when no project is given: leaving it
 # alone lets a live session's PROJECT_NAME through, and with it every
 # _env_is_current_project decision. Same reasoning for CCO_CONFIG_TARGETS,
-# CCO_PROJECT_PACKS and CCO_PROJECT_LLMS, which are pinned deterministically.
+# CCO_PROJECT_PACKS, CCO_PROJECT_LLMS and CCO_STORE_TOTALS, which are pinned
+# deterministically (the last one empty = "no host total known", so a lane never
+# inherits a live session's store counts and grows a hidden-count supplement it
+# did not ask for — INV-DESC's third registry).
 # Optional caller vars (the `_op_seed` precedent): OP_TRIPLE → CCO_ACCESS_TRIPLE,
 # OP_TARGETS → CCO_CONFIG_TARGETS, OP_SHP → CCO_SHOW_HOST_PATHS.
 # Usage: eval "$(_lane_operator_exports <level> [<project>])"
@@ -648,7 +651,7 @@ export CCO_STORE_ELEVATED=1
 export CCO_CCO_ACCESS='$level'
 export CCO_SHOW_HOST_PATHS='${OP_SHP:-true}'
 export CCO_CONFIG_TARGETS='${OP_TARGETS:-}'
-export CCO_PROJECT_PACKS='' CCO_PROJECT_LLMS=''
+export CCO_PROJECT_PACKS='' CCO_PROJECT_LLMS='' CCO_STORE_TOTALS=''
 EOF
     # CCO_SESSION_CONTEXT: inert while operator mode is ON, but if a future change
     # ever flips the predicate off it makes bin/cco refuse EVERY invocation (exit 2).

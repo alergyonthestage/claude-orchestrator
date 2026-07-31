@@ -4,7 +4,7 @@
 > + Phase IV (tutorial `read-all`, config-editor min-privilege) landed on
 > `feat/config-access/e2e-review` as 6 atomic commits (`1b4ec02`, `6458fd1`,
 > `0605f15`, `91e8e54`, `176f344`, `8617e24`). No rebuild needed. See
-> [`implementation-handoff.md`](implementation-handoff.md) §5 Phase III/IV for the
+> `implementation-handoff.md` (consumed) §5 Phase III/IV for the
 > as-built notes (deviations recorded there). Next: **S3** (Phase V registry +
 > Phase VI migrations/changelog/DOC5 + `cco build`) → e2e v2. Push both branches
 > from the Mac. The kickoff below is retained as the original plan of record.
@@ -15,7 +15,7 @@
 > the built-in-preset flips on top. **All bash — in-session verifiable via the suite; no image
 > rebuild** (except possibly a baked preset default in Phase IV).
 >
-> **Master plan**: [`implementation-handoff.md`](implementation-handoff.md) (read §1 operating
+> **Master plan**: `implementation-handoff.md` — consumed (read §1 operating
 > constraints + §5 Phase III + IV). **Contract/oracle**:
 > [A1 command-scope matrix](../e2e-review/analysis/A1-command-scope-matrix.md) (the per-verb table
 > + B1–B6) and [ADR-0046 §7](../decisions/0046-unified-cco-access-model.md) (read-visibility +
@@ -119,5 +119,5 @@ changes (verify).
 
 → **S3** (Phase V running registry ADR-0045 + B1–B4; Phase VI migrations + changelog + **DOC5
 shipped-doc cutover** + `cco build`) → **e2e v2** (acceptance). See
-[`implementation-handoff.md`](implementation-handoff.md) §4/§5. Flip the backlog/roadmap rows as
+`implementation-handoff.md` (consumed) §4/§5. Flip the backlog/roadmap rows as
 each phase lands.

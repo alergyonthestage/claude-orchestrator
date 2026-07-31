@@ -4,6 +4,12 @@ set -euo pipefail
 # Catch silent crashes (set -e/set -u violations, syntax errors).
 # Expected errors (die, return 1) are caught by the dispatcher and exit
 # cleanly — only truly unexpected exits trigger this message.
+#
+# The sentinel below is set ONLY by lib/colors.sh's three exit primitives —
+# die (1), refuse (2), _cco_exit (any deliberate status). No other code path
+# may exit this process: see the INV-EXIT note in lib/colors.sh for why a raw
+# `exit` (or an `|| exit $?` propagating a SUBSHELL die) leaves the sentinel
+# false and prints "✗ exited unexpectedly" over a perfectly correct run.
 _cco_completed=false
 trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
@@ -431,7 +437,15 @@ _cco_operator_shim() {
         remote)
             case "$sub" in
                 "") return 0 ;;
-                list) _op_read_scope global "remote list"; return 0 ;;   # personal-global registry
+                # FI-45: `remote list` was REMOVED by ADR-0029 D1 (→ `cco list
+                # remotes`), so it is classified with its four sibling removed
+                # aliases — NOT as a live read verb. It used to be gated
+                # `_op_read_scope global` first, which told a read-project session
+                # to widen its access to reach a verb that would then answer "was
+                # removed": a remedy the reader cannot act on, the very class this
+                # cycle closed elsewhere. The removal notice is now level-
+                # independent, exactly like `pack|template|llms|project list`.
+                list) _op_removed_list remote ;;
                 add) _op_write "remote add" global ;;   # DATA registry only (the --token half is refused in cmd-remote.sh)
                 # D-V3-1: remove/rename join the token verbs as host-only. They
                 # CASCADE into the 0600 STATE token store (store.sh remote-drop/
@@ -519,6 +533,11 @@ _cco_verb_touches_store() {
         path)    [[ "$s" == "list" ]] && return 0 ;;                  # index (host paths)
         repo|extra-mount) [[ "$s" == "rename" ]] && return 0 ;;       # STATE index re-key (project-scoped)
         tag)     case "$s" in add|remove|rm) return 0 ;; esac ;;      # DATA tags.yml write
+        # `remote list` is unreachable here since FI-45 (the shim refuses it as a
+        # removed alias, and `refuse` exits) — kept deliberately, not dead weight:
+        # the classifier answers "would this verb touch the store", and keeping the
+        # honest answer means a future re-classification cannot silently lose the
+        # trampoline. `tests/test_privilege_boundary.sh` pins it.
         remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
         project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
         pack|template|llms) case "$s" in show|validate) return 0 ;; esac ;;  # DATA source provenance
@@ -531,15 +550,15 @@ _cco_verb_touches_store() {
 cmd="${1:-}"
 # No command → print usage and exit cleanly. Mark completion so the EXIT trap
 # does not misreport this normal exit-0 path as an unexpected crash.
-[[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
+[[ -z "$cmd" ]] && { usage; _cco_exit 0; }
 shift
 
 # Top-level --version/-v and --help/-h (FI-11): handled before the dispatch (and
 # before the J0 bootstrap below) so they work with no other args and have no side
 # effects — `cco --version` is a pure query. Per-subcommand --help is unaffected.
 case "$cmd" in
-    --version|-v) _cco_print_version; _cco_completed=true; exit 0 ;;
-    --help|-h)    usage "$@";         _cco_completed=true; exit 0 ;;
+    --version|-v) _cco_print_version; _cco_exit 0 ;;
+    --help|-h)    usage "$@";         _cco_exit 0 ;;
 esac
 
 # Container-operator mode (ADR-0036 D4): cco runs in-container behind the
@@ -565,8 +584,7 @@ if [[ "$cmd" == "__store" ]] && _cco_container_operator; then
     if [[ "$cmd" == "store-op" ]]; then
         _cco_store_rc=0
         _cco_operator_shim store-op "$@" || _cco_store_rc=$?
-        _cco_completed=true
-        exit $_cco_store_rc
+        _cco_exit $_cco_store_rc
     fi
     _cco_operator_shim "$cmd" "$@"
 elif _cco_container_operator; then
@@ -628,7 +646,7 @@ deregister cco's machine-local bookkeeping with 'cco forget' (ADR-0018 D2).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -674,7 +692,7 @@ List packs with 'cco list pack' (or 'cco list' for all resources).
 
 Run 'cco pack <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -708,5 +726,4 @@ EOF
     help)     usage "$@" ;;
     *)        die "Unknown command: $cmd. Run 'cco help' for usage." ;;
 esac
-_cco_completed=true
-exit $_cco_rc
+_cco_exit $_cco_rc

@@ -690,8 +690,18 @@ test_path_list_unreadable_index_fails_loud() {
 # (bin/cco's operator gate refuses it), so pointing the agent at it is advice the
 # shim rejects — the string RC-2 retired, still live on this path because cycle 1
 # never audited it. Asserted on BOTH surfaces the stage touches, since the
-# failure and the honest-empty arms carry separate sentences and a fix to one
-# does not imply the other.
+# zero-row and the unreadable arms carry separate sentences and a fix to one does
+# not imply the other.
+#
+# ⚠ ARM (1)'s CONTRACT CHANGED in S6, deliberately — this is not a test bent to
+# fit the code. ADR-0056's ratified annotation "D6 — extended to a zero-row index
+# in a session (S6)" removes the premise this arm was written on: there is no
+# "genuinely empty index" in a session, because a session is LAUNCHED from the
+# index. What the arm exists to guard — the R3 vocabulary rule — is unchanged and
+# still asserted here; only the answer it guards moved from a benign rc=0 line to
+# a refusal. The benign arm did not disappear: it is asserted on the HOST, in
+# tests/test_index_session_axis.sh (…_stays_benign_on_the_host, and the verb-level
+# …_verbs_stay_benign_on_the_host).
 test_path_list_operator_never_emits_the_retired_resolve_hint() {
     [[ "$(id -u)" -eq 0 ]] && return 0
     local tmp; tmp=$(mktemp -d)
@@ -699,17 +709,19 @@ test_path_list_operator_never_emits_the_retired_resolve_hint() {
     setup_cco_env "$tmp"
     setup_operator_session "$tmp" read-all
 
-    # (1) the honest-EMPTY arm: a readable index holding nothing.
+    # (1) the ZERO-ROW arm: a present, readable, non-zero index holding nothing.
     local idx; idx=$(_rsv_index_file)
     mkdir -p "$(dirname "$idx")"
     printf 'version: 2\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$idx"
     local rc=0
     _rsv_cco_in "$tmp" path list || rc=$?
-    assert_rc 0 "$rc" "path list on a genuinely empty index" || return 1
-    [[ "$CCO_OUTPUT" == *"empty"* ]] \
-        || { fail "an empty index must still be announced as empty: $CCO_OUTPUT"; return 1; }
+    assert_rc 1 "$rc" "path list on a zero-row index inside a session" || return 1
+    [[ "$CCO_OUTPUT" != *"nothing is registered on this machine yet"* ]] \
+        || { fail "a session is launched from the index — it may not be told nothing is registered on this machine: $CCO_OUTPUT"; return 1; }
     [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
         || { fail "in a session the empty-index remedy must not name host-only 'cco resolve': $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"host"* ]] \
+        || { fail "the session remedy must point at the host: $CCO_OUTPUT"; return 1; }
 
     # (2) the FAILURE arm: same rule, different sentence.
     chmod 000 "$idx"

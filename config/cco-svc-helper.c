@@ -51,7 +51,15 @@
 
 /* Scoping keys the descriptor may set. Only these are honoured; anything else in the
  * descriptor is ignored, and NOTHING from the caller's environment survives. Order is
- * irrelevant. Keep this list in sync with the descriptor writer (lib/cmd-start.sh). */
+ * irrelevant. Keep this list in sync with the descriptor writer (lib/cmd-start.sh).
+ *
+ * "In sync" is now a LINTED invariant, not a comment: a key the writer emits and this
+ * list omits is dropped here in silence, so the elevated child runs without a signal
+ * the writer believes it sent — and the bash suite cannot see it, because it sets such
+ * a signal in-process and never crosses this boundary. That is exactly how
+ * CCO_STORE_TOTALS shipped inert (ADR-0056 D5: the notice stayed silent about packs
+ * the session could not enumerate, which is the very finding D5 answers).
+ * See test_invariant_descriptor_keys_whitelisted (INV-DESC). */
 static const char *ALLOWED_KEYS[] = {
     "CCO_ACCESS_TRIPLE",
     "PROJECT_NAME",
@@ -59,6 +67,12 @@ static const char *ALLOWED_KEYS[] = {
     "CCO_SHOW_HOST_PATHS",
     "CCO_PROJECT_PACKS",
     "CCO_PROJECT_LLMS",
+    /* Host-computed store totals (ADR-0056 D5) — the third signal of the same family
+     * as the two above, and cosmetic: a count that turns "nothing here" into "hidden,
+     * not absent" (INV-B). It widens what CROSSES the boundary by one read-only scalar,
+     * never what the boundary can DO — A1's rejection of an elevated `store-op count`
+     * still holds, since no new privileged verb exists. */
+    "CCO_STORE_TOTALS",
     "CCO_CONFIG_TARGETS",
     NULL
 };

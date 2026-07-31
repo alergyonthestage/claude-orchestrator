@@ -61,11 +61,14 @@ EOF
         printf "%-18s %-8s %b\n" "$name" "$repo_count" "$status"
         shown=$((shown + 1))
     done < <(_index_list_projects)
-    # An honestly empty listing says so. Reached only when the index is readable
-    # and genuinely holds no project — the failure shapes died above. Suppressed
-    # when rows were merely scope-hidden: _env_flush_hidden_notice speaks for
-    # that case, and printing both would contradict it (INV-E, one vocabulary).
-    if [[ $shown -eq 0 ]] && ! _env_has_hidden; then info "$(_index_empty_sentence)"; fi
+    # An honestly empty listing says so — ON THE HOST. Reached only when the index
+    # is readable and genuinely holds no project; the failure shapes died above.
+    # Suppressed when rows were merely scope-hidden: _env_flush_hidden_notice
+    # speaks for that case, and printing both would contradict it (INV-E, one
+    # vocabulary). IN A SESSION _index_report_empty refuses instead: a session is
+    # launched from the index, so zero rows here is a broken view, not an empty
+    # machine (ADR-0056 D6, extended in S6).
+    if [[ $shown -eq 0 ]] && ! _env_has_hidden; then _index_report_empty; fi
     _env_flush_hidden_notice
 }
 
@@ -78,7 +81,8 @@ EOF
 #   foreign    -> foreign    (hosts a DIFFERENT project — NEW: previously this
 #                             case was mislabeled synced/divergent; the latent gap)
 #   code-only  -> code-only  (resolved, no .cco)
-#   unresolved -> code-only  (path missing here; the caller adds a [missing] badge)
+#   unresolved -> code-only  (path missing here; the caller badges the row from
+#                             _env_member_state — ADR-0056 D7 retired `[missing]`)
 # This also fixes a second latent bug: a same-name DIVERGENT member used to short-
 # circuit to "host" (the name== check preceded the divergence check); it now
 # reports "divergent" correctly.
@@ -124,6 +128,9 @@ _project_show_repo_centric() {
         # empty out (INV-F.1), so the (unresolved) rendering below is preserved for
         # a declared-but-unbound member and the outer -n guard is subsumed.
         p=$(_cco_display_path "$rn" "$p")
+        # Same single meaning as the extra-mounts badge below (ADR-0056 D7): an
+        # empty path here is an ABSENT BINDING, never "the index could not be
+        # read" — the entry guard in cmd_project_show has already ruled that out.
         [[ -n "$p" ]] && l="$l ($p)" || l="$l (unresolved)"
         [[ -n "$refby" ]] && l="$l — also in: $refby"
         echo "$l"
@@ -180,6 +187,21 @@ EOF
         esac
     done
 
+    # Read-path honesty (ADR-0056 D7). Every branch below reads the index —
+    # _project_show_repo_centric through _index_get_path/_index_paths_get_bindings,
+    # the by-name card through _mount_source_for and the member probe — and each
+    # reader degrades an UNREADABLE index into an empty answer. The observed
+    # result (review §10.9d) was not a degraded card but a FABRICATED one: three
+    # bound, readable mounts badged `[unresolved]`, and the repo's host path
+    # silently downgraded to its container path. A fabricated answer is strictly
+    # worse than a degraded one, so this verb renders no card at all and refuses
+    # here instead.
+    #
+    # ⚠ At verb ENTRY, before any read — the same discipline as `project list`,
+    # `path list` and `cco list`. Checking after a read loop would print the card
+    # (or "empty") first and then contradict it.
+    _index_assert_readable
+
     # Repo-centric view (ADR-0024 D5): invoked from a repo dir that hosts a
     # project, with no explicit name → summarize this repo's relationships.
     # Child-wins: a repo-local .cco (e.g. /workspace/<repo>) takes precedence over
@@ -234,28 +256,44 @@ EOF
             refby=$([[ -n "$repo_path" ]] && _index_paths_get_bindings "$repo_path" 2>/dev/null | cut -f1 | grep -vxF "${yml_name:-$name}" | sort -u | paste -sd, - 2>/dev/null)
             local suffix="[$role]"
             [[ -n "$refby" ]] && suffix="$suffix — also referenced by: $refby"
-            # B-DF1: probe the member where it lives in THIS context (mount
-            # in-container, index host path on the host) — never the host path
-            # in-container, which cannot exist and made every mounted repo read
-            # `[missing]` + "N reference(s) unresolved".
-            local _probe _disp
-            _probe=$(_cco_member_probe_path "$repo_name" "$repo_path")
-            # Host-path hygiene (INV-4), orthogonal to the probe, through the single
+            # ADR-0056 D1/D7 — INV-AVAIL. This was the last two-way `[[ -d $_probe ]]`
+            # test in the codebase, and it is the site the ADR names: a member that is
+            # merely NOT MOUNTED rendered `[missing]` plus "run 'cco resolve <p>'", a
+            # remedy this very session refuses at exit 2. Both halves were wrong for
+            # the same reason — the verb was deciding availability for itself, so it
+            # had only two answers for three realities. It now ASKS the owner and
+            # renders the three states in the shared vocabulary.
+            local _disp _mst
+            # Host-path hygiene (INV-4), orthogonal to the state, through the single
             # display helper: a host path is shown only where show_host_paths permits
             # it; otherwise the mount is rendered. Defensive `${:-unresolved}` parity
             # with the prior fallback for a never-empty _effective_repo_mounts path.
             _disp=$(_cco_display_path "$repo_name" "$repo_path")
             _disp="${_disp:-unresolved}"
-            if [[ -d "$_probe" ]]; then
-                echo "  $repo_name ($_disp) $suffix"
-            else
-                echo -e "  $repo_name ($_disp) ${YELLOW}[missing]${NC} $suffix"
-                _unresolved=$(( _unresolved + 1 ))
-            fi
+            _mst=$(_env_member_state "$repo_name" "$repo_path")
+            # The BADGE WORDS come from the owner too (_env_state_badge) — spelling
+            # them here is what made `[missing]` a fourth name for a state the
+            # classifier had already named. Colour is the caller's (the layer has no
+            # colour dependency); `here` badges empty.
+            case "$_mst" in
+                here)        echo "  $repo_name ($_disp) $suffix" ;;
+                not-mounted) echo -e "  $repo_name ($_disp) ${YELLOW}$(_env_state_badge not-mounted)${NC} $suffix"
+                             _env_note_unmounted repo ;;
+                *)           echo -e "  $repo_name ($_disp) ${YELLOW}$(_env_state_badge unresolved)${NC} $suffix"
+                             _unresolved=$(( _unresolved + 1 )) ;;
+            esac
         done <<< "$repos"
         # Passive ⚠ badge (F49 / ADR-0019 D2 layer-e) — awareness, never a block.
+        # Only for GENUINELY unresolved members: a not-mounted one is reported by the
+        # shared "not mounted in this session" notice below, whose remedy is reachable
+        # where it prints. The `cco resolve` remedy is host-qualified here for the same
+        # reason (D2) — the string is unfollowable in-session otherwise.
         if [[ $_unresolved -gt 0 ]]; then
-            echo -e "  ${YELLOW}⚠${NC} ${yml_name:-$name}: $_unresolved reference(s) unresolved — run 'cco resolve $name' to configure them"
+            if _cco_container_operator; then
+                echo -e "  ${YELLOW}⚠${NC} ${yml_name:-$name}: $_unresolved reference(s) unresolved — run 'cco resolve $name' on your host to configure them"
+            else
+                echo -e "  ${YELLOW}⚠${NC} ${yml_name:-$name}: $_unresolved reference(s) unresolved — run 'cco resolve $name' to configure them"
+            fi
         fi
     else
         echo "  (none)"
@@ -293,13 +331,33 @@ EOF
         # the same default _effective_extra_mounts applies, so the two agree.
         [[ -z "$em_target" ]] && em_target="/workspace/$em_name"
         em_src=$(_mount_source_for "${yml_name:-$name}" "$em_name")
-        if [[ "$em_src" == /* ]]; then
-            # Host-path hygiene (INV-4) through the single display helper, exactly as
-            # the repos block above: a host path shows only where show_host_paths permits.
-            echo "  $em_name → $em_target ($(_cco_display_path "$em_name" "$em_src"))"
-        else
-            echo -e "  $em_name → $em_target ${YELLOW}[unresolved]${NC}"
-        fi
+        # ADR-0056 D7 — `[unresolved]` means EXACTLY ONE thing: the index holds no
+        # binding for this member. Not "the probe failed", and not "I could not read
+        # the index" — _mount_source_for returns empty for all three, which is
+        # precisely the conflation §10.9d observed (bound, readable mounts badged
+        # `[unresolved]` off an index that could not be read). What keeps the badge
+        # honest is the _index_assert_readable guard at verb entry: an unreadable
+        # index never reaches this line, so an empty source here can only be an
+        # absent binding.
+        #
+        # D-V31-3: a BOUND mount that this session does not carry — the shape a
+        # config-editor target's dropped extra_mounts produce — is a THIRD state,
+        # and badging it `[unresolved]` told the agent to go bind something that is
+        # already bound. It is now named in the existing vocabulary, via the same
+        # classifier the repos block above asks (INV-AVAIL: this verb does not test
+        # the path itself).
+        local _emst; _emst=$(_env_member_state "$em_name" "$em_src" "$em_target")
+        case "$_emst" in
+            here)
+                # Host-path hygiene (INV-4) through the single display helper, exactly as
+                # the repos block above: a host path shows only where show_host_paths permits.
+                echo "  $em_name → $em_target ($(_cco_display_path "$em_name" "$em_src"))" ;;
+            not-mounted)
+                echo -e "  $em_name → $em_target ${YELLOW}$(_env_state_badge not-mounted)${NC}"
+                _env_note_unmounted extra_mount ;;
+            *)
+                echo -e "  $em_name → $em_target ${YELLOW}$(_env_state_badge unresolved)${NC}" ;;
+        esac
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
     [[ "$_em_any" == true ]] || echo "  (none)"
     echo ""
@@ -311,8 +369,18 @@ EOF
     if [[ -n "$packs" ]]; then
         while IFS= read -r pack; do
             [[ -z "$pack" ]] && continue
+            # INV-AVAIL (ADR-0056 D1). NOT in the ADR's site table — found by the
+            # enumeration-by-grep the ADR mandates, and it is the same defect in a
+            # different vocabulary: a bare `[[ -d $PACKS_DIR/... ]]` renders
+            # `[not found]` for a pack the session merely cannot SEE. `~/.cco` is
+            # unmounted at G=none and narrowed to the referenced subset at
+            # read-project, so `project show <other-project>` badged every one of
+            # that project's packs as missing. Ask the owner, render the state.
             if [[ -d "$PACKS_DIR/$pack" ]]; then
                 echo "  $pack"
+            elif _cco_container_operator; then
+                echo -e "  $pack ${YELLOW}$(_env_state_badge not-mounted)${NC}"
+                _env_note_unmounted pack
             else
                 echo -e "  $pack ${YELLOW}[not found]${NC}"
             fi
@@ -343,4 +411,11 @@ EOF
     # Tri-state (B4): `unknown` in-container when the registry is unreachable.
     echo -e "${BOLD}Status:${NC}"
     echo -e "  $(_cco_session_status_display "${yml_name:-$name}")"
+
+    # INV-B: the rows badged `[not mounted in this session]` above are COUNTED, and
+    # the count is spoken by the shared notice (stderr, INV-C) — the same sentence
+    # `cco list` and `project validate --all` emit. Without this flush the badges
+    # would be the only signal, and a caller reading stdout alone would see a card
+    # with holes and no explanation of what put them there.
+    _env_flush_hidden_notice
 }

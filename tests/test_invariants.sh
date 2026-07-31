@@ -707,11 +707,15 @@ test_invariant_index_writes_status_checked() {
 #                                              S7 added the last two and a <kind> noun
 #                                              WITHOUT a third spelling: arms carry the
 #                                              detail, the single warn carries the state.
-#   cmd-resolve.sh 1 cmd_path (list)         — the hidden-COUNT notice for path
-#                                              entries, which must say read-all where
-#                                              the shared notice says read-global
-#                                              (other projects need Po≥ro). Reconciling
-#                                              the shared one is V4-F-V4-03 / Q-C3.
+#   cmd-resolve.sh 0 — RETIRED by ADR-0056 D3 (S4). It held one spelling because
+#                      `cco path list`'s notice "must say read-all where the shared
+#                      notice says read-global", with the note "reconciling the
+#                      shared one is V4-F-V4-03 / Q-C3". That reconciliation landed:
+#                      _env_widening_clause now derives the widening from WHAT IS
+#                      HIDDEN, and a `path` row rides Po exactly as a project does,
+#                      so the site routes through _env_note_hidden + the shared
+#                      flush and spells nothing. The entry is REMOVED rather than
+#                      left at 1 — a budget nobody spends is an invitation.
 #   cmd-project-rename.sh 1 cmd_project_rename — an AGGREGATE over member repos
 #                                              (a plural list), not a single
 #                                              resource's state; host-only verb.
@@ -720,7 +724,7 @@ test_invariant_index_writes_status_checked() {
 # one always does. Raising a budget is a deliberate act that has to be argued here.
 test_invariant_env_one_spelling_per_state() {
     local vocab='not available at this access scope|not mounted in this session|not resolved on this machine|hidden by access scope'
-    local ratified="store.sh:1 rename.sh:1 cmd-start.sh:2 cmd-resolve.sh:1 cmd-project-rename.sh:1"
+    local ratified="store.sh:1 rename.sh:1 cmd-start.sh:2 cmd-project-rename.sh:1"
     local f base budget n hits=""
     for f in "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/cco; do
         [[ -f "$f" ]] || continue
@@ -945,4 +949,798 @@ test_invariant_mount_ancestry_image_set() {
         case "$block" in *"$d"*) ;; *) missing="${missing}  ${d}"$'\n' ;; esac
     done
     [[ -z "$missing" ]] || fail "INV-MP: the image no longer pre-creates a documented mountpoint ancestor. An ancestor that is currently a mount target is EXEMPT from the ancestry lint, so dropping it here fails nothing until a lane stops binding it — which is how R-D shipped:"$'\n'"$missing"
+}
+
+# ── INV-YAML the section-boundary CLASS guard (R-E / runbook §6.1) ────
+#
+# THE INVARIANT — one spelling of "where does a YAML section end", comment-block
+# aware: buffer the trailing run of top-level comment and blank lines; on the next
+# top-level key, emit before the buffered run, then flush. The sanctioned spelling
+# is `_yml_append_coord` in lib/cmd-project-add.sh, reached by all four verbs that
+# add a coordinate (`cco project add {repo,mount,llms,pack}`, `cco init`,
+# `cco join`). Behavioural coverage: the golden-file round trip in
+# tests/test_project_add.sh.
+#
+# THE CLASS this lint guards — INSERTION, not parsing. The comment-blind idiom
+# `/^[^ #]/` appears ~40 times across lib/, and in the overwhelming majority it is
+# a READER (`{ exit }`, `{ in_sec = 0 }`, a parse into a stream). For a reader the
+# distinction is unobservable: a top-level comment run contains no `  - name:`
+# entry lines, so treating it as inside the section reads exactly the same set.
+# The defect only exists where the boundary decides WHERE NEW CONTENT IS EMITTED —
+# there, comment-blindness silently relocates a user's entry into someone else's
+# section. A lint over every reader would be ~40 lines of noise on day one, and a
+# lint that is noise gets silenced rather than heeded.
+#
+# ALLOWLIST — files where an insertion at the boundary is present and correct,
+# with the reason recorded (a bare file name is not a justification):
+#   lib/cmd-project-add.sh — DEFINES the sanctioned spelling.
+#   lib/index.sh           — the STATE index: a GENERATED file with no comments,
+#                            so the trailing run is always empty. (Named in the
+#                            runbook as the reason this lands as one-spelling-
+#                            plus-a-lint rather than a local patch: the idiom was
+#                            already spreading.)
+#   lib/tags.sh            — the DATA tags registry: same reason, generated and
+#                            never hand-edited (CLAUDE.md, "Framework state").
+#
+# ⚠ lib/migrate.sh WAS allowlisted here by S5, and the entry is GONE (S6). It was
+# never an exemption on the merits: S5 recorded it as "NOT clean" because the llms
+# url-recovery rewriter destroyed comments outright, a different defect from the
+# misplacement this invariant names, out of that session's scope. S6 fixed the
+# rewriter — it now injects into a verbatim pass-through under this very
+# buffer-and-flush rule — so the entry stopped being earned and the file is
+# scanned like any other. Its two legacy PARSERS (_migrate_legacy_repos /
+# _migrate_legacy_mounts) spell the boundary `/^[^ ]/` with an explicit `/^#/`
+# skip in front, which is behaviourally identical to what they had and keeps the
+# insertion-class idiom out of a file the lint reads.
+test_invariant_yaml_section_end_one_spelling() {
+    local allow=" cmd-project-add.sh index.sh tags.sh "
+    # An awk rule that (a) tests the top-level section-end idiom, (b) EMITS in its
+    # action (`print <something>` — not a bare `print`/`print $0`, which re-emits
+    # the boundary line itself — or a flush() of buffered content), and (c) does
+    # NOT `exit` there. (c) is what separates a rewriter from a parser: a rewriter
+    # must copy the rest of the file, so it never terminates the scan at the
+    # boundary; a parser that has found its answer does (session-context.sh:120).
+    local prog='
+/\/\^\[\^ #\]\// {
+  act = $0
+  sub(/.*\/\^\[\^ #\]\//, "", act)
+  if (act ~ /(^|[^a-zA-Z_])exit([^a-zA-Z_]|$)/) next
+  if (act ~ /print[ \t]+[^ \t;}]/ || act ~ /flush\(\)/) print FILENAME ":" FNR ": " $0
+}'
+    local f base hits="" h
+    for f in "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/bin/cco "$REPO_ROOT"/migrations/*/*.sh; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        case "$allow" in *" $base "*) continue ;; esac
+        h=$(awk "$prog" "$f")
+        [[ -n "$h" ]] && hits="${hits}${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || { fail "INV-YAML: a second INSERTION-class implementation of the YAML section-end idiom. A top-level comment block belongs to the NEXT key by YAML convention, so a \`/^[^ #]/\` boundary slides the insertion past it and into the following section (R-E). Route the insert through _yml_append_coord (lib/cmd-project-add.sh), or extend the allowlist here WITH ITS REASON:"$'\n'"$hits"; return 1; }
+
+    # Discrimination — a static lint that cannot fail is indistinguishable from an
+    # inert one. Plant the forbidden shape in a throwaway lib/ and assert it fires.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/lib"
+    cat > "$tmp/lib/cmd-fake.sh" <<'PLANT'
+_fake_append() {
+    awk -v sec="$1" '
+        $0 == sec":" { in_sec=1; print; next }
+        in_sec && /^[^ #]/ { if (!ins) { print ENVIRON["BLK"]; ins=1 } in_sec=0; print; next }
+        { print }
+    ' "$2"
+}
+PLANT
+    local planted; planted=$(awk "$prog" "$tmp/lib/cmd-fake.sh")
+    [[ -n "$planted" ]] \
+        || { fail "INV-YAML lint does NOT discriminate: a planted comment-blind insertion went uncaught"; return 1; }
+    # …and does NOT fire on a pure READER, which is outside the class.
+    cat > "$tmp/lib/cmd-reader.sh" <<'PLANT'
+_fake_read() {
+    awk -v sec="$1" '
+        $0 == sec":" { in_sec=1; next }
+        in_sec && /^[^ #]/ { exit }
+        in_sec && /^  - name:/ { print; next }
+    ' "$2"
+}
+PLANT
+    local reader; reader=$(awk "$prog" "$tmp/lib/cmd-reader.sh")
+    [[ -z "$reader" ]] \
+        || { fail "INV-YAML lint over-fires: a pure reader (no emission at the boundary) was flagged:"$'\n'"$reader"; return 1; }
+    return 0
+}
+
+# ── INV-EXIT the sentinel discipline (R-G / runbook §6.2) ─────────────
+#
+# THE INVARIANT — bin/cco's EXIT trap prints "✗ cco exited unexpectedly (exit N)"
+# unless `_cco_completed` is true. Only lib/colors.sh's three exit primitives
+# (die 1 · refuse 2 · _cco_exit N) set it, so a raw shell `exit` anywhere else —
+# or an `|| exit $?` propagating a status out of a SUBSHELL die, whose assignment
+# died with the subshell — leaves it false and glues an ✗ onto a perfectly correct
+# run. Both shipped: the group-help paths of `cco project` / `cco pack` printed it
+# on exit 0, and a mistyped --cco-access printed it after a well-formed INV-2
+# refusal on the host. Behavioural coverage: the two arm tests below.
+#
+# MECHANISM — only SHELL exits count; the ~70 `exit` tokens in lib/ are almost all
+# awk program text (`{ print; exit }`), which terminates awk, not cco. Quoted
+# regions, comments and heredoc bodies are therefore removed before matching. Four
+# hazards are handled explicitly, each of which produced a false positive while
+# this was being written: the close-literal-reopen quote token (4 chars, in
+# lib/llms.sh and lib/paths.sh) must not invert the single-quote state; an
+# apostrophe in a prose comment must not either; a heredoc body is DATA (`cco
+# update --help` prints the literal text "(… exit 0)"); and a heredoc delimiter is
+# usually quoted, so its opener is matched on the raw line. The quote character
+# arrives via -v because an awk "\x27" escape is a gawk extension that would
+# silently not fire on the macOS/BSD awk this project targets. migrations/ is
+# scanned: a migration runs under `cco update` with the libs sourced, so its
+# `exit` is cco's exit — the same reason INV-TTY scans it.
+#
+# ALLOWLIST (by file, with the reason — a raw exit is legal only where it does NOT
+# terminate the cco process):
+#   lib/colors.sh   — DEFINES die / refuse / _cco_exit, the three primitives.
+#   lib/cmd-init.sh — `cd "$gclaude" || exit 1` inside an explicit ( … ) subshell:
+#                     it exits the subshell, and a cd that fails there IS an
+#                     undiagnosed crash — the trap firing is correct.
+_inv_exit_shell_exits() {
+    # Emits "<file>:<line>: <text>" for every `exit` reached in SHELL context.
+    awk -v q="'" '
+      BEGIN { inq = 0; indq = 0; inhd = 0 }
+      inhd { if ($0 ~ ("^[ \t]*" hdw "[ \t]*$")) inhd = 0; next }
+      {
+        line = $0; out = ""; i = 1; n = length(line)
+        while (i <= n) {
+          c = substr(line, i, 1)
+          if (inq && substr(line, i, 4) == q "\\" q q) { i += 4; continue }
+          if (indq && c == "\\") { i += 2; continue }
+          if (!indq && c == q)    { inq = !inq;   i++; continue }
+          if (!inq  && c == "\"") { indq = !indq; i++; continue }
+          if (!inq && !indq && c == "#" && (i == 1 || substr(line, i-1, 1) ~ /[ \t;&|(]/)) break
+          if (!inq && !indq) out = out c
+          i++
+        }
+        if (out ~ /(^|[;&|(){}[:space:]])exit([[:space:]]|;|$)/) print FILENAME ":" FNR ": " $0
+        hl = line; gsub(/"/, "", hl); gsub(q, "", hl)
+        if (match(hl, /<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/) \
+            && (RSTART == 1 || substr(hl, RSTART - 1, 1) != "<")) {
+          hdw = substr(hl, RSTART, RLENGTH); sub(/^<<-?[ \t]*/, "", hdw)
+          inhd = 1
+        }
+      }' "$1"
+}
+
+test_invariant_exit_sentinel_discipline() {
+    local allow_file=" colors.sh cmd-init.sh "
+    local f base hits="" h
+    for f in "$REPO_ROOT"/bin/cco "$REPO_ROOT"/lib/*.sh "$REPO_ROOT"/migrations/*/*.sh; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        case "$allow_file" in *" $base "*) continue ;; esac
+        h=$(_inv_exit_shell_exits "$f")
+        [[ -n "$h" ]] && hits="${hits}${h}"$'\n'
+    done
+    [[ -z "$hits" ]] || { fail "INV-EXIT: a raw shell \`exit\` outside lib/colors.sh's primitives. It leaves the EXIT-trap sentinel false, so bin/cco prints \"✗ cco exited unexpectedly\" over a deliberate exit — which is both a lie and a mask for the real crashes the trap exists to catch (R-G). Use _cco_exit <code> (or die / refuse); for an exit that is subshell-local, extend the allowlist here WITH ITS REASON:"$'\n'"$hits"; return 1; }
+
+    # Discrimination, both directions.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf '%s\n' 'cmd_x() { [[ -z "$1" ]] && { usage; exit 0; }; }'     > "$tmp/raw.sh"
+    printf '%s\n' 'cmd_y() { local t; t=$(_resolve "$1") || exit $?; }'  > "$tmp/prop.sh"
+    local a b c
+    a=$(_inv_exit_shell_exits "$tmp/raw.sh")
+    [[ -n "$a" ]] || { fail "INV-EXIT lint does NOT discriminate: a planted bare 'exit 0' (the group-help arm) went uncaught"; return 1; }
+    b=$(_inv_exit_shell_exits "$tmp/prop.sh")
+    [[ -n "$b" ]] || { fail "INV-EXIT lint does NOT discriminate: a planted '|| exit \$?' (the subshell-propagation arm) went uncaught"; return 1; }
+    # …and does NOT fire on the shapes a naive grep would mistake for shell exits:
+    # awk program text under both quotings, a prose comment, and a heredoc body.
+    {
+        printf '%s\n' 'f() { awk "/^x:/ { print; exit }" "$1"; }'
+        printf '%s\n' "g() { awk '/^y:/ { print v; exit }' \"\$1\"; }"
+        printf '%s\n' "h() { awk -F': *' '/^n:/{gsub(/[\"'\\''\"]/,\"\",\$2); print \$2; exit}' \"\$1\"; }"
+        printf '%s\n' "# it doesn't matter how the caller chose to exit here"
+        printf '%s\n' 'u() { cat <<EOF' '  --flag   does a thing (read-only, exit 0)' 'EOF' '}'
+    } > "$tmp/awkonly.sh"
+    c=$(_inv_exit_shell_exits "$tmp/awkonly.sh")
+    [[ -z "$c" ]] || { fail "INV-EXIT lint over-fires: non-shell text was read as a shell exit:"$'\n'"$c"; return 1; }
+    return 0
+}
+
+# ── INV-EXIT arm 1: a SUCCESSFUL run must not be reported as a crash ──
+# `cco project` / `cco pack` with no subcommand print their group help and exit 0.
+# Both exited without setting the sentinel, so every such run ended with
+# "✗ cco exited unexpectedly (exit 0)" printed under its own help text.
+test_invariant_exit_sentinel_group_help_is_not_a_crash() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local ns rc
+    for ns in project pack; do
+        rc=0; run_cco "$ns" || rc=$?
+        [[ $rc -eq 0 ]] || { fail "INV-EXIT: 'cco $ns' group help should exit 0, got $rc"; return 1; }
+        case "$CCO_OUTPUT" in
+            *"Usage: cco $ns"*) ;;
+            *) fail "INV-EXIT: 'cco $ns' did not print its group help — the arm-1 assertion would be vacuous:"$'\n'"$CCO_OUTPUT"; return 1 ;;
+        esac
+        case "$CCO_OUTPUT" in
+            *"exited unexpectedly"*)
+                fail "INV-EXIT: 'cco $ns' printed the crash notice on a SUCCESSFUL exit-0 run:"$'\n'"$CCO_OUTPUT"
+                return 1 ;;
+        esac
+    done
+}
+
+# ── INV-EXIT arm 2: a CORRECT refusal must not be reported as a crash ─
+# The access resolver runs inside a command substitution, so its `die` set the
+# sentinel in a SUBSHELL and the parent propagated the status with a bare
+# `|| exit $?` — leaving the trap to append "✗ cco exited unexpectedly (exit 1)"
+# to a well-formed refusal. This is the path a user hits by mistyping
+# --cco-access, so it fired on the HOST on an ordinary typo. Two shapes, one
+# mechanism: an unknown preset, and an explicit INV-2 floor violation.
+test_invariant_exit_sentinel_access_refusal_is_not_a_crash() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+
+    local spec want rc
+    for spec in "read-projekt|Invalid cco_access" "current=none|INV-2"; do
+        want="${spec#*|}"
+        rc=0; run_cco start test-proj --cco-access "${spec%%|*}" --dry-run || rc=$?
+        [[ $rc -ne 0 ]] || { fail "INV-EXIT: --cco-access '${spec%%|*}' should have been refused, got exit 0"; return 1; }
+        case "$CCO_OUTPUT" in
+            *"$want"*) ;;
+            *) fail "INV-EXIT: expected the '$want' refusal for --cco-access '${spec%%|*}' — the arm-2 assertion would be vacuous:"$'\n'"$CCO_OUTPUT"; return 1 ;;
+        esac
+        case "$CCO_OUTPUT" in
+            *"exited unexpectedly"*)
+                fail "INV-EXIT: the crash notice was appended to a well-formed refusal for --cco-access '${spec%%|*}':"$'\n'"$CCO_OUTPUT"
+                return 1 ;;
+        esac
+    done
+}
+
+# ── INV-AVAIL the CLASS guard (ADR-0056 D1 / D9) ──────────────────────
+# INV-AVAIL: no verb computes an availability or scope-widening answer for itself.
+# Every such answer is produced by lib/access-scope.sh, which owns (a) the
+# three-state classification, (b) the sentence, (c) the remedy and (d) the exit
+# code. Deliberately the same shape as INV-S6, whose CLASS lint has held.
+#
+# ── Why a SECOND guard beside INV-ENV ────────────────────────────────
+# INV-ENV (above) already budgets the four STATE SENTENCES. It is a pure string
+# count, and it is blind to the two halves that actually shipped the defect:
+#   1. the PREDICATE — `[[ -d "$_probe" ]]` renders availability without ever
+#      spelling a state sentence, so INV-ENV scored `project show` clean while it
+#      badged a mounted-but-unbindable member `[missing]` for three cycles;
+#   2. the BADGES + the RETIRED REMEDY — `[missing]`, `[unresolved]` and
+#      `cco resolve` are the reserved strings D9 names, and none of them appear in
+#      INV-ENV's vocabulary.
+# INV-ENV answers "is the state spelled in one place"; INV-AVAIL answers "is the
+# state DECIDED in one place". Neither subsumes the other.
+#
+# ── MECHANISM — assignment provenance, not a naive grep (D9, from INV-S6) ──
+# A guard blind to the `local x; x=$(…)` split idiom misses the majority of its
+# class and certifies anyway — that is the recorded INV-S6 lesson, and the very
+# site this unit fixes is written in exactly that idiom:
+#     local _probe; _probe=$(_cco_member_probe_path "$n" "$p")
+#     if [[ -d "$_probe" ]]; then …
+# A grep for `_cco_member_probe_path` on the same line as `[[ -d` finds NOTHING
+# there. So, per file, an awk pass:
+#   1. taints every variable whose RHS names an availability-path resolver or an
+#      already-tainted variable — including the split form;
+#   2. flags an existence predicate ([[ -d/-e/-f/-r/-w … ]]) whose target expands a
+#      tainted variable or calls a resolver directly                    [KIND=PRED]
+#   3. flags a reserved AVAILABILITY string on a non-comment line       [KIND=STR]
+# Taint does not leak across function boundaries (reset at each definition), which
+# is what keeps a same-named local in an unrelated function from false-flagging.
+#
+# TRACKED availability resolver — deliberately EXACTLY ONE: _cco_member_probe_path.
+# Its whole purpose is "where do I look to decide whether this member is available
+# here" (the container mount in operator mode, the index host path on the host), so
+# an existence predicate on its result IS an availability decision, by construction
+# and with no false positives.
+#
+# ⚠ The wider set was tried first and REJECTED, which is worth recording because the
+# obvious next maintainer will try it again: tracking _resolve_project_yml /
+# _index_get_path / _mount_source_for as well flags twelve sites, and every one of
+# them is legitimate — `[[ -f "$project_yml" ]] || die "has no readable
+# project.yml"` runs AFTER the owner already answered `here`, and asks a different
+# question (is the manifest readable), not an availability question. A lint whose
+# hits are mostly legitimate gets allowlisted until it is inert, which is the
+# failure mode D9 exists to avoid. INV-S6 could ban its whole resolver set because
+# behind the ADR-0047 boundary those reads are MEANINGLESS; here they are meaningful.
+# NOT tracked for the same reason: _cco_display_path (a PRESENTATION helper — INV-4
+# host-path hygiene; its result is never probed).
+#
+# RESERVED STRINGS (D9): the two badges and the two notice fragments are absolute —
+# they belong to the owner, full stop. `cco resolve` is different in kind: D2 makes
+# a remedy a function of the PRINT SITE, and the verb is legitimate advice ON THE
+# HOST. So it is flagged only when it appears WITHOUT a host qualifier on the same
+# line, in a file the operator shim can actually reach. That is the rule
+# index.sh:160-164 already implements and D2 generalises.
+_avail_lint_prog() {
+    cat <<'AWK'
+BEGIN {
+  RES="_cco_member_probe_path"
+  STR="\\[missing\\]|\\[unresolved\\]|not mounted in this session|not available at this access scope"
+  QUAL="on your host|on the host|on a terminal|_cco_container_operator"
+  fn="(toplevel)"; nrem=0; ctxaware=0
+}
+function flushfn(  i) {
+  if (!ctxaware) for (i=0;i<nrem;i++) print rem[i]
+  nrem=0; ctxaware=0
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ {
+  flushfn()
+  fn=$0; sub(/\(\).*/,"",fn); for (v in seen) delete seen[v]
+  nrem=0; ctxaware=0
+  next
+}
+/^[ \t]*#/ { next }                                   # comments are exempt (docs quote the vocabulary)
+{
+  line=$0; s=line
+  # 1. taint propagation, including the `local x; x=$(...)` split form
+  while (match(s, /(^|[ \t;])[A-Za-z_][A-Za-z0-9_]*=/)) {
+    seg=substr(s, RSTART, RLENGTH); vn=seg; gsub(/[ \t;]/,"",vn); sub(/=$/,"",vn)
+    rest=substr(s, RSTART+RLENGTH); r=rest; sub(/;.*/,"",r)
+    t=0
+    if (r ~ ("(" RES ")")) t=1
+    else { for (v in seen) if (index(r,"$"v)||index(r,"${"v)) t=1 }
+    if (t && vn!="") seen[vn]=1
+    s=substr(s, RSTART+RLENGTH)
+  }
+  # 2. existence predicate on a tainted/resolver path → the verb is deciding
+  if (line ~ /\[\[[^]]*-[defrw][ \t]+/) {
+    hit=0
+    if (line ~ ("\\$\\(?(" RES ")")) hit=1
+    for (v in seen) if (index(line,"$"v)||index(line,"${"v)) hit=1
+    if (hit) print FILENAME "|" fn "|PRED"
+  }
+  # 3. a reserved availability string outside the owner
+  if (line ~ (STR)) print FILENAME "|" fn "|STR"
+  # 4. the retired remedy, unqualified at a container-reachable print site (D2).
+  #    A line carrying its own qualifier is fine; so is a line inside a function
+  #    that CONSULTS the print site (_cco_container_operator), because such a
+  #    function's host arm is legitimately unqualified — that is the shape
+  #    index.sh:160-164 uses and D2 blesses. Deferred to end-of-function so the
+  #    consult may appear after the message it governs.
+  if (line ~ (QUAL)) ctxaware=1
+  if (line ~ /cco resolve/ && line !~ (QUAL)) rem[nrem++]=FILENAME "|" fn "|REMEDY"
+}
+END { flushfn() }
+AWK
+}
+
+# Echo the VIOLATING hits ("<basename>|<func>|<kind>" per line) found in <libdir>.
+# Empty output = clean.
+_avail_lint_violations() {
+    local libdir="$1" f b prog hf fn kind
+    prog=$(_avail_lint_prog)
+    # EXCLUDED — the owner itself, plus the two layers whose subject is a STORE
+    # BUCKET rather than a named resource (a bucket is never "unresolved"; their
+    # own predicate is governed by INV-S3b/INV-S6, and INV-ENV budgets their
+    # sentence). index.sh is the index PRIMITIVE: it defines _index_get_path and
+    # owns the read-state taxonomy ADR-0056 D6 put there deliberately.
+    local excluded=" access-scope.sh store.sh rename.sh index.sh "
+    # ALLOWLIST — HOST-ONLY verb files. The operator shim REFUSES these in-container
+    # (bin/cco: start|stop|build|new|resolve|sync|init|join|forget|update|clean, plus
+    # project rename/export/import/add and pack/template publish|export), so a
+    # `cco resolve` remedy printed there is read on the host, where it is exactly
+    # right — D2 is a statement about the PRINT SITE, not about the string.
+    local host_only=" cmd-resolve.sh cmd-sync.sh cmd-init.sh cmd-join.sh cmd-forget.sh"
+    host_only+=" cmd-clean.sh cmd-update.sh cmd-config.sh cmd-start.sh migrate.sh"
+    host_only+=" cmd-project-rename.sh cmd-project-export-import.sh cmd-project-add.sh"
+    host_only+=" packs.sh local-paths.sh "
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        case "$excluded"  in *" $b "*) continue ;; esac
+        case "$host_only" in *" $b "*) continue ;; esac
+        while IFS='|' read -r hf fn kind; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_local_availability_decisions() {
+    # 1. The live tree must be clean.
+    local v; v=$(_avail_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || fail "INV-AVAIL: a verb decides availability for itself — an existence predicate on a member/mount/project path [PRED], or a reserved availability string [STR], outside lib/access-scope.sh. Ask _env_member_state/_env_project_state and render with _env_unavailable[_warn] (ADR-0056 D1):"$'\n'"$v"
+
+    # 2. Discrimination (D9, mandatory). A STATIC invariant cannot "fail on reverted
+    #    lib/", so an undemonstrated lint is indistinguishable from an inert one.
+    #    Both arms are planted in a STAGED copy of a NON-allowlisted file.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL self-test: could not stage lib/"; return 1; }
+
+    # 2a. MUST FIRE — and specifically through the SPLIT idiom a naive grep misses:
+    #     the resolver and the predicate are on DIFFERENT lines.
+    printf '\n_lint_probe_avail() {\n    local p\n    p=$(_cco_member_probe_path "$1" "$2")\n    if [[ -d "$p" ]]; then echo here; fi\n}\n' \
+        >> "$tmp/cmd-project-query.sh"
+    local planted; planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-project-query.sh|_lint_probe_avail|PRED"* ]] \
+        || { fail "INV-AVAIL does NOT discriminate: a planted split-idiom availability probe went uncaught (this is the exact shape of the shipped defect):"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2b. MUST FIRE — a reserved string in a container-reachable file.
+    printf '\n_lint_probe_badge() {\n    echo "  x [missing]"\n}\n' >> "$tmp/cmd-template.sh"
+    planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-template.sh|_lint_probe_badge|STR"* ]] \
+        || { fail "INV-AVAIL does NOT discriminate: a planted reserved badge went uncaught"; return 1; }
+
+    # 2c. MUST NOT FIRE — a comment quoting the vocabulary, and an existence
+    #     predicate on a path that is NOT an availability path. Without this arm a
+    #     guard that flags every `[[ -d ]]` in lib/ would also "pass" 2a, and would
+    #     be unusable rather than discriminating.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL self-test: could not re-stage lib/"; return 1; }
+    printf '\n# a doc line about [missing] and "not mounted in this session"\n_lint_probe_ok() {\n    local d="$HOME/somewhere"\n    if [[ -d "$d" ]]; then echo fine; fi\n}\n' \
+        >> "$tmp/cmd-template.sh"
+    planted=$(_avail_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_ok"* ]] \
+        || { fail "INV-AVAIL over-reaches: a non-availability existence test / a comment quoting the vocabulary was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
+
+# ── INV-AVAIL/CONSUMER — reading the answer from the wrong owner ──────
+#
+# THE INVARIANT — a verb that turns `_project_iter_members`' / `_project_member_status`'
+# status into a REFUSAL must ask `_env_member_state` first.
+#
+# WHY A SECOND ARM. INV-AVAIL's three arms guard how a verb COMPUTES availability
+# (a probe predicate), and which BADGES it spells. FI-41 shipped through all three
+# untouched: `cco pack rename` computed nothing and spelled no badge — it branched on
+# the index-level word `unresolved` and printed the `cco resolve` remedy. That word
+# means "the probe is not inspectable in THIS context", and column 2 is the container
+# MOUNT in operator mode, so in a session it covers two realities and the remedy fits
+# only one. On the host the same word is honest, which is why every host-only verb
+# file stays allowlisted here exactly as it is for the D2 arm.
+#
+# The meta-root, one level out from the cycle's own: not "a predicate every call site
+# computes for itself" but **a call site reading the right value from the wrong owner**.
+_avail_consumer_lint_violations() {
+    local libdir="$1" f b
+    local prog
+    prog=$(cat <<'AWK'
+BEGIN { fn="(toplevel)"; t=0; br=0; sp=0; ask=0 }
+function flushfn() {
+  if (t && br && sp && !ask) print FILENAME "|" fn "|CONSUMER"
+  t=0; br=0; sp=0; ask=0
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ {
+  flushfn(); fn=$0; sub(/\(\).*/,"",fn); next
+}
+/^[ \t]*#/ { next }
+{
+  if ($0 ~ /_project_iter_members|_project_member_status/)        t=1
+  if ($0 ~ /(==[ \t]*"?unresolved"?)|(^[ \t]*unresolved\))/)      br=1
+  if ($0 ~ /(^|[ \t;&|(])(die|refuse)[ \t"]/)                     sp=1
+  if ($0 ~ /_env_member_state|_env_project_state/)                ask=1
+}
+END { flushfn() }
+AWK
+)
+    # Same exemptions as the D2 arm, for the same reasons: access-scope.sh IS the
+    # owner, index.sh DEFINES the status vocabulary, rename.sh routes the status as a
+    # DATA tag rather than a message, store.sh has its own guard. Host-only verb files
+    # are exempt because the shim refuses them in-container — where `unresolved` cannot
+    # be a not-mounted member, the conflation this arm exists to catch cannot arise.
+    local excluded=" access-scope.sh store.sh rename.sh index.sh "
+    local host_only=" cmd-resolve.sh cmd-sync.sh cmd-init.sh cmd-join.sh cmd-forget.sh"
+    host_only+=" cmd-clean.sh cmd-update.sh cmd-config.sh cmd-start.sh migrate.sh"
+    host_only+=" cmd-project-rename.sh cmd-project-export-import.sh cmd-project-add.sh"
+    host_only+=" packs.sh local-paths.sh "
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        case "$excluded"  in *" $b "*) continue ;; esac
+        case "$host_only" in *" $b "*) continue ;; esac
+        while IFS='|' read -r hf fn kind; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_status_word_refusals() {
+    # 1. The live tree must be clean.
+    local v; v=$(_avail_consumer_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || fail "INV-AVAIL/CONSUMER: a verb refuses on _project_iter_members' status word without asking _env_member_state — in a session that word cannot tell a NOT-MOUNTED member from an unresolved one, so the remedy fits only one of them (FI-41):"$'\n'"$v"
+
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL/CONSUMER self-test: could not stage lib/"; return 1; }
+
+    # 2a. MUST FIRE — the exact shape FI-41 shipped: iterate members, branch on the
+    #     status word, refuse. No _env_member_state anywhere in the function.
+    printf '\n_lint_probe_consumer() {\n    local n p s\n    while IFS=$'"'"'\\t'"'"' read -r n p s; do\n        [[ "$s" == unresolved ]] && die "unresolved member $n. Run '"'"'cco resolve'"'"' on your host first."\n    done < <(_project_iter_members "$1")\n}\n' \
+        >> "$tmp/cmd-pack.sh"
+    local planted; planted=$(_avail_consumer_lint_violations "$tmp")
+    [[ "$planted" == *"cmd-pack.sh|_lint_probe_consumer|CONSUMER"* ]] \
+        || { fail "INV-AVAIL/CONSUMER does NOT discriminate: a planted status-word refusal went uncaught (this is the exact shape of the shipped defect):"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2b. MUST NOT FIRE — the same shape, fixed: the owner is asked. Without this arm
+    #     the guard would flag the remedy as well as the defect, and a lint that cannot
+    #     be satisfied is one somebody deletes.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-AVAIL/CONSUMER self-test: could not re-stage lib/"; return 1; }
+    printf '\n_lint_probe_fixed() {\n    local n p s st\n    while IFS=$'"'"'\\t'"'"' read -r n p s; do\n        [[ "$s" == unresolved ]] || continue\n        st=$(_env_member_state "$n" "$(_index_get_path "$1" "$n")")\n        [[ "$st" == not-mounted ]] && _env_unavailable not-mounted repo "$n"\n        die "unresolved member $n."\n    done < <(_project_iter_members "$1")\n}\n' \
+        >> "$tmp/cmd-pack.sh"
+    planted=$(_avail_consumer_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_fixed"* ]] \
+        || { fail "INV-AVAIL/CONSUMER over-reaches: the SANCTIONED shape (asks _env_member_state, then refuses) was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
+
+# ── INV-DESC — the trusted descriptor's keys cross the boundary ───────
+#
+# THE INVARIANT — every key `cco start` writes into the trusted session descriptor
+# (lib/cmd-start.sh, the block redirected into "$session_descriptor") appears in
+# ALLOWED_KEYS[] in config/cco-svc-helper.c.
+#
+# WHY A LINT AND NOT A COMMENT. The helper builds the elevated child's environment
+# FROM SCRATCH (ADR-0047 R2: never argv, never the caller's env) and copies over only
+# whitelisted descriptor keys. A key the writer emits and the whitelist omits is
+# therefore dropped IN SILENCE: no error, no refusal, no exit code — the elevated cco
+# simply runs without a signal the host believes it sent. Both sides look correct in
+# isolation, which is why the writer's own "Keys mirror the helper's whitelist" comment
+# survived being false.
+#
+# WHY THE SUITE COULD NOT SEE IT. A bash test exercises such a signal by exporting it
+# and calling the consumer in-process (tests/test_access_scope.sh does exactly this for
+# CCO_STORE_TOTALS) — a path that never crosses the setuid boundary, so it passes on a
+# tree where the real path is inert. This is the RC-17 shape: the hermetic lane cannot
+# observe container reality. A STATIC cross-file lint can, because the correspondence
+# it checks is a property of the two source files, not of a running container.
+#
+# THE SHIPPED DEFECT this closes: CCO_STORE_TOTALS (ADR-0056 D5) was written into the
+# descriptor by S4 and never whitelisted, so the "hidden by access scope" notice stayed
+# silent about exactly the resources D5 exists to count — `cco list packs` showed 1 of 6
+# packs with no notice at all. Found by the post-build container probe, not by the suite.
+#
+# DELIBERATELY ONE-DIRECTIONAL: written ⊆ allowed. The reverse (a whitelisted key no
+# writer emits) is dead surface, not a behavioural defect — and failing on it would
+# reject a legitimate two-commit sequence that widens the whitelist before the writer
+# uses it. ADR-0047's minimal-surface argument is served by review, not by this lint.
+
+#
+# SECOND ARM — the same family, the other registry. A descriptor key is also a variable
+# the SUITE must neutralize: `bin/test` unsets the ambient session environment so a
+# self-dev run behaves like a host run (its own comment explains why). A key missing
+# there leaks a REAL session value into every test that reads it — for CCO_STORE_TOTALS,
+# a hidden-count supplement three notice tests never asked for, failing in-container and
+# passing on the host, which is indistinguishable from the known host-only set until
+# someone diffs the names. Same omission class as the whitelist, found the same day: a
+# signal family with more than one registry needs the correspondence linted, not
+# remembered.
+
+# Echo the keys `cco start` writes into the trusted descriptor, one per line. Both arms
+# below read the writer through THIS function, so they can never disagree about what a
+# descriptor key is. Arg: <path to cmd-start.sh> (a path, so the self-tests can read a
+# STAGED copy).
+#
+# The keys are the printf'd KEY= names inside the group redirected into
+# "$session_descriptor": buffer since the opening `{`, emit at the redirect. So a printf
+# anywhere else in the file (the compose stream, another verb) is not a descriptor key,
+# and the block can move without the lint chasing line numbers.
+_desc_lint_written_keys() {
+    local prog
+    prog=$(cat <<'AWK'
+/^[[:space:]]*\{[[:space:]]*$/ { n = 0; next }
+match($0, /printf '[A-Z_][A-Z_0-9]*=/) {
+    k = substr($0, RSTART + 8); sub(/=.*/, "", k); buf[n++] = k
+}
+/^[[:space:]]*\}[[:space:]]*>[[:space:]]*"\$session_descriptor"/ {
+    for (i = 0; i < n; i++) print buf[i]; n = 0
+}
+AWK
+)
+    awk "$prog" "$1"
+}
+
+# Echo the members of <keys> absent from the space-delimited <registry>, one per line.
+# A parse failure on either side must never read as "clean", so it is reported as a hit.
+_desc_lint_absent_from() {
+    local keys="$1" registry="$2" what="$3" k
+    [[ -n "$keys" ]]         || { echo "__NO_DESCRIPTOR_KEYS_PARSED__"; return 0; }
+    [[ "$registry" != "  " ]] || { echo "__NO_${what}_PARSED__"; return 0; }
+    while IFS= read -r k; do
+        [[ -n "$k" ]] || continue
+        case "$registry" in *" $k "*) ;; *) echo "$k" ;; esac
+    done <<< "$keys"
+}
+
+# Descriptor keys missing from the helper's whitelist (empty = clean).
+# Args: <cmd-start.sh> <cco-svc-helper.c>.
+_desc_lint_missing_keys() {
+    local allowed
+    # Whitelist entries: the quoted names in the ALLOWED_KEYS[] initialiser.
+    allowed=" $(sed -n '/ALLOWED_KEYS\[\][[:space:]]*=[[:space:]]*{/,/};/p' "$2" \
+        | grep -o '"[A-Z_][A-Z_0-9]*"' | tr -d '"' | tr '\n' ' ') "
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$allowed" NO_WHITELIST
+}
+
+# Descriptor keys the SUITE RUNNER does not neutralize (empty = clean).
+# Args: <cmd-start.sh> <bin/test>.
+_desc_lint_unneutralized_keys() {
+    local cleared=" " tok
+    # The unset statement: from the `unset` keyword to the redirect that closes it,
+    # keeping only shell-variable-shaped tokens (drops 2>/dev/null, ||, true, \).
+    for tok in $(sed -n '/^unset /,/2>\/dev\/null/p' "$2"); do
+        [[ "$tok" =~ ^[A-Z][A-Z_0-9]*$ ]] && cleared+="$tok "
+    done
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$cleared" NO_UNSET_LIST
+}
+
+# Descriptor keys the OPERATOR LANE sanitiser leaves to chance (empty = clean).
+# Args: <cmd-start.sh> <tests/helpers.sh>.
+#
+# Here "neutralized" is wider than in bin/test: _lane_operator_exports deliberately SETS
+# most of these to a deterministic value (that is the point of a lane) and unsets the
+# rest. Either is fine; what is not fine is a key it never mentions, because then the
+# value comes from whatever session happens to be running — the very leak its own
+# comment (c) says it exists to prevent.
+_desc_lint_unpinned_lane_keys() {
+    local pinned=" " tok region
+    region=$(sed -n '/^_lane_operator_exports()/,/^}/p' "$2")
+    for tok in $(printf '%s' "$region" | tr -c 'A-Za-z0-9_' ' '); do
+        [[ "$tok" =~ ^[A-Z][A-Z_0-9]*$ ]] && pinned+="$tok "
+    done
+    _desc_lint_absent_from "$(_desc_lint_written_keys "$1")" "$pinned" NO_LANE_REGION
+}
+
+test_invariant_descriptor_keys_whitelisted() {
+    local writer="$REPO_ROOT/lib/cmd-start.sh" helper="$REPO_ROOT/config/cco-svc-helper.c"
+    [[ -f "$writer" && -f "$helper" ]] \
+        || { fail "INV-DESC: descriptor writer or setuid helper not found"; return 1; }
+
+    # 1. The live tree must be clean.
+    local missing; missing=$(_desc_lint_missing_keys "$writer" "$helper")
+    [[ -z "$missing" ]] || { fail "INV-DESC: \`cco start\` writes a descriptor key the setuid helper does not whitelist, so the elevated cco never receives it — silently, and invisibly to a suite that exports the signal in-process. Add it to ALLOWED_KEYS[] in config/cco-svc-helper.c (and rebuild: the helper is compiled into the image):"$'\n'"$missing"; return 1; }
+
+    # 2. Discrimination (D9, mandatory). A static invariant cannot "fail on a reverted
+    #    tree" when both halves of the correspondence move together, so the proof is a
+    #    planted violation — in both directions — over STAGED copies.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$writer" "$tmp/cmd-start.sh"; cp "$helper" "$tmp/helper.c"
+
+    # 2a. MUST FIRE — a new descriptor key that nobody whitelisted: the exact shape of
+    #     the shipped CCO_STORE_TOTALS defect.
+    awk '/^[[:space:]]*\}[[:space:]]*>[[:space:]]*"\$session_descriptor"/ && !done {
+            print "                printf '\''CCO_LINT_PLANT=%s\\n'\'' \"x\""; done = 1
+         } { print }' "$tmp/cmd-start.sh" > "$tmp/planted.sh"
+    grep -q 'CCO_LINT_PLANT' "$tmp/planted.sh" \
+        || { fail "INV-DESC self-test: could not plant a descriptor key — has the descriptor block moved?"; return 1; }
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper.c")
+    [[ "$missing" == *"CCO_LINT_PLANT"* ]] \
+        || { fail "INV-DESC does NOT discriminate: a planted un-whitelisted descriptor key went uncaught (this is the exact shape of the shipped defect):"$'\n'"${missing:-<no hits>}"; return 1; }
+
+    # 2b. MUST NOT FIRE — the same key, now whitelisted. Without this arm a lint that
+    #     flagged every key unconditionally would also "pass" 2a.
+    sed 's/"CCO_CONFIG_TARGETS",/"CCO_LINT_PLANT",\n    "CCO_CONFIG_TARGETS",/' \
+        "$tmp/helper.c" > "$tmp/helper-ok.c"
+    grep -q 'CCO_LINT_PLANT' "$tmp/helper-ok.c" \
+        || { fail "INV-DESC self-test: could not plant a whitelist entry"; return 1; }
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper-ok.c")
+    [[ -z "$missing" ]] \
+        || { fail "INV-DESC over-reaches: a properly whitelisted descriptor key was flagged:"$'\n'"$missing"; return 1; }
+
+    # 2c. MUST NOT FIRE — a printf of a KEY= outside the descriptor group is not a
+    #     descriptor key (the compose stream emits env lines of the same shape).
+    printf '\n_lint_probe_other() {\n    printf '\''CCO_OTHER_PLANT=%%s\\n'\'' "x"\n}\n' \
+        >> "$tmp/planted.sh"
+    missing=$(_desc_lint_missing_keys "$tmp/planted.sh" "$tmp/helper-ok.c")
+    [[ "$missing" != *"CCO_OTHER_PLANT"* ]] \
+        || { fail "INV-DESC over-reaches: a printf outside the descriptor group was read as a descriptor key:"$'\n'"$missing"; return 1; }
+    return 0
+}
+
+# ── INV-AVAIL/D5 — counting a store kind means declaring it ───────────
+#
+# THE INVARIANT — a function that calls `_env_note_seen` (it enumerates a store kind,
+# row by row, for the host-total supplement) also calls `_env_store_subject` (it says
+# which kinds its notice may speak about). The two are halves of one statement: seen is
+# "how many I found", subject is "what I was looking for", and the supplement is the
+# difference. A function with only the first half enumerates without declaring, so its
+# rows are counted and then dropped — silently, because the ratified default is silence.
+#
+# WHY THIS SHAPE. The kinds are often variables (`_env_note_seen "$rk"` in the unified
+# lister, `_env_store_subject $_ENV_STORE_KINDS` beside it), so matching kind NAMES
+# statically would be noise. Function-level co-presence is what is checkable, and it is
+# exactly the omission class: an exhaustive enumerator either declares or it does not.
+#
+# ⚠ THE OTHER DIRECTION IS NOT LINTED. Declaring without enumerating is harmless and
+# often right: the supplement is total-minus-seen, so a declared kind with no rows
+# yields the whole total — precisely the G=none case D5 exists for (`cco list packs`
+# with the pack mount absent declares pack and sees nothing). Linting that direction
+# would flag the design.
+_seen_lint_violations() {
+    local libdir="$1" f b prog
+    prog=$(cat <<'AWK'
+/^[_a-zA-Z][_a-zA-Z0-9]*\(\)[[:space:]]*\{/ { fn = $0; sub(/\(\).*/, "", fn); seen = 0; subj = 0 }
+$0 ~ /_env_note_seen/ && $0 !~ /^[[:space:]]*#/     { if (fn != "") seen = 1 }
+$0 ~ /_env_store_subject/ && $0 !~ /^[[:space:]]*#/ { if (fn != "") subj = 1 }
+/^\}/ { if (fn != "" && seen && !subj) print fn; fn = ""; seen = 0; subj = 0 }
+AWK
+)
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        # The owner DEFINES both primitives; its mentions are definitions, not calls.
+        [[ "$b" == "access-scope.sh" ]] && continue
+        awk "$prog" "$f" | sed "s|^|${b}: |"
+    done
+}
+
+test_invariant_store_subject_declared_where_counted() {
+    local v; v=$(_seen_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || { fail "INV-AVAIL/D5: a verb counts enumerated rows (_env_note_seen) without declaring which store kinds its notice may speak about (_env_store_subject), so those rows are counted and then dropped — the supplement stays silent about resources that exist. Declare the subject beside the enumeration loop:"$'\n'"$v"; return 1; }
+
+    # Discrimination, both directions, on a staged copy of a real (non-owner) file.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null || { fail "INV-D5 self-test: could not stage lib/"; return 1; }
+
+    # MUST FIRE — enumerates, never declares.
+    printf '\n_lint_probe_counts_only() {\n    _env_note_seen pack\n}\n' >> "$tmp/cmd-template.sh"
+    local planted; planted=$(_seen_lint_violations "$tmp")
+    [[ "$planted" == *"_lint_probe_counts_only"* ]] \
+        || { fail "INV-D5 does NOT discriminate: a planted count-without-declare went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # MUST NOT FIRE — the correct pairing.
+    printf '\n_lint_probe_counts_and_declares() {\n    _env_store_subject pack\n    _env_note_seen pack\n}\n' \
+        >> "$tmp/cmd-template.sh"
+    planted=$(_seen_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_counts_and_declares"* ]] \
+        || { fail "INV-D5 over-reaches: a correctly paired enumerator was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
+
+# The second registry: the same descriptor keys must be neutralized by the suite runner.
+# Split from the whitelist arm so a failure names WHICH registry drifted — the remedies
+# are in different files and only one of them needs a rebuild.
+test_invariant_descriptor_keys_neutralized_in_suite() {
+    local writer="$REPO_ROOT/lib/cmd-start.sh" runner="$REPO_ROOT/bin/test"
+    [[ -f "$writer" && -f "$runner" ]] \
+        || { fail "INV-DESC: descriptor writer or test runner not found"; return 1; }
+
+    # 1. The live tree must be clean.
+    local leaked; leaked=$(_desc_lint_unneutralized_keys "$writer" "$runner")
+    [[ -z "$leaked" ]] || { fail "INV-DESC: \`cco start\` writes a descriptor key that bin/test does not unset, so a self-dev run inherits the REAL session's value and tests that read it fail in-container while passing on the host — which reads as one more host-only failure. Add it to the unset list in bin/test:"$'\n'"$leaked"; return 1; }
+
+    # 2. Discrimination. MUST FIRE on a staged runner with one key dropped from the unset
+    #    list — literally the pre-fix state of bin/test for CCO_STORE_TOTALS.
+    #
+    #    The victim is whatever key the writer lists first, so the plant must not depend
+    #    on how THAT key happens to be spelled in the registry: the drop is scoped to the
+    #    registry's own region and confirmed by awk (exit 3 when nothing was removed),
+    #    never by grepping the whole file — a comment naming the key would defeat that,
+    #    and a plant that quietly removes nothing is an inert lint wearing a PASS.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    local victim; victim=$(_desc_lint_written_keys "$writer" | grep -v '^PROJECT_NAME$' | head -1)
+    [[ -n "$victim" ]] || { fail "INV-DESC self-test: no descriptor key to drop"; return 1; }
+    awk -v v="$victim" '
+        /^unset /         { inb = 1 }
+        inb               { if (gsub("(^| )" v "( |$)", " ")) removed = 1 }
+        /2>\/dev\/null/   { inb = 0 }
+                          { print }
+        END               { exit(removed ? 0 : 3) }
+    ' "$runner" > "$tmp/test-runner" \
+        || { fail "INV-DESC self-test: could not drop '$victim' from bin/test's unset list"; return 1; }
+    leaked=$(_desc_lint_unneutralized_keys "$writer" "$tmp/test-runner")
+    [[ "$leaked" == *"$victim"* ]] \
+        || { fail "INV-DESC does NOT discriminate: '$victim' dropped from bin/test's unset list went uncaught:"$'\n'"${leaked:-<no hits>}"; return 1; }
+
+    # 3. The THIRD registry: the operator-lane sanitiser, which by its own comment (c)
+    #    must not rely on the runner. Same key set, wider notion of "handled".
+    local helpers="$REPO_ROOT/tests/helpers.sh"
+    [[ -f "$helpers" ]] || { fail "INV-DESC: tests/helpers.sh not found"; return 1; }
+    local unpinned; unpinned=$(_desc_lint_unpinned_lane_keys "$writer" "$helpers")
+    [[ -z "$unpinned" ]] || { fail "INV-DESC: a descriptor key is neither pinned nor unset by _lane_operator_exports (tests/helpers.sh), so an operator-lane test inherits it from whatever cco session is running — its own comment (c) is the argument against exactly this. Pin it deterministically beside CCO_PROJECT_PACKS:"$'\n'"$unpinned"; return 1; }
+
+    # MUST FIRE on a staged helpers.sh with every mention of the victim removed from the
+    # lane function — whatever form it takes there (an export, an unset, a printf).
+    # The staged file is only ever LINTED, never sourced, so dropping whole lines is safe.
+    awk -v v="$victim" '
+        /^_lane_operator_exports\(\)/ { inb = 1 }
+        inb && /^}/                   { inb = 0 }
+        inb && index($0, v)           { removed = 1; next }
+                                      { print }
+        END                           { exit(removed ? 0 : 3) }
+    ' "$helpers" > "$tmp/helpers.sh" \
+        || { fail "INV-DESC self-test: could not drop '$victim' from _lane_operator_exports"; return 1; }
+    unpinned=$(_desc_lint_unpinned_lane_keys "$writer" "$tmp/helpers.sh")
+    [[ "$unpinned" == *"$victim"* ]] \
+        || { fail "INV-DESC does NOT discriminate: '$victim' dropped from the lane sanitiser went uncaught:"$'\n'"${unpinned:-<no hits>}"; return 1; }
+    return 0
 }

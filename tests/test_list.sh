@@ -209,8 +209,14 @@ test_list_running_builtin_shown_in_default() {
     # In-container: a RUNNING built-in (registry marker present) appears in the plain
     # default index without any flag. Simulate the operator context + a marker.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    mkdir -p "$tmpdir/state/running" "$tmpdir/home"
+    mkdir -p "$tmpdir/state/running" "$tmpdir/state/shared" "$tmpdir/home"
     : > "$tmpdir/state/running/config-editor"
+    # A session is LAUNCHED from the index, so an operator fixture without one is
+    # a state that cannot occur — and since ADR-0056 D6 it is refused at entry
+    # rather than rendered as an empty listing. Seed the scaffold every real
+    # session has (_index_ensure_file's shape); the built-in rows under test do
+    # not come from it, and the projects section stays empty.
+    printf 'version: 2\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$tmpdir/state/shared/index"
     CCO_OUTPUT=$(
         env CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
             CCO_CCO_ACCESS=read-all \

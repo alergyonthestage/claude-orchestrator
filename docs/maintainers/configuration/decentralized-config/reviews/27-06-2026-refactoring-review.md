@@ -3,7 +3,7 @@
 **Date**: 2026-06-27 · **Branch**: `feat/vault/decentralized-config` (commits LOCAL,
 pushed from the maintainer's Mac) · **Method**: `engineering/guides/review-playbooks.md` §3
 (S.O.L.I.D., DRY, Open/Closed, KISS, YAGNI) · **Launcher**:
-[`refactoring-review-handoff.md`](../refactoring-review-handoff.md).
+`refactoring-review-handoff.md` (consumed).
 
 **Outcome**: 8 atomic LOCAL refactor commits `e65aa2f`→`0c3c822` + the L6 correctness fix
 `a216c8b`. Test suite **914/0 → 921/0** (green per step; +7 `_peel_tab` unit tests).

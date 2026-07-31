@@ -143,3 +143,72 @@ test_template_rename_not_found() {
     setup_cco_env "$tmp"
     run_cco template rename nope other -y && fail "expected 'not found'" || true
 }
+
+# ── FI-41 — the two realities behind one status word ──────────────────
+# `_project_member_status` answers "is the probe inspectable HERE", and in operator
+# mode column 2 is the CONTAINER MOUNT — so its `unresolved` covers both a member
+# with no binding at all and one that is bound on this machine but simply not bound
+# into this container. The pre-scan used to answer both with `cco resolve`, which the
+# host would answer "already resolved": an unactionable remedy, and the operator loops.
+#
+# Derived from the contract (ADR-0056 D1 one owner, D8 exit taxonomy), not from the
+# code: the SENTENCE and the EXIT CODE are the observable behaviour a caller depends
+# on. ⚠ Both FAIL pre-fix — the first on all three assertions, the second not at all
+# (it is the counterweight).
+
+# A project whose member is BOUND on this machine but NOT mounted in this session.
+test_pack_rename_operator_refuses_a_not_mounted_member_without_the_resolve_remedy() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    create_pack "$tmp" oldpack "name: oldpack"
+    setup_operator_session "$tmp" edit-all app
+    local mnt; mnt=$(operator_mount_unit app app) || return 1
+    # In operator mode the member ENUMERATION comes from the reachable project.yml,
+    # not from the index (index.sh:1456-1468) — so a fixture that seeds only the index
+    # is vacuous here. `ghost` is declared as a member, HAS an index binding
+    # (host-shaped, absent on every runner) and has no mount target: exactly the shape
+    # a session gets for a project whose repo it does not bind.
+    printf 'name: app\nrepos:\n  - name: app\n  - name: ghost\npacks:\n  - name: oldpack\n' \
+        > "$mnt/.cco/project.yml"
+    seed_index_path ghost /Users/cco-e2e/code/ghost app
+    index_set_project_repos app app ghost
+
+    local rc=0
+    run_cco pack rename oldpack newpack -y || rc=$?
+
+    # (a) a session SHAPE refuses at 2, not 1 (D8) and names the real state
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not mounted in this session" || return 1
+    # (b) the remedy must be the reachable one…
+    assert_output_contains "on your host" || return 1
+    # (c) …and never the one the host would answer "already resolved"
+    assert_output_not_contains "cco resolve" || return 1
+    # (d) fail-closed: a refusal changes nothing
+    assert_dir_exists "$CCO_PACKS_DIR/oldpack" || return 1
+    [[ ! -d "$CCO_PACKS_DIR/newpack" ]] || { fail "a refused rename must not create packs/newpack"; return 1; }
+    return 0
+}
+
+# The counterweight, deliberately green before AND after: it proves the fix is scoped
+# to the not-mounted reality and did not delete the guard ADR-0031 D3 actually needs.
+# A member with NO binding at all is a configuration error wherever it is read.
+test_pack_rename_operator_still_prescribes_resolve_for_an_unbound_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    create_pack "$tmp" oldpack "name: oldpack"
+    setup_operator_session "$tmp" edit-all app
+    local mnt; mnt=$(operator_mount_unit app app) || return 1
+    # Identical fixture to the test above with ONE variable changed: `ghost` is a
+    # declared member with NO index binding at all (INV-F.1) — nothing to mount and
+    # nothing to reach, on any machine. That single difference must flip the answer.
+    printf 'name: app\nrepos:\n  - name: app\n  - name: ghost\npacks:\n  - name: oldpack\n' \
+        > "$mnt/.cco/project.yml"
+    index_set_project_repos app app ghost
+
+    local rc=0
+    run_cco pack rename oldpack newpack -y || rc=$?
+
+    assert_rc 1 "$rc" "pack rename with a genuinely unbound member" || return 1
+    assert_output_contains "cco resolve" || return 1
+    assert_dir_exists "$CCO_PACKS_DIR/oldpack" || return 1
+    return 0
+}
