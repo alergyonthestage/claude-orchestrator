@@ -1,111 +1,116 @@
-# Handoff — every cycle-1.2 gate is green; the next unit is an **analysis**, not the audit
+# Handoff — the cycle is accepted; **one in-session item stands between here and the merge**
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
-> Written 2026-07-31. Supersedes the handoff of 2026-07-30.
-> Nothing about future work lives *here*: the remaining gates live in the
+> Written 2026-07-31. Supersedes the handoff of 2026-07-31 (*"the next unit is an analysis"*).
+> Nothing about future work lives *here*: the gates live in the
 > [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
-> and the plan lives in the [roadmap](roadmap.md). This file only says where we stopped and how to start.
+> and the plan lives in the [roadmap](roadmap.md). This file says where we stopped and how to start.
 
 ## Methodology / where we are
 
-**Cycle-1.2's Implementation + Test is complete, and every probe it owed has now been run.** L1, L2 and
-L3 have their Rule-1 container evidence; L4 and L5 closed in-session by an earlier ruling. The gate
-sequence G0–G1 is green.
+**Cycle-1.2 is ACCEPTED.** The block's single human gate **G3 passed on 2026-07-31**, verdict
+`ACCEPTED with follow-ups`, written into the plan's §7 acceptance log. All five lanes L1–L5 are
+accepted. **G1's residual host cleanup is done** — nothing from this cycle is left on the host.
 
-**The next unit is an Analysis**, not the next gate — a maintainer decision of 2026-07-31. Two refusals
-hit while running G1 exposed a design question about *how a project's committed config is mounted and by
-which path a verb reaches it*, big enough that auditing the CLI's documentation first would document a
-surface that may move. Roadmap **step 2b**.
+**Roadmap step 2b closed with a decision, not a fix**: the config mount topology **does not change in
+this release**; the whole block moves to **cycle-2**, and FI-40 / FI-42 / FI-43 are deferred with it.
 
-**Pending human gate: G3**, the block's single human gate (the per-phase gates for S3→S4→S5 were relaxed
-to one at the end). It has **not** been taken, and it must now also absorb the findings below.
+**No gate is pending human approval.** The next phase is Review/Documentation, autonomous:
+**G2, the CLI-surface documentation audit** — the only item left before the merge, and the only one a
+session can finish alone.
 
 ## How to resume
 
-1. Read **roadmap step 2b** ([roadmap.md](roadmap.md)) and the three findings it feeds on —
-   **FI-42**, **FI-43**, **FI-40** in [roadmap-backlog.md](roadmap-backlog.md). FI-42 is the concrete
-   defect the topology question explains; do not re-derive it.
-2. Run the analysis (`/analyze`). It is **read-only** — the analyst returns the document and the lead
-   persists it once the direction is approved. Suggested home:
-   `docs/maintainers/configuration/agent-cco-access/analysis/config-mount-topology.md`. ⚠ The subject
-   straddles the `configuration/agent-cco-access` and `environment` domains (it is about mounts *and*
-   access); pick the home deliberately and say why in the first paragraph.
-3. **Do not start G2** (the CLI-surface audit). It is deferred behind 2b, on purpose.
-
-If the maintainer instead wants to close the cycle first, the entry point is the runbook's **G3**.
+1. Open the [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
+   at **G2**. Its deferral is **lifted** (step 2b is closed, so the surface the audit documents is the
+   shipped one). ⚠ **Audit today's behaviour — do not pre-document anything from the topology
+   analysis.** Nothing from it ships.
+2. G2 already has **two findings handed to it**, in its own section — do not re-derive them:
+   the stale `cco start --help` text, and the ADR-0046 §6 ratification. Start from the canonical
+   [`cli/reference/cli-surface-matrix.md`](cli/reference/cli-surface-matrix.md): a wrong row there is
+   inherited by every downstream doc.
+3. **In parallel** (maintainer's instruction, 2026-07-31): FI-44's **class-B** link repair —
+   [`roadmap-backlog.md`](roadmap-backlog.md). Independent of G2, same pre-release window.
+   ⚠ Read FI-44's warning first; the obvious repair is the wrong one.
+4. Autonomy for both is `review-docs`-class: objective drift is corrected in place; **user-facing
+   wording is a human gate**, not a sweep.
 
 ## Tasks
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list only points at it.
 
-- [ ] **Step 2b — config mount topology analysis** ◀ *next*. Weigh: system impact · ADR conformance
-      (which decisions it honours and which it would **supersede**, explicitly) · UX across the real
-      launch modes (mono/multi-repo, config-editor, tutorial, standard, `--repo`/`--mount`) ·
-      `cco sync` in-container. → then the maintainer's decision, including whether any of it ships in
-      this release.
-- [ ] **G3 — the block's single human gate.** Checklist in the
-      [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md).
-      It now also has to rule on FI-40, FI-42, FI-43 and on FI-41's in-cycle fix.
-- [ ] **G2 — CLI-surface documentation audit** (roadmap step 3), *after* 2b.
-- [ ] **G4 / G5 / G6** — merge → verify on `develop` → release.
-- [ ] **Residual host cleanup** from G1, if not already done: `rm -rf /tmp/cco-scratch`,
-      `rm -rf ~/.cco/packs/scratch-pack*`, `cco forget proj-a`, `cco forget proj-b`, and the four stale
-      remotes `probe-2`, `x`, `probe-3`, `probe-3b`.
+- [ ] **G2 — CLI-surface documentation audit** (roadmap step 3) ◀ *next, in-session*.
+- [ ] **FI-44 class B** — links from immutable ADRs/reviews to consumed handoffs. Parallel to G2.
+- [ ] **G4** — merge → `develop`, then verify the merge did nothing extra (tree-hash check).
+- [ ] **G5** — verify **on `develop`**: the unmasked suite, and the **macOS host suite on this tree**
+      (never run — the largest unknown left).
+- [ ] **G6** — `develop → main` + release. ⚠ **Step 5 of G6 is new**: carry the **FI-42 known-issue**
+      into the release notes; the wording is written out there, already reduced to what a user can act on.
+- [ ] **Host-side, owed**: `git push origin develop fix/release/cycle-1.2` — the branch is **14 commits
+      ahead** of origin. (G1's cleanup is done; nothing else is owed on the host.)
 
 ## Context
 
-### What this session actually produced
+### What this session produced
 
-- **S3's probe passed on both arms** — the *split* gate (host `mv`, in-session observations). Evidence
-  in the plan's §7. It was mislabelled *host-only* for a round, which is the session's first lesson:
-  **classify a gate by where its observations live, not by where its most privileged step runs.**
-- **G1 passed**: **E6B-04** ran for the first time in any round and the fan-out re-keyed **both**
-  referring `project.yml` copies with no `failed` tag; **D7**'s view composed for a pack-less project
-  with both floor entries writable. ⚠ E6B-04's third post-condition (provenance/tags/meta) is recorded
-  as **vacuous** — the pack was created locally, so the sidecar re-key had nothing to move.
-- **FI-41 fixed in-cycle** (`1814ba3`, changelog 60) with the maintainer's approval, plus a **fourth
-  INV-AVAIL arm** and two regressions that fail on the pre-fix tree. Suite **1617/7 of 1624, mask ON**;
-  the 7 are the documented host-only set, name for name.
-- **The gates were extracted into one operational runbook** (G0…G6) — §8 of the plan is now a pointer.
+Three commits, **all docs — no code was touched**, so every gate result from G0/G1 still stands:
+
+- `241273e` — the **step-2b analysis**, persisted at
+  [`configuration/agent-cco-access/analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md).
+  Home chosen deliberately (mounts are the mechanism, *which authoring path a verb may use at a given
+  access level* is the subject), argued in its first paragraph.
+- `30be1d8` — **step 2b's decision**: release as-is, block → cycle-2. Landed the ADR-0046 §6
+  ratification, the three backlog deferrals, and unblocked G2.
+- `fb9b796` — **G3's verdict** recorded, lanes marked accepted, plus the class-A link repair and
+  **FI-44**.
 
 ### Decisions taken (rationale lives in the linked documents, not here)
 
-- **E6B-04 before the merge**, and **on the host** — runbook G1.
-- **G2 sequential after G1**, then **deferred behind step 2b** — roadmap step 2b.
-- **FI-41 fixed narrowly at the consumer**, leaving `_project_member_status` untouched — FI-41.
-- **The merge needs no re-ordering to be verifiable**: both `develop → main` and the cycle merge are
-  content fast-forwards (measured tree hashes in runbook **G4**), so the tree verified on the branch *is*
-  the released tree. What that cannot promise became **G5**.
+- **The topology does not change in this release; FI-42 is deferred with it** — roadmap step 2b.
+  The decisive reason is *conceptual, not economic*: **the fix cannot be taken without taking the
+  contract decision it carries** (all-or-nothing vs all-or-declared-partial), and that decision is the
+  cycle-2 subject. Implementing now would settle a contract by implementation.
+- **G3 = `ACCEPTED with follow-ups`**, not plain `ACCEPTED` — three findings leave the cycle by
+  decision and one ships as a known-issue, so **D-V31-4** requires the exception be written.
+- **ADR-0046 §6 ratified in place** (annotation on the ADR, ADR-0056's established form), *not*
+  deferred: the **normal** session already ships the wide `Pc` span unenforced.
+- **Only class-A links repaired**; class B gets an entry instead of a sed — see FI-44.
 
 ### Open questions that need the human
 
-- **FI-40** — may a refusal name the unmounted projects instead of counting them? D-V31-1's axis says
-  naming is safe at read scope `all`. Affects **two** guards; decide once.
-- **FI-42** — write through the reachable config mount and declare the unreachable copies, or keep
-  refusing but for the right reason? It changes `pack rename` from all-or-nothing to
-  all-or-declared-partial, which is a **contract** change.
-- **FI-43** — `--repo` mounts the code `rw` while RC-6 §3.7's rationale says the built-in mounts repos
-  to *read* code. Two files disagree about intent; the default is user-visible.
+**None blocking.** The six open questions of the topology analysis (§8) are **cycle-2's agenda**, not
+this release's — they were deliberately left open when step 2b was decided.
 
 ### Non-obvious things worth not rediscovering
 
-- ⚠ **A correction that a future session would otherwise re-derive wrongly.** It is recorded twice
-  (runbook G1.3 and FI-42) because it was asserted confidently and was wrong: config-editor's
-  `--repo <name>` **composes with `--all`** — its collector loop runs after the mode chain,
-  unconditionally. So `--all --repo a --repo b` *does* bind repos at `edit-all`. E6B-04 still belongs on
-  the host, but because the built-in forces the repo-path `.cco` overlay `:ro` (`cmd-start.sh:1898`) —
-  not because the arm is unreachable.
-- **Lane-fixture trap**: in operator mode `_project_iter_members` enumerates from the reachable
-  `project.yml`, **not** the index (`index.sh:1456-1468`). A fixture that seeds only the index is
-  vacuous, and looks like a product bug for a while.
-- **The mask.** `access: {claude: all}` is uncommitted in `.cco/project.yml` and every suite figure in
-  this cycle was measured with it **ON**. Unmasked adds two known failures. **State the mask state with
-  any number** — this cycle has been wrong about it four times.
+- 🔑 **The result that reframes the topology proposal**: *"the fan-out writer becomes correct
+  verbatim"* and **soundness in `--all`** are **mutually exclusive**. `--all` exists to reach projects
+  whose repos are **not** mounted, and a repo name is a **per-project label** (ADR-0051 D2), so `--all`
+  structurally needs a project-keyed component; `<project>--<repo>` is layout 2 renamed. **The
+  topology's residual value is UX — host/session path parity — not FI-42's correctness.** Recorded in
+  the analysis and in FI-42; do not re-derive it as an argument *for* the change.
+- 🔑 **Why deferring FI-42 is safe, established before deferring** (full table in FI-42): a **normal**
+  session *is* layout 1, so the probe is correct there; `edit-project` and `config-editor --project`
+  refuse at the access boundary (`pack rename` needs `G=rw`); `--all` without `--repo` refuses **before
+  any mutation**. The **only** route reaching the fan-out is `config-editor --all --repo …`, and it
+  exits **declared** — rc 1 plus the `failed` paths. Not silent corruption.
+- ⚠ **FI-44's trap**: the dangling `implementation-handoff.md` links resolve *by basename* to
+  `naming/implementation-handoff.md` — **another domain's file**. "Fixing" them that way replaces a
+  dead link with a **misleading** one. There is no correct target: the handoffs were consumed.
+- ⚠ **A relative link to a pack-supplied rule always dangles.** `documentation.md`, `workflow.md`,
+  `testing.md`, `git-practices.md` come from the pack `core-dev-framework`, not from the repo's
+  `.claude/rules/` (which holds only `documentation-lifecycle.md` + `update-system.md`). **Reference
+  pack rules by name.** Caught live this session.
+- 📝 **The link audit is ~20 lines** over markdown link targets. As a suite docs-lint it would make the
+  ephemeral-link rule enforceable rather than aspirational — proposed in FI-44, not built.
+- **The mask.** `access: {claude: all}` is uncommitted in `.cco/project.yml`; every suite figure in
+  this cycle was measured with it **ON** (**1617/7 of 1624**). Unmasked adds two known failures.
+  **State the mask state with any number** — this cycle has been wrong about it four times.
 - **A count is not a fingerprint**: identify failing tests by name, never by how many there are.
-- **Never edit `lib/`, `bin/test` or `tests/helpers.sh` while a suite run is in flight** — the runner is
-  the script bash is executing.
+- **Never edit `lib/`, `bin/test` or `tests/helpers.sh` while a suite run is in flight** — the runner
+  is the script bash is executing.
 - **Store-touching verbs in a session run the image-baked cco**, so `lib/` edits stay invisible
-  in-session until `cco build`. On the **host**, `./bin/cco` reads the working tree — no rebuild needed.
+  in-session until `cco build`. On the **host**, `./bin/cco` reads the working tree.
 - The working tree carries three untracked paths that are not this cycle's (`tmp`,
   `to-verify-guides-docs.md`, `.claude/worktrees/`) and one intentional uncommitted diff
   (`.cco/project.yml`). **Leave them alone unless asked.**
@@ -114,16 +119,17 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 
 ## Reference documents
 
-- [Roadmap](roadmap.md) — **step 2b** (next), step 3 (audit), step 4 (release); lanes L1–L5 ·
-  [backlog](roadmap-backlog.md) — FI-40, FI-41 (fixed), FI-42, FI-43
+- [Roadmap](roadmap.md) — **G3's verdict** + lanes L1–L5 · **step 2b closed** + the **cycle-2 entry**
+  (config multiplicity, divergence awareness & mount topology) · step 3 (G2) · step 4 (release) ·
+  [backlog](roadmap-backlog.md) — FI-40, FI-42, FI-43 (all deferred), FI-41 (fixed), **FI-44** (new)
 - [Gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) —
-  G0…G6, the operational file for everything from here to the release
-- [Cycle-1.2 plan](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — §1 the two
-  governing rules · **§7 the acceptance log** (S1, S3 both arms, S4 round 3, S5's ruling, G1)
+  G0…G6; **G2 unblocked with two ready findings**, **G6 step 5** carries the known-issue
+- [Cycle-1.2 plan](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — **§7 the
+  acceptance log**, now closing with **G3's verdict**
+- [Config mount topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) —
+  this session's artifact; **cycle-2 starts here**, §3.3 (four blockers) and §8 (six questions)
+- [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) — §6 + the
+  **2026-07-31 ratification annotation**
 - [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
-  — the availability model + its ratified implementation annotations
-- [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) — D3/D7, the
-  functional-write floor and the view-composition trigger
-- [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md) ·
-  [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) — the
-  config-editor modes and the `(G,Pc,Po)` ladder that step 2b must weigh against
+  · [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) ·
+  [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md)
