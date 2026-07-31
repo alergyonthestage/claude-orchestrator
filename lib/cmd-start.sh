@@ -137,7 +137,7 @@ YAML
         # Repos (ADR-0042 §8): only under --project/--repo. Only the NAME reaches
         # the manifest — the host path lives solely in the session override above,
         # so no host path is committed (AD3/G8). Emitted only when non-empty so the
-        # broad default stays repo-free (P18).
+        # `--all` broad mode stays repo-free (P18).
         if [[ -n "$repos" ]]; then
             echo "repos:"
             local _rln
@@ -2583,17 +2583,20 @@ Reads the decentralized <repo>/.cco/ config. With no project name, starts the
 project the current repo HOSTS (cwd-first); name a project to resolve it via the
 machine-local index.
 
-Built-in sessions: 'cco start config-editor' opens the config-editor. By default
-it mounts your ~/.cco store + EVERY resolvable project's .cco/ for broad config
-editing (no code repos). Narrow with --project <name> (repeatable) to mount just
-that project's .cco/ AND its repos (repo-aware config authoring); --repo <name>
-adds one repo. 'cco start tutorial' opens the read-only tutorial.
+Built-in sessions: 'cco start config-editor' opens the config-editor. It is
+minimum-privilege BY MODE (ADR-0044/0048): inside a project (cwd, or --project
+<name>, repeatable) it mounts that project's .cco/ AND its repos read-write while
+your ~/.cco store stays READ-ONLY; bare outside any project it mounts ~/.cco
+read-write only. Widen to every resolvable project's .cco/ with --all (no code
+repos). --repo <name> adds one repo. 'cco start tutorial' opens the read-only
+tutorial.
 
 Options:
   --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
-  --project <name>     config-editor only: narrow to <name>'s .cco/ + its repos (rw; repeatable)
+  --project <name>     config-editor only: target <name>'s .cco/ + its repos (rw; repeatable)
   --repo <name>        config-editor only: also mount repo <name> (rw; repeatable)
-  --all                config-editor only: explicit alias of the broad default (all .cco/, no repos)
+  --all                config-editor only: explicit widener — every project's .cco/
+                       (no repos, edit-all); cannot be combined with --project/--repo
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -2604,10 +2607,14 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --claude-access <l>  .claude authoring access: none | repo (default) | all
+  --claude-access <l>  .claude authoring access: none | repo | all, or granular
+                       repo=,current=,global=,others= (each ro|rw). UNSET it
+                       DERIVES from --cco-access (ADR-0049), so a normal session's
+                       .claude is read-only by default
   --cco-access <l>     .cco/framework access: none | read-project (default) |
                        read-global | read-all | edit-project | edit-global |
-                       edit-all (ADR-0036/0042; `read` = alias for read-all)
+                       edit-all, or granular global=,current=,others= (each
+                       none|ro|rw) (ADR-0036/0042/0046; `read` = alias for read-all)
   --show-host-paths    Show the host<->container path map to the session (default)
   --no-show-host-paths Hide host paths from the session
   --enable-config-edit Deprecated alias for --cco-access edit-project (see 'cco
@@ -2681,9 +2688,14 @@ EOF
             die "--all / --project / --repo apply only to 'cco start config-editor' (ADR-0042 §8). This is a '${session_preset}' session."
         fi
     else
-        # --all is the explicit alias of the broad default (no targets); combining
-        # it with a narrowing selector is contradictory — reject rather than
-        # silently drop --all.
+        # --all is the explicit widener (every project, no targets); combining it
+        # with a narrowing selector is contradictory — reject rather than silently
+        # drop --all. ⚠ This guard tests config_editor_all ONLY, so the OTHER
+        # spelling of the same mode (--cco-access edit-all, which
+        # _resolve_config_editor_mode also resolves to mode=all) is NOT rejected
+        # with --repo: that combination launches, and it is the one route that
+        # reaches FI-42's fan-out. Do not "fix" the asymmetry here — which of the
+        # two spellings is right belongs to the cycle-2 topology decision.
         if [[ "$config_editor_all" == "true" && ( ${#config_editor_targets[@]} -gt 0 || ${#config_editor_repos[@]} -gt 0 ) ]]; then
             die "--all (broad: every project's <repo>/.cco) cannot be combined with --project/--repo (which narrow the scope)."
         fi
