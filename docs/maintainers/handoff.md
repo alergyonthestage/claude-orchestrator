@@ -13,15 +13,16 @@
 documentation audit — is DONE**. Report:
 [`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
 
-**No session can advance this release further.** G4 (merge), G5 (verify on `develop`) and G6
-(release) are all host-side. Two small decisions are owed by the maintainer first — see *Tasks*.
+**No session can advance this release further, and nothing is owed by you first.** The two decisions
+G2 raised were taken on 2026-07-31 (the release-note sentence approved, FI-45 fixed). G4 (merge),
+G5 (verify on `develop`) and G6 (release) are all host-side.
 
 ## How to resume
 
 1. **If you are the maintainer at a host terminal**: open the
    [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
-   at **G4** and work down. Read G2's two ▶ owed items first (below) — one of them changes a
-   sentence in the **release notes**.
+   at **G4** and work down. Nothing blocks it: G2's two items are closed, and G6 step 5 already
+   carries the **approved** known-issue sentence — ship it verbatim.
 2. **If you are a session**: there is no in-session work left on this release. Do not start G4/G5/G6.
    The next *design* subject is **cycle-2** (config multiplicity, divergence awareness & mount
    topology) — start from
@@ -87,7 +88,7 @@ name for name (the six `test_as_*` plus `test_paths_symlink_safe_tool_root`):
 
 ### Open questions that need the human
 
-The two ▶ items in *Tasks*. Neither blocks a session; both block the release.
+**None.** The two G2 raised were both decided on 2026-07-31 — see the ✅ rows in *Tasks*.
 
 ### Non-obvious things worth not rediscovering
 
