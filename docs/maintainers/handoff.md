@@ -1,135 +1,127 @@
-# Handoff — the cycle is accepted; **one in-session item stands between here and the merge**
+# Handoff — **every in-session item is done; what remains is host-side**
 
 > **Ephemeral.** Delete this file before writing the next handoff. It links out only.
-> Written 2026-07-31. Supersedes the handoff of 2026-07-31 (*"the next unit is an analysis"*).
-> Nothing about future work lives *here*: the gates live in the
-> [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
-> and the plan lives in the [roadmap](roadmap.md). This file says where we stopped and how to start.
+> Written 2026-07-31. Supersedes the handoff of 2026-07-31 (*"one in-session item stands between here
+> and the merge"*). That item — **G2** — is done, and so is FI-44's parallel task.
+> The gates live in the
+> [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md),
+> the plan in the [roadmap](roadmap.md). This file says where we stopped and how to start.
 
 ## Methodology / where we are
 
-**Cycle-1.2 is ACCEPTED.** The block's single human gate **G3 passed on 2026-07-31**, verdict
-`ACCEPTED with follow-ups`, written into the plan's §7 acceptance log. All five lanes L1–L5 are
-accepted. **G1's residual host cleanup is done** — nothing from this cycle is left on the host.
+**Cycle-1.2 is ACCEPTED** (G3, 2026-07-31, `ACCEPTED with follow-ups`) and **G2 — the CLI-surface
+documentation audit — is DONE**. Report:
+[`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
 
-**Roadmap step 2b closed with a decision, not a fix**: the config mount topology **does not change in
-this release**; the whole block moves to **cycle-2**, and FI-40 / FI-42 / FI-43 are deferred with it.
-
-**No gate is pending human approval.** The next phase is Review/Documentation, autonomous:
-**G2, the CLI-surface documentation audit** — the only item left before the merge, and the only one a
-session can finish alone.
+**No session can advance this release further.** G4 (merge), G5 (verify on `develop`) and G6
+(release) are all host-side. Two small decisions are owed by the maintainer first — see *Tasks*.
 
 ## How to resume
 
-1. Open the [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
-   at **G2**. Its deferral is **lifted** (step 2b is closed, so the surface the audit documents is the
-   shipped one). ⚠ **Audit today's behaviour — do not pre-document anything from the topology
-   analysis.** Nothing from it ships.
-2. G2 already has **two findings handed to it**, in its own section — do not re-derive them:
-   the stale `cco start --help` text, and the ADR-0046 §6 ratification. Start from the canonical
-   [`cli/reference/cli-surface-matrix.md`](cli/reference/cli-surface-matrix.md): a wrong row there is
-   inherited by every downstream doc.
-3. **In parallel** (maintainer's instruction, 2026-07-31): FI-44's **class-B** link repair —
-   [`roadmap-backlog.md`](roadmap-backlog.md). Independent of G2, same pre-release window.
-   ⚠ Read FI-44's warning first; the obvious repair is the wrong one.
-4. Autonomy for both is `review-docs`-class: objective drift is corrected in place; **user-facing
-   wording is a human gate**, not a sweep.
+1. **If you are the maintainer at a host terminal**: open the
+   [gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
+   at **G4** and work down. Read G2's two ▶ owed items first (below) — one of them changes a
+   sentence in the **release notes**.
+2. **If you are a session**: there is no in-session work left on this release. Do not start G4/G5/G6.
+   The next *design* subject is **cycle-2** (config multiplicity, divergence awareness & mount
+   topology) — start from
+   [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
+   §3.3 and §8, and note the new fact G2 added to it (below).
 
 ## Tasks
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list only points at it.
 
-- [ ] **G2 — CLI-surface documentation audit** (roadmap step 3) ◀ *next, in-session*.
-- [ ] **FI-44 class B** — links from immutable ADRs/reviews to consumed handoffs. Parallel to G2.
+- [ ] **▶ OWED BY YOU (1) — sign off the release-note sentence.** G6 step 5's known-issue wording was
+      **factually wrong** and is corrected: it named `cco start config-editor --all --repo …`, an
+      invocation `cco start` **refuses**. The reachable one is `--cco-access edit-all --repo …`. The
+      correction is factual; the phrasing is yours.
+- [ ] **▶ OWED BY YOU (2) — decide [FI-45](roadmap-backlog.md)**: `cco remote list` at `read-project`
+      says *"widen your access to read-global"*, and at read-global+ says *"was removed"*. Its four
+      sibling removed aliases refuse at the shim before any scope test. One `case` arm — but it edits
+      a user-visible message and **two pinned tests**, so G2 did not touch it.
 - [ ] **G4** — merge → `develop`, then verify the merge did nothing extra (tree-hash check).
 - [ ] **G5** — verify **on `develop`**: the unmasked suite, and the **macOS host suite on this tree**
       (never run — the largest unknown left).
-- [ ] **G6** — `develop → main` + release. ⚠ **Step 5 of G6 is new**: carry the **FI-42 known-issue**
-      into the release notes; the wording is written out there, already reduced to what a user can act on.
-- [ ] **Host-side, owed**: `git push origin develop fix/release/cycle-1.2` — the branch is **14 commits
-      ahead** of origin. (G1's cleanup is done; nothing else is owed on the host.)
+- [ ] **G6** — `develop → main` + release, carrying the FI-42 known-issue (wording above).
+- [ ] **Host-side, owed**: `git push origin develop fix/release/cycle-1.2` — the branch is **20
+      commits ahead** of origin.
 
 ## Context
 
 ### What this session produced
 
-Three commits, **all docs — no code was touched**, so every gate result from G0/G1 still stands:
+Six commits — five docs, **one touching `lib/`** (the `cco start --help` text plus two stale
+comments; behaviour unchanged, suite re-run):
 
-- `241273e` — the **step-2b analysis**, persisted at
-  [`configuration/agent-cco-access/analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md).
-  Home chosen deliberately (mounts are the mechanism, *which authoring path a verb may use at a given
-  access level* is the subject), argued in its first paragraph.
-- `30be1d8` — **step 2b's decision**: release as-is, block → cycle-2. Landed the ADR-0046 §6
-  ratification, the three backlog deferrals, and unblocked G2.
-- `fb9b796` — **G3's verdict** recorded, lanes marked accepted, plus the class-A link repair and
-  **FI-44**.
+- `e0606d1` — `cco start --help` corrected: config-editor is **min-privilege by mode**, not the old
+  broad default; `--claude-access` no longer claims `repo` is the default.
+- `2e5e54e` — the **canonical CLI-surface matrix** re-derived from the shim (4 wrong rows), plus the
+  living design doc and a forward annotation on the A1 analysis.
+- `b40b9e0` — **user docs**: the config-editor guide was still pre-ADR-0048; `cli.md`'s one
+  self-contradicting line.
+- `bb875d3` — the **release known-issue named an invocation `cco start` refuses** (4 documents).
+- `eb1dec5` — G2's record: report, gate status, roadmap step 3, **FI-45**.
+- `e0a591f` — **FI-44 class B**: 15 links to consumed handoffs de-linked; class D closed as *not a
+  defect*.
 
 ### Decisions taken (rationale lives in the linked documents, not here)
 
-- **The topology does not change in this release; FI-42 is deferred with it** — roadmap step 2b.
-  The decisive reason is *conceptual, not economic*: **the fix cannot be taken without taking the
-  contract decision it carries** (all-or-nothing vs all-or-declared-partial), and that decision is the
-  cycle-2 subject. Implementing now would settle a contract by implementation.
-- **G3 = `ACCEPTED with follow-ups`**, not plain `ACCEPTED` — three findings leave the cycle by
-  decision and one ships as a known-issue, so **D-V31-4** requires the exception be written.
-- **ADR-0046 §6 ratified in place** (annotation on the ADR, ADR-0056's established form), *not*
-  deferred: the **normal** session already ships the wide `Pc` span unenforced.
-- **Only class-A links repaired**; class B gets an entry instead of a sed — see FI-44.
+- **G2's autonomy was applied as written**: objective drift corrected in place (8 items), anything
+  touching user-facing wording or a pinned test raised instead of swept (2 items).
+- **FI-44 class B repaired in the conservative form** proposed in the entry — de-link, keep prose,
+  mark *(consumed)* — because it removes a broken promise without restating a decision, which is what
+  makes it compatible with editing immutable documents.
+- **FI-44 class D closed as a false positive**, not fixed: the three "placeholders" are
+  `` `[name](url)` `` inside **code spans**, illustrating the llms.txt format.
 
 ### Open questions that need the human
 
-**None blocking.** The six open questions of the topology analysis (§8) are **cycle-2's agenda**, not
-this release's — they were deliberately left open when step 2b was decided.
+The two ▶ items in *Tasks*. Neither blocks a session; both block the release.
 
 ### Non-obvious things worth not rediscovering
 
-- 🔑 **The result that reframes the topology proposal**: *"the fan-out writer becomes correct
-  verbatim"* and **soundness in `--all`** are **mutually exclusive**. `--all` exists to reach projects
-  whose repos are **not** mounted, and a repo name is a **per-project label** (ADR-0051 D2), so `--all`
-  structurally needs a project-keyed component; `<project>--<repo>` is layout 2 renamed. **The
-  topology's residual value is UX — host/session path parity — not FI-42's correctness.** Recorded in
-  the analysis and in FI-42; do not re-derive it as an argument *for* the change.
-- 🔑 **Why deferring FI-42 is safe, established before deferring** (full table in FI-42): a **normal**
-  session *is* layout 1, so the probe is correct there; `edit-project` and `config-editor --project`
-  refuse at the access boundary (`pack rename` needs `G=rw`); `--all` without `--repo` refuses **before
-  any mutation**. The **only** route reaching the fan-out is `config-editor --all --repo …`, and it
-  exits **declared** — rc 1 plus the `failed` paths. Not silent corruption.
-- ⚠ **FI-44's trap**: the dangling `implementation-handoff.md` links resolve *by basename* to
-  `naming/implementation-handoff.md` — **another domain's file**. "Fixing" them that way replaces a
-  dead link with a **misleading** one. There is no correct target: the handoffs were consumed.
-- ⚠ **A relative link to a pack-supplied rule always dangles.** `documentation.md`, `workflow.md`,
-  `testing.md`, `git-practices.md` come from the pack `core-dev-framework`, not from the repo's
-  `.claude/rules/` (which holds only `documentation-lifecycle.md` + `update-system.md`). **Reference
-  pack rules by name.** Caught live this session.
-- 📝 **The link audit is ~20 lines** over markdown link targets. As a suite docs-lint it would make the
-  ephemeral-link rule enforceable rather than aspirational — proposed in FI-44, not built.
+- 🔑 **`--all` and `--cco-access edit-all` are two spellings of one config-editor mode, and only the
+  first is guarded.** `cmd-start.sh:2687` rejects `--all` with `--project`/`--repo`; the same guard
+  never tests `cli_cco_access`. So the *unguarded* spelling is the one that reaches FI-42's fan-out.
+  Annotated at the guard. **Do not fix it as a stray guard** — which spelling is canonical belongs to
+  the cycle-2 topology decision, and cycle-2 inherits this fact.
+- 🔑 **Three times this cycle, a confident classification derived by reading code was refuted by
+  running it** (S7's dead fix site, S8's unreachable remedy, now this). G2's every behavioural claim
+  was probed against the hermetic harness. `tests/helpers.sh`'s `setup_cco_env` +
+  `_lane_operator_exports` give you a host run and an operator-lane run in ~10 lines — cheaper than
+  the re-derivation they replace.
+- ⚠ **The machine-read surface being right does not mean the human one is.** The config-editor's own
+  agent-facing rules (`internal/config-editor/.claude/`) were **correct**; the user guide next to
+  them was two ADRs stale and advertised three verbs the session refuses. Check both, always.
+- ⚠ **A docs-link lint must skip inline code spans**, or it reports FI-44's own text — and every
+  `[name](url)` format example — as broken forever. Recorded in FI-44.
 - **The mask.** `access: {claude: all}` is uncommitted in `.cco/project.yml`; every suite figure in
-  this cycle was measured with it **ON** (**1617/7 of 1624**). Unmasked adds two known failures.
-  **State the mask state with any number** — this cycle has been wrong about it four times.
+  this cycle was measured with it **ON**. **State the mask state with any number.**
 - **A count is not a fingerprint**: identify failing tests by name, never by how many there are.
-- **Never edit `lib/`, `bin/test` or `tests/helpers.sh` while a suite run is in flight** — the runner
-  is the script bash is executing.
+- **Never edit `lib/`, `bin/test` or `tests/helpers.sh` while a suite run is in flight.**
 - **Store-touching verbs in a session run the image-baked cco**, so `lib/` edits stay invisible
   in-session until `cco build`. On the **host**, `./bin/cco` reads the working tree.
 - The working tree carries three untracked paths that are not this cycle's (`tmp`,
   `to-verify-guides-docs.md`, `.claude/worktrees/`) and one intentional uncommitted diff
-  (`.cco/project.yml`). **Leave them alone unless asked.**
+  (`.cco/project.yml`). **Leave them alone unless asked.** ⚠ `.claude/worktrees/` holds full copies
+  of the repo — exclude it from every repo-wide grep or you will "find" stale text that is not in the
+  tree (it happened during this audit).
 - `tests/test_start_dry_run.sh:1740` and `:1762` contain literal conflict markers as **fixture
   content** — a repo-wide grep for merge markers flags them as false positives.
 
 ## Reference documents
 
-- [Roadmap](roadmap.md) — **G3's verdict** + lanes L1–L5 · **step 2b closed** + the **cycle-2 entry**
-  (config multiplicity, divergence awareness & mount topology) · step 3 (G2) · step 4 (release) ·
-  [backlog](roadmap-backlog.md) — FI-40, FI-42, FI-43 (all deferred), FI-41 (fixed), **FI-44** (new)
+- [Roadmap](roadmap.md) — G3's verdict + lanes L1–L5 · step 2b closed + the **cycle-2 entry** ·
+  **step 3 (G2) closed** · step 4 (release) ·
+  [backlog](roadmap-backlog.md) — FI-40/42/43 (deferred to cycle-2), **FI-44 (B done, D closed)**,
+  **FI-45 (new, needs your decision)**
 - [Gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) —
-  G0…G6; **G2 unblocked with two ready findings**, **G6 step 5** carries the known-issue
-- [Cycle-1.2 plan](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — **§7 the
-  acceptance log**, now closing with **G3's verdict**
+  G0…G6; **G2 done with two owed items**, **G6 step 5** carries the corrected known-issue
+- [G2 audit report](cli/reviews/2026-07-31-cli-surface-audit.md) — method, the 8 corrections, the
+  release-artefact finding, and what was verified correct
+- [CLI-surface matrix](cli/reference/cli-surface-matrix.md) — the canonical verb table, re-derived
 - [Config mount topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) —
-  this session's artifact; **cycle-2 starts here**, §3.3 (four blockers) and §8 (six questions)
-- [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) — §6 + the
-  **2026-07-31 ratification annotation**
-- [ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)
-  · [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md) ·
-  [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md)
+  **cycle-2 starts here**, §3.3 (four blockers) and §8 (six questions)
+- [Cycle-1.2 plan](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) — §7 the
+  acceptance log
