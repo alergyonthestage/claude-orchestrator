@@ -819,7 +819,7 @@ carried out of the cycle by an explicit decision, and one of them ships as a kno
 
 | Follow-up | Disposition |
 |---|---|
-| [FI-42](../../../../roadmap-backlog.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --all --repo …`), failing **declared** (rc 1 + the `failed` paths). |
+| [FI-42](../../../../roadmap-backlog.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --cco-access edit-all --repo …`; ⚠ *the `--all --repo` spelling written here at the gate is refused by `cco start` — corrected at G2, see below*), failing **declared** (rc 1 + the `failed` paths). |
 | [FI-43](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — a sub-question of the topology decision, not a standalone flag. No exposure: the current `rw` default is documented as such. |
 | [FI-40](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — topology-independent, deferred only to keep the release tree unchanged. |
 | ADR-0046 §6 | **Ratified in place** 2026-07-31 (annotation on the ADR), not deferred. |
@@ -837,6 +837,23 @@ confirmed by the maintainer 2026-07-31.
 ⚠ **The lanes' status follows from this gate**: L1, L2, L4 and L5 were each *"awaiting the block's
 single human gate"* — they are now **accepted**, and the roadmap rows say so. L3 was already accepted.
 
+#### G2 — CLI-surface documentation audit: **DONE** (2026-07-31), and what it changed *after* acceptance
+
+Report: [`cli/reviews/2026-07-31-cli-surface-audit.md`](../../../../cli/reviews/2026-07-31-cli-surface-audit.md).
+Eight objective drifts corrected in place. Two items went to the maintainer; **both were decided the
+same day**, and one of them lands code **after** G3 — recorded here rather than inferred (D-V31-4):
+
+| Item | Disposition |
+|---|---|
+| The **release known-issue named an invocation `cco start` refuses** — `--all --repo …` dies at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …` (both probed) | ✅ **Corrected and approved** in the G3-accepted shape — only the named command changed. Runbook G6 step 5 carries the signed-off sentence. |
+| [**FI-45**](../../../../roadmap-backlog.md) — `cco remote list` told a read-project session to widen its access to reach a **removed** verb | ✅ **FIXED** (`bin/cco` + 2 rewritten tests + 1 new one, changelog 61). **This is a post-acceptance change to `bin/cco`**, taken deliberately: it copies the shape four sibling removed aliases already have, so it adds **no contract** — and shipping a known false remedy in the release that exists to close that class was the worse option. |
+
+⚠ **What the post-acceptance fix costs, stated rather than assumed**: G3's verdict was recorded on a
+tree that did not contain it. The change is confined to one `case` arm in the shim's `remote` branch
+and its tests; **G5 re-runs the full suite on `develop`**, which is where it gets its verification.
+G1's and G3's evidence is unaffected — neither exercised `remote list`. Precedent: **FI-41** was fixed
+in-cycle after the G1 gate surfaced it.
+
 ---
 
 ## 8. Out-of-session gates → [`08-gates-to-release.md`](08-gates-to-release.md)
@@ -853,10 +870,10 @@ trap (the pre-S1 `state/cco/index` spelling, which moves nothing) is exactly tha
 | Gate | What | Where it runs | State |
 |---|---|---|---|
 | **G0** | `git push origin develop fix/release/cycle-1.2` | host | ✅ done 2026-07-30 |
-| **G1** | S6's host half (**E6B-04**) + **D7**'s residual — one scratch setup serves both | host + an `edit-all` session | ◀ current |
-| **G2** | CLI-surface documentation audit (roadmap step 3) | in-session, **sequential after G1** | owed |
-| **G3** | the block's **single human gate** | maintainer | owed |
-| **G4** | merge → `develop` + the merge tree-hash check | host | owed |
+| **G1** | S6's host half (**E6B-04**) + **D7**'s residual — one scratch setup serves both | host + an `edit-all` session | ✅ passed 2026-07-31 |
+| **G2** | CLI-surface documentation audit (roadmap step 3) | in-session, **sequential after G1** | ✅ done 2026-07-31 |
+| **G3** | the block's **single human gate** | maintainer | ✅ **`ACCEPTED with follow-ups`** 2026-07-31 |
+| **G4** | merge → `develop` + the merge tree-hash check | host | ◀ next |
 | **G5** | verification **on `develop`** (unmasked suite · macOS host suite · `cco build` + smoke) | host | owed |
 | **G6** | `develop → main` + `scripts/release.sh` | host | owed |
 

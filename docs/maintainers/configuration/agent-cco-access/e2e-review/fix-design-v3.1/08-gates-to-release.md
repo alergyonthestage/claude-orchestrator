@@ -248,15 +248,17 @@ Expected: the view **is** composed, and both floor entries are writable while th
 > ✅ **Ran and completed 2026-07-31.** Report:
 > [`cli/reviews/2026-07-31-cli-surface-audit.md`](../../../../cli/reviews/2026-07-31-cli-surface-audit.md).
 > **Eight drifts corrected in place** (both handed findings + six the audit found), **one release
-> artefact corrected**, **two items left for you**:
+> artefact corrected**, and the two items it raised for the maintainer are **both closed the same
+> day**:
 >
-> 1. 🔴 **The release known-issue named an invocation `cco start` refuses** — `--all --repo …` is
+> 1. ✅ **The release known-issue named an invocation `cco start` refuses** — `--all --repo …` is
 >    rejected at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …`.
->    G6 step 5's wording is corrected below; **the sentence is release-facing and owes your
->    sign-off**.
-> 2. **`remote list` answers *"widen your access"* for a removed verb** — documented as shipped,
->    logged as [FI-45](../../../../roadmap-backlog.md); the fix is pinned by two tests and changes a
->    user-visible message, so it is a decision, not a sweep.
+>    G6 step 5's wording is corrected below and **approved by the maintainer** — ship it verbatim.
+> 2. ✅ **[FI-45](../../../../roadmap-backlog.md) FIXED** — `remote list` no longer answers *"widen
+>    your access"* for a removed verb; it refuses with the removal notice at every level, like its
+>    four siblings. Decided by the maintainer the same day; no new contract (it copies the sibling
+>    shape), changelog 61. ⚠ **This lands `bin/cco` AFTER G3's acceptance** — recorded as a
+>    post-acceptance in-cycle fix in the plan's §7, the same treatment FI-41 got.
 >
 > The largest find was **not** in the matrix: the **config-editor user guide** was still describing
 > the pre-ADR-0048 model and advertising three verbs that project mode refuses — while the built-in's
@@ -419,8 +421,8 @@ A failure here is a fix on a branch off `develop`, never a commit on `develop`.
    `config-editor --all` + `--repo`, which **`cco start` refuses** (`cmd-start.sh:2687` rejects `--all`
    with a narrowing selector). Shipping that sentence would have handed users a command that cannot run,
    for a bug they can actually hit by the other spelling — the exact defect class this cycle was about.
-   ⚠ **Maintainer sign-off is owed on this sentence** (release-note wording is a human gate); the
-   correction is factual, the phrasing is yours to accept.
+   ✅ **APPROVED by the maintainer 2026-07-31**, in the corrected form above: the shape G3 accepted is
+   kept and only the named invocation changed. **This sentence is signed off — ship it verbatim.**
 
 ⚠ CI on the tag is the **last** net, and it fires on `main` — i.e. publicly. G5 exists so that net never
 has to catch anything.
