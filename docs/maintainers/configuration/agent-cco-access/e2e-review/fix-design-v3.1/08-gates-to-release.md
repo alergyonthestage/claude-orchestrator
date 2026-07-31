@@ -238,9 +238,20 @@ Expected: the view **is** composed, and both floor entries are writable while th
 
 ## G2 — CLI-surface documentation audit (in-session)
 
-> ⏸ **DEFERRED by the maintainer, 2026-07-31**, behind the config-mount-topology analysis (roadmap
-> step **2b**). G1's two refusals exposed a design question big enough to change what the CLI surface
-> *should say* — auditing the documentation of a surface that may move is work done twice.
+> ▶ **UNBLOCKED 2026-07-31 — the deferral is lifted.** It was deferred behind the
+> config-mount-topology analysis (roadmap step **2b**) because auditing a surface that may move is work
+> done twice. **Step 2b is now closed**: the maintainer decided the topology does **not** change in this
+> release (whole block → cycle-2), so **the surface the audit documents is the shipped one**. Audit
+> today's behaviour, and do not pre-document anything from the analysis.
+>
+> 📝 **Two items the analysis already handed this audit** (do not re-derive):
+> 1. `cco start --help` (`lib/cmd-start.sh:2586-2590`) still describes the **pre-ADR-0044** world —
+>    *"By default it mounts your ~/.cco store + EVERY resolvable project's .cco/"* and *"`--all` … an
+>    explicit alias of the broad default"*. Both false since ADR-0044 §3 / ADR-0048 §1: config-editor's
+>    default is **min-privilege by mode**. Objective drift → correct in place.
+> 2. The [ADR-0046 §6 ratification](../../decisions/0046-unified-cco-access-model.md) landed on
+>    2026-07-31 — a **normal** `edit-project` session spans every member repo's `.cco` at `Pc`. Any doc
+>    row still stating the narrow default is drift.
 
 Roadmap **step 3**, deliberately before the merge: *a release whose CLI reference misstates where a verb
 runs ships the same defect class this cycle was about.* Sequential after G1 by the maintainer's decision,
@@ -272,9 +283,15 @@ be on the table:
 
 - [ ] **§7 acceptance log**, four rows: S1 (both arms) · **S3 (both arms)** · **S4 (round 3)** · S5's ruling
       that closes L4/L5 in-session.
-- [ ] **Suite 1614/7 of 1621, mask ON** — and the 7 identified **name for name** as the host-only set, not
-      by count. *A count is not a fingerprint*: the 10-vs-7 episode began exactly there.
-- [ ] **G1's two results** (E6B-04, D7).
+- [ ] **Suite 1617/7 of 1624, mask ON** (was 1614/7 of 1621 before FI-41's in-cycle fix `1814ba3` added
+      the 4th INV-AVAIL arm + two regressions) — and the 7 identified **name for name** as the host-only
+      set, not by count. *A count is not a fingerprint*: the 10-vs-7 episode began exactly there.
+- [ ] **G1's two results** (E6B-04, D7) — including that E6B-04's third post-condition is recorded
+      **vacuous** (a locally created pack carries no provenance/tags/fingerprint to re-key).
+- [ ] **Step 2b's decision is TAKEN, not open** (2026-07-31): the mount topology does not change in this
+      release; **FI-40, FI-42 and FI-43 are deferred to cycle-2**, each with its reason written into
+      [`roadmap-backlog.md`](../../../../roadmap-backlog.md). ADR-0046 §6 was ratified in place. **Do not
+      re-litigate** — what this gate still owes is the *release known-issue* below.
 - [ ] **G2's findings**, split into *corrected in place* vs *needs your decision*.
 - [ ] The **seven ratified deviations** in ADR-0056's *"Implementation annotations"* — already decided,
       **not** to be re-litigated.
@@ -348,6 +365,19 @@ A failure here is a fix on a branch off `develop`, never a commit on `develop`.
 3. The version number is the **maintainer's call** — `package.json` is at `0.5.2`.
 4. State the **verified platform** in the release notes: macOS verified; Linux partially supported with the
    internal-store reachability caveat (README already says this consistently in both places since `9599111`).
+5. **Carry the FI-42 known-issue into the release notes** (decided with step 2b, 2026-07-31). Suggested
+   wording, already reduced to what a user can act on:
+
+   > **Known issue** — in a `cco start config-editor --all` session that *also* binds repos with
+   > `--repo`, `cco pack rename` moves the pack in the store and then fails to re-key the referring
+   > `project.yml` files, because the built-in mounts a repo's committed `.cco` read-only. It exits **1**
+   > and **lists the paths it could not rewrite** — nothing is changed silently. Re-run the rename on
+   > your **host** to complete it. Every other route is unaffected: a normal session succeeds, and the
+   > other config-editor modes refuse before changing anything.
+
+   ⚠ Two things this wording protects, both learned the hard way: it names the **one** invocation instead
+   of implying `pack rename` is broken, and it says the failure is **declared**, so a user meeting it does
+   not assume silent corruption. Tracked as [FI-42](../../../../roadmap-backlog.md) → cycle-2.
 
 ⚠ CI on the tag is the **last** net, and it fires on `main` — i.e. publicly. G5 exists so that net never
 has to catch anything.

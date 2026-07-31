@@ -1528,6 +1528,13 @@ repo cwd gets a path that works but is not the one that counts).
 
 ## FI-40: a fail-closed refusal states a count where naming is safe (`pack rename`, unmounted census)
 
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31**, with the rest of the step-2b block. The
+> [topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) §7 confirms it
+> is **topology-independent** — the census counts a *name* set (`store.sh:185-194`), so no mount
+> change affects it and it could have shipped on either side of the gate. It is deferred purely to
+> keep the release tree unchanged: it is user-facing wording **and** a behaviour change, i.e. code
+> plus a suite re-run, on a cycle whose gates are already green. Nothing blocks it in cycle-2.
+
 **Found**: 2026-07-30, during cycle-1.2's **G1/E6B-04** gate, from a real refusal in an `edit-all`
 config-editor session. **Severity**: low — nothing is lost and the refusal is correct; it is the
 *remedy* that is unactionable. **Effort**: Low. **Class**: availability vocabulary (R-A's family),
@@ -1663,6 +1670,37 @@ D1 (one owner) · D2 (a remedy is a function of the print site) · criterion C �
 
 ## FI-42: the packs[] fan-out resolves its WRITE path by member probe, while its READ path is operator-aware
 
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31**, after the [config mount topology
+> analysis](configuration/agent-cco-access/analysis/config-mount-topology.md). **Not** because it is
+> unimportant: **the fix cannot be taken without taking the contract decision below** (all-or-nothing
+> vs all-or-declared-partial), and that decision is the subject of the cycle-2 session. Fixing the
+> writer now would settle the contract *by implementation* — the decision-never-made the workflow's
+> golden rule forbids. Secondary cost: `lib/rename.sh` is the surface **E6B-04** validates, and that
+> gate ran for the first time in any round on 2026-07-31; touching it invalidates the evidence and
+> costs a full host round (`cco build` + re-run) on a cycle whose only remaining work is verification.
+>
+> **Reachability, established before deferring** (this is what makes the deferral safe):
+>
+> | Invocation | Behaviour today |
+> |---|---|
+> | normal session, `edit-global` | **works** — a normal session *is* layout 1, member `.cco` is rw (`cmd-start.sh:1885-1887`), so the probe is correct by construction |
+> | normal session, `edit-project` | refused, exit 2 — `pack rename` writes the store, needs `G=rw` (`bin/cco:490`) |
+> | `config-editor --project X` | refused, exit 2 — project mode is `global=ro` (`_config_editor_default_cco`) |
+> | `config-editor --all` (no `--repo`) | refused **before any mutation** by the pre-scan, with FI-41's corrected wording |
+> | `config-editor --all --repo a --repo b` | ⚠ **the only path that reaches the fan-out**: store moved, every rewrite fails on the forced `:ro`, exits **declared** — rc 1 + the `failed` paths listed (S2b contract). Not silent corruption. |
+>
+> So the residual exposure is **one built-in, one flag combination** — the one believed unreachable
+> until 2026-07-31 — failing declared and repairably. Carried as a release known-issue.
+>
+> 🔑 **A result derived while persisting the analysis, which weakens the topology fix and belongs
+> here**: *"the writer becomes correct verbatim"* and *soundness in `--all`* are **mutually
+> exclusive**. `--all` exists to reach projects whose repos are **not** mounted, and repo names are
+> per-project labels (ADR-0051 D2) — so `--all` structurally needs a project-keyed component.
+> `<project>--<repo>` is layout 2 under another name (the fan-out would still have to compose the
+> path → no verbatim fix); a mode-split keeps the verbatim property only in project mode, where it
+> already works today via the same-inode second bind (D-M11). **The topology's residual value is UX —
+> host/session path parity — not FI-42's correctness.**
+
 **Found**: 2026-07-31, from two maintainer questions about config-editor's repo mounting.
 **Severity**: a capability that exists in the session is unreachable — `cco pack rename` refuses in a
 config-editor session although the files it must rewrite are mounted **and writable** there.
@@ -1731,6 +1769,14 @@ canonical) · FI-41 · [FI-43](#fi-43---repo-mounts-the-code-rw-while-its-stated
 ---
 
 ## FI-43: `--repo` mounts the code **rw** while its stated purpose is to READ it
+
+> ⏸ **DEFERRED TO CYCLE-2 by the maintainer, 2026-07-31.** The
+> [topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) §5 established
+> that this is **a sub-question of the topology decision, not a standalone flag**: if the mount
+> topology moves, `--repo`'s contract is restated anyway, and option (ii) — body `:ro`, config rw —
+> is exactly what would make RC-6 §3.7's rationale *true* rather than merely re-worded. Deciding it
+> first would fix the cheaper half of a question whose expensive half is still open. No exposure: the
+> current default is documented as `rw`, so nothing is misstated in the release.
 
 **Found**: 2026-07-31, same conversation. **Severity**: none observed — a coherence question between a
 documented behaviour and the rationale of the decision that shaped it. **Effort**: Low (a flag), but

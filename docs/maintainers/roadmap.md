@@ -508,8 +508,59 @@ its rationale becomes false; its `Po=none` gain needs role-aware per-member mode
 (`cmd-start.sh:1885-1887`), so §6 should be settled in the same ADR, not re-deferred. On `cco sync`:
 the topology removes reachability only — the blocking prerequisite is that `sync-meta` never crosses
 INV-STATE, so `synced`/`divergent`/one-config-repo are **indistinguishable in-session today**. FI-40
-is topology-independent and can ship either side of the gate. ▶ Next: the maintainer's decision on the
-six open questions in §8 of the analysis, then an ADR.
+is topology-independent and can ship either side of the gate.
+
+✅ **STEP 2b IS CLOSED — the maintainer's decision, 2026-07-31: release at the current state; the whole
+block moves to cycle-2.** Nothing about the mount topology ships in this release, and **FI-42 is
+deferred with it**.
+
+- **Why FI-42 is not fixed first** (the decisive reason, not the cheapest): the fix *cannot be taken
+  without taking the contract decision it carries* — all-or-nothing vs all-or-declared-partial — and
+  that decision is exactly what the cycle-2 session is for. Implementing now would settle a contract
+  by implementation. Secondary: `lib/rename.sh` is the surface **E6B-04** validates, and that gate ran
+  for the first time in any round today; touching it invalidates the evidence and buys a full host
+  round on a cycle whose only remaining work is verification.
+- **Why deferring is safe** — reachability was established before deciding (table in
+  [FI-42](roadmap-backlog.md)): a **normal** session is layout 1, so the probe is correct there;
+  `edit-project` and `config-editor --project` refuse at the access boundary (`G=rw` required);
+  `--all` without `--repo` refuses **before any mutation**. The **only** path reaching the fan-out is
+  `config-editor --all --repo …` — the combination believed unreachable until today — and it exits
+  **declared** (rc 1 + the `failed` paths, S2b contract), not silently. → release known-issue.
+- 🔑 **A result derived while persisting the analysis, which reframes the proposal**: *"the writer
+  becomes correct verbatim"* and *soundness in `--all`* are **mutually exclusive** — `--all` exists to
+  reach projects whose repos are not mounted, and a repo name is a per-project label (ADR-0051 D2), so
+  `--all` structurally needs a project-keyed component. **The topology's residual value is UX (host /
+  session path parity), not FI-42's correctness.**
+- ✅ **Landed here, docs-only**: the [ADR-0046 §6 ratification annotation](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)
+  — the *normal* session already ships `include_member_configs: true`'s span unenforced, so the
+  config-editor built-in is the **stricter** of the two; the shipped behaviour is ratified, the
+  rewrite of §6 belongs to cycle-2.
+- ⏸ **Deferred to cycle-2**: [FI-42](roadmap-backlog.md) · [FI-43](roadmap-backlog.md) (a
+  *sub-question* of the topology decision, not a standalone flag) · [FI-40](roadmap-backlog.md)
+  (topology-independent; deferred only to keep the release tree unchanged).
+
+**⏭ CYCLE-2 — config multiplicity, divergence awareness & mount topology** (analysis → design, one
+session, subject fixed by the maintainer 2026-07-31). ⚠ **The subject is wider than the mount
+topology, and the topology is downstream of it.** The prior question is that **a session does not know
+how many config copies exist for a project, nor whether they diverge** — the analysis grounds this
+mechanically: `sync-meta` never crosses **INV-STATE**, so `_sync_is_divergent` always returns false and
+every owned member reports `synced`. The question is not badly answered, it is **unaskable**. From
+there:
+
+- **config-editor is the config-authoring tool** and must therefore *know* a project's sync/divergence
+  state and let the user handle it **explicitly** (which implies `cco sync`, or a successor, being
+  reachable in that session — and its blocking prerequisite is the STATE crossing, not the mounts).
+- **A standard session is right to see only the config of the project it was started from** (which
+  repo hosted the launch — already documented at length in the design). The two modes have different
+  needs, and today's single mechanism serves both by accident.
+- **Then, and only then, the topology**: validate or discard the two-path model
+  (`/workspace/<name>-config` vs `/workspace/<repo>/.cco`) against real use cases and user intent,
+  with the four blockers and the six open questions of
+  [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
+  §3.3/§8 as ready-made input. ⚠ Start from the analysis: it is *not* a dead end even if the topology
+  is discarded — it either validates the current design or names what is wrong with it, and it has
+  already surfaced one thing nobody had seen (a repo name is per-project, so a repo-keyed mount cannot
+  address several projects at once).
 
 **3 — CLI-surface documentation audit** (own session, after cycle-1.2, before merge). Verify
 every verb declares correctly **which access levels it runs at** and **host vs container**. This
