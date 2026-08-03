@@ -1835,10 +1835,11 @@ Convert a pack to fully self-contained and locally owned (see also the unified
 `cco <res> internalize`, §3.23).
 
 ```
-Usage: cco pack internalize <name>
+Usage: cco pack internalize <name> [--as <new-name>]
 
 Examples:
   cco pack internalize my-docs-pack
+  cco pack internalize team-rules --as team-rules-local   # fork, leaving the original linked
 ```
 
 Performs two independent operations as needed:
