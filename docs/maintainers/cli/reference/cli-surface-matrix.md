@@ -3,6 +3,10 @@
 > **Status**: Approved reference (2026-07-07), **re-audited against the code 2026-07-31**
 > (release gate **G2** — [runbook](../../configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md),
 > report in [`../reviews/2026-07-31-cli-surface-audit.md`](../reviews/2026-07-31-cli-surface-audit.md)).
+> **Inventory re-derived from the code 2026-08-03** (G6 living-docs sweep): G2 audited each row's
+> *access level* and *host-vs-container* class; this pass asked the orthogonal question — does a row
+> exist for every verb, and does every row's verb exist? (findings: the llms family, `list builtin`,
+> `store-op`, the removed `project` aliases.)
 > The single-screen view of the whole `cco`
 > verb surface: for each verb, its behaviour on the **host** vs **in-container**
 > (container-operator mode), and how availability + output vary by **`cco_access`**.
@@ -117,11 +121,12 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `list` (unified) | read:project | ✅ from read-project | scoped per kind (§3); count-only stderr notice when filtered |
 | `list projects\|packs\|llms` | read:project | ✅ from read-project | project-class (§3) |
 | `list templates\|remotes` | read:**global** | ✅ from **read-global** | global-class. ⚠ The **kind-specific** form is a *refusal* below read-global (exit 2, `'cco list template' is not available at this access scope`), **not** an empty list: the count-only notice is what the **unified** `cco list` emits for the same hidden kind (verified 2026-07-31, G2) |
+| `list builtin` (aliases `builtins`, `internal`; also `--include-internal`) | read:project | ✅ from read-project | **never scope-hidden** — the branch bypasses `_env_require_kind_visible` (`lib/tags.sh:398`) because built-ins are framework sessions, not the user's config (§3, R3) |
 | `docs` | always | ✅ from read-project | — (refused at `none`, R6) |
 | `help`, `--help`/`-h`, `--version`/`-v` | always | ✅ | help is scope-aware (§4) |
 | `whoami` | always | ✅ from read-project | session-state introspection (F4); listed in in-container `help` (B1). **Identity-first layout (R1)**: a `Session` block (identity / editing target / code repos) precedes `Access`, so config-editor's synthetic envelope vs its editing targets and whether code repos are mounted are explicit. **Deduplicated access (R2)**: `level` names the PRESET (else `custom (global=…)` carrying the granular form once) and `triple` is the explicit `(G,Pc,Po)` + read/write scope — no byte-identical rows; privilege-boundary note retained ([A1 §4.5](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `project show\|validate\|coords` | read:project | ✅ from read-project | bare `project show` at the `/workspace` WORKDIR root resolves the **session project** (`PROJECT_NAME` → flat `/workspace/project.yml`), so cwd-based introspection works from the root as inside a mounted repo dir (**R4**; child-wins: a repo-local `.cco` takes precedence) |
-| `pack show\|validate`, `llms show\|validate` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names |
+| `pack show\|validate`, `llms show` | read:project | ✅ from read-project | `_env_require_visible` — graceful "not in scope" for out-of-scope names. ⚠ **`llms validate` does not exist**: the shim classifies `pack\|template\|llms` as one family (`bin/cco:493`), so it *passes the gate* and then dies at the dispatcher with `Unknown llms command` (exit 1) — llms references are validated as part of `pack\|project validate` (`_validate_llms_refs`, `lib/llms.sh:201`) |
 | `template show\|validate` | read:**global** | ✅ from **read-global** | global-class |
 | `remote list` | **removed alias** (ADR-0029) → `cco list remote[s]` | ❌ refused at **every** level with the removal notice (exit 2), like its four siblings in §2.4 — **not** a scope question (FI-45, fixed 2026-07-31; it previously answered *"needs read-global scope"* at read-project, sending the reader to widen access for a verb that does not exist) | — |
 | `config` (bare), `tag` (bare), `repo` (bare), `extra-mount` (bare), `pack\|template\|llms\|project` (bare) | always | ✅ prints sub-usage | — |
@@ -131,12 +136,12 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | Verb | Class (target tree) | Available from | Notes |
 |---|---|---|---|
 | `repo rename`, `extra-mount rename` | write:**project** (`<repo>/.cco/project.yml` + the STATE index membership/binding) | **edit-project** | the **only** wrapped verbs that write the current project tree (ADR-0050 D7). Cwd-first, `--move-dir` on `repo rename`; the index half crosses the ADR-0047 boundary, so they trampoline through the setuid helper (`_cco_verb_touches_store`). Refuse at a read level with the `Pc=rw` message |
-| `tag add\|remove` | write:global (DATA registry) | by target axis | gated by the **tagged resource's axis** (B5): project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all). Ownership predicate is config-editor-aware (`_env_is_current_project`) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
+| `tag add\|remove` (alias `rm`) | write:global (DATA registry) | by target axis | gated by the **tagged resource's axis** (B5): project(current)→`Pc` (edit-project), pack/template→`G` (edit-global), project(other)→`Po` (edit-all). Ownership predicate is config-editor-aware (`_env_is_current_project`) ([A1 §4.1](../../configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)) |
 | `config save` | write:global (`~/.cco`) | edit-global | clear "needs edit-global" msg on ro mount at edit-project (CLI-surface F3) |
 | `remote add` | write:global (DATA registry) | edit-global | DATA-only, so it stays in-container. `remote add --token` refuses the **token half** (secret stays host-side) |
 | `pack create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | network fetches (`install\|update\|import`) are writes, allowed at edit level (D4 carve-out) |
 | `template create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
-| `llms create\|update\|remove\|install\|import\|internalize\|rename` | write:global | edit-global | same carve-out |
+| `llms install\|update\|remove\|rename` | write:global | edit-global | same carve-out. ⚠ **The llms family is smaller than pack/template**: `create`, `import`, `internalize`, `publish`, `export` are *classified* by the shared `pack\|template\|llms` arm but **have no dispatcher** (`cmd_llms`, `lib/cmd-llms.sh:29-37`) — at an edit level they die `Unknown llms command` (exit 1); below one they are refused (exit 2) for a verb that does not exist |
 
 > **Project-tree writes: two wrapped verbs, everything else is a direct file edit.**
 > `repo rename` and `extra-mount rename` (ADR-0050 D7) are the wrapped `write:project`
@@ -159,7 +164,9 @@ wholesale in-container (exit 2, R6) — every row below is unavailable at `none`
 | `project rename` | ✅ | ❌ host-only (re-keys machine-local state) | exit 2 |
 | `pack\|template\|llms\|project\|remote list` (old subcommand) | (redirect) | ❌ → "use `cco list <kind>`" (ADR-0029) | exit 2 |
 | `share`, `manifest` | ❌ removed | ❌ removed | exit 2 |
+| `project publish\|install\|update\|internalize\|resolve\|add-pack\|remove-pack\|delete` (removed aliases) | ✅ each dies with its **migration hint** (`bin/cco:653-660`) | ❌ generic `Unknown 'project' command` (exit 1) — the shim's `project` arm classifies only the live subcommands, so the hint never renders in-container | exit 1 |
 | unknown top-level verb | error | error ("Run `cco help`") — **not** a host-only misfire | exit 1 |
+| `store-op <plan\|apply> <op>` | ❌ not a public verb | ❌ refused unless `CCO_STORE_ELEVATED=1` — reached **only** through the cco-svc boundary (ADR-0047); `_store_validate_args` (INV-S1) runs *before* the `_op_write` gate (INV-S2) | exit 2 |
 | `<cmd> --help` / `-h` | ✅ | ✅ **always** (informational, even for host-only verbs) | — |
 
 > **D-V3-1 (e2e v3 cycle-1.1, 2026-07-21)** — why `remote remove|rename` moved here from §2.3.
@@ -264,6 +271,13 @@ rw child overlay stay writable regardless (functional-write floor, ADR-0049 §5)
   the matching row here and extend `tests/test_operator_shim.sh`. The §5 checklist of
   [design-cli-environment-awareness.md](../design/design-cli-environment-awareness.md) is the
   authoring procedure; this table is its rendered result.
+- **Derive from BOTH ends, and in both directions.** The shim is authoritative for *classification*,
+  but it classifies whole families (`pack|template|llms`, `repo|extra-mount`) — it is **not** an
+  inventory. The inventory is the dispatcher (`bin/cco` `case "$cmd"`) plus each namespace's own
+  `case` in `lib/cmd-*.sh`. Check both directions: a verb in the dispatcher with no row here is the
+  classic omission (G2 found `repo rename` / `extra-mount rename`); a row here with no dispatcher arm
+  is the inverse (the 2026-08-03 sweep found four such llms subcommands), and it is the worse of the
+  two — it sends the reader to a verb that answers `Unknown … command`.
 - **⏳ target rows** are cleared (flag removed) as approved behaviour lands, at the commit
   that makes each true. The hardening-v2 batch (ADR-0044 preset flip; ADR-0046 model;
   ADR-0047 boundary; B1–B4) has all landed, so **no ⏳ rows remain** — every row is shipped

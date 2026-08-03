@@ -1,6 +1,9 @@
 # Sprint 5b — Design: Defaults, Templates & Update System
 
-**Status**: Final — Revised 2026-03-17
+**Status**: Living — Revised 2026-03-17; **re-verified against the code 2026-08-03**
+(G6 living-docs sweep: §4.4 policy arrays, §4.11 meta schema, §4.14 changelog schema +
+tracker storage, §4.15 migration scopes, and the removed `cco project create|install`
+verbs were corrected against `lib/update*.sh` and `migrations/`)
 **Original date**: 2026-03-13
 **Scope**: Architecture-level
 
@@ -37,7 +40,7 @@ and ownership models.
 
 | Aspect | Defaults | Templates |
 |--------|----------|-----------|
-| **When used** | `cco init`, `cco update --sync` | `cco project create`, `cco pack create` |
+| **When used** | `cco init`, `cco update --sync` | `cco init --template`, `cco pack create` |
 | **How many** | One set (global) | Multiple (base, tutorial, user-defined...) |
 | **Update role** | Opinionated files: discoverable, on-demand merge | Base: opinionated source. Non-base/user: not discoverable |
 | **Relationship to user files** | 1:1 mapping (default → installed file) | 1:N mapping (template → many projects) |
@@ -170,7 +173,7 @@ This is the definitive reference for every file managed by the update system.
 | `.claude/agents/` | `untracked` | ❌ | Project agents are user-defined |
 | `.claude/skills/` | `untracked` | ❌ | User-defined or template-installed; not discovered |
 | `project.yml` | `untracked` | ❌ | 100% user config; new fields are additive (code defaults) |
-| `setup.sh` | `copy-if-missing` | ❌ | Written once at project create |
+| `setup.sh` | `copy-if-missing` | ❌ | Written once at `cco init` |
 | `secrets.env` | `copy-if-missing` | ❌ | Written once; user fills secrets |
 | `mcp-packages.txt` | `copy-if-missing` | ❌ | Written once; user adds packages |
 
@@ -199,13 +202,13 @@ User-added skills (not from the template) remain user-owned and undiscovered.
 |------|--------|-------------|------------|
 | `<state>/cco/projects/<name>/docker-compose.yml` | STATE | `cco start` | `cco clean --generated` |
 | `<cache>/cco/projects/<name>/managed/` | CACHE | `cco start` | `cco start` (regenerated each run) |
-| `<cache>/cco/projects/<name>/.claude/` (`workspace.yml`) | CACHE | `cco start` | `cco start` (regenerated each run) |
+| `<cache>/cco/projects/<name>/.claude/` (generated overlay) | CACHE | `cco start` | `cco start` (regenerated each run). The former `workspace.yml`/`packs.md` files in it are **retired** — the session-info surface is the `CCO_SESSION_CONTEXT` env var (ADR-0042), and `cco start` actively removes any stale copies |
 | `<repo>/.cco/.tmp/` | repo | `cco start --dry-run --dump` | `cco clean --tmp` |
 | `<state>/cco/global/update/meta` | STATE | `cco init` / `cco update --sync` | ❌ do not delete |
 | `<state>/cco/global/update/base/` | STATE | `cco init` / `cco update --sync` | ❌ do not delete |
-| `<state>/cco/projects/<name>/update/meta` | STATE | `cco project create` / `cco update --sync` | ❌ do not delete |
-| `<state>/cco/projects/<name>/update/base/` | STATE | `cco project create` / `cco update --sync` | ❌ do not delete |
-| `<data>/cco/projects/<name>/source` | DATA | `cco project create --template` / `cco project install` | ❌ do not delete |
+| `<state>/cco/projects/<name>/update/meta` | STATE | first `cco update` (see §4.3) | ❌ do not delete |
+| `<state>/cco/projects/<name>/update/base/` | STATE | first `cco update` (see §4.3) | ❌ do not delete |
+| `<data>/cco/projects/<name>/source` | DATA | `cco init --template` | ❌ do not delete |
 | `<state>/cco/packs/<name>/update/meta` | STATE | `cco pack create` / `cco pack install` | ❌ do not delete |
 | `<data>/cco/packs/<name>/source` | DATA | `cco pack install` | ❌ do not delete |
 | `<state>/cco/templates/<name>/update/meta` | STATE | `cco template create` | ❌ do not delete |
@@ -276,58 +279,71 @@ for global, `<repo>/.cco/` for projects — never in the STATE base store
 > files under the committed config tree.
 
 **Lifecycle:**
-- Created at `cco init` (global) and `cco project create` (project)
+- **Global**: created at `cco init` (`_save_all_base_versions`, `lib/cmd-init.sh:256`)
+- **Project**: **not** created at scaffold time. `cco init` / `cco join` write only the
+  repo's `<repo>/.cco/`; the STATE `meta` + `base/` are created lazily on the project's
+  first `cco update` — by `_handle_policy_transitions`' bootstrap path (which seeds a base
+  for every `tracked` file that lacks one) and `_generate_project_cco_meta` /
+  `_save_all_base_versions` (`lib/update.sh:373-377`). A project that has never been
+  updated legitimately has no STATE update bucket
 - Updated after each successful `cco update --sync` (per file)
 - Never modified by user (hidden in STATE, never synced across machines)
 - Size: mirrors opinionated files only (~50KB total — negligible)
 
 ### 4.4 File Policies (Definitive)
 
+Policies live in **one array per scope** in `lib/update.sh`, each entry a
+`<path>:<policy>` pair — *not* one array per policy. The single-array shape is what
+makes the automatic policy-transition handler possible: the active policies are
+serialized verbatim into the STATE `meta` `policies:` block (§4.11) and diffed on the
+next run (see [`design-base-tracking-fix.md`](design-base-tracking-fix.md) §2.5).
+
 ```bash
-# Opinionated: framework provides defaults; discovered by cco update;
-# applied only via --sync. User-owned after install.
-GLOBAL_OPINIONATED_FILES=(
-    ".claude/CLAUDE.md"
-    ".claude/settings.json"
-    ".claude/agents/analyst.md"
-    ".claude/agents/reviewer.md"
-    ".claude/rules/documentation.md"
-    ".claude/rules/git-practices.md"
-    ".claude/rules/workflow.md"
-    ".claude/skills/analyze/SKILL.md"
-    ".claude/skills/review/SKILL.md"
-    ".claude/skills/design/SKILL.md"
-    ".claude/skills/commit/SKILL.md"
+# lib/update.sh — policies: tracked | untracked | generated
+GLOBAL_FILE_POLICIES=(
+    ".claude/CLAUDE.md:tracked"
+    ".claude/settings.json:tracked"
+    ".claude/mcp.json:untracked"
+    ".claude/agents/analyst.md:tracked"
+    ".claude/agents/reviewer.md:tracked"
+    ".claude/rules/documentation.md:tracked"
+    ".claude/rules/git-practices.md:tracked"
+    ".claude/rules/workflow.md:tracked"
+    ".claude/rules/language.md:generated"
+    ".claude/skills/analyze/SKILL.md:tracked"
+    ".claude/skills/review/SKILL.md:tracked"
+    ".claude/skills/design/SKILL.md:tracked"
+    ".claude/skills/commit/SKILL.md:tracked"
+    "setup.sh:untracked"
+    "setup-build.sh:untracked"
 )
 
-# Generated: rebuilt from template + saved preferences
-GLOBAL_GENERATED_FILES=(
-    ".claude/rules/language.md"
+# Project scope: BOTH tracked. CLAUDE.md became tracked on 2026-03-17 — the
+# missing base that change left behind is the bug design-base-tracking-fix.md
+# was written for; do not re-document it as untracked.
+PROJECT_FILE_POLICIES=(
+    ".claude/CLAUDE.md:tracked"
+    ".claude/settings.json:tracked"
 )
 
-# Untracked: never touched by cco update
-GLOBAL_UNTRACKED=(
-    ".claude/mcp.json"
-    "setup.sh"
-    "setup-build.sh"
-)
-
-# Project scope: only settings.json is opinionated
-PROJECT_OPINIONATED_FILES=(
-    ".claude/settings.json"
-)
-
-# Project untracked: never touched by cco update
-PROJECT_UNTRACKED=(
-    "project.yml"
-    ".claude/CLAUDE.md"
-    ".claude/rules/language.md"
-)
-
-# Copy-if-missing: scaffold files written once at create, then ignored
-GLOBAL_COPY_IF_MISSING=("setup.sh" "setup-build.sh")
-PROJECT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
+# Root files: copied from defaults/template if missing, never overwritten.
+# (Root files sit outside the .claude/ scan scope, so they are handled here
+# rather than by a policy entry.)
+GLOBAL_ROOT_COPY_IF_MISSING=("setup.sh" "setup-build.sh")
+PROJECT_ROOT_COPY_IF_MISSING=("setup.sh" "secrets.env" "mcp-packages.txt")
 ```
+
+Two derived lists are computed from the arrays at source time and are the only
+per-policy lists that exist: `GLOBAL_UNTRACKED_FILES` / `PROJECT_UNTRACKED_FILES`
+(filter lists) and `GLOBAL_SPECIAL_FILES` (the `generated` set). `tracked` needs no
+list — it is the default `_collect_file_changes()` discovers. Paths inside `.claude/`
+are stored **with** the `.claude/` prefix in the policy array and **without** it in the
+derived lists, the `policies:` block, and the base store; `${rel#.claude/}` is the
+conversion.
+
+> `project.yml` is **not** in any policy array. It is user-owned in full (§3.3): the
+> update system neither tracks nor discovers it, and new fields arrive as additive
+> code-level defaults or an explicit migration.
 
 ### 4.5 Discovery Algorithm
 
@@ -465,8 +481,9 @@ This prevents launching a session with broken config files.
 ### 4.8 `.cco/base/` Update Rules
 
 `.cco/base/` is only updated by:
-- `cco init` — saves initial framework versions
-- `cco project create` — saves initial framework versions
+- `cco init` — saves the initial framework versions **for global scope only**
+- the project's first `cco update` — seeds a base for every `tracked` file that lacks
+  one (`_handle_policy_transitions` bootstrap), then `_save_all_base_versions`
 - `cco update --sync` with **(A)pply**, **(M)erge**, or **(R)eplace** — saves the
   framework version that was applied
 - `cco update --sync` with **(K)eep** — saves the framework version that was
@@ -541,35 +558,49 @@ defaults to **(S)kip** for all files (safest choice). No silent modifications.
 
 ```yaml
 # Auto-generated by cco — do not edit
-schema_version: 8
+schema_version: 17
 created_at: 2026-01-15T10:00:00Z
 updated_at: 2026-03-14T10:00:00Z
 
-# Last seen changelog entry (global only — for additive change notifications)
-last_seen_changelog: 12
-last_read_changelog: 10
-
 # Template origin (projects only — informational, not used for update routing)
-template: base               # base | tutorial | <user-template-name>
+template: base               # base | config-editor | <user-template-name>
 
-# Language preferences (global only)
-languages:
-  communication: Italian
-  documentation: English
-  code_comments: English
-
-# Manifest: sha256 of each opinionated file at last install/apply
+# Manifest: sha256 of each tracked file at last install/apply
 manifest:
-  .claude/CLAUDE.md: a1b2c3d4...
-  .claude/settings.json: e5f6g7h8...
-  .claude/rules/workflow.md: i9j0k1l2...
+  CLAUDE.md: a1b2c3d4...
+  settings.json: e5f6g7h8...
+  rules/workflow.md: i9j0k1l2...
+
+# Active file policies at the time of writing — the input to transition detection
+policies:
+  CLAUDE.md: tracked
+  settings.json: tracked
+  mcp.json: untracked
+  rules/language.md: generated
 ```
 
+Manifest and policy keys are `.claude/`-relative (§4.4), matching the base store layout.
+
 **Variants by scope:**
-- **Global**: Full schema (languages, last_seen_changelog, last_read_changelog, manifest)
-- **Project**: `schema_version`, `template`, `manifest` (no languages, no changelog)
-- **Pack**: `schema_version`, `manifest` only
-- **User template**: `schema_version` only
+- **Global**: `schema_version`, `created_at`, `updated_at`, `manifest`, `policies`
+  (`_generate_cco_meta`)
+- **Project**: the same, plus `template` (`_generate_project_cco_meta`), plus fields that
+  are **preserved across regeneration** rather than authored here:
+  `local_framework_override`, `remote_cache.{commit,checked}` (FI-7), and the install
+  provenance `installed_commit` / `src_installed` / `src_updated` (relocated from
+  `source`, ADR-0022 D1)
+- **Pack**: `schema_version`, `manifest`
+- **User template**: `schema_version`
+
+> **Decomposed out of the meta (ADR-0013 D4) — do not look for them here:**
+> - **Language preferences** → `~/.cco/languages` (personal store, user-owned).
+> - **Changelog markers** → two single-integer STATE files, `<state>/cco/last_seen` and
+>   `<state>/cco/last_read` (`_cco_last_seen_file` / `_cco_last_read_file`), read and
+>   written only through `_read_/_write_last_{seen,read}_changelog`. They are
+>   machine-local and never appear in any YAML. The legacy `meta_file` argument some of
+>   those helpers still accept is **ignored** — passing it does not restore the old
+>   location. The global meta file is still *stat*-ed by the changelog flow, but only as
+>   a "global config is initialized" proxy (`update-changelog.sh:165-167`).
 
 Note: `template` is informational — it records which template was used at creation
 for user reference and future `cco template sync` (not yet implemented).
@@ -623,21 +654,28 @@ capabilities without reading docs proactively.
 
 ```yaml
 # changelog.yml — user-visible additive changes
-- id: 12
-  type: additive
-  date: 2026-03-14
-  summary: "New 'rag:' section in project.yml for semantic search"
-  docs: "docs/reference/project-yaml.md#rag"
-  example: |
-    rag:
-      enabled: true
-      provider: local-rag
+entries:
+  - id: 61
+    date: "2026-07-31"
+    type: additive
+    title: "Short, one-line headline"
+    description: >
+      Details about the new feature and how to use it. Folded (>) and literal (|)
+      block scalars are both supported.
 ```
 
-**Tracking**: `.cco/meta` (global only) stores `last_seen_changelog: <id>` and
-`last_read_changelog: <id>`. `cco update` compares against the latest entry in
-`changelog.yml` and reports unseen changes. After reporting, updates
-`last_seen_changelog`. `cco update --news` updates both trackers.
+Entries live under a top-level `entries:` key, and the parser
+(`_parse_changelog_entries`, `lib/update-changelog.sh`) reads exactly four fields —
+`id`, `date`, `title`, `description` — emitting one `id\tdate\ttitle\tdescription`
+line per entry. `type:` is carried for classification but not rendered. There are **no
+`summary:`, `docs:` or `example:` fields**; a field by another name is silently dropped.
+
+**Tracking**: two machine-local STATE files (§4.11), *not* keys in any meta —
+`<state>/cco/last_seen` and `<state>/cco/last_read`, each a single integer.
+`cco update` compares the latest `changelog.yml` id against them and reports unseen
+entries; discovery then advances `last_seen` only, and `cco update --news` advances
+**both**. Being STATE, the markers do not sync across machines: a second machine
+re-shows the same entries once, by design.
 
 **Output**: Shown between migrations and discovery in the `cco update` output:
 
@@ -655,43 +693,68 @@ Docker mount needed.
 silently skipped (no error). This ensures backward compatibility when updating
 from a version that predates the changelog mechanism.
 
-**`--news` and seen tracking**: `cco update` updates `last_seen_changelog` only
-(discovery). `cco update --news` updates both `last_seen_changelog` and
-`last_read_changelog`. Running `--news` immediately after `cco update` shows
-the same entries with full details (examples, docs links) but does not
-re-show the summary on the next `cco update`.
+**`--news` and seen tracking**: `cco update` advances `last_seen` only (discovery).
+`cco update --news` advances both `last_seen` and `last_read`. Running `--news`
+immediately after `cco update` re-shows the same entries with their full
+`description`, and does not re-show the summary on the next `cco update`. Both writes
+are skipped under `--dry-run`.
 
 **Maintainer workflow**: Append entry with incremented `id` when adding an
 additive change. The entry is shown once to each user.
 
 ### 4.15 Migration Scopes
 
-The migration runner supports four scopes:
+The migration **engine** is scope-parametric — `_run_migrations <scope> …`,
+`_latest_schema_version <scope>` and `_count_pending_migrations <scope>` all take the
+scope as an argument and resolve `migrations/<scope>/`, returning `0` (and running
+nothing) when that directory is absent. Four scopes are designed:
 
 ```
 migrations/
-├── global/       # cco update (always)
-├── project/      # cco update (per project)
-├── pack/         # cco update (per pack with .cco/meta)
-└── template/     # cco update (user templates with .cco/meta)
+├── global/       # WIRED   — cco update (always)
+├── project/      # WIRED   — cco update (per project in scope)
+├── pack/         # DESIGNED, NOT WIRED — no directory, no iteration
+└── template/     # DESIGNED, NOT WIRED — no directory, no iteration
 ```
 
-**Execution order in `cco update`:**
-1. Global migrations — always (affect `~/.cco/`)
-2. Pack migrations — always (iterate `~/.cco/packs/*/`, tracked via STATE `<state>/cco/packs/<name>/update/meta`)
-3. User template migrations — always (iterate `~/.cco/templates/*/`, tracked via STATE `<state>/cco/templates/<name>/update/meta`)
-4. Project migrations — per project in scope (controlled by `--project`/`--all`)
-5. Additive notifications — always (from `changelog.yml`)
-6. Discovery — per project in scope (opinionated files)
+> ⏳ **Target, not shipped: the `pack` and `template` scopes.** Nothing in `cco update`
+> ever iterates `~/.cco/packs/*/` or `~/.cco/templates/*/` to run migrations; the site
+> where that loop belongs carries an explicit `TODO: pack and template migration scopes
+> (design §4.15)` (`lib/cmd-update.sh:248`), and neither `migrations/pack/` nor
+> `migrations/template/` exists in the tree. A migration authored into either directory
+> today would **never run**. Because the engine already takes the scope as a parameter,
+> wiring them is a loop plus the per-resource meta plumbing below — not an engine change.
+> *(Flagged at the G6 living-docs sweep, 2026-08-03: this section previously described the
+> execution order below as current behaviour.)*
 
-**Important**: Migration scope is absolute for global/pack/template — they always
-run regardless of `--project` or `--all` flags, because these are shared resources.
-Only project migrations and discovery are limited by scope flags.
+**Execution order in `cco update`** — ✅ = shipped, ⏳ = target:
 
-**Pack `.cco/meta` initialization:**
-- `cco pack create` and `cco pack install` create `.cco/meta` with
+1. ✅ Global migrations — always (affect `~/.cco/`)
+2. ⏳ Pack migrations — would iterate `~/.cco/packs/*/`, tracked via STATE
+   `<state>/cco/packs/<name>/update/meta` (the path helper already exists)
+3. ⏳ User template migrations — would iterate `~/.cco/templates/*/`, tracked via STATE
+   `<state>/cco/templates/<name>/update/meta` (the path helper already exists)
+4. ✅ Project migrations — per project in scope (`--project <name>`, else every project
+   the index resolves)
+5. ✅ Additive notifications — always (from `changelog.yml`)
+6. ✅ Discovery — per project in scope
+
+**Important**: migration scope is intended to be absolute for global/pack/template —
+they run regardless of `--project`, because they are shared resources. Only project
+migrations and discovery are limited by scope flags. Today this is observable for
+`global` alone.
+
+**Current max `MIGRATION_ID` per scope** (verified against the tree, 2026-08-03):
+`global` = **17**, `project` = **15**, `pack` / `template` = none. Assign the next ID by
+inspecting the directory, never by incrementing the number written here. The `global`
+sequence has a **gap at 008** — deliberate and harmless: `_count_pending_migrations`
+counts *files* whose ID exceeds the current version rather than differencing
+`latest - current`, precisely so a gap cannot inflate the pending count.
+
+**Pack `.cco/meta` initialization** (part of the ⏳ work above):
+- `cco pack create` / `cco pack install` write the STATE `update/meta` with
   `schema_version: 0` and manifest hashes
-- Bootstrap migration for existing packs: a global migration iterates
+- Existing packs are bootstrapped by a `global` migration that iterates
   `~/.cco/packs/*/` and creates the STATE `update/meta` where missing
 
 **Native templates** (`templates/project/*/`, `templates/pack/*/`):
@@ -746,8 +809,7 @@ remote resources.
 **Created by:**
 - `cco pack install` → remote URL (already implemented)
 - `cco pack create` → `source: local` (already implemented)
-- `cco project create --template <native>` → `native:project/<name>` (new)
-- `cco project install <url>` → remote URL (new)
+- `cco init --template <native>` → `native:project/<name>`
 
 **Used by:**
 - `cco update` → resolve update source for native template projects
@@ -848,22 +910,27 @@ Key points:
 ### 5.1 CLI Interface
 
 ```bash
-cco project create my-app                          # Uses base template
-cco project create my-app --template config-editor  # Uses config-editor template
-cco project create my-app --template my-preset     # Uses user template
+cco init                                           # Scaffold this repo's .cco/ from base
+cco init --template config-editor                  # Scaffold from a native template
+cco init --template my-preset                      # Scaffold from a user template
 
 cco pack create my-pack                            # Uses base template
 cco pack create my-pack --template my-preset       # Uses user template
 
-cco template list                                  # List all templates (native + user)
-cco template list --project                        # Project templates only
-cco template list --pack                           # Pack templates only
+cco list template                                  # List all templates (native + user)
 cco template show <name>                           # Show template details
 cco template create <name> --project               # Create empty user project template
 cco template create <name> --pack                  # Create empty user pack template
 cco template create <name> --from <project>        # Create template from existing project
+cco template rename <old> <new>                    # Rename a user template
 cco template remove <name>                         # Remove user template
 ```
+
+> **Verb note (ADR-0017 D2 / ADR-0018 D2).** There is no `cco project create`: a project's
+> config lives in its own repo, so it is *scaffolded in place* by `cco init` (`--template`
+> selects the template) and joined by `cco join`. `cco template list` is likewise a removed
+> alias — the unified index is `cco list template` (ADR-0029). Both removed spellings still
+> answer with a migration hint on the host.
 
 ### 5.2 Template Resolution
 
@@ -962,7 +1029,7 @@ dry-run behavior, which is appropriate after inspection.
 |--------|----------|------|
 | **Purpose** | Scaffold new resources | Reusable knowledge/config |
 | **Cardinality** | 1 template → N projects | 1 pack → N projects (shared) |
-| **Installation** | `project create --template` | `pack install` + reference in project.yml |
+| **Installation** | `cco init --template` | `pack install` + reference in project.yml |
 | **After install** | Template recorded in `.cco/meta`; output is user-owned | Pack remains; updates via `pack update` |
 | **Content** | Full project structure with placeholders | Knowledge, rules, skills, agents |
 | **Update mechanism** | Opinionated files via `cco update --sync`. Non-base: manual | `cco pack update` from source |
@@ -1017,7 +1084,7 @@ WHAT cco update DOES NOT DO (automatically)
 WHAT cco update --sync DOES NOT TOUCH
     mcp.json                untracked, personal MCP servers
     project.yml             untracked, 100% user config
-    project/setup.sh        copy-if-missing, only written at project create
+    project/setup.sh        copy-if-missing, only written at cco init
     project/secrets.env     copy-if-missing
     project/mcp-packages.txt   copy-if-missing
     # Note: project/.claude/CLAUDE.md is now opinionated/tracked (2026-03-16)
@@ -1110,6 +1177,13 @@ WHAT cco update --sync DOES NOT TOUCH
 21. **`cco project create` initializes `.cco/meta`/`.cco/base` immediately**
     *(fix, 2026-03-14)*: Not deferred to bootstrap migration. Created at
     project creation time alongside `.cco/source` for non-base templates.
+    > **Superseded by the decentralized-config cutover** (verified 2026-08-03).
+    > `cco project create` no longer exists — a project is scaffolded in place by
+    > `cco init` (ADR-0017 D2), which writes `<repo>/.cco/` but **not** the STATE
+    > `meta`/`base/`. Those are created on the project's first `cco update`
+    > (§4.3 Lifecycle). The decision's *intent* — no bootstrap migration — still
+    > holds: the seeding is done by the self-bootstrapping policy-transition
+    > handler instead.
 
 22. **`--dry-run` shows pending migrations** *(clarification, 2026-03-14)*:
     `--dry-run` does NOT run migrations — it lists them as pending. Discovery

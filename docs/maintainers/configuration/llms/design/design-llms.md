@@ -1,9 +1,13 @@
 # Design: llms.txt Integration
 
-> Status: Draft
+> Status: **Implemented** — shipped design, re-verified against `lib/cmd-llms.sh` /
+> `lib/llms.sh` on **2026-08-03** (G6 living-docs sweep). Written as a draft on 2026-03-24;
+> where the shipped surface diverged from the draft (the `list` verb, `rename`, the
+> retired `workspace.yml`, the mandatory llms `url`), this document now states the
+> **shipped** behaviour.
 > Date: 2026-03-24
 > Analysis: [analysis.md](../analysis/analysis-001-llms.md)
-> Related: [Packs design](../../../packs/design/design-packs.md) | [project-yaml.md](../../../../users/configuration/reference/project-yaml.md)
+> Related: [Packs design](../../../packs/design/design-packs.md) | [project-yaml.md](../../../../users/configuration/reference/project-yaml.md) | [ADR-0032](../../decentralized-config/decisions/0032-pack-llms-coordinate-coherence.md) (llms `url` invariant)
 
 ---
 
@@ -212,9 +216,14 @@ Saved to ~/.cache/cco/llms/svelte/
   llms-full.txt (primary — 17140 lines)
 ```
 
-### 4.2 `cco llms list`
+### 4.2 `cco list llms`
 
-Lists all installed llms entries with metadata.
+Lists all installed llms entries with metadata. **`cco llms list` was removed**
+(ADR-0029 D1 → the unified index); it now answers with a migration hint on the host and
+is refused with the same notice in-container. The renderer behind the kind view is still
+`_llms_list`; `cco list` (unified) also surfaces llms rows, scoped to the session's read
+scope (ADR-0043 — at `read-project` only the llms this project references are shown, with
+a count-only stderr notice for the rest).
 
 ```
 Name             Variant   Lines   Downloaded    Source URL
@@ -295,6 +304,25 @@ cco llms show svelte
 #   pack frontend-stack
 #   project my-svelte-app
 ```
+
+### 4.6 `cco llms rename <old> <new>`
+
+Renames an installed entry: the CACHE directory `<llms>/<old>/` → `<llms>/<new>/`, and
+every `llms:` reference to it in the packs and projects that name it. **Only llms has
+`rename`** among the resource families' download-shaped verbs — entries are auto-named
+from their URL, so a bad auto-name is a real and llms-specific need (`cmd_llms`,
+`lib/cmd-llms.sh:21-22`).
+
+> **The llms verb set is smaller than pack's / template's.** Shipped: `install`, `show`,
+> `update`, `rename`, `remove` (+ the removed `list` alias). There is deliberately **no**
+> `llms create` (an entry is a download, not something you author), **no** `import` /
+> `export` / `publish` / `internalize` (the coordinate is shared inside `project.yml` /
+> `pack.yml`, and the content is re-fetchable — §12), and **no** `llms validate` (llms
+> references are validated as part of `cco pack validate` / `cco project validate`, via
+> `_validate_llms_refs` in `lib/llms.sh`). The operator shim classifies
+> `pack|template|llms` as one family, so those absent verbs pass its gate and then die at
+> the dispatcher with `Unknown llms command` — see the
+> [CLI surface matrix](../../../cli/reference/cli-surface-matrix.md) §2.2/§2.3.
 
 ---
 

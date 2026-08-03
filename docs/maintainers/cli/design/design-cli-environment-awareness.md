@@ -7,7 +7,9 @@
 > + [CLI-surface matrix](../reference/cli-surface-matrix.md) added (2026-07-07, §4)**;
 > **base model → `(G,Pc,Po)` triple ([ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md))
 > + enforcement via a privilege boundary, output-scoping demoted to defense-in-depth
-> ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)) — design-intent, not yet implemented (2026-07-08)**
+> ([ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)) — **shipped**
+> (the "design-intent, not yet implemented" flag was cleared in §4b at G2, 2026-07-31; this header
+> carried the stale copy until the G6 sweep, 2026-08-03)**
 > Related: [ADR-0036](../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md) (capability model — D4 wrapped-cco, D8 caller-context) · [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) (three-level interaction model) · [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md) (unified env & access-scope resolution) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) (enforcement — privilege boundary) · [agent ↔ cco access design](../../configuration/agent-cco-access/design.md) · user CLI reference [`cli.md`](../../../users/reference/cli.md)
 
 ---
@@ -49,7 +51,8 @@ context — do not re-derive it ad hoc:
 |---|---|---|
 | `_cco_caller_context` | `lib/paths.sh` | `host` \| `container-agent` — the D8 caller-context signal (`/.dockerenv` / `CCO_IN_CONTAINER`). |
 | `_cco_container_operator` | `lib/paths.sh` | True **only** under the deliberate wrapped-cco mode: `CCO_CONTAINER_OPERATOR=1` **and** all three bucket overrides (`CCO_DATA_HOME`/`CCO_STATE_HOME`/`CCO_CACHE_HOME`) are absolute mount paths. Never inferrable from a plain agent env. |
-| `CCO_CCO_ACCESS` | env (set by `cco start`) | The resolved access scope in-container (`read-project` … `edit-all`) — drives read-scope + write gating (ADR-0042). |
+| `CCO_ACCESS_TRIPLE` | env (set by `cco start`) | **The authoritative `(G,Pc,Po)` triple** — comma-separated, read through `_env_triple` (`lib/access-scope.sh:415`), which is the single source every gate keys off (INV-E; ADR-0046 §7). |
+| `CCO_CCO_ACCESS` | env (set by `cco start`) | The resolved level *name* (`read-project` … `edit-all`) — a **display and back-compat** value. `_env_triple` falls back to `_cco_preset_triple` on it only when `CCO_ACCESS_TRIPLE` is absent (a pre-ADR-0046 launch); the bare `read` alias is normalized to `read-all` (`bin/cco:321`). Do not gate on it directly. |
 | `PROJECT_NAME` | env (set by `cco start`) | The current session's project — the "current project" signal that makes `project`-scoped output filtering possible in-container (ADR-0043). Empty on the host. |
 
 ## 4. Enforcement layers
@@ -89,18 +92,30 @@ flowchart TD
   D -- "yes (container)" --> SHIM["_cco_operator_shim<br/>(default-deny whitelist)"]
   SHIM -- "host-only verb" --> REDIR["die: 'run it on your host' hint"]
   SHIM -- "read verb" --> SCOPE{"read scope ≥ required?"}
-  SHIM -- "write verb" --> EDIT{"cco_access ∈ edit-*?"}
-  SCOPE -- no --> REDIR2["die: needs read-global/all"]
+  SHIM -- "write verb" --> EDIT{"_op_write: triple grants<br/>the TARGET TREE's axis?"}
+  SCOPE -- no --> REDIR2["refuse (2): needs read-global/all"]
   SCOPE -- yes --> BODY
-  EDIT -- no --> REDIR3["die: needs an edit level"]
+  EDIT -- no --> REDIR3["refuse (2): names the missing<br/>axis — Pc / G / Po"]
   EDIT -- yes --> BODY["command body"]
   BODY --> SELF["per-command self-checks:<br/>resolver guard · secret masking ·<br/>path_map gating · scope-aware help"]
 ```
 
 1. **Central shim — `_cco_operator_shim` (`bin/cco`).** The first gate in container-operator
-   mode. Default-deny: host-only verbs die with a hint; read verbs are gated by read scope
-   (`template`/`remote list` need `read-global`, etc.); write verbs need an edit level. This
-   is where a verb's *context classification* lives.
+   mode. Default-deny, and it decides in three shapes:
+   - **host-only** → `_op_hostonly` / an explicit `refuse` with the "run it on your host" hint.
+   - **read** → `_op_read_scope <global|all>`. The global-class tier is keyed off the **G axis**
+     (`G ≥ ro`), not the ordinal read scope, so a granular `(none,rw,rw)` session — ordinal read
+     `all`, yet `G=none` — is still refused for `template show|validate`. *(`remote list` is **not**
+     an example of this tier any more: since **FI-45** it is classified with the removed aliases and
+     refuses at every level, `bin/cco:448`.)*
+   - **write** → `_op_write <verb> <target tree: project|global|all>`, which asks whether the
+     session's **triple grants that tree's axis** (`project→Pc=rw`, `global→G=rw`, `all→Po=rw`) —
+     not whether the level's *name* starts with `edit-`. This is what lets the redefined
+     `edit-global` `(rw,rw,none)` satisfy both `global` and `project` targets, and what makes the
+     refusal message name the missing axis. `tag add|remove` resolves its target tree from the
+     **tagged resource's** kind + ownership first (`_op_tag_gate`, B5).
+
+   This is where a verb's *context classification* lives.
 2. **Resolver guard — `_cco_resolver_guard` (`lib/paths.sh`).** Refuses host-path resolution
    inside a container (anti-in-container guard, ADR-0007), except the sanctioned operator
    mode with mounted buckets. Any command that resolves host paths is thereby host-only.
@@ -221,8 +236,11 @@ This is a second, orthogonal dimension enforced by a single shared layer
   | project · pack · llms | **project** | current project (`PROJECT_NAME`) + its referenced resources | all |
   | template · remote | **global** | none (needs `read-global+`) | all |
 
-  `global`-class kinds mirror the shim's existing gates (`template …`, `remote list` need
-  `read-global+`). One taxonomy for both verb gating and output scoping — no parallel model.
+  `global`-class kinds mirror the shim's existing verb gate for `template show|validate`
+  (`_op_read_scope global`, keyed off `G ≥ ro`). Note the `remote` **kind** still scopes here — it
+  is reached through `cco list remote[s]`; the old `cco remote list` **verb** is a removed alias
+  refused at every level (FI-45), so it is no longer an example of the read-scope gate. One
+  taxonomy for both verb gating and output scoping — no parallel model.
   Rationale + the full module API in
   [ADR-0043](../decisions/0043-unified-cli-environment-access-scope.md).
 - **Invariants.** Host-open (scoping engages only under `_cco_container_operator`); hidden ≠
@@ -253,9 +271,10 @@ Any new or changed verb MUST answer, and wire, the following:
    host paths, touches **credentials** or the personal-store git remote) · read (which scope:
    project / global / all) · write (which scope).
    > **Network carve-out (ADR-0036 D4).** "Touches the network" is *not* on its own a
-   > host-only trigger. Sharing-repo fetches — `pack|template|llms install|update|import` —
-   > are **write** verbs, allowed at an edit level (they clone public sharing repos into the
-   > mounted store); only credential/remote-git ops stay host-only (`config push|pull`,
+   > host-only trigger. Sharing-repo fetches — `pack|template install|update|import` and
+   > `llms install|update` (llms has no `import`) — are **write** verbs, allowed at an edit level
+   > (they clone public sharing repos, or download an llms.txt, into the mounted store);
+   > only credential/remote-git ops stay host-only (`config push|pull`,
    > `remote set-token|remove-token`, and — since **D-V3-1** — `remote remove|rename`, which
    > cascade into the same 0600 token store). Token-authed fetches simply degrade in-container
    > (the token bucket is never mounted), they are not refused by the shim.
