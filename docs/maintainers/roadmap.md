@@ -423,7 +423,7 @@ fact still measured true (`tree(develop) == tree(merge-base 14779d4)`, so `devel
 The gate's own check **passed**: `tree(fix/release/cycle-1.2) == tree(develop) == 73987ab5…`, i.e. the
 merge introduced no content nobody wrote. All three branches are pushed and level with `origin`.
 
-🔴 **G5 — 3 of 4 items PASS, the fourth FAILS. The release is BLOCKED.**
+✅ **G5 — ALL FOUR ITEMS PASS (2026-08-03). The release is unblocked.**
 
 - ✅ **Unmasked in-container suite** (mask OFF, session restarted so the `:ro` overlays actually
   apply): **1616 passed / 9 failed of 1625**, `bin/test` exit 1. The 9 are the expected set *name for
@@ -443,7 +443,14 @@ merge introduced no content nobody wrote. All three branches are pushed and leve
   173 shell sources exit 0 where the pre-fix file exits 2. **The gate item itself is still open** —
   it is satisfied only by a macOS run that prints a `Results:` line, which is host-side work.
 
-▶ **G6 must not start** until FI-46 is fixed and the host suite completes with a real summary line.
+✅ **G6 is unblocked.** The macOS host suite completed on `develop@205c940`:
+**`Results: 1626 passed, 0 failed, 1626 total`** — the summary line is present, which is the only
+at-a-glance difference from the abort that blocked this gate. INV-B32 is among the passes, so the
+lint is itself parseable and effective on bash 3.2.
+
+📝 **The seven in-container failures are now confirmed host-only by positive evidence**, not only by
+mechanism: 1626/1626 on the host against 1619/7 of the same 1626 in-container. First complete host
+run of the cycle.
 
 🔑 **A premise recorded across FI-46, the handoff and the runbook is now measured FALSE: the
 container is NOT structurally blind to bash 3.2.** The session's Docker socket reaches the public

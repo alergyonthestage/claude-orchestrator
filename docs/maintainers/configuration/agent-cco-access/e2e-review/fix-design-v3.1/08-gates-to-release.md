@@ -387,7 +387,7 @@ Different hashes ⇒ the merge introduced content nobody wrote. **Stop and look*
 
 ---
 
-## G5 — Verify **on `develop`**: the exact release state 🔴 **3 of 4 PASS — BLOCKED on the fourth**
+## G5 — Verify **on `develop`**: the exact release state ✅ **ALL FOUR PASS (2026-08-03)**
 
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 
@@ -435,16 +435,23 @@ Fold it into the docs sweep.
 
 ---
 
-## G6 — `develop → main` + release 🔴 **BLOCKED — do not start**
+## G6 — `develop → main` + release ✅ **UNBLOCKED (2026-08-03)**
 
-> 🔴 **Blocked on [FI-46](../../../../roadmap-backlog.md)** (2026-08-03): G5's macOS host suite aborted
-> on a bash 3.2 parse error, so the platform this release declares **verified** has never completed a
-> full run on this tree. Step 4 below asks you to *"state the verified platform in the release notes"* —
-> today that sentence would be unsupported. Fix FI-46, re-run the host suite to a real `Results:` line,
-> **then** start G6.
+> ✅ **The block is lifted.** FI-46 is fixed and merged (`f1813c1`), and the **macOS host suite
+> completed on `develop@205c940`: `Results: 1626 passed, 0 failed, 1626 total`** — with the summary
+> line present, which is what distinguishes a completion from the abort that blocked this gate.
+> `test_invariant_no_heredoc_inside_command_substitution` is among the passes, so INV-B32 is itself
+> parseable and effective on bash 3.2. Step 4's *"state the verified platform in the release notes"*
+> is now a supported sentence.
+>
+> 📝 **The seven in-container failures are confirmed host-only for the first time by a complete run.**
+> They were classified by mechanism; this is the positive evidence — 1626/1626 on the host against
+> 1619/7 of the same 1626 in-container.
 >
 > 🧹 Before starting: delete `suite-macos-b3e3496.log` from the repo root (an untracked host-run
-> artefact, not part of the release).
+> artefact, not part of the release). ⚠ Its **name is stale** — it says `b3e3496`, the commit of the
+> aborted run, while it now holds the run from `205c940`. A log named after the wrong commit is a
+> provenance trap; delete it rather than keep it as evidence, and cite the runbook record instead.
 
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 
