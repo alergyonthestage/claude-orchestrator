@@ -10,7 +10,10 @@
 
 Browser automation lets Claude control a real Chrome browser via the Chrome DevTools Protocol (CDP). The browser runs on your host OS — you see it on your screen in real time while Claude navigates, clicks, fills forms, takes screenshots, and reads page content.
 
-This is powered by [`chrome-devtools-mcp`](https://github.com/anthropics/anthropic-tools), a Model Context Protocol server maintained by Google's Chrome DevTools team. It is pre-installed in the claude-orchestrator Docker image.
+This is powered by the `chrome-devtools-mcp` npm package, a Model Context Protocol server
+maintained by the Chrome DevTools team. `cco build` pre-installs it in the
+claude-orchestrator Docker image (`npm install -g chrome-devtools-mcp@latest`), so no
+per-project setup is needed.
 
 ```mermaid
 sequenceDiagram
@@ -63,7 +66,7 @@ No additional software or npm packages are needed.
 Add the `browser` section to your project configuration:
 
 ```yaml
-# projects/my-project/project.yml
+# <repo>/.cco/project.yml
 
 browser:
   enabled: true           # Activate chrome-devtools-mcp
@@ -76,7 +79,9 @@ Only `enabled: true` is required — all other fields have sensible defaults.
 
 ### 3.2 Start Chrome
 
-Launch Chrome with remote debugging enabled:
+Launch Chrome with remote debugging enabled — **on your host**, not inside a session
+(`cco chrome` is one of the host-only verbs; the in-session `cco` refuses it, since the
+browser runs on your desktop):
 
 ```bash
 cco chrome start
@@ -153,7 +158,7 @@ If you run multiple projects with browser automation simultaneously, each needs 
 1. At `cco start`, the CLI scans running containers for claimed browser ports
 2. If your configured `cdp_port` is already taken, it auto-assigns the next free port (9222 → 9223 → 9224...)
 3. A warning is displayed with the effective port
-4. The effective port is saved to `projects/<name>/.cco/managed/.browser-port`
+4. The effective port is saved to `<cache>/cco/projects/<name>/managed/.browser-port`
 
 ### Launching Chrome for a Specific Project
 
@@ -183,8 +188,8 @@ cco chrome start --port 9223
 
 When `browser.enabled: true` is set:
 
-1. **`cco start`** generates `.cco/managed/browser.json` in the project directory with the chrome-devtools-mcp configuration
-2. The `.cco/managed/` directory is mounted into the container as `/workspace/.managed/` (read-only)
+1. **`cco start`** generates `browser.json` with the chrome-devtools-mcp configuration into the project's **CACHE** dir, `<cache>/cco/projects/<name>/managed/` (regenerated on every start; never written into your repo)
+2. That `managed/` directory is mounted into the container as `/workspace/.managed/` (read-only)
 3. **`entrypoint.sh`** merges all `*.json` files in `/workspace/.managed/` into Claude Code's settings (after global and project MCP)
 4. A **socat proxy** starts inside the container, forwarding `localhost:<port>` to `host.docker.internal:<port>` — this solves Chrome 145+'s Host header validation
 5. Claude Code loads the MCP server and browser tools become available
@@ -193,8 +198,11 @@ When `browser.enabled: true` is set:
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `browser.json` | `projects/<name>/.cco/managed/browser.json` | MCP server config (auto-generated, gitignored) |
-| `.browser-port` | `projects/<name>/.cco/managed/.browser-port` | Effective runtime port (auto-generated, gitignored) |
+| `browser.json` | `<cache>/cco/projects/<name>/managed/browser.json` | MCP server config (auto-generated in CACHE, regenerated on every start) |
+| `.browser-port` | `<cache>/cco/projects/<name>/managed/.browser-port` | Effective runtime port (auto-generated in CACHE) |
+
+`<cache>` is `~/.cache` by default (`$XDG_CACHE_HOME` when set). Neither file is written
+into the repo, so neither needs a `.gitignore` entry. `cco clean --generated` removes them.
 
 ### Privacy
 
@@ -256,7 +264,7 @@ Options:
 
 **Port resolution priority**:
 1. `--port <n>` — explicit flag
-2. `--project <name>` → `projects/<name>/.cco/managed/.browser-port` (effective runtime port)
+2. `--project <name>` → `<cache>/cco/projects/<name>/managed/.browser-port` (effective runtime port)
 3. `--project <name>` → `project.yml` `browser.cdp_port`
 4. Default: `9222`
 
@@ -285,7 +293,7 @@ Full CLI reference: [cli.md](../../reference/cli.md#37-cco-chrome-startstopstatu
 3. Verify the port matches:
    ```bash
    # Check which port the container expects
-   cat projects/my-project/.cco/managed/.browser-port
+   cat ~/.cache/cco/projects/my-project/managed/.browser-port
 
    # Start Chrome on that port
    cco chrome start --project my-project

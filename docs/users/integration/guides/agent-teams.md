@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-When using agent teams, Claude Code can display teammates in three modes:
+When using agent teams, Claude Code can display teammates in two modes:
 
 | Mode | Where Panes Live | Requirements | Best For |
 |------|-------------------|--------------|----------|
@@ -30,7 +30,10 @@ When using agent teams, Claude Code can display teammates in three modes:
 
 **No host-side setup required.** tmux runs entirely inside the container.
 
-**Configuration** (`~/.cco/.claude/settings.json`):
+**Configuration** — this is the default; nothing to set. The session is launched inside
+tmux unless you pass `--teammate-mode` with something other than `tmux`, and Claude Code's
+own default (`defaults/global/.claude/settings.json`) is `"teammateMode": "tmux"`:
+
 ```json
 {
   "teammateMode": "tmux"
@@ -48,7 +51,7 @@ cco start my-project --teammate-mode tmux
 |--------|-----|
 | Navigate between panes | `Alt + Arrow keys` |
 | Resize pane | `Ctrl+B` then `Alt + Arrow` |
-| Scroll pane history | `Ctrl+B` then `[` (enter copy mode), then scroll |
+| Scroll pane history | `Ctrl+B` then `[` (enter copy mode), then scroll (50 000 lines are kept) |
 | Exit copy/scroll mode | `q` |
 | Zoom a pane (fullscreen toggle) | `Ctrl+B` then `z` |
 
@@ -240,7 +243,10 @@ Set `teammateMode` to `"auto"` — this makes Claude Code detect iTerm2 automati
 }
 ```
 
-Or per-session:
+**And** start the session with `--teammate-mode auto`, so the entrypoint execs Claude Code
+directly instead of wrapping it in tmux (see §5 — the setting alone does not skip the
+tmux wrapper):
+
 ```bash
 cco start my-project --teammate-mode auto
 ```
@@ -291,25 +297,37 @@ With iTerm2 mode active:
 
 ---
 
-## 6. Switching Modes
+## 5. Switching Modes
 
-You can switch modes at any time:
+Two different knobs share the name, and they do different jobs:
 
-1. **Per-session** — use the CLI flag:
+| Knob | Who reads it | What it decides |
+|---|---|---|
+| `cco start --teammate-mode <m>` | the container **entrypoint** | whether the session is launched inside tmux (`tmux`, the default) or exec'd directly (anything else, e.g. `auto`) |
+| `teammateMode` in `settings.json` | **Claude Code** | how Claude Code itself renders teammates (native iTerm2 panes vs tmux panes) |
+
+`cco start` does **not** read `settings.json`: with no `--teammate-mode` it always passes
+`tmux` to the entrypoint. So for native iTerm2 panes you need **both** —
+`--teammate-mode auto` (so the session is not wrapped in tmux) and `teammateMode: "auto"`
+in a settings file Claude Code reads:
+
+1. **Per-session** — the CLI flag, which selects the launch mode:
    ```bash
    cco start my-project --teammate-mode auto
    ```
 
-2. **Per-project** — add to project settings:
+2. **Per-project** — Claude Code's own setting, project scope:
    ```json
    // <repo>/.cco/claude/settings.json
    { "teammateMode": "auto" }
    ```
 
-3. **Globally** — change global settings:
+3. **Globally** — Claude Code's own setting, user scope:
    ```json
    // ~/.cco/.claude/settings.json
    { "teammateMode": "tmux" }
    ```
 
-Precedence: CLI flag > project settings > global settings.
+Precedence *within Claude Code's setting*: project settings > global settings (its normal
+settings resolution). The CLI flag is not part of that chain — it governs the container
+launch, not Claude Code.
