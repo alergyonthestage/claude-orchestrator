@@ -2005,6 +2005,11 @@ cannot observe this failure mode. That is a process decision, not a bug.
 item (G5's fourth), not a defect: the fix is not "verified" for the release until a macOS run prints a
 `Results:` line.
 
+**In-container suite on the fix branch: 1619 passed / 7 failed of 1626, mask ON** (`access: {claude:
+all}`). The 7 are the expected host-only set *name for name* — six `test_as_*` plus
+`test_paths_symlink_safe_tool_root` — and the total is the 1625 of the masked baseline plus INV-B32.
+No test regressed; the fourth site's fixture extraction left `test_migrate.sh` green (53/53).
+
 Three things the diagnosis above did not have, each of which changed the work:
 
 1. **The container is NOT structurally blind to bash 3.2.** The premise stated above — repeated in the
