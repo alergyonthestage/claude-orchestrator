@@ -342,7 +342,7 @@ cmd_list() {
         case "$1" in
             --help|-h|help)
                 cat <<'EOF'
-Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag] [--reverse|-r]
+Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag|status] [--reverse|-r]
                 [--include-internal]
 
 Unified index of your resources. <kind> is one of:
