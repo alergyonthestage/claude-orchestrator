@@ -1076,29 +1076,28 @@ test_backfill_pack_llms_closes_the_block_at_eof_without_losing_comments() {
 # form included — the backfill injects, it does not normalize. Guards the other
 # direction: a "fix" that rewrote every entry could preserve comments and still
 # churn a user's file.
+# The fixture lives in its own function for two reasons: it is the SAME bytes the
+# assertion compares against (one source, not two that can drift), and a heredoc may
+# never be opened inside a `$( … )` / `<( … )` — bash 3.2 cannot parse it (INV-B32).
+_backfill_untouched_fixture() {
+    cat <<'YML'
+name: p
+llms:
+  - svelte
+  - name: tailwind
+    # pinned to our fork on purpose
+    url: https://custom/t.txt
+YML
+}
+
 test_backfill_pack_llms_leaves_an_entry_it_does_not_touch_verbatim() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _setup_backfill_env "$tmpdir" "svelte" "https://svelte.dev/llms.txt" "full"
     local yml="$tmpdir/pack.yml"
-    cat > "$yml" <<'YML'
-name: p
-llms:
-  - svelte
-  - name: tailwind
-    # pinned to our fork on purpose
-    url: https://custom/t.txt
-YML
+    _backfill_untouched_fixture > "$yml"
     _backfill_one_pack_llms "$yml"
 
-    local removed; removed=$(_backfill_removed_lines <(cat <<'YML'
-name: p
-llms:
-  - svelte
-  - name: tailwind
-    # pinned to our fork on purpose
-    url: https://custom/t.txt
-YML
-) "$yml")
+    local removed; removed=$(_backfill_removed_lines <(_backfill_untouched_fixture) "$yml")
     [[ "$removed" == "  - svelte" ]] \
         || fail "only the entry being backfilled may be rewritten; also removed:"$'\n'"$removed"
     grep -qxF '    # pinned to our fork on purpose' "$yml" \

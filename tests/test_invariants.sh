@@ -1392,10 +1392,12 @@ test_invariant_no_local_availability_decisions() {
 #
 # The meta-root, one level out from the cycle's own: not "a predicate every call site
 # computes for itself" but **a call site reading the right value from the wrong owner**.
-_avail_consumer_lint_violations() {
-    local libdir="$1" f b
-    local prog
-    prog=$(cat <<'AWK'
+#
+# The awk source lives in its own function — NOT inline as `prog=$(cat <<'AWK' … )` —
+# because bash 3.2's legacy command-substitution scanner does not skip heredoc bodies
+# (bin/cco:181-186 carries the rule; FI-46 is what happens when it is forgotten).
+_avail_consumer_lint_prog() {
+    cat <<'AWK'
 BEGIN { fn="(toplevel)"; t=0; br=0; sp=0; ask=0 }
 function flushfn() {
   if (t && br && sp && !ask) print FILENAME "|" fn "|CONSUMER"
@@ -1413,7 +1415,12 @@ function flushfn() {
 }
 END { flushfn() }
 AWK
-)
+}
+
+_avail_consumer_lint_violations() {
+    local libdir="$1" f b
+    local prog
+    prog=$(_avail_consumer_lint_prog)
     # Same exemptions as the D2 arm, for the same reasons: access-scope.sh IS the
     # owner, index.sh DEFINES the status vocabulary, rename.sh routes the status as a
     # DATA tag rather than a message, store.sh has its own guard. Host-only verb files
@@ -1515,9 +1522,11 @@ test_invariant_no_status_word_refusals() {
 # "$session_descriptor": buffer since the opening `{`, emit at the redirect. So a printf
 # anywhere else in the file (the compose stream, another verb) is not a descriptor key,
 # and the block can move without the lint chasing line numbers.
-_desc_lint_written_keys() {
-    local prog
-    prog=$(cat <<'AWK'
+#
+# The awk source is a function, not an inline `$(cat <<'AWK' … )` — see FI-46 and
+# bin/cco:181-186: bash 3.2 cannot parse a heredoc inside a command substitution.
+_desc_lint_written_keys_prog() {
+    cat <<'AWK'
 /^[[:space:]]*\{[[:space:]]*$/ { n = 0; next }
 match($0, /printf '[A-Z_][A-Z_0-9]*=/) {
     k = substr($0, RSTART + 8); sub(/=.*/, "", k); buf[n++] = k
@@ -1526,7 +1535,11 @@ match($0, /printf '[A-Z_][A-Z_0-9]*=/) {
     for (i = 0; i < n; i++) print buf[i]; n = 0
 }
 AWK
-)
+}
+
+_desc_lint_written_keys() {
+    local prog
+    prog=$(_desc_lint_written_keys_prog)
     awk "$prog" "$1"
 }
 
@@ -1646,15 +1659,21 @@ test_invariant_descriptor_keys_whitelisted() {
 # yields the whole total — precisely the G=none case D5 exists for (`cco list packs`
 # with the pack mount absent declares pack and sees nothing). Linting that direction
 # would flag the design.
-_seen_lint_violations() {
-    local libdir="$1" f b prog
-    prog=$(cat <<'AWK'
+#
+# Own function for the awk source, never an inline `$(cat <<'AWK' … )` — bash 3.2's
+# command-substitution scanner does not skip heredoc bodies (FI-46, bin/cco:181-186).
+_seen_lint_prog() {
+    cat <<'AWK'
 /^[_a-zA-Z][_a-zA-Z0-9]*\(\)[[:space:]]*\{/ { fn = $0; sub(/\(\).*/, "", fn); seen = 0; subj = 0 }
 $0 ~ /_env_note_seen/ && $0 !~ /^[[:space:]]*#/     { if (fn != "") seen = 1 }
 $0 ~ /_env_store_subject/ && $0 !~ /^[[:space:]]*#/ { if (fn != "") subj = 1 }
 /^\}/ { if (fn != "" && seen && !subj) print fn; fn = ""; seen = 0; subj = 0 }
 AWK
-)
+}
+
+_seen_lint_violations() {
+    local libdir="$1" f b prog
+    prog=$(_seen_lint_prog)
     for f in "$libdir"/*.sh; do
         b=$(basename "$f")
         # The owner DEFINES both primitives; its mentions are definitions, not calls.
@@ -1742,5 +1761,132 @@ test_invariant_descriptor_keys_neutralized_in_suite() {
     unpinned=$(_desc_lint_unpinned_lane_keys "$writer" "$tmp/helpers.sh")
     [[ "$unpinned" == *"$victim"* ]] \
         || { fail "INV-DESC does NOT discriminate: '$victim' dropped from the lane sanitiser went uncaught:"$'\n'"${unpinned:-<no hits>}"; return 1; }
+    return 0
+}
+
+# ── INV-B32 the bash-3.2 CLASS guard (FI-46) ──────────────────────────
+# A heredoc opened INSIDE a command substitution is unparseable by bash 3.2 — macOS's
+# stock /bin/bash, and one of the two platforms this project supports. Its legacy
+# `$( … )` scanner does not skip heredoc bodies, so punctuation in the body desyncs it,
+# it never finds the closing `)`, and the WHOLE FILE dies: not one failing test but an
+# aborted run whose log carries `0 failed` and no `Results:` line. `bin/cco:181-186`
+# has carried the prohibition since the `cco help` incident; FI-46 is the same defect
+# re-entering through a late in-cycle fix, in the file that guards every other
+# invariant.
+#
+# WHY STATIC, NOT BEHAVIOURAL. The suite's own interpreter is bash 5.2 in the image and
+# 3.2 only on a macOS host, so a behavioural regression test is green wherever the suite
+# normally runs and proves nothing. The cover must read the SOURCE — which is what makes
+# it work in both environments.
+#
+# WHAT ACTUALLY TRIGGERS IT (measured on real bash 3.2, not assumed). The body's own
+# punctuation decides: an unbalanced quote (`it's`) or a bare unquoted paren aborts the
+# parse; a body with balanced quotes, or with parens INSIDE quotes, parses fine. Two of
+# FI-46's three sites aborted; the third was benign and would have stayed benign until
+# someone added an apostrophe to a comment. **That is precisely why the rule is the
+# unconditional one and not "keep the body tidy": survival depends on incidental
+# punctuation a later edit can change without touching the construct.**
+#
+# SCOPE — two arms, because the tree is not uniform:
+#   * `bin/` `lib/` `migrations/` — host-executed shipped code (`cco update` runs the
+#     migrations under the same /bin/bash 3.2). Measured CLEAN of the entire class, so
+#     they carry the UNCONDITIONAL rule: no heredoc inside a substitution, at all.
+#   * `tests/` — the FI-46 shape only: the substitution as the RHS of an ASSIGNMENT.
+#     180 argument-position fixtures (`create_project … "$(cat <<YAML`) predate this
+#     guard and parse on 3.2 today; banning them outright is a 180-site refactor and a
+#     maintainer's call, recorded on the roadmap, not a decision this lint makes.
+# `config/` is deliberately unscanned: the entrypoint and hooks only ever run inside the
+# image (bash 5.x), where the idiom parses.
+#
+# MECHANISM. Per non-comment line: find each `$(` that is not the `$((` of an arithmetic
+# expansion, then flag only if a heredoc operator (`<<`, `<<-`, never the `<<<`
+# herestring) appears BEFORE that substitution's closing `)`. The ordering test is what
+# keeps `x=$(foo); cat <<EOF` — a heredoc opened after the substitution already closed —
+# from reading as a violation. Comment lines are skipped by design: the prohibition is
+# stated verbatim, idiom included, at `bin/cco:182` and beside each site it was written
+# for.
+_b32_lint_prog() {
+    cat <<'AWK'
+/^[[:space:]]*#/ { next }
+{
+  line = $0; off = 0
+  while (1) {
+    rest0 = substr(line, off + 1)
+    if (!match(rest0, /\$\(/)) break
+    abs = off + RSTART
+    off = abs + 1
+    rest = substr(line, abs + 2)
+    if (substr(rest, 1, 1) == "(") continue          # $(( … )): `<<` there is a shift
+    r2 = rest " "
+    hp = 0
+    if (match(r2, /(^|[^<])<<[^<]/)) hp = RSTART     # a heredoc opener, not `<<<`
+    cp = index(rest, ")")
+    if (hp > 0 && (cp == 0 || hp < cp)) {
+      pre = substr(line, 1, abs - 1); sub(/"$/, "", pre)
+      kind = (pre ~ /[A-Za-z_][A-Za-z0-9_]*=$/) ? "ASSIGN" : "ARG"
+      print FILENAME "|" FNR "|" kind
+      next
+    }
+  }
+}
+AWK
+}
+
+# Echo the violating hits ("<path>|<line>|<kind>" per line) under <root>, applying the
+# per-arm scope above. Empty output = clean.
+_b32_lint_violations() {
+    local root="$1" f prog rel kind
+    prog=$(_b32_lint_prog)
+    for f in "$root"/bin/* "$root"/lib/*.sh "$root"/migrations/*/*.sh "$root"/tests/*.sh; do
+        [[ -f "$f" ]] || continue
+        rel="${f#"$root"/}"
+        while IFS='|' read -r _ line kind; do
+            [[ -z "$line" ]] && continue
+            # tests/: only the FI-46 assignment shape (see SCOPE above).
+            [[ "$rel" == tests/* && "$kind" != "ASSIGN" ]] && continue
+            printf '%s|%s|%s\n' "$rel" "$line" "$kind"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_no_heredoc_inside_command_substitution() {
+    # 1. The live tree must be clean.
+    local v; v=$(_b32_lint_violations "$REPO_ROOT")
+    [[ -z "$v" ]] || { fail "INV-B32: a heredoc is opened inside a command substitution. Bash 3.2 (macOS stock /bin/bash) cannot parse it, so the whole FILE aborts — a run that reports 0 failed and no Results: line (FI-46). Move the body into its own function and call it as \$(_fn); the shape is at bin/cco:_cco_usage_text:"$'\n'"$v"; return 1; }
+
+    # 2. Discrimination, per arm. A static invariant cannot "fail on a reverted tree",
+    #    so the guard must prove it catches the real shape. The plants are assembled
+    #    from a variable so THIS file — which the lint scans — never carries the literal
+    #    idiom on a code line.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/bin" "$tmp/lib" "$tmp/tests" "$tmp/migrations/project"
+    local hd='<<'
+    #    2a. lib/: the unconditional arm — an ARGUMENT-position heredoc is enough.
+    printf '\n_b32_probe_arg() {\n    echo "$(cat %s%s\nBEGIN { print "'"'"'" }\nAWK\n)"\n}\n' \
+        "$hd" "'AWK'" > "$tmp/lib/probe.sh"
+    #    2b. tests/: the FI-46 assignment shape, which is the one that shipped.
+    printf '\ntest_b32_probe_assign() {\n    local p; p=$(cat %s%s\nBEGIN { print "(" }\nAWK\n)\n    echo "$p"\n}\n' \
+        "$hd" "'AWK'" > "$tmp/tests/test_probe.sh"
+    local planted; planted=$(_b32_lint_violations "$tmp")
+    [[ "$planted" == *"lib/probe.sh|"*"|ARG"* ]] \
+        || { fail "INV-B32 does NOT discriminate: a planted argument-position heredoc in lib/ went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+    [[ "$planted" == *"tests/test_probe.sh|"*"|ASSIGN"* ]] \
+        || { fail "INV-B32 does NOT discriminate: a planted assignment heredoc in tests/ went uncaught — this is the exact shape of the shipped defect (FI-46):"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 3. Over-reach, on the shapes that are legitimate and MUST stay silent: the
+    #    sanctioned $(_fn) indirection, the rule quoted in a comment (bin/cco:182 does
+    #    exactly this), an arithmetic left-shift, a heredoc opened only after the
+    #    substitution closed, and — tests/ only — the 180 argument-position fixtures.
+    rm -f "$tmp"/lib/*.sh "$tmp"/tests/*.sh
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf '# the rule, quoted verbatim: never write _body=$(cat %s%s … )\n' "$hd" "'EOF'"
+        printf '_prog() {\n    cat %s%s\nBEGIN { print "(" }\nAWK\n}\n' "$hd" "'AWK'"
+        printf '_use() {\n    local p; p=$(_prog)\n    local n=$((1 %s 3))\n    local x; x=$(echo hi); cat %sEOF\nbody\nEOF\n}\n' "$hd" "$hd"
+    } > "$tmp/lib/legit.sh"
+    printf 'test_fixture() {\n    create_project "$d" "p" "$(cat %sYAML\nname: p\nYAML\n)"\n}\n' "$hd" > "$tmp/tests/test_legit.sh"
+    local overreach; overreach=$(_b32_lint_violations "$tmp")
+    [[ -z "$overreach" ]] \
+        || { fail "INV-B32 over-reaches: a legitimate shape (the \$(_fn) indirection, the rule in a comment, an arithmetic shift, a heredoc opened after the substitution closed, or a tests/ argument-position fixture) was flagged:"$'\n'"$overreach"; return 1; }
     return 0
 }
