@@ -438,8 +438,7 @@ merge introduced no content nobody wrote. All three branches are pushed and leve
   `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
   `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
   tests that could fail. Root cause and fix: **[FI-46](roadmap-backlog.md)**.
-  **↳ 2026-08-03: the DEFECT is fixed and covered** on `fix/tests/bash32-heredoc-substitution`
-  (`a0d1cc5`) — four sites moved out of command substitutions (the lint found a fourth the diagnosis
+  **↳ 2026-08-03: the DEFECT is fixed and covered**, merged into `develop` as `f1813c1` — four sites moved out of command substitutions (the lint found a fourth the diagnosis
   had not named), covered by the **INV-B32** CLASS lint, and **parse-verified on real bash 3.2**:
   173 shell sources exit 0 where the pre-fix file exits 2. **The gate item itself is still open** —
   it is satisfied only by a macOS run that prints a `Results:` line, which is host-side work.
@@ -593,7 +592,7 @@ deferred with it**.
   (topology-independent; deferred only to keep the release tree unchanged).
 
 ✅ **BEFORE G6 — living-docs coherence sweep DONE 2026-08-03**, branch
-`docs/release/living-docs-sweep` (10 commits, unmerged). Seven scopes, disjoint file sets, every
+`docs/release/living-docs-sweep`, merged into `develop` as `da1fcb6`. Seven scopes, disjoint file sets, every
 claim verified against `bin/cco` / `lib/*.sh` rather than against another document.
 
 **The drifts worth remembering** (each was believed correct until it was checked):

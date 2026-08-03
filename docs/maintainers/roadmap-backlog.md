@@ -1999,7 +1999,7 @@ cannot observe this failure mode. That is a process decision, not a bug.
 **Related**: `bin/cco:181-186` (the rule, already written) · [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work)
 (the commit that introduced it) · the `bash 3.2 compatibility` convention in the repo's `CLAUDE.md`.
 
-### Resolution — 2026-08-03, `fix/tests/bash32-heredoc-substitution` (`a0d1cc5`)
+### Resolution — 2026-08-03, merged into `develop` (`f1813c1`)
 
 **Fixed, covered, and verified on real bash 3.2. What remains is the host re-run**, which is a *gate*
 item (G5's fourth), not a defect: the fix is not "verified" for the release until a macOS run prints a
