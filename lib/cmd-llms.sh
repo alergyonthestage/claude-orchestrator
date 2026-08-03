@@ -53,7 +53,8 @@ _llms_install() {
                 cat <<'EOF'
 Usage: cco llms install <url> [options]
 
-Download an llms.txt file and save it to user-config/llms/<name>/.
+Download an llms.txt file into the machine-local CACHE (default
+~/.cache/cco/llms/<name>/; honours CCO_CACHE_HOME / XDG_CACHE_HOME).
 
 Options:
   --name <name>        Override the auto-detected name (skips confirmation)

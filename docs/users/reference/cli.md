@@ -290,7 +290,7 @@ narrow a built-in for one session with an explicit `--cco-access` (e.g.
    - From a repo dir: use the invoking repo's <repo>/.cco/ (the project it hosts);
      by name: resolve via the index (--from > entry > prompt on divergence)
    - Resolve each member repo/mount via the index; unresolved → prompt resolve|clone|skip
-   - Check no existing running session for this project (die if container cc-<name> is running)
+   - Check no existing running session for this project (by the `cco.project` label; die if one is running)
    - Check Docker image exists (suggest `cco build` if not)
 
 2. GENERATE docker-compose.yml (into CACHE, host-absolute mount sources)
@@ -588,7 +588,7 @@ The per-noun `cco project list` verb was **removed** (ADR-0029 D1): listing is n
 unified under `cco list` (§3.5b). Running the old verb prints a one-line redirect.
 
 ```
-cco list project             # projects only (NAME · REPOS · STATUS · TAGS)
+cco list project             # projects only (NAME · REPOS · STATUS)
 cco list                     # all resources, grouped by kind
 cco list project --tag work  # projects carrying the "work" tag
 ```
@@ -596,7 +596,8 @@ cco list project --tag work  # projects carrying the "work" tag
 **Implementation** (under `cco list project`):
 - List projects registered in the machine-local index (`<state>/cco/index` `projects:` map)
 - Parse each repo's `<repo>/.cco/project.yml` for repo count
-- Check Docker for running containers (`cc-<name>`)
+- Resolve each project's session STATUS (`running` | `stopped` | `unknown`) by the
+  `cco.project` label — see §3.6
 
 ---
 
@@ -615,7 +616,7 @@ grouped by kind, with a **TAGS** column. `cco list <kind>` narrows to one kind
 Long names are ellipsized so columns stay aligned in any terminal width.
 
 ```
-Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag] [--reverse|-r]
+Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag|status] [--reverse|-r]
                 [--include-internal]
 
 Arguments:
@@ -625,8 +626,9 @@ Arguments:
 
 Options:
   --tag <t>            Show only resources carrying tag <t>
-  --sort kind|name|tag Order by kind (default), name, or first tag
-                       (--sort tag: untagged resources sort last, then by name)
+  --sort <field>       Order by kind (default), name, tag, or status
+                       (--sort tag: untagged resources sort last, then by name;
+                        --sort status: running sessions first, then by name)
   --reverse, -r        Reverse the chosen order
   --include-internal   Also list internal built-ins even when stopped
 
@@ -649,7 +651,7 @@ by default only when **running** (so the list stays uncluttered), and always
 (any status) under `--include-internal` or the explicit `cco list builtin`. They
 carry no tags and are never scope-hidden (framework sessions, not your config).
 
-> `--sort`/`--reverse` always render the compact index (KIND · NAME · TAGS), even
+> `--sort`/`--reverse` always render the compact index (KIND · NAME · STATUS · TAGS), even
 > when a `<kind>` is given — so `cco list packs --sort tag` sorts packs by tag.
 
 > The per-noun `cco project|pack|template|llms|remote list` verbs were removed;
@@ -675,6 +677,40 @@ Tags are organizational only; they carry no privilege and never affect resolutio
 
 ---
 
+### 3.5c `cco whoami`
+
+Report the **current session's** resolved access state, so an agent (or you) can tell what
+it may read and write without probing the shim by trial and error. Read-only: it consumes
+the session's own environment, never the filesystem or the internal store. Available at
+every read level; refused only at `cco_access=none`, where `cco` itself is refused (§3.2).
+
+```
+Usage: cco whoami
+```
+
+On the **host** there is no session envelope, so it prints one line — *"Not in a cco
+session (host context) — cco runs unrestricted here."* — plus the redirected bucket paths
+when a developer sandbox is active (§3.34).
+
+**In a session** it prints four blocks and a closing note:
+
+| Block | Contents |
+|-------|----------|
+| **Session** | `identity` (the project name) · `editing target` (config-editor's `--project` targets, only when set) · `code repos` (mounted repos, or `— (config only)`) · `image built from` (the source ref baked into the image at build time) |
+| **Access** | `level` — the **preset name** when the resolved triple is symmetric, else `custom (global=…,current=…,others=…)`, which is the copy-pasteable `--cco-access` value · `triple` (`G`/`Pc`/`Po` + read/write scope) · `claude_access` and its `(Cr,Cp,Cg,Co)` triple · `show_host_paths` |
+| **Config trees (.cco)** | `rw` / `ro` / `—` per tree: project config (`<repo>/.cco`), personal store + registry (`~/.cco`), llms cache, and other projects' config (shown only when `Po ≥ ro`) |
+| **Authoring trees (.claude)** | `rw` / `ro` / `—` per tree: repo-native `Cr`, project `Cp`, global `Cg`, and other projects' `Co` (shown only when `Co = rw`) |
+
+The closing **Enforcement** note restates that the internal store sits behind the
+ADR-0047 privilege boundary: these values are enforced by the setuid `cco-svc` helper
+(a raw read of the store fails), not merely by output filtering.
+
+> `image built from` is the line to check before trusting a probe: a `lib/` edit is
+> invisible to any store-touching verb until the next `cco build`, so it names the ref
+> the running image was built from rather than the working tree.
+
+---
+
 ### 3.6 `cco stop [project]`
 
 Stop a running session.
@@ -690,14 +726,21 @@ Examples:
   cco stop              # Stop all running sessions
 ```
 
-**Implementation**:
+**Implementation**: session identity is the compose **`cco.project` label**, not the
+container name. `cco start` launches with `docker compose run --rm`, which discards
+`container_name`, so a `name=cc-…` filter never matches a live session.
+
 ```bash
 # Specific project
-docker stop cc-<project>
+docker ps --filter "label=cco.project=<project>" --format '{{.ID}}' | xargs docker stop
 
 # All sessions
-docker ps --filter "name=cc-" -q | xargs docker stop
+docker ps --filter "label=cco.project" --format '{{.ID}}' | xargs docker stop
 ```
+
+`cco stop` also reconciles the STATE running registry (dropping the marker for each
+session it stops) and clears that project's generated runtime state in CACHE
+(`browser.json`, `.browser-port`, `github.json`).
 
 ---
 
@@ -963,7 +1006,8 @@ Examples:
      key `cco path` and `cco extra-mount rename` take
    - Packs: list with existence check ([not found] marker for absent packs)
    - Docker config: auth method, ports, network name
-   - Status: checks Docker for running container (cc-<name>)
+   - Status: the session state `running` | `stopped` | `unknown`, by the `cco.project`
+     label (`unknown` = the running registry is unreachable, never a false `stopped`)
    - ⚠ passive badge: unresolved/unreachable references, if any
 ```
 
@@ -1195,7 +1239,8 @@ same-name-different-path clash is refused. If the name diverges from the directo
 `cco path set` prints a hint (`cco repo rename` aligns them). The index stores **absolute paths
 only**: every write is normalized (`~`/`$HOME` expanded, and one pair of surrounding quotes
 stripped so a pasted `'/my/repo'` or `"/my/repo"` resolves to the literal directory) and a value
-that cannot be made absolute is refused. `cco path list` labels each row with its owning project (`[project] name → path`),
+that cannot be made absolute is refused. `cco path list` labels each row with its owning project and prints one
+**TAB-separated** `[project] name<TAB>path` row (a bare, unbracketed label is an unscoped entry),
 normalizes each value for display, and flags any stale non-absolute entry (e.g. a legacy `@local`)
 as `⚠ malformed`; run `cco update` (which normalizes the index) or `cco resolve --scan <dir>` to
 clean it.
@@ -1379,10 +1424,12 @@ Install packs from a remote **sharing repo** (a git repo whose layout holds `pac
 in `~/.cco/packs/`.
 
 ```
-Usage: cco pack install <url> [OPTIONS]
+Usage: cco pack install <source> [OPTIONS]
 
 Arguments:
-  url                  URL of the sharing repo (git repository)
+  source               A git URL of the sharing repo, or the name of a remote
+                       registered with `cco remote add` (§3.28). A URL may carry
+                       an `@<branch-or-tag>` suffix to pin the ref.
 
 Options:
   --pick <name>        Install only a specific pack from the repo
@@ -1391,7 +1438,8 @@ Options:
 
 Examples:
   cco pack install https://github.com/team/cco-sharing
-  cco pack install https://github.com/team/cco-sharing --pick react-guidelines
+  cco pack install https://github.com/team/cco-sharing@v1.2
+  cco pack install team --pick react-guidelines      # `team` = a registered remote
   cco pack install https://github.com/team/cco-sharing --token ghp_... --force
 ```
 
@@ -1429,17 +1477,24 @@ Examples:
 The tar-snapshot half of the pack sharing 2×2 (`publish`/`install` is the live-source half).
 
 ```
-Usage: cco pack export <name>          # Write ~/.cco/packs/<name>/ to a .tar.gz archive
-       cco pack import <archive>       # Install a pack from a .tar.gz archive into ~/.cco/packs/
+Usage: cco pack export <name>                   # Write ~/.cco/packs/<name>/ to a .tar.gz archive
+       cco pack import <archive> [--force]      # Install a pack from a .tar.gz archive into ~/.cco/packs/
 
 Arguments:
   name                 Pack name to export
   archive              Path to a .tar.gz pack archive
 
+Options:
+  --force              (import) Overwrite an existing pack of the same name
+
 Examples:
   cco pack export react-guidelines
   cco pack import ./react-guidelines.tar.gz
+  cco pack import ./react-guidelines.tar.gz --force
 ```
+
+An imported pack is an **internalized snapshot** (`source: local`) — `cco pack update`
+does not apply to it.
 
 ---
 
@@ -1780,10 +1835,11 @@ Convert a pack to fully self-contained and locally owned (see also the unified
 `cco <res> internalize`, §3.23).
 
 ```
-Usage: cco pack internalize <name>
+Usage: cco pack internalize <name> [--as <new-name>]
 
 Examples:
   cco pack internalize my-docs-pack
+  cco pack internalize team-rules --as team-rules-local   # fork, leaving the original linked
 ```
 
 Performs two independent operations as needed:
@@ -1849,6 +1905,20 @@ prints a one-line redirect.
 cco list remotes
 ```
 
+#### `cco remote rename <old> <new> [-y]`
+
+Rename a registered remote, re-keying its url-registry entry **and** migrating any saved
+auth token, so url and token survive under the new name. Previews and confirms first.
+**Host-only** — see §3.13c for the rename family and §3.2 for why the token cascade keeps
+it off the container.
+
+```
+Usage: cco remote rename <old> <new> [-y]
+
+Options:
+  -y, --yes            Skip the confirmation prompt
+```
+
 #### `cco remote set-token <name> <token>`
 
 Save or update an auth token for a registered remote. The token is stored in STATE
@@ -1888,10 +1958,16 @@ internalize · show · remove · validate** (ADR-0029 D3). Listing is unified un
 #### Listing templates → `cco list templates`
 
 ```
-cco list templates           # native + user templates (KIND · NAME · TAGS)
+cco list templates           # native + user templates, grouped by kind
 ```
 
-The old `cco template list [--project|--pack]` verb prints a one-line redirect.
+The bare per-kind view is the **rich** one, not the compact `KIND · NAME · STATUS ·
+TAGS` index (add `--tag`/`--sort` to get that instead — §3.5b): two headings,
+`Project templates:` and `Pack templates:`, each row `<name>  (native|user)` plus the
+`template.yml` description for project templates. In a container session it needs
+`read-global` or higher — templates are a personal-global resource, so `read-project`
+refuses it by name rather than printing an empty list. The old
+`cco template list [--project|--pack]` verb prints a one-line redirect.
 
 #### `cco template update <name> [--all] [--force]`
 
@@ -2028,10 +2104,11 @@ via the `llms:` section.
 Usage: cco llms install <url> [OPTIONS]
 
 Options:
-  --name <name>        Override the auto-detected framework name
+  --name <name>        Override the auto-detected framework name (skips confirmation)
   --variant <v>        Force variant: full, medium, small, index (default: auto)
   --pack <pack>        Add reference to this pack's pack.yml
   --project <project>  Add reference to this project's project.yml
+  --force              Overwrite an existing entry with the same name
 
 Examples:
   cco llms install https://svelte.dev/docs/svelte/llms.txt
@@ -2205,7 +2282,9 @@ sources are **host-absolute** (config, state, and cache live under three roots, 
 services:
   claude:
     image: claude-orchestrator:latest
-    container_name: cc-my-saas-platform
+    container_name: cc-my-saas-platform   # cosmetic — `run --rm` discards it
+    labels:
+      cco.project: "my-saas-platform"     # the session-identity contract (§3.6)
     stdin_open: true
     tty: true
     environment:
@@ -2315,7 +2394,7 @@ If the proxy fails to start, the real socket remains locked (`chmod 600`). Docke
 | Scenario | Behavior |
 |----------|----------|
 | Project not found | `Error: Project 'foo' not found. Run 'cco list project' to see available projects.` |
-| Session already running | `Error: Project 'foo' already has a running session (container cc-foo). Run 'cco stop foo' first.` |
+| Session already running | `Error: Project 'foo' already has a running session. Run 'cco stop foo' first.` |
 | Repo path doesn't exist | `Error: Repository path ~/projects/foo does not exist.` |
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
 | Docker not running | `Error: Docker daemon is not running. Start Docker Desktop.` |

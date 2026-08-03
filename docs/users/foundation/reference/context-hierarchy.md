@@ -40,6 +40,7 @@ These files are loaded into Claude's context when the session starts:
 | File | Container Path | Source | Tier |
 |------|---------------|--------|------|
 | Managed CLAUDE.md | `/etc/claude-code/CLAUDE.md` | `defaults/managed/CLAUDE.md` (in image) | Managed |
+| Managed rules | `/etc/claude-code/.claude/rules/*.md` | `defaults/managed/.claude/rules/*.md` (in image) | Managed |
 | User CLAUDE.md | `~/.claude/CLAUDE.md` | `~/.cco/.claude/CLAUDE.md` | User |
 | User rules | `~/.claude/rules/*.md` | `~/.cco/.claude/rules/*.md` | User |
 | Project CLAUDE.md | `/workspace/.claude/CLAUDE.md` | `<repo>/.cco/claude/CLAUDE.md` | Project |
@@ -148,7 +149,8 @@ Framework infrastructure — baked into the Docker image, non-overridable.
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/session-context.sh", "timeout": 10 }] }],
     "SubagentStart": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/subagent-context.sh", "timeout": 5 }] }],
-    "PreCompact": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/precompact.sh", "timeout": 5 }] }]
+    "PreCompact": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/precompact.sh", "timeout": 5 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/cco-hooks/prompt-submit.sh", "timeout": 5 }] }]
   },
   "statusLine": { "type": "command", "command": "/usr/local/bin/cco-hooks/statusline.sh" },
   "permissions": { "deny": ["Read(~/.claude.json)", "Read(~/.ssh/*)"] }
@@ -200,131 +202,36 @@ User preferences — copied once by `cco init`, fully customizable.
 
 ### 4.2 Global CLAUDE.md (`~/.cco/.claude/CLAUDE.md`)
 
-```markdown
-# Global Instructions
+Copied once from `defaults/global/.claude/CLAUDE.md` by `cco init`, then user-owned and
+never overwritten. The shipped default is deliberately short — it delegates the detail to
+`~/.cco/.claude/rules/` (§4.3) instead of restating it, so the two cannot diverge:
 
-## Development Workflow
+- **How to Work** — follow the active rules; project-level rules win over global ones for
+  that project; clarify scope and phase before starting.
+- **Communication Style** — concise and direct, structured findings, trade-offs with any
+  options, a summary at the end of each phase.
 
-Every task follows this structured workflow. Phase transitions are MANUAL — 
-never skip ahead or auto-advance without explicit user approval.
-
-### Phases
-1. **Analysis** → Understand requirements, explore codebase, identify constraints
-2. **Review & Approval** → Present findings, wait for user feedback
-3. **Design** → Propose architecture, interfaces, data models
-4. **Review & Approval** → Present design, wait for user feedback  
-5. **Implementation & Testing** → Write code, tests, verify
-6. **Review & Approval** → Present implementation, wait for user feedback
-7. **Documentation** → Update docs, README, API docs, changelog
-8. **Closure** → Final review, merge readiness check
-
-### Scope Levels
-The workflow applies recursively at multiple levels:
-- **Project**: Overall project planning and architecture
-- **Architecture**: System-wide design decisions
-- **App/Service**: Individual application or microservice
-- **Module**: Component or module within an app
-- **Feature**: Specific feature or user story
-
-Always clarify the current scope level before starting work.
-
-### Phase Behavior
-- During **Analysis**: Read code, ask questions, produce summaries. NO code changes.
-- During **Design**: Produce design docs, diagrams, interface definitions. NO implementation.
-- During **Implementation**: Write code and tests. Follow the approved design.
-- During **Documentation**: Update all relevant docs. NO new features.
-
-## Git Practices
-- Always work on feature branches, never directly on main/master
-- Use conventional commits: feat:, fix:, docs:, refactor:, test:, chore:
-- Commit frequently with meaningful, descriptive messages
-- Create a new branch at the start of any implementation phase
-- Branch naming: `<type>/<scope>/<description>` (e.g., `feat/auth/add-oauth-flow`)
-
-## Communication Style
-- Be concise and direct
-- Present findings in structured format
-- When presenting options, include trade-offs
-- Ask clarifying questions before making assumptions
-- At the end of each phase, summarize what was done and what's next
-
-## Agent Teams
-- The lead coordinates and delegates work to teammates
-- Each teammate focuses on their specialized domain
-- Use the shared task list for coordination
-- Communicate relevant findings between teammates
-- The lead synthesizes teammate outputs into coherent results
-
-## Docker Environment
-- This session runs inside a Docker container
-- Repos are mounted at /workspace/<repo-name>/
-- Docker socket is available — you can run docker and docker compose
-- When starting infrastructure (postgres, redis, etc.), use the project network
-- Dev servers run inside this container with ports mapped to the host
-```
+The file itself is the source of truth for its wording — read
+`defaults/global/.claude/CLAUDE.md` (the shipped default) or `~/.cco/.claude/CLAUDE.md`
+(your copy, which you are free to rewrite).
 
 ### 4.3 Global Rules
 
-Modular rule files in `~/.cco/.claude/rules/`:
+Modular rule files in `~/.cco/.claude/rules/`, copied once from
+`defaults/global/.claude/rules/` by `cco init` and user-owned thereafter. Claude Code
+loads every `*.md` under a `rules/` directory at user scope, so a rule applies to every
+project on this machine:
 
-**`workflow.md`** — Detailed workflow phase behaviors:
-```markdown
-# Workflow Phase Rules
+| File | Covers |
+|------|--------|
+| `workflow.md` | Phase principles and per-phase behaviour (Analysis → Design → Implementation → Documentation), plus the testing approach |
+| `git-practices.md` | Branch strategy, conventional commits, commit frequency |
+| `documentation.md` | Where docs live, roadmap as SSOT, ADRs, Mermaid-only diagrams |
+| `language.md` | Language for communication vs. documentation vs. code comments |
 
-## Analysis Phase
-- Read and understand all relevant code before proposing changes
-- Identify dependencies, constraints, and potential risks
-- Document findings in a structured analysis summary
-- List questions that need answers before proceeding
-- DO NOT modify any files during analysis
-
-## Design Phase  
-- Reference the analysis findings
-- Propose clear interfaces and data models
-- Consider error handling and edge cases
-- Evaluate alternatives and document trade-offs
-- Produce diagrams where helpful (see diagrams rule)
-- DO NOT write implementation code during design
-
-## Implementation Phase
-- Follow the approved design
-- Write tests alongside implementation
-- Commit after each logical unit of work
-- Run existing tests to verify no regressions
-- If the design needs changes, pause and discuss
-
-## Documentation Phase
-- Update README if public API changed
-- Update inline code comments
-- Update changelog
-- Document new configuration options
-- DO NOT add new features during documentation
-```
-
-**`git-practices.md`** — Git conventions:
-```markdown
-# Git Practices
-
-## Branch Strategy
-- Main branch: `main` (never commit directly)
-- Feature branches: `feat/<scope>/<description>`
-- Fix branches: `fix/<scope>/<description>`
-- Always branch from the latest main
-
-## Commit Messages
-Follow conventional commits:
-- `feat: add user authentication`
-- `fix: resolve race condition in queue processor`
-- `docs: update API endpoint documentation`
-- `refactor: extract validation logic to shared module`
-- `test: add integration tests for payment flow`
-- `chore: update dependencies`
-
-## Commit Frequency
-- Commit after each logical, working unit of change
-- Each commit should leave the codebase in a working state
-- Prefer many small commits over few large ones
-```
+Add your own by dropping a `.md` file into `~/.cco/.claude/rules/` — no registration step.
+`cco update --diff`/`--sync` surfaces changes the framework makes to its own defaults;
+your edits are never overwritten.
 
 ### 4.4 Project CLAUDE.md Template (`templates/project/base/.claude/CLAUDE.md`)
 
@@ -334,39 +241,24 @@ Follow conventional commits:
 ## Overview
 {{DESCRIPTION}}
 
-## Repositories
+<!-- Run /init-workspace after starting the first session to auto-populate
+     this file from your repositories and knowledge packs. -->
 
-{{#each repos}}
-### {{name}}
-- Path: /workspace/{{name}}/
-- Description: {{description}}
-{{/each}}
+## Repositories
 
 ## Project-Specific Instructions
 
-<!-- Add project-specific instructions, conventions, and context here -->
-
 ## Architecture
-
-<!-- Describe the overall architecture, how repos relate to each other -->
 
 ## Infrastructure
 
-<!-- If this project uses docker compose for infrastructure:
-- Network name: cc-{{PROJECT_NAME}}
-- Set `networks.default.external = true` and `networks.default.name = cc-{{PROJECT_NAME}}`
-  in infrastructure docker-compose files so containers join the project network.
--->
-
 ## Key Commands
-
-<!-- Common commands for this project:
-- Build: ...
-- Test: ...
-- Run dev: ...
-- Deploy: ...
--->
 ```
+
+Only `{{PROJECT_NAME}}` and `{{DESCRIPTION}}` are interpolated at scaffold time. The
+per-repo sections are left empty on purpose: `/init-workspace` fills them in from the
+injected session context (§3.4), which already carries the repo list and descriptions —
+the template does not loop over repos itself.
 
 ### 4.5 Project Settings Template (`templates/project/base/.claude/settings.json`)
 
@@ -405,7 +297,11 @@ Claude Code stores auto memory at:
 └── patterns.md
 ```
 
-The `<project-identifier>` is derived from the git root directory. Since `/workspace` is not a git repo, Claude Code falls back to using the working directory name: `workspace`.
+The `<project-identifier>` is the session's working directory path with every
+non-alphanumeric character replaced by `-` — a session at `/workspace` therefore writes
+under `-workspace`. For **auto memory** the key is derived from the enclosing git
+repository when there is one (so all worktrees and subdirectories of a repo share one
+memory directory); `/workspace` is not a git repo, so the directory itself is used.
 
 ### 5.2 Isolation and Persistence Strategy
 
@@ -513,7 +409,14 @@ User skills live in `defaults/global/.claude/skills/`, copied once to `~/.cco/.c
 
 ### 7.5 Project-Specific Skills
 
-Projects can add custom skills in `<repo>/.cco/claude/skills/`. These are mounted read-write at `/workspace/.claude/skills/`. **Note**: For skills, User > Project — user-level skills take precedence over project-level skills with the same name. Packs can add new skills but cannot override existing global ones. See [scope-design.md §3.5](../../../maintainers/configuration/scope-hierarchy/design/design-scope-hierarchy.md) for details.
+Projects can add custom skills in `<repo>/.cco/claude/skills/`. They appear at
+`/workspace/.claude/skills/`, **read-only by default**: the whole project `.claude` tree
+is mounted `:ro` unless the session's `claude_access` makes the project axis writable
+(ADR-0049 — the authoring tree follows `cco_access` unless you set `claude_access`
+explicitly). Author them on the host, or start the session with a `claude_access` that
+grants project authoring. **Note**: for skills, User > Project — user-level skills take
+precedence over project-level skills with the same name. Packs can add new skills but
+cannot override existing global ones. See [scope-design.md §3.5](../../../maintainers/configuration/scope-hierarchy/design/design-scope-hierarchy.md) for details.
 
 ---
 
@@ -557,7 +460,13 @@ The CLI mounts `mcp.json` directly at `/workspace/.mcp.json` (read-only). No int
 
 #### Global-Level MCP
 
-`~/.cco/.claude/mcp.json` defines MCP servers available in all projects. The entrypoint copies the host's `~/.claude.json` from the read-only seed mount, then merges MCP servers into the writable copy at container startup using `jq`. Defaults ship in `defaults/global/.claude/mcp.json` (empty, user-owned after init).
+`~/.cco/.claude/mcp.json` defines MCP servers available in all projects. It is mounted
+read-only at `~/.claude/mcp-global.json`; at container startup the entrypoint resets
+`mcpServers` in `~/.claude.json` and merges the global, project and managed MCP configs
+into it with `jq`. `~/.claude.json` itself is a **read-write bind from machine-local
+STATE** (`<state>/cco/claude.json`, shared by every project) — not a copied seed — so
+preferences and session metadata persist across sessions. Defaults ship in
+`defaults/global/.claude/mcp.json` (empty, user-owned after init).
 
 ### 8.3 Authentication / Secrets
 
@@ -614,17 +523,20 @@ The Dockerfile uses `ARG MCP_PACKAGES` to conditionally run `npm install -g`.
 
 When creating a new project, these files should be configured:
 
+Paths are relative to the invoking repo's committed `<repo>/.cco/`, except the two
+machine-local STATE entries at the end (created for you on first run).
+
 | File | Required | Purpose |
 |------|----------|---------|
-| `project.yml` | ✅ | Defines repos, ports, auth |
-| `.claude/CLAUDE.md` | ✅ | Project instructions |
-| `.claude/settings.json` | ❌ | Override global settings |
-| `.claude/rules/*.md` | ❌ | Project-specific rules |
-| `.claude/agents/*.md` | ❌ | Project-specific subagents |
-| `.claude/skills/*/SKILL.md` | ❌ | Project-specific skills |
+| `project.yml` | ✅ | Defines repos, extra mounts, ports, auth, access |
+| `claude/CLAUDE.md` | ✅ | Project instructions |
+| `claude/settings.json` | ❌ | Override global settings |
+| `claude/rules/*.md` | ❌ | Project-specific rules |
+| `claude/agents/*.md` | ❌ | Project-specific subagents |
+| `claude/skills/*/SKILL.md` | ❌ | Project-specific skills |
 | `mcp.json` | ❌ | MCP server configuration |
-| `.claude/skills/` | ❌ | Project-specific skills |
-| `<state>/cco/projects/<id>/claude-state/` | auto | Created in STATE on first run; holds session transcripts |
+| `secrets.env` | ❌ | Project secrets (gitignored; masked out of every session mount) |
+| `<state>/cco/projects/<id>/session/claude-state/` | auto | Created in STATE on first run; holds session transcripts |
 | `<state>/cco/projects/<id>/docker-compose.yml` | auto | Generated by CLI from project.yml (STATE) |
 
 ---
@@ -645,21 +557,36 @@ Script: `/usr/local/bin/cco-hooks/session-context.sh`
 
 Uses a catch-all matcher (no `"matcher"` field) — fires on all SessionStart events (startup, clear, etc.).
 
-At session startup, this hook automatically detects and injects:
-- **Project name** — from `PROJECT_NAME` env var
-- **Teammate mode** — from `TEAMMATE_MODE` env var
-- **Mounted repositories** — scans `/workspace/*/` for `.git` directories
-- **MCP servers** — reads server count and names from `~/.claude.json`
-- **Global/project skills and agents** — discovers available skills and agents
-- **Knowledge packs** — renders the `knowledge` (and `llms`) sections carried by the injected session context (`CCO_SESSION_CONTEXT`), listing available knowledge files with descriptions
+At session startup, this hook injects two things, from two different sources:
 
-Claude receives this context as `additionalContext`, so it knows what's available without needing to explore. Knowledge packs are injected automatically — no `@import` in CLAUDE.md required.
+**Filesystem-side metadata it discovers itself** —
+- **Project name** — from the `PROJECT_NAME` env var
+- **Teammate mode** — from the `TEAMMATE_MODE` env var
+- **MCP servers** — count and names from the merged `~/.claude.json`
+- **Global/project skills and agents** — by listing `~/.claude/skills|agents` and `/workspace/.claude/skills|agents`
+
+**The host-computed session context**, decoded from `CCO_SESSION_CONTEXT` and appended
+**verbatim**: repos and read-only mounts (with descriptions), packs, the knowledge and
+llms indexes with their instructional preambles, the optional host↔container path map,
+and the wrapped-`cco` access declaration. The hook does **not** scan `/workspace/*/` for
+repos — `project.yml` is the sole authority on session resources, so a git-backed
+read-only mount is never mislabelled as a repository.
+
+Claude receives all of it as `additionalContext`, so it knows what's available without needing to explore. Knowledge packs are injected automatically — no `@import` in CLAUDE.md required.
 
 #### SubagentStart — Condensed Context for Subagents
 
 Script: `/usr/local/bin/cco-hooks/subagent-context.sh`
 
 Injects a condensed version of the project context into subagents (teammates, forked skills). Reduces token budget by only providing essential information (project name, repos, active packs).
+
+#### UserPromptSubmit — Per-Prompt Reminder
+
+Script: `/usr/local/bin/cco-hooks/prompt-submit.sh`
+
+Fires on every prompt you submit. Re-injects a short reminder to check the active rules,
+the git status, and existing documentation before acting — the counterweight to context
+drift over a long session.
 
 #### PreCompact — Compaction Guidance
 
@@ -697,10 +624,11 @@ Hook scripts baked into the image live at `/usr/local/bin/cco-hooks/`. Source fi
 
 | Script | Hook Event | Purpose |
 |--------|-----------|---------|
-| `session-context.sh` | SessionStart | Inject project context (repos, MCP, packs) |
+| `session-context.sh` | SessionStart | Inject project context (MCP/skills/agents + the host-computed session context) |
 | `subagent-context.sh` | SubagentStart | Condensed context for subagents |
+| `prompt-submit.sh` | UserPromptSubmit | Per-prompt reminder (rules, git status, existing docs) |
 | `precompact.sh` | PreCompact | Guide context compaction |
-| `statusline.sh` | StatusLine | Display `[project] model \| ctx XX% \| $cost` |
+| `statusline.sh` | StatusLine | Display `[project] model \| ctx XX% \| $cost` (plus an auth-expiry tag when the OAuth token is close to expiring) |
 
 ---
 
@@ -753,11 +681,13 @@ graph TD
     end
 
     subgraph ENTRY ["CONTAINER STARTUP — entrypoint.sh"]
-        E1[fix docker socket GID]
-        E2[copy .claude.json.seed → ~/.claude.json]
-        E3[merge mcp-global.json + .mcp.json → ~/.claude.json]
-        E4[exec gosu claude: tmux → claude]
-        E1 --> E2 --> E3 --> E4
+        E1["fix docker socket GID + start the socket proxy (when mounted)"]
+        E2["lock the cco-svc internal-store boundary"]
+        E3["merge mcp-global.json + .mcp.json + .managed/*.json → ~/.claude.json (bound rw from STATE)"]
+        E4["run global then project setup.sh, install project MCP packages"]
+        E5["install/re-pin Claude Code natively into the persistent CACHE mount (ADR-0039)"]
+        E6["exec gosu claude: tmux → claude"]
+        E1 --> E2 --> E3 --> E4 --> E5 --> E6
     end
 
     subgraph LAUNCH ["CLAUDE CODE LAUNCH"]
@@ -816,25 +746,33 @@ Host origins are **host-absolute** sources resolved by `cco start`: project conf
 | Pack agents | `/workspace/.claude/agents/*.md` | `~/.cco/packs/<name>/agents/` (mounted `:ro`, per file) | Claude launch | Claude Code |
 | Pack rules | `/workspace/.claude/rules/*.md` | `~/.cco/packs/<name>/rules/` (mounted `:ro`, per file) | Claude launch | Claude Code |
 | Session context | injected (no file) | computed host-side by `lib/session-context.sh` from `project.yml` + packs/llms | Hook injection of `knowledge`/`llms` sections (automatic) | `session-context.sh` via the `CCO_SESSION_CONTEXT` env var (base64) |
-| project.yml | `/workspace/.claude/project.yml` | `<repo>/.cco/project.yml` (`:rw` mount) | On-demand (written by `/init-workspace`) | Claude Code (via skill) |
+| project.yml | `/workspace/project.yml` | `<repo>/.cco/project.yml` (`:ro` mount, always) | On-demand (read by `/init-workspace`) | Claude Code (via skill) |
 | Repo CLAUDE.md | `/workspace/<repo>/.claude/CLAUDE.md` | Repo itself (`<repo>/.claude/`) | On-demand (nested project) | Claude Code |
 | SessionStart hook | `/usr/local/bin/cco-hooks/session-context.sh` | `config/hooks/session-context.sh` (baked at build) | Immediately after launch | Claude Code hooks |
 | MCP servers | `~/.claude.json` (merged) | `~/.cco/.claude/mcp.json` + `<repo>/.cco/mcp.json` | MCP init (Claude launch) | `entrypoint.sh` (jq merge) |
-| Auth state | `~/.claude.json` | `~/.claude.json` on host (mounted as `.seed:ro`, copied at startup) | Claude launch | `entrypoint.sh` (copy seed) |
+| Auth state / preferences | `~/.claude.json` | `<state>/cco/claude.json` (rw; re-synced from the host `~/.claude.json` when the host copy is newer) | Claude launch | `cco start` (host sync) + `entrypoint.sh` (MCP merge) |
+| OAuth credentials | `~/.claude/.credentials.json` | `<state>/cco/.credentials.json` (rw; seeded from the macOS Keychain) | Claude launch | `cco start` (Keychain seeding, macOS + `auth.method: oauth`) |
 | Auto memory | `~/.claude/projects/-workspace/memory/` | `<state>/cco/projects/<id>/session/memory/` | Claude launch (prime 200 lines) | Claude Code |
 | Session transcripts | `~/.claude/projects/` (every cwd key) | `<state>/cco/projects/<id>/session/claude-state/` | `/resume` command | Claude Code |
 | Project workflow saves | `/workspace/.claude/workflows/` | `<state>/cco/projects/<id>/workflows/` when the project `.claude` tree is read-only; the repo itself under `--claude-access all` | `/workflows` save | Claude Code |
-
-> **Known limitation.** The save target above applies to the **project** tree. A session whose working
-> directory is inside a repo — a subagent or teammate you start there, a worktree or background
-> session — saves to that **repo's** own `<repo>/.claude/workflows/` instead, which is read-only unless
-> you raise `claude_access`, and `/workspace/.claude/workflows/` is not a fallback for it (Claude Code
-> only searches between the working directory and the repository root). Save from `/workspace`, or
-> raise `claude_access`, until this lane is closed.
 | Global secrets | Container env vars | `~/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Project secrets | Container env vars | `<repo>/.cco/secrets.env` | Container start (`-e` flags) | `cco start` / compose env |
 | Git config | `~/.gitconfig` | `~/.gitconfig` on host | Git operations | Docker volume mount (`:ro`) |
-| SSH keys | `~/.ssh/` | `~/.ssh/` on host | Git/SSH operations | Docker volume mount (`:ro`) |
+
+> **Known limitation — where a workflow is saved.** The `Project workflow saves` row above applies to
+> the **project** tree. A session whose working directory is inside a repo — a subagent or teammate you
+> start there, a worktree or background session — saves to that **repo's** own
+> `<repo>/.claude/workflows/` instead, which is read-only unless you raise `claude_access`, and
+> `/workspace/.claude/workflows/` is not a fallback for it (Claude Code only searches between the
+> working directory and the repository root). Save from `/workspace`, or raise `claude_access`, until
+> this lane is closed.
+
+> **No SSH keys are mounted.** `cco start` binds `~/.gitconfig` only — the commit
+> identity, not the credentials — and managed settings additionally deny
+> `Read(~/.ssh/*)`. Git over SSH therefore does not work from inside a session: push
+> over HTTPS with `GITHUB_TOKEN` (the entrypoint runs `gh auth setup-git` for you — see
+> the [authentication guide](../../integration/guides/authentication.md)), or push from
+> the host.
 
 ---
 
@@ -890,9 +828,12 @@ generated file.
 
 ### project.yml mount
 
-`project.yml` is mounted read-write at `/workspace/.claude/project.yml` so
-the `/init-workspace` skill can write repo descriptions directly into it — persisting
-them on the host without requiring `cco stop`.
+`project.yml` is mounted **read-only** at `/workspace/project.yml` — always, at every
+access level — so `/init-workspace` and any other reader can consult the authoritative,
+structured resource list. Writing descriptions back into it is a separate capability: it
+goes through the repo's own `<repo>/.cco/project.yml`, which is writable only when the
+session has `cco_access ≥ edit-project` (a normal session overlays the committed `.cco`
+tree read-only). The skill checks that level before offering the write-back.
 
 ### Auto memory
 
@@ -908,9 +849,12 @@ key for `/workspace` directory sessions.
 
 `session-context.sh` runs once when Claude Code starts a session. It injects:
 1. Project name and teammate mode
-2. List of git repositories discovered under `/workspace/`
-3. MCP server names from `~/.claude.json`
-4. The `knowledge`/`llms` sections carried by the injected `CCO_SESSION_CONTEXT`, rendered with their instructional preambles
+2. MCP server names from `~/.claude.json`
+3. Available skills and agents, discovered by listing the user and project scopes
+4. The host-computed `CCO_SESSION_CONTEXT`, decoded and appended verbatim — repos and
+   read-only mounts (from `project.yml`, not a filesystem scan), packs, and the
+   `knowledge`/`llms` sections with the instructional preambles `lib/session-context.sh`
+   rendered host-side
 
 The hook output (`hookSpecificOutput.additionalContext`) appears in Claude's
 context but is not part of the conversation history.
@@ -923,7 +867,7 @@ context but is not part of the conversation history.
 |---------|-------------|-----|
 | Pack files not in context | `knowledge` section of the injected context missing or empty | Verify the pack is listed in `project.yml` `packs:` and its `pack.yml` has `knowledge.files:`; confirm `CCO_SESSION_CONTEXT` is set at startup |
 | `/init-workspace` skill not found | Docker image outdated | Run `cco build` to rebuild the image; the skill is baked in at `/etc/claude-code/.claude/skills/init-workspace/SKILL.md` |
-| Repo not visible at `/workspace/<name>/` | Path doesn't exist on host | Check `repos.path:` in project.yml; ensure directory exists |
+| Repo not visible at `/workspace/<name>/` | The repo name is not bound to a path on this machine, or the bound path is gone | `project.yml` carries logical names + coordinates, never host paths — run `cco resolve <project>` to bind them (or `cco resolve --scan <dir>`), and check `cco project show <name>` |
 | MCP server not loaded | mcp.json missing or bad JSON | Check `~/.cco/.claude/mcp.json`; run `cco start` and look for merge errors |
 | Auto memory not persisting | `memory/` dir not created or not mounted | Run `cco start`; check that `<state>/cco/projects/<id>/session/memory/` exists and is mounted |
 | Context too large | Too many repos or large knowledge files | Reduce pack files; use `/compress` periodically |

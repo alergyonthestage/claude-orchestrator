@@ -105,8 +105,10 @@ not exist for the next session.
   `project.yml` and `.claude/` directories, all tracked in git. Analysis and design
   documents go in `docs/` within your repo. The agent's context comes from the repo,
   not from chat history.
-- **Auto memory is project-scoped.** Each project's machine-local STATE store
-  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/`,
+- **Auto memory is project-scoped.** Each project's machine-local STATE store lives at
+  `~/.local/state/cco/projects/<id>/session/` and is mounted in two pieces: the transcripts
+  bucket (`session/claude-state`) becomes the whole `~/.claude/projects/` tree, and memory
+  (`session/memory`) is a child mount at `~/.claude/projects/-workspace/memory` —
   isolating session transcripts and memory per project. Transcripts persist for every session
   key — the main session, subagents and teammates started inside a repo, worktree and background
   sessions. Memory persists across sessions within the project but never leaks between projects.

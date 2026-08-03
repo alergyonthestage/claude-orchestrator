@@ -592,27 +592,48 @@ deferred with it**.
   *sub-question* of the topology decision, not a standalone flag) · [FI-40](roadmap-backlog.md)
   (topology-independent; deferred only to keep the release tree unchanged).
 
-**⏭ BEFORE G6 — living-docs coherence sweep** (planned by the maintainer 2026-08-03, one session,
-**gating the release**). Subject: bring the **stale long-living docs** to the current state —
-maintainer design/reference docs, user guides, and the CLI help — so that what **ships** is coherent
-with what the release actually does. Scope note: *living* docs only; ADRs, reviews and analyses are
-immutable history and are forward-annotated, never rewritten
-([`documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md)).
+✅ **BEFORE G6 — living-docs coherence sweep DONE 2026-08-03**, branch
+`docs/release/living-docs-sweep` (10 commits, unmerged). Seven scopes, disjoint file sets, every
+claim verified against `bin/cco` / `lib/*.sh` rather than against another document.
 
-- **Build on [G2's audit](cli/reviews/2026-07-31-cli-surface-audit.md), do not redo it.** G2 corrected
-  eight drifts on 2026-07-31 across the [CLI-surface matrix](cli/reference/cli-surface-matrix.md),
-  `docs/users/reference/cli.md`, the A1 analysis and the environment-awareness design. Start from what
-  it *did not* cover.
-- 🔑 **G2's own largest find is the method**: the canonical machine-read surface was right while the
-  **config-editor user guide** next to it was two ADRs stale. **A sweep that checks the reference and
-  stops there passes the defect.** Check the human-facing surface for every claim the reference makes.
-- **One item is already found and waiting**: `CLAUDE.md:134` still declares `claude_access` *default
-  `repo`*, but Axis B has had **no fixed default** since ADR-0049 §2 — it derives from the resolved cco
-  triple (`lib/cmd-start.sh:256-257`), which is why a `read-project` session correctly reports
-  `claude_access: none`. `docs/users/reference/cli.md:350` is already correct; `CLAUDE.md` was not one
-  of G2's four subjects and does **not** ship (absent from `package.json`'s `files`).
-- ⚠ Exclude `.claude/worktrees/` from every repo-wide grep — it holds full repo copies, so a grep
-  "finds" stale text that is not in the tree.
+**The drifts worth remembering** (each was believed correct until it was checked):
+
+- **The README presented `cco init` as a global setup step** to run after `npm install -g`. It is
+  the project entry verb and acts on `$PWD` (`lib/cmd-init.sh:270-282`); the image is built only on
+  a fresh global seed (`:104-112`). The guides were already right and the README contradicted its
+  own text twenty lines below — the drift was localized to the one file that **ships** and is read
+  first. *(The maintainer's find; verified, not taken on report.)*
+- **A pack rule beats a project rule of the same filename** — the guide said the opposite. The
+  committed file is skipped, not layered (`lib/cmd-start.sh:694`, ADR-0005 F2; warning at
+  `lib/packs.sh:133`).
+- **Credentials are not per-project.** `claude.json` / `.credentials.json` live at the STATE root
+  and are shared by every project (`lib/cmd-start.sh:1521,1903`); the guide placed them under
+  `<state>/projects/<id>/session/`. Anyone reasoning about session isolation was reading it wrong.
+- **`cco stop` documented an implementation that cannot work** (`docker stop cc-<project>`):
+  `docker compose run --rm` discards `container_name`, so identity is the `cco.project` label.
+- **`context-hierarchy.md` illustrated the shipped global CLAUDE.md with a fabricated example** —
+  an eight-phase workflow absent from the 19-line real file. An invented example is worse than
+  none: it is the part readers copy.
+- **The retired `workspace.yml`** was still documented as a generated overlay file in three
+  separate documents (ADR-0041/0042 replaced it with `CCO_SESSION_CONTEXT`), and ADR-0036/0041
+  were still marked *"impl pending"* — the same "still design-intent" class G2 fixed elsewhere.
+- Three `--help` strings were **objectively false** (llms download path, `--keep`'s merge base,
+  `--sort status`) and were corrected in code, with the pinning tests run.
+
+🔑 **Coverage was measured, not asserted.** Verbs enumerated from the dispatcher and checked
+against `docs/users/reference/cli.md`: the only absentees are `store-op` and its `plan` sub-op —
+the ADR-0047 internal crossing, correctly not user documentation. ⚠ The first subcommand-level
+check reported "no gaps" **because its extraction returned nothing**; re-run with a non-emptiness
+proof it found a real one (`cco pack internalize`'s duplicate section at §3.27 had already
+diverged, omitting `--as`). *A green check that measured nothing is the same failure as the host
+log with `0 failed` and no `Results:` line.*
+
+📋 **Open for the maintainer** — (a) **`cco init` has no `$HOME` guard**: it scaffolds `$PWD/.cco`,
+and in a home directory that is the personal store's own path. On a fresh machine the outcome is a
+confusing `refusing to clobber`, not corruption — but it is exactly the mistake the old README
+invited. A guard is a code change, deliberately not made here. (b) **`cco pack internalize` is
+documented twice** (§3.23 unified, §3.27 dedicated); the divergence is fixed, the duplication is
+not — merging sections in a shipped reference at a release gate is an editorial call.
 
 **⏭ CYCLE-2 — config multiplicity, divergence awareness & mount topology** (analysis → design, one
 session, subject fixed by the maintainer 2026-07-31). ⚠ **The subject is wider than the mount

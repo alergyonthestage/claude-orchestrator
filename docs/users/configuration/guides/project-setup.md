@@ -25,8 +25,11 @@ This scaffolds `<repo>/.cco/` and registers the project in the machine-local ind
     │   ├── CLAUDE.md            # Instructions for Claude (project-level)
     │   ├── settings.json        # Settings overrides (optional)
     │   ├── agents/              # Custom subagents (optional)
-    │   └── rules/               # Custom rules (optional)
-    ├── secrets.env.example      # Template for credentials/tokens
+    │   ├── rules/               # Custom rules (optional)
+    │   └── skills/              # Custom skills (optional)
+    ├── secrets.env.example      # Committed skeleton; the real secrets.env is gitignored
+    ├── setup.sh                 # Optional per-project container setup hook
+    ├── mcp-packages.txt         # Optional extra MCP packages to install
     └── .gitignore               # Ignores secrets.env
 ```
 
@@ -62,9 +65,19 @@ built in:
 cco start config-editor
 ```
 
-The config-editor mounts your personal store `~/.cco` with write access (and, in
-project mode, the target `<repo>/.cco`), allowing Claude to create projects,
-packs, and configuration files for you interactively.
+The config-editor is **minimum-privilege by mode** — what it may write depends on
+where you launch it:
+
+| Launch | What is writable | What is read-only |
+|---|---|---|
+| Inside a project (cwd), or `--project <name>` | that project's `<repo>/.cco/` **and its repos** | your personal store `~/.cco` |
+| Bare, outside any project | your personal store `~/.cco` | — (no project in scope) |
+| `--all` (or `--cco-access edit-all`) | every resolvable project's `<repo>/.cco/` | — (no code repos mounted) |
+
+So in **project mode `~/.cco` stays read-only**: the editor reads your store to
+reference packs and templates, but writing it is a distinct intent you opt into
+with `cco start config-editor --cco-access edit-global`. Within its mode, Claude
+creates projects, packs, and configuration files for you interactively.
 
 ---
 
@@ -399,10 +412,15 @@ with no resolved local path and prompts you to:
 You can also resolve paths ahead of time:
 
 ```bash
-cco resolve myapp                              # Interactive mode
-cco resolve myapp --repo backend ~/dev/be      # Direct set
-cco path myapp                                 # Show resolved paths / status
+cco resolve myapp                              # Interactive: prompt for each unresolved name
+cco resolve --scan ~/dev                       # Discover + register every .cco/ project under a dir
+cco path set backend ~/dev/be                  # Low-level: bind one logical name → absolute path
+cco path list                                  # Show every name → path binding
 ```
+
+`cco resolve` is the normal route; `cco path set|list` is the low-level escape
+hatch for moving a directory, fixing a divergence, or registering a repo you
+cloned by hand.
 
 This is transparent — the system records each name→path mapping in the index and
 reuses it on every subsequent session.
