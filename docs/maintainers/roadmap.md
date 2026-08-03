@@ -415,8 +415,31 @@ accepted; the verdict, what was on the table, and the follow-ups are written int
 release known-issue, runbook G6) · **FI-43** · **FI-40**, all three deferred to cycle-2 by the step-2b
 decision; ADR-0046 §6 was ratified in place rather than deferred. **G1's residual host cleanup is
 done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31**, and both items it raised are closed —
-see step 3 below. ▶ What remains is **host-side only**: **G4** merge → **G5** verify on `develop` →
-**G6** release (whose step 5 carries the **approved** known-issue sentence).
+see step 3 below.
+
+✅ **G4 — merged into `develop` 2026-08-03** (`b3e3496`). The pre-condition held (`git diff
+develop..fix/release/cycle-1.2 -- .cco/` empty, so FI-20 did not apply) and the 2026-07-30 topology
+fact still measured true (`tree(develop) == tree(merge-base 14779d4)`, so `develop` contributed zero).
+The gate's own check **passed**: `tree(fix/release/cycle-1.2) == tree(develop) == 73987ab5…`, i.e. the
+merge introduced no content nobody wrote. All three branches are pushed and level with `origin`.
+
+🔴 **G5 — 3 of 4 items PASS, the fourth FAILS. The release is BLOCKED.**
+
+- ✅ **Unmasked in-container suite** (mask OFF, session restarted so the `:ro` overlays actually
+  apply): **1616 passed / 9 failed of 1625**, `bin/test` exit 1. The 9 are the expected set *name for
+  name* — the 7 host-only (six `test_as_*` + `test_paths_symlink_safe_tool_root`) plus the 2 unmasked
+  (`test_update_new_file_added`, `test_update_dry_run`), each corroborated by **mechanism**, not by
+  name match.
+- ✅ **npm-pack hygiene** — `201 lines inspected; no forbidden paths`.
+- ✅ **`cco build` from `develop` + provenance + smoke dogfood** — `cco whoami` reports
+  `image built from: develop@b3e3496` with `diff -rq /opt/cco/lib lib` empty; `cco list`,
+  `cco path list`, `cco project show` all answer with correct scope notices.
+- 🔴 **macOS host suite (bash 3.2) — ABORTED, not passed.** 427 tests ran, then bash died with
+  `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
+  `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
+  tests that could fail. Root cause and fix: **[FI-46](roadmap-backlog.md)**.
+
+▶ **G6 must not start** until FI-46 is fixed and the host suite completes with a real summary line.
 
 | Lane | Deliverable | Closes |
 |---|---|---|

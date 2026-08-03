@@ -338,9 +338,24 @@ on the table:
 
 ---
 
-## G4 — Merge → `develop`, then verify the merge did nothing extra
+## G4 — Merge → `develop`, then verify the merge did nothing extra ✅ **DONE 2026-08-03**
 
 > ⚙ **Generalises** — candidate for a long-living release runbook.
+>
+> ✅ **Merged as `b3e3496`.** Every pre-condition was re-measured rather than inherited, and all held:
+> the `.cco/` diff was empty (FI-20 did not apply), and `tree(develop) == tree(14779d4)` still, so
+> `develop` contributed zero. The merge was clean (ort, no conflicts, 63 commits / 56 files).
+> **The gate's check passed**: `tree(fix/release/cycle-1.2) == tree(develop) == 73987ab5…`, and
+> `git diff fix/release/cycle-1.2 develop` is empty.
+>
+> 📝 Two things worth carrying into the long-living runbook when this section is promoted:
+> 1. **Re-measure the topology, do not inherit it.** The numbers above were first taken 2026-07-30 and
+>    were still true on 2026-08-03 — but the check that proves it costs one command, and the claim it
+>    replaces is the whole justification for calling the merge safe.
+> 2. **Check untracked-file collisions before switching branches** when the working tree is dirty.
+>    Here `tmp`, `to-verify-guides-docs.md` and `.claude/worktrees/` are untracked and
+>    `.cco/project.yml` carries an intentional diff; all four survived the checkout because none is
+>    tracked on `develop` — but that was verified first, not assumed.
 
 Per [`.cco/claude/rules/git-workflow.md`](../../../../../../.cco/claude/rules/git-workflow.md). **FI-20**
 (merges touching `.cco` are host-only) does **not** apply here: `git diff --name-status develop
@@ -372,26 +387,64 @@ Different hashes ⇒ the merge introduced content nobody wrote. **Stop and look*
 
 ---
 
-## G5 — Verify **on `develop`**: the exact release state
+## G5 — Verify **on `develop`**: the exact release state 🔴 **3 of 4 PASS — BLOCKED on the fourth**
 
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 
 G4 proves the *tree* is the same. This gate covers what a tree identity cannot:
 
-- [ ] **In-container suite, mask OFF.** Every figure in this cycle is masked. Stash the
-      `access: {claude: all}` block, run the suite, and record the honest number — expect the two known
-      unmasked failures on top of the host-only 7.
-- [ ] **Host suite on macOS (bash 3.2 + BSD userland).** Never run on this tree, and it has its own
-      failure families the container cannot see. This is the single largest unknown left in the release.
-- [ ] **`cco build` from `develop`** + `cco whoami` provenance, then a smoke dogfood: start a real
-      session, `cco list`, `cco path list`, `cco project show`.
-- [ ] **npm-pack hygiene** — `scripts/release.sh` runs it as a pre-flight; running it early costs nothing.
+- [x] ✅ **In-container suite, mask OFF** (2026-08-03) — **1616 passed / 9 failed of 1625**, exit 1.
+      ⚠ **Removing the `access: {claude: all}` block is not enough: it is a MOUNT property, resolved at
+      `cco start`.** Editing `project.yml` while a session is live changes nothing — `/proc/self/mountinfo`
+      still shows no `:ro` overlay on any `.claude` tree. The session must be **restarted**. Verified both
+      ways: with the mask, `defaults/global/.claude/rules` is writable and the two update tests pass; after
+      the restart it is read-only and they fail. The 9 are the expected set *name for name* — the 7
+      host-only (six `test_as_*` + `test_paths_symlink_safe_tool_root`) + `test_update_new_file_added`
+      and `test_update_dry_run` — each confirmed by **mechanism**: the first fails on `EACCES` at
+      `~/.cache/cco` (the ADR-0047 boundary), the last two write into `$REPO_ROOT/defaults/global/.claude/rules/`
+      (`tests/test_update.sh:156`, `:172`), i.e. the now-`:ro` real directory.
+- [ ] 🔴 **Host suite on macOS (bash 3.2 + BSD userland) — RUN 2026-08-03, and it did NOT pass: it
+      ABORTED.** 427 tests, then `tests/test_invariants.sh: line 1398: unexpected EOF while looking for
+      matching ')'`. Root cause + fix: **[FI-46](../../../../roadmap-backlog.md)** — a heredoc inside
+      `$( … )`, which bash 3.2 cannot parse and bash 5.x can.
+      ⚠ **How to read this log, because it looks green:** it ends with `0 failed` and **no `Results:`
+      line**. The zero means the run never reached a test that could fail. **Check for the summary line
+      before believing any host figure** — its absence is the only at-a-glance difference between an
+      abort and a clean run. This gate was called *"the single largest unknown left in the release"*,
+      and it returned the defect it existed to find.
+- [x] ✅ **`cco build` from `develop` + provenance + smoke dogfood** (2026-08-03) — `cco whoami` reports
+      `image built from: develop@b3e3496` and `diff -rq /opt/cco/lib lib` is empty (the tree is dirty only
+      in `.cco/project.yml`, which is not baked). `cco list` / `cco path list` / `cco project show` all
+      answer, with correct count-only scope notices. 📋 Run at `read-project`, so it exercised the
+      **scoped** output path, not the full one — whether a `read-all` dogfood belongs in this gate is
+      **undecided**.
+- [x] ✅ **npm-pack hygiene** (2026-08-03) — `201 lines inspected; no forbidden paths`, exit 0.
 
 A failure here is a fix on a branch off `develop`, never a commit on `develop`.
 
+### 📝 One drift found by the dogfood, not release-blocking
+
+`cco whoami` reports `claude_access: none` where the repo's own `CLAUDE.md:134` still says
+*default `repo`*. **The code is right**: `lib/cmd-start.sh:256-257` states that Axis B *"no longer has
+a fixed preset default — it DERIVES from the resolved cco triple (ADR-0049 §2)"*, and with
+`(G=none, Pc=ro, Po=none)` the concordant derivation is `none`. G2 already corrected the user-facing
+copy (`docs/users/reference/cli.md:350` says *"Default: DERIVED from `cco_access`"*); `CLAUDE.md` was
+not among G2's four subjects. It does **not** ship — the repo-root `CLAUDE.md` is absent from
+`package.json`'s `files` allowlist (verified against the `npm pack` manifest), so no user sees it.
+Fold it into the docs sweep.
+
 ---
 
-## G6 — `develop → main` + release
+## G6 — `develop → main` + release 🔴 **BLOCKED — do not start**
+
+> 🔴 **Blocked on [FI-46](../../../../roadmap-backlog.md)** (2026-08-03): G5's macOS host suite aborted
+> on a bash 3.2 parse error, so the platform this release declares **verified** has never completed a
+> full run on this tree. Step 4 below asks you to *"state the verified platform in the release notes"* —
+> today that sentence would be unsupported. Fix FI-46, re-run the host suite to a real `Results:` line,
+> **then** start G6.
+>
+> 🧹 Before starting: delete `suite-macos-b3e3496.log` from the repo root (an untracked host-run
+> artefact, not part of the release).
 
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 

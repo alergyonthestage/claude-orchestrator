@@ -1939,3 +1939,62 @@ annotation at the top of this entry).
 **Related**: ADR-0029 D1 (the `list` unification) · the R9 refusal taxonomy (`bin/cco:392-398`) ·
 [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work) — the
 same class (a remedy the reader cannot act on), one layer down.
+
+---
+
+## FI-46: a heredoc inside `$( … )` makes `tests/test_invariants.sh` unparseable on bash 3.2 🔴
+
+**Found**: 2026-08-03, by the **G5** macOS host-suite run (the gate's *"single largest unknown"*).
+**Severity**: 🔴 **release-blocking**. It does not break the shipped CLI, but it makes the host suite —
+the only gate that runs on the platform the release declares *verified* — impossible to complete.
+**Effort**: Low and fully prescribed by precedent (see *The fix* below). The cost is the host round-trip.
+
+**What happens.** On macOS stock `/bin/bash` (3.2), the suite runs 427 tests and then dies:
+
+```
+tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching `)'
+```
+
+⚠ **The log ends with no `Results:` line and `0 failed`.** That zero is not a pass — the run aborted
+before reaching any test that could fail. *A count is not a fingerprint*, and here there was no count
+at all: **the absence of the summary line is the signal**, and it is the only thing distinguishing this
+from a green run at a glance.
+
+**Root cause.** Three sites in `tests/test_invariants.sh` (**1398**, **1520**, **1651**) build an awk
+program as `prog=$(cat <<'AWK' … AWK\n)` — a heredoc **inside** a command substitution. Bash 3.2's
+legacy `$( … )` scanner does not skip heredoc bodies, so the parens and apostrophes in the awk source
+desync it and it never finds the closing `)`. Bash 5.x (the container) parses it fine, which is exactly
+why the in-container suite is green on the same tree.
+
+**This project already knew the rule and wrote it down.** `bin/cco:181-186` carries the prohibition
+verbatim, with the same failure mode and the fix:
+
+> Kept in its own function — **NOT** inline as `_body=$(cat <<'EOF' … )` — because bash 3.2's legacy
+> command-substitution scanner does not skip heredoc bodies: the apostrophes in the text … desync its
+> single-quote tracking, it never matches the closing `)`, and `cco help`/`--help` dies with a syntax
+> error on macOS stock /bin/bash. A trivial `$(_cco_usage_text)` sidesteps that scanner entirely.
+
+**The fix.** Move each awk program into its own function that `cat`s the heredoc, and call it as
+`prog=$(_avail_lint_awk)`. Mechanical, and the shape is already in the tree at `_cco_usage_text`.
+
+**Provenance.** All three sites came in with `1814ba3` — *"fix(pack): ask the availability owner before
+refusing a rename (FI-41)"*, a **post-acceptance in-cycle fix**. Confirmed not an ancestor of the
+cycle's merge-base `14779d4`, i.e. introduced by cycle-1.2 itself.
+
+**The class, which is the part worth keeping.** A bash-3.2-hostile idiom entered the tree through a
+late fix, and **the container is structurally incapable of seeing it** — there is no bash 3.2 in the
+image (`bash 5.2.15`), so no in-session run of any kind would have caught it. The two fixes that landed
+after G3's acceptance (FI-41, FI-45) were both verified in-container only.
+
+**Regression cover — and why a plain test is not enough.** The defect cannot fail in the environment
+where the suite normally runs, so the cover must be **static**, not behavioural: a CLASS lint that
+rejects `=$(cat <<` anywhere in `bin/`, `lib/`, `tests/`. That runs and passes in-container, exactly
+like the existing `INV-S6` / `INV-YAML` / `INV-AVAIL` CLASS lints it should sit beside. A behavioural
+regression test would be green in CI and in every session, and would prove nothing.
+
+📋 **Open question for the maintainer** (do not settle it inside the fix): should the host suite be
+part of a *gate* rather than a manual step? Every other release check runs in an environment that
+cannot observe this failure mode. That is a process decision, not a bug.
+
+**Related**: `bin/cco:181-186` (the rule, already written) · [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work)
+(the commit that introduced it) · the `bash 3.2 compatibility` convention in the repo's `CLAUDE.md`.
