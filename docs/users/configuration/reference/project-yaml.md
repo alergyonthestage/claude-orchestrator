@@ -30,30 +30,54 @@ extra_mounts:
     target: /workspace/docs/api-specs
     readonly: true
     description: "OpenAPI specs (reference)"   # optional; surfaced to the agent in the session context
+    config_access_policy: ro             # nested .claude/.cco inside the mount:
+                                         #   ro (default) | project | write
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
+# Reference packs by logical name + an OPTIONAL machine-agnostic coordinate.
 packs:
-  - my-client-knowledge   # References ~/.cco/packs/my-client-knowledge/pack.yml
+  - name: shared-pack                              # map form (with coordinate)
+    url: https://github.com/org/cco-sharing.git    # optional — the pack's sharing repo
+    ref: main                                      # optional git ref
+  - my-client-knowledge   # short form: no url → a project-local AUTHORED pack in
+                          #   <repo>/.cco/packs/, or an already-installed
+                          #   ~/.cco/packs/my-client-knowledge/pack.yml
 
-# ── Session access (optional; ADR-0036 / ADR-0046) ───────────────────
+# ── Session access (optional; ADR-0036 / ADR-0046 / ADR-0049) ────────
 # Per-project defaults for how much of your config a session can read/edit.
-# Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit to keep
-# the defaults (repo / read-project / on).
+# Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit `cco` to keep
+# the default read-project; omit `claude` and it DERIVES from the resolved `cco`
+# triple (there is no fixed claude default — ADR-0049 §2).
 access:
-  claude: repo            # .claude authoring: none | repo (default) | all
   cco: read-project       # .cco config — SCALAR (preset) form: none |
                           #   read-project (default) | read-global | read-all |
                           #   edit-project | edit-global | edit-all
                           #   (bare `read` = read-all, deprecated)
   # The `cco` field also accepts a granular MAP over three config trees, each
   # none|ro|rw (ADR-0046). Unspecified axes auto-promote to the invariant floor
-  # (current is never none while cco is enabled; others <= current):
+  # (current is never none while cco is enabled and a current project is in
+  # scope; others <= current):
   #   cco:
   #     global: ro                     # G  — the rest of ~/.cco
   #     current: rw                    # Pc — this project's .cco (never none)
   #     others: none                   # Po — other projects' .cco
   #     include_member_configs: false  # widen Pc's rw span from the hosting repo's
   #                                    #   <repo>/.cco to all member repos' copies
+
+  # claude: repo          # .claude AUTHORING — SCALAR (preset): none | repo | all.
+                          #   LEAVE IT OUT unless you mean to override: each axis then
+                          #   derives from `cco` above. At the default read-project
+                          #   (G=none,Pc=ro,Po=none) the derived triple is
+                          #   (ro,ro,ro,ro) — label `none`.
+  # `claude` also accepts a granular MAP over four authoring trees, each ro|rw
+  # (ADR-0049 §3/§9). Omitted axes derive from the `cco` triple; `repo` is
+  # always `ro` unless set explicitly:
+  #   claude:
+  #     repo: ro                       # Cr — the repo's own <repo>/.claude
+  #     current: rw                    # Cp — this project's <repo>/.cco/claude
+  #     global: ro                     # Cg — ~/.cco/.claude
+  #     others: ro                     # Co — other projects' .claude trees
+
   show_host_paths: true   # host↔container path map in the session (default)
 
 # ── Docker options ───────────────────────────────────────────────────
@@ -109,6 +133,11 @@ auth:
   method: oauth         # "oauth" (default) | "api_key"
   # If api_key: reads from ANTHROPIC_API_KEY env var
 
+# ── GitHub MCP (optional) ────────────────────────────────────────────
+github:
+  enabled: true             # Activate the github MCP server (default: false)
+  token_env: GITHUB_TOKEN   # env var holding the token (default: GITHUB_TOKEN)
+
 # ── Browser Automation (optional) ──────────────────────────────────
 browser:
   enabled: true           # Activate chrome-devtools-mcp (default: false)
@@ -136,9 +165,18 @@ browser:
 | `extra_mounts[].target` | ❌ | string | `/workspace/<name>` | Container path |
 | `extra_mounts[].readonly` | ❌ | bool | `true` | Mount as read-only (secure default; set `false` explicitly for writable mounts) |
 | `extra_mounts[].description` | ❌ | string | — | Human-readable note surfaced to the agent in the session context (INV-3: `project.yml` is the single source for resource descriptions) |
-| `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below) |
+| `extra_mounts[].config_access_policy` | ❌ | enum | `ro` | How a `.claude`/`.cco` tree **nested inside this mount** is mounted (ADR-0049 §7): `ro` (strict default) \| `project` (follow the session's `access` knobs) \| `write`. An extra_mount is reference material, not a config repo, so its nested config is read-only unless you opt in. An unrecognized value falls back to `ro` |
+| `packs` | ❌ | list | `[]` | Knowledge packs to activate (see Knowledge Packs section below). Entries take either the short form (`- name`) or the coordinate map (`- name:` + `url`/`ref`/`resource`) |
+| `packs[].name` | ✅ (map form) | string | — | Logical pack name — in the short form the bare string *is* the name. Resolved from `~/.cco/packs/<name>/` or, with no `url`, from a project-local `<repo>/.cco/packs/<name>/` |
+| `packs[].url` | ❌ | string | — | Sharing-repo coordinate — the re-fetch source for `cco pack update`. **Absent = the pack is authored here**, not a cache of an upstream |
+| `packs[].ref` | ❌ | string | — | Git ref (branch/tag) coordinate, paired with `url` |
+| `packs[].resource` | ❌ | string | — | Path of the pack **inside** a multi-pack sharing repo (e.g. `packs/acme-conventions`); omit for a single-pack repo |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
-| `access.claude` | ❌ | enum | `repo` | Session `.claude` authoring access: `none` \| `repo` \| `all` (ADR-0036; see [Session access](../../reference/cli.md#session-access-capability-model)) |
+| `access.claude` | ❌ | enum \| map | *derived from `access.cco`* | Session `.claude` **authoring** access. **There is no fixed default** (ADR-0049 §2): each axis derives from the resolved `cco` triple — at the default `cco: read-project` the derived triple is `(ro,ro,ro,ro)`, label `none`. **Scalar (preset)**: `none` \| `repo` \| `all`, or the granular `repo=…,current=…,global=…,others=…`. **Map (granular)**: `repo` / `current` / `global` / `others`, each `ro` \| `rw`; omitted axes derive from `cco`. See [Session access](../../reference/cli.md#session-access-capability-model) |
+| `access.claude.repo` | ❌ | enum | `ro` | (map form) `Cr` — the repo's own `<repo>/.claude`. Never derived up: `ro` unless set explicitly |
+| `access.claude.current` | ❌ | enum | derived from `access.cco.current` | (map form) `Cp` — this project's `<repo>/.cco/claude` |
+| `access.claude.global` | ❌ | enum | derived from `access.cco.global` | (map form) `Cg` — `~/.cco/.claude` |
+| `access.claude.others` | ❌ | enum | derived from `access.cco.others` | (map form) `Co` — other projects' `.claude` trees |
 | `access.cco` | ❌ | enum \| map | `read-project` | Session `.cco`/framework config access. **Scalar (preset)**: `none` \| `read-project` \| `read-global` \| `read-all` \| `edit-project` \| `edit-global` \| `edit-all` (bare `read` = deprecated alias for `read-all`). **Map (granular, ADR-0046)**: `global` / `current` / `others`, each `none` \| `ro` \| `rw`; presets are sugar for the symmetric triples. See [Session access](../../reference/cli.md#session-access-capability-model) (ADR-0036/0042/0046). |
 | `access.cco.include_member_configs` | ❌ | bool | `false` | (map form only) Widen the `current` (`Pc`) write span from the hosting repo's `<repo>/.cco` to **all** member repos' `.cco` copies in a multi-repo project |
 | `access.show_host_paths` | ❌ | bool | `true` | Include the host↔container path map in the session |
@@ -165,6 +203,8 @@ browser:
 | `docker.security.resources.cpus` | ❌ | string | `"4"` | Max CPUs per container |
 | `docker.security.resources.max_containers` | ❌ | int | `10` | Max simultaneous containers |
 | `auth.method` | ❌ | string | `oauth` | Authentication method |
+| `github.enabled` | ❌ | bool | `false` | Activate the GitHub MCP server for the session. Session flags `--github` / `--no-github` override it |
+| `github.token_env` | ❌ | string | `GITHUB_TOKEN` | Name of the env var the MCP server reads the GitHub token from |
 | `browser.enabled` | ❌ | bool | `false` | Activate browser automation ([guide](../../integration/guides/browser-automation.md)) |
 | `browser.mode` | ❌ | string | `host` | Where Chrome runs (`host` only in v1) |
 | `browser.cdp_port` | ❌ | int | `9222` | Chrome remote debugging port |

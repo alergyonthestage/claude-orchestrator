@@ -110,8 +110,14 @@ deletion (detect/report, prune only on confirm) — never automatic.
 
 `project.yml` carries logical names + machine-agnostic `url`/`ref` coordinates. Each
 machine maps those names to absolute paths in its **STATE index**
-(`<state>/cco/index`, never committed, never synced). There are no `@local` markers
-and no per-repo `local-paths.yml`.
+(`<state>/cco/shared/index`, never committed, never synced). There are no `@local`
+markers and no per-repo `local-paths.yml`.
+
+Bindings are **scoped per project** (ADR-0051): the identity of a repo or mount is its
+**absolute path**, and the logical name is just the label *that project* uses for it. So
+two projects may legitimately call the same directory by different names, and the same
+name may point at different directories in different projects — renaming a label in one
+project never disturbs another.
 
 On a fresh machine after `git clone`, resolve the names:
 
@@ -599,3 +605,6 @@ versioned and **not** synced in v1:
 | `cco project show <name>` | Project + repo↔project roles, referenced-by, sync state |
 | `cco project validate [name] [--all] [--reachable]` | Share-readiness validation (coordinates, no path leaks, no pack collision) |
 | `cco project coords [--diff] [--sync --from <unit>]` | Show/reconcile coordinate consistency across your projects |
+| `cco project rename [<old>] <new>` | Rename a project, re-keying its identity across project.yml, index, tags and internal state (host-only) |
+| `cco repo rename [<old>] <new>` | Rename a repo's **per-project label** — re-keys the index binding + this project's `repos[]`; the directory and other projects are untouched |
+| `cco extra-mount rename <old> <new>` | Same, for an `extra_mounts[]` label |

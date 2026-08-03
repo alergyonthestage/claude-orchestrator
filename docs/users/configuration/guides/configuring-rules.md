@@ -149,19 +149,32 @@ knowledge, shared coding guidelines, reusable agent personas, cross-project skil
 
 Rules and skills can live at different levels. Choose the right scope for each:
 
-| Scope | Location | When to use |
-|-------|----------|-------------|
-| **Global** | `.claude/rules/`, `.claude/skills/` | Conventions that apply to ALL your projects (language, commit style, general workflow) |
-| **Project** | `projects/<name>/.claude/rules/`, `projects/<name>/.claude/skills/` | Project-specific conventions (architecture patterns, testing strategy, deployment rules) |
-| **Pack** | `packs/<name>/rules/`, `packs/<name>/skills/` | Reusable conventions shared across projects (e.g., a "React" pack with frontend rules) |
-| **Repo** | `<repo>/.claude/rules/` | Repo-specific rules committed to the repository itself (shared with all repo contributors) |
+| Scope | Where you author it | Container path | When to use |
+|-------|---------------------|----------------|-------------|
+| **Global** | `~/.cco/.claude/rules/`, `~/.cco/.claude/skills/` | `~/.claude/` | Conventions that apply to ALL your projects (language, commit style, general workflow) |
+| **Project** | the host repo's `<repo>/.cco/claude/rules/`, `<repo>/.cco/claude/skills/` | `/workspace/.claude/` | Project-specific conventions (architecture patterns, testing strategy, deployment rules) |
+| **Pack** | `~/.cco/packs/<name>/rules/`, `~/.cco/packs/<name>/skills/` | `/workspace/.claude/` (see below) | Reusable conventions shared across projects (e.g., a "React" pack with frontend rules) |
+| **Repo** | `<repo>/.claude/rules/` | `/workspace/<repo>/.claude/` | Repo-specific rules committed to the repository itself (shared with all repo contributors, and with native Claude Code use) |
 
 **Resolution order**: cco's four-tier hierarchy maps to Claude Code's native resolution:
-Managed (framework) → Global → Project → Repo (nested). Pack rules and skills are
-mounted at the **Project tier** — they share the same resolution level as project rules.
-Within the project tier, pack resources complement project resources; if a pack rule
-and a project rule cover the same topic, the project rule takes precedence (it is loaded
-from `.claude/rules/` while pack rules are in `.claude/packs/<name>/rules/`).
+Managed (framework) → Global → Project → Repo (nested).
+
+**Pack rules and skills are merged *into* the project tier, not kept beside it.** At
+`cco start` each declared pack rule is bind-mounted read-only onto
+`/workspace/.claude/rules/<file>`, each agent onto `/workspace/.claude/agents/<file>`,
+and each skill directory onto `/workspace/.claude/skills/<name>` — the exact same paths
+your project's own `<repo>/.cco/claude/` tree lands on. (Only pack *knowledge* files get
+a namespaced home, at `/workspace/.claude/packs/<name>/`.)
+
+> ⚠ **A pack rule beats a project rule of the same filename.** Because the pack is a
+> deeper read-only bind mount applied over the project tree, the pack file **shadows**
+> your committed one. `cco start` warns when this happens
+> (*"Committed .claude/rules/foo.md collides with pack 'r-pack' — the pack ':ro' overlay
+> wins"*), but it does not block. If you need a project-specific override, give the file
+> a **different name** rather than trying to shadow the pack's.
+
+If two *packs* declare the same rule, agent, or skill name, the **last pack listed** in
+`project.yml` `packs:` wins, again with a warning.
 
 **Rule of thumb**: Start global. Move to project-level only when a rule genuinely differs
 between projects. Use packs when a set of rules applies to multiple projects sharing
@@ -394,7 +407,7 @@ Beyond universal rules, each project benefits from project-specific configuratio
 
 ### Architecture & Project Structure
 
-Define in the project's `.claude/CLAUDE.md` or `.claude/rules/`:
+Define in the host repo's `<repo>/.cco/claude/CLAUDE.md` or `<repo>/.cco/claude/rules/`:
 - Directory tree and file positioning conventions
 - Technology stack and key dependencies
 - Architectural patterns in use (e.g., hexagonal architecture, event sourcing)
@@ -433,10 +446,10 @@ cco ships with workflow-phase skills as defaults: `/analyze`, `/design`, `/revie
 
 ### Customizing existing skills
 
-Each skill is a folder with a `SKILL.md` file in `.claude/skills/` or
-`projects/<name>/.claude/skills/`. To customize:
+Each skill is a folder with a `SKILL.md` file in `~/.cco/.claude/skills/` (global) or
+the host repo's `<repo>/.cco/claude/skills/` (project). To customize:
 
-1. Open the skill file (e.g., `.claude/skills/analyze/SKILL.md`)
+1. Open the skill file (e.g., `~/.cco/.claude/skills/analyze/SKILL.md`)
 2. Modify the instructions, checklist, or output format
 3. The changes apply to all future sessions
 
@@ -554,7 +567,7 @@ The defaults work out of the box. Start with them and customize as you learn wha
 for your projects:
 
 1. Run `cco start tutorial` — the tutorial guides you through initial configuration
-2. Set your **language** preferences (edit `.claude/rules/language.md`)
+2. Set your **language** preferences (edit `~/.cco/.claude/rules/language.md`)
 3. Use the default workflow for a few sessions — note what works and what doesn't
 4. Gradually customize rules based on your experience
 
