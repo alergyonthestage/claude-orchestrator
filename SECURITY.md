@@ -27,7 +27,7 @@ claude-orchestrator runs Claude Code inside Docker containers with `--dangerousl
 - **Docker socket**: even with the proxy, mounting the Docker socket grants significant capabilities. Use `mount_socket: false` in `project.yml` if your workflow does not require Docker-from-Docker.
 - **Mounted repositories**: Claude has read-write access to all mounted repos. This is by design — it needs to edit code.
 
-For a detailed security analysis, see [docs/maintainer/architecture/security.md](docs/maintainers/security/design/design-security-model.md).
+For a detailed security analysis, see [docs/maintainers/security/design/design-security-model.md](docs/maintainers/security/design/design-security-model.md).
 
 ## Supported Versions
 
