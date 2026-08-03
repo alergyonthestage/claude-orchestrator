@@ -53,12 +53,16 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list on
 - [ ] 🔴 **[FI-46](roadmap-backlog.md)** — fix the three heredoc-in-substitution sites + the CLASS lint.
 - [ ] 🔴 **G5's fourth item** — re-run the macOS host suite to completion. **Check for the `Results:`
       line**; its absence is what made the last run look green.
-- [ ] **Docs sweep** — stale long-living docs → current state; shipped docs coherent before G6.
+- [ ] **Living-docs coherence sweep** — the roadmap entry *"BEFORE G6 — living-docs coherence sweep"*
+      carries the scope, the method and the one item already found. **It is on the roadmap, not only
+      here** — this handoff will be deleted, that entry will not.
 - [ ] **G6** — `develop → main` + release, carrying the approved FI-42 known-issue sentence verbatim.
 - [ ] **Housekeeping at G6** — delete `suite-macos-b3e3496.log` from the repo root (untracked host
-      artefact); delete the merged `feat/*` branches; **restore the `access: {claude: all}` mask** in
-      `.cco/project.yml` (removed for G5's honest measurement — without it, dev sessions cannot author
-      `.claude` trees).
+      artefact); delete the merged `feat/*` branches.
+- [x] ✅ **Mask restored** by the maintainer 2026-08-03 — `access: {claude: all}` is back in
+      `.cco/project.yml` and takes effect at the next `cco start`. ⚠ **Every suite figure measured from
+      now on is masked again**: expect the shape `…/7`, not `…/9`, and **state the mask state with any
+      number**. The unmasked baseline for this tree is **1616/9 of 1625**.
 
 ## Context
 

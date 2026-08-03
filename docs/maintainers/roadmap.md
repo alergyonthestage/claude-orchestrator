@@ -576,6 +576,28 @@ deferred with it**.
   *sub-question* of the topology decision, not a standalone flag) · [FI-40](roadmap-backlog.md)
   (topology-independent; deferred only to keep the release tree unchanged).
 
+**⏭ BEFORE G6 — living-docs coherence sweep** (planned by the maintainer 2026-08-03, one session,
+**gating the release**). Subject: bring the **stale long-living docs** to the current state —
+maintainer design/reference docs, user guides, and the CLI help — so that what **ships** is coherent
+with what the release actually does. Scope note: *living* docs only; ADRs, reviews and analyses are
+immutable history and are forward-annotated, never rewritten
+([`documentation-lifecycle.md`](../../.claude/rules/documentation-lifecycle.md)).
+
+- **Build on [G2's audit](cli/reviews/2026-07-31-cli-surface-audit.md), do not redo it.** G2 corrected
+  eight drifts on 2026-07-31 across the [CLI-surface matrix](cli/reference/cli-surface-matrix.md),
+  `docs/users/reference/cli.md`, the A1 analysis and the environment-awareness design. Start from what
+  it *did not* cover.
+- 🔑 **G2's own largest find is the method**: the canonical machine-read surface was right while the
+  **config-editor user guide** next to it was two ADRs stale. **A sweep that checks the reference and
+  stops there passes the defect.** Check the human-facing surface for every claim the reference makes.
+- **One item is already found and waiting**: `CLAUDE.md:134` still declares `claude_access` *default
+  `repo`*, but Axis B has had **no fixed default** since ADR-0049 §2 — it derives from the resolved cco
+  triple (`lib/cmd-start.sh:256-257`), which is why a `read-project` session correctly reports
+  `claude_access: none`. `docs/users/reference/cli.md:350` is already correct; `CLAUDE.md` was not one
+  of G2's four subjects and does **not** ship (absent from `package.json`'s `files`).
+- ⚠ Exclude `.claude/worktrees/` from every repo-wide grep — it holds full repo copies, so a grep
+  "finds" stale text that is not in the tree.
+
 **⏭ CYCLE-2 — config multiplicity, divergence awareness & mount topology** (analysis → design, one
 session, subject fixed by the maintainer 2026-07-31). ⚠ **The subject is wider than the mount
 topology, and the topology is downstream of it.** The prior question is that **a session does not know
