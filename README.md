@@ -74,12 +74,20 @@ Each step earns its place — here's what you get from it:
 # 1. Install the CLI from npm — this is the `cco` command and its defaults
 npm install -g @claude-orchestrator/cco
 
-# 2. Initialize — seeds your personal ~/.cco store from defaults and builds the Docker image
+# 2. Initialize — run this INSIDE the repo you want Claude to work in.
+#    It scaffolds that repo's committed .cco/ config and registers it on this
+#    machine; on your very first run it also seeds your personal ~/.cco store
+#    from the defaults and builds the Docker image.
+cd ~/projects/my-repo
 cco init
 
 # 3. Learn by doing — the interactive tutorial walks you through everything
 cco start tutorial
 ```
+
+> `cco init` is the **project** entry verb and works on the current directory — it is
+> not a global setup step to run from wherever you happen to be. The global store is
+> seeded as a first-run side effect, not as the point of the command.
 
 > **Prefer to install from source?** Clone the repo and put `bin/` on your PATH
 > instead of installing from npm — see the [maintainer setup](CONTRIBUTING.md#local-development)
