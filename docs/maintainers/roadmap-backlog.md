@@ -1942,7 +1942,7 @@ same class (a remedy the reader cannot act on), one layer down.
 
 ---
 
-## FI-46: a heredoc inside `$( … )` makes `tests/test_invariants.sh` unparseable on bash 3.2 🔴
+## FI-46: a heredoc inside `$( … )` makes `tests/test_invariants.sh` unparseable on bash 3.2 ✅ fixed, host re-run owed
 
 **Found**: 2026-08-03, by the **G5** macOS host-suite run (the gate's *"single largest unknown"*).
 **Severity**: 🔴 **release-blocking**. It does not break the shipped CLI, but it makes the host suite —
@@ -1998,3 +1998,47 @@ cannot observe this failure mode. That is a process decision, not a bug.
 
 **Related**: `bin/cco:181-186` (the rule, already written) · [FI-41](#fi-41-in-a-session-not-mounted-is-reported-as-unresolved--and-the-remedy-cannot-work)
 (the commit that introduced it) · the `bash 3.2 compatibility` convention in the repo's `CLAUDE.md`.
+
+### Resolution — 2026-08-03, `fix/tests/bash32-heredoc-substitution` (`a0d1cc5`)
+
+**Fixed, covered, and verified on real bash 3.2. What remains is the host re-run**, which is a *gate*
+item (G5's fourth), not a defect: the fix is not "verified" for the release until a macOS run prints a
+`Results:` line.
+
+Three things the diagnosis above did not have, each of which changed the work:
+
+1. **The container is NOT structurally blind to bash 3.2.** The premise stated above — repeated in the
+   handoff and the runbook — is **false as written**. The session's Docker socket reaches the public
+   `bash:3.2` image, so a real 3.2 parse oracle is available in-session:
+   `docker run --rm --name cc-<project>-b32 -v <host-repo>:/src bash:3.2 bash -n <file>`. Pre-fix the
+   file exits **2**; after the fix **173** shell sources across `bin/ lib/ tests/ config/ migrations/`
+   all exit **0**. (Two constraints: the docker proxy demands the `cc-<project>-` name prefix, and it
+   swallows container stdout — read results from exit codes or from a file written into the mounted
+   repo.) The narrower claim that stays true is the one that matters for the cover: *the suite's own
+   interpreter* is bash 5.2, so a **behavioural** regression test still proves nothing.
+2. **What actually aborts the parse is the heredoc BODY, not the construct.** Measured on 3.2, not
+   assumed: an unbalanced quote (`it's`) or a bare unquoted paren desyncs the scanner; balanced quotes,
+   and parens *inside* quotes, parse fine. So of the three named sites, **1398 and 1520 really aborted
+   and 1651 was benign** — it would have stayed benign until someone added an apostrophe to a comment
+   in the awk source. This is the argument for an **unconditional** rule rather than "keep bodies tidy".
+3. **There was a fourth site**, found by the lint and not by the diagnosis: `tests/test_migrate.sh:1093`,
+   a heredoc inside a *process* substitution nested in a command substitution. Older than the cycle and
+   currently benign — again the argument for the guard.
+
+**The cover: INV-B32**, beside INV-S6 / INV-YAML / INV-AVAIL, static as prescribed, with two arms
+because the tree is not uniform:
+
+- `bin/` `lib/` `migrations/` — host-executed (the migrations run under the same `/bin/bash` 3.2) and
+  **measured clean of the whole class** → they carry the unconditional rule.
+- `tests/` — the FI-46 **assignment** shape only. **180 argument-position fixtures**
+  (`create_project … "$(cat <<YAML`) predate the guard and parse on 3.2 today.
+
+📋 **Second open question for the maintainer** (deliberately not settled here): **those 180 sites are
+the same class**, latent — each one aborts the whole host suite the day its fixture body gains an
+apostrophe. Closing them is a mechanical but wide refactor (extract each fixture into a function, as
+the fourth site now does). Options: (a) leave the two-arm lint as shipped and accept the latency;
+(b) schedule the refactor for cycle-2 and tighten INV-B32 to one unconditional arm at its end;
+(c) neither, and instead make the bash-3.2 parse sweep of finding 1 a **release gate** — it covers the
+whole class by construction, including shapes no lint models. Note (c) also answers the *first* open
+question above (should the host suite be a gate?) in a cheaper way than a full host run, though **not
+the same way**: a parse sweep proves the suite can be *read* on 3.2, never that it *passes* there.

@@ -438,8 +438,24 @@ merge introduced no content nobody wrote. All three branches are pushed and leve
   `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
   `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
   tests that could fail. Root cause and fix: **[FI-46](roadmap-backlog.md)**.
+  **↳ 2026-08-03: the DEFECT is fixed and covered** on `fix/tests/bash32-heredoc-substitution`
+  (`a0d1cc5`) — four sites moved out of command substitutions (the lint found a fourth the diagnosis
+  had not named), covered by the **INV-B32** CLASS lint, and **parse-verified on real bash 3.2**:
+  173 shell sources exit 0 where the pre-fix file exits 2. **The gate item itself is still open** —
+  it is satisfied only by a macOS run that prints a `Results:` line, which is host-side work.
 
 ▶ **G6 must not start** until FI-46 is fixed and the host suite completes with a real summary line.
+
+🔑 **A premise recorded across FI-46, the handoff and the runbook is now measured FALSE: the
+container is NOT structurally blind to bash 3.2.** The session's Docker socket reaches the public
+`bash:3.2` image, so `docker run --rm --name cc-<project>-… -v <host-repo>:/src bash:3.2 bash -n <file>`
+is a real 3.2 oracle available in-session — it is what produced the verification above, and the truth
+table behind INV-B32 (what aborts the parse is an unbalanced quote or a bare paren in the heredoc
+BODY, so one of FI-46's three known sites was benign and two were not). Two constraints: the proxy
+requires the `cc-<project>-` container-name prefix, and it swallows container stdout — results come
+back through exit codes or a file written into the mounted repo. **Whether this becomes a gate, a
+suite test, or stays an ad-hoc tool is an open decision** — see FI-46's open question, which it
+directly bears on.
 
 | Lane | Deliverable | Closes |
 |---|---|---|
