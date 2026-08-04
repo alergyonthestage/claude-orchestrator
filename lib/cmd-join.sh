@@ -83,7 +83,7 @@ EOF
     # ── Member name: --name > interactive prompt (default basename) > basename
     local repo_name="$name_override" default_name; default_name=$(basename "$repo")
     if [[ -z "$repo_name" ]]; then
-        if [[ -t 0 ]]; then
+        if _cco_have_tty; then
             printf "Member name for this repo [%s]: " "$default_name" >&2
             read -r repo_name
             [[ -z "$repo_name" ]] && repo_name="$default_name"
@@ -130,7 +130,7 @@ EOF
         target_dirs=( "${owned_dirs[@]}" )            # Case B: all in-sync members
     else
         # Case C — divergent members exist; the maintainer ruling is to PROMPT.
-        if [[ ! -t 0 ]]; then
+        if ! _cco_have_tty; then
             die "Project '$project' has divergent members (their .cco/ differ). Re-run 'cco join' interactively to choose which to update, or converge them first with 'cco sync'."
         fi
         echo "Project '$project' has members with divergent .cco/. Pick the project.yml to update:" >&2
@@ -166,8 +166,22 @@ EOF
     done
 
     # ── Machine-local index: membership + path (applied together) ────────
-    _index_set_project_repos "$project" $members "$repo_name"
-    _index_set_path "$repo_name" "$repo"
+    # S2b: this is the highest-consequence site of the class. Called bare, a failed
+    # write left the verb printing "✓ Joined" and then telling the user to COMMIT
+    # AND PUSH a project.yml declaring a member that no index binds — the blast
+    # radius leaves the machine and reaches teammates on pull. (v3's V3-01 damaged
+    # one session; this damages a versioned, distributed artifact.) errexit is
+    # disabled by bin/cco's `|| _cco_rc=$?` dispatch, so propagate explicitly.
+    #
+    # project.yml has ALREADY been rewritten in the member repos at this point, so
+    # the message must say so — the recovery is a local re-bind, and the user must
+    # not be left guessing whether to git-revert instead.
+    if ! _index_set_project_repos "$project" $members "$repo_name" \
+       || ! _index_set_path "$project" "$repo_name" "$repo"; then
+        local _also=""
+        [[ ${#changed[@]} -gt 0 ]] && _also=" project.yml WAS updated in ${#changed[@]} repo(s) — do NOT commit it yet."
+        die "Updated project.yml for '$project', but the machine-local index could not be updated, so member '$repo_name' is not bound on this machine.${_also} Run 'cco resolve --scan $repo' to bind it, then re-check before committing."
+    fi
 
     ok "Joined '$project' as member '$repo_name'."
 

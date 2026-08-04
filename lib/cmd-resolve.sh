@@ -31,15 +31,29 @@
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-# Resolve a CLI-supplied path to an absolute path (tilde + cwd-relative).
-# The index stores absolute paths only (design §3).
+# Resolve a CLI-supplied path to an absolute, CANONICAL path (tilde + cwd-relative
+# + lexical + best-effort symlink resolution). The index stores canonical absolute
+# paths only (design §3, ADR-0053). Canonicalizing HERE is load-bearing: this
+# value feeds BOTH the pre-write AD5′ conflict check (_index_path_conflicts) and
+# the write, so the probe and the stored value share one spelling — a
+# `cco path set /var/x` no longer diverges from a `/private/var/x` cwd-derived
+# binding of the same dir.
 _resolve_to_abs() {
     local p
-    p=$(expand_path "$1")
+    # Strip one pair of surrounding quotes first (ADR-0050 D8) — a path pasted as
+    # '/my/repo' or "/my/repo" absolutizes to the literal dir, not a bogus quoted
+    # name. Covers `cco path set`/`resolve` and the interactive path prompts, which
+    # all flow through here.
+    p=$(_strip_surrounding_quotes "$1")
+    p=$(expand_path "$p")
     case "$p" in
-        /*) printf '%s\n' "$p" ;;
-        *)  printf '%s\n' "$(pwd -P)/$p" ;;
+        /*) : ;;
+        *)  p="$(pwd -P)/$p" ;;
     esac
+    # Canonicalize; fall back to the raw absolute path if canon somehow fails (it
+    # cannot for an absolute input, but stay defensive — the contract is "always
+    # emit an absolute path").
+    _index_canonicalize_path "$p" || printf '%s\n' "$p"
 }
 
 # Walk cwd and its ancestors for a <dir>/.cco/project.yml; echo the owning <dir>
@@ -67,13 +81,109 @@ _resolve_unit_dir_for_project() {
     repos=$(_index_get_project_repos "$proj")
     [[ -z "$repos" ]] && return 1
     for r in $repos; do
-        p=$(_index_get_path "$r")
+        p=$(_index_get_path "$proj" "$r")
         if [[ -n "$p" && -f "$p/.cco/project.yml" ]]; then
             printf '%s\n' "$p"
             return 0
         fi
     done
     return 1
+}
+
+# ── Operator-mode (in-container) project resolution (R2/R4, ADR-0042/0043) ──
+# The STATE index stores HOST paths that never resolve inside a container, so the
+# host resolver above returns 1 in-session → the old "not found, run cco resolve"
+# host-only hint. The wrapped cco instead resolves a project NAME to its MOUNTED
+# project.yml, so self-introspection and membership scans work in-session. Two
+# mount layouts (C2):
+#   layout 1 (normal session): the current project's manifest is mounted at
+#     /workspace/project.yml (its repo also lives at /workspace/<repo>/.cco/). There
+#     is NO canonical /workspace/.cco/project.yml.
+#   layout 2 (config-editor target): the target's .cco tree is mounted AT the mount
+#     root — /workspace/<name>-config/project.yml (the mount IS the .cco dir).
+# Resolution order: current project → config-editor target → built-in preset →
+# unavailable-at-scope (return 1; the caller reports scope, never "run cco resolve").
+
+# Echo the current project's mounted project.yml (layout 1). Fast path is the
+# always-mounted /workspace/project.yml; falls back to scanning /workspace/*/.cco/.
+_resolve_operator_current_yml() {
+    local want="${PROJECT_NAME:-}" d yml n wd="${CCO_WORKDIR:-/workspace}"
+    [[ -z "$want" ]] && return 1
+    if [[ -f "$wd/project.yml" ]]; then
+        n=$(yml_get "$wd/project.yml" name 2>/dev/null)
+        [[ "$n" == "$want" ]] && { printf '%s\n' "$wd/project.yml"; return 0; }
+    fi
+    for d in "$wd"/*/; do
+        yml="${d}.cco/project.yml"
+        [[ -f "$yml" ]] || continue
+        n=$(yml_get "$yml" name 2>/dev/null)
+        [[ "$n" == "$want" ]] && { printf '%s\n' "$yml"; return 0; }
+    done
+    return 1
+}
+
+# Echo the project.yml path for <name> in operator mode, or return 1 (unavailable
+# at THIS scope — a distinct status the caller renders as scope-limited, not the
+# host-only "run cco resolve").
+_resolve_operator_project_yml() {
+    local name="$1" yml
+    # 1. Current project (resolves from any cwd, including /workspace root).
+    if [[ -n "${PROJECT_NAME:-}" && "$name" == "$PROJECT_NAME" ]]; then
+        _resolve_operator_current_yml && return 0
+    fi
+    # 2. config-editor target (D9): its .cco is mounted at <workdir>/<name>-config.
+    if _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}"; then
+        yml="${CCO_WORKDIR:-/workspace}/${name}-config/project.yml"
+        [[ -f "$yml" ]] && { printf '%s\n' "$yml"; return 0; }
+    fi
+    # 3. Built-in preset — its generated config lives in the internal runtime dir.
+    case "$name" in
+        tutorial|config-editor)
+            yml="$(_cco_internal_runtime_dir)/${name}/project.yml"
+            [[ -f "$yml" ]] && { printf '%s\n' "$yml"; return 0; } ;;
+    esac
+    return 1
+}
+
+# Resolve a project NAME to its project.yml PATH, host- AND operator-aware — the
+# single entry the read/introspection verbs use. Host: STATE index (host paths).
+# Operator: the mounted /workspace trees. Returns 1 when unavailable at this scope.
+_resolve_project_yml() {
+    local name="$1" d
+    if _cco_container_operator; then
+        _resolve_operator_project_yml "$name"
+        return $?
+    fi
+    d=$(_resolve_unit_dir_for_project "$name") || return 1
+    printf '%s\n' "$d/.cco/project.yml"
+}
+
+# Resolve a project NAME to its .cco DIRECTORY path, host- AND operator-aware — the
+# sibling of _resolve_project_yml for verbs that need the .cco tree itself (authored
+# packs in `project validate`, `template create --from`). It CANNOT be dirname-
+# derived: the flat operator layout mounts <workdir>/project.yml with no .cco
+# parent, and the config-editor layout mounts the .cco tree AT <workdir>/<name>-config
+# (the mount IS the .cco dir). Returns 1 when no .cco directory is reachable in this
+# context. Usage: _resolve_project_cco_dir <name>
+_resolve_project_cco_dir() {
+    local name="$1" d yml n wd="${CCO_WORKDIR:-/workspace}"
+    if _cco_container_operator; then
+        # Layout 1: a mounted repo carrying <name>'s committed config at <ws>/<repo>/.cco.
+        for d in "$wd"/*/; do
+            yml="${d}.cco/project.yml"
+            [[ -f "$yml" ]] || continue
+            n=$(yml_get "$yml" name 2>/dev/null)
+            [[ "$n" == "$name" ]] && { printf '%s\n' "${d}.cco"; return 0; }
+        done
+        # Layout 2: a config-editor target — the mount itself IS the .cco dir.
+        if _env_csv_has "$name" "${CCO_CONFIG_TARGETS:-}"; then
+            d="${wd}/${name}-config"
+            [[ -f "$d/project.yml" ]] && { printf '%s\n' "$d"; return 0; }
+        fi
+        return 1
+    fi
+    d=$(_resolve_unit_dir_for_project "$name") || return 1
+    printf '%s\n' "$d/.cco"
 }
 
 # Iterate the indexed projects, emitting one TAB line "<proj>\t<unit_dir>\t<yml>"
@@ -86,6 +196,33 @@ _resolve_unit_dir_for_project() {
 # Usage: while IFS=$'\t' read -r proj unit_dir yml; do …; done < <(_project_foreach)
 _project_foreach() {
     local proj unit_dir yml
+    # Operator mode (R4): the host index paths don't resolve in-container. Enumerate
+    # only the MOUNTED projects — the current project (normal session) plus every
+    # config-editor target — via the operator resolver, so membership scans ("Used
+    # by") answer correctly for what IS mounted and stay silent (unavailable at this
+    # scope) for the rest, never a false "(none)". The unit_dir is dirname(.cco),
+    # i.e. dirname(dirname(yml)) for a nested .cco, or dirname(yml) for a flat mount.
+    if _cco_container_operator; then
+        local names name
+        names="${PROJECT_NAME:-}"
+        [[ -n "${CCO_CONFIG_TARGETS:-}" ]] && names="${names},${CCO_CONFIG_TARGETS}"
+        # Split the CSV without globbing; dedup by emitting each name once.
+        local seen=","
+        local IFS=','
+        for name in $names; do
+            [[ -z "$name" ]] && continue
+            case "$seen" in *",${name},"*) continue ;; esac
+            seen="${seen}${name},"
+            yml=$(_resolve_operator_project_yml "$name" 2>/dev/null) || continue
+            [[ -f "$yml" ]] || continue
+            case "$yml" in
+                */.cco/project.yml) unit_dir="${yml%/.cco/project.yml}" ;;
+                *)                  unit_dir="${yml%/project.yml}" ;;
+            esac
+            printf '%s\t%s\t%s\n' "$name" "$unit_dir" "$yml"
+        done
+        return 0
+    fi
     while IFS='=' read -r proj _; do
         [[ -z "$proj" ]] && continue
         [[ "$proj" == "_template" ]] && continue
@@ -100,6 +237,12 @@ _project_foreach() {
 # recording the project's repo membership. Reuses _resolve_entry_index (the
 # index-materialization primitive: lookup -> prompt/clone -> store). Non-TTY
 # unresolved entries are reported (warn), never block.
+# N3 (ADR-0052 §6): a user Exit ([q]) at any heal prompt surfaces rc=2 from
+# _resolve_entry_index / _resolve_{llms,pack}_entry. It PROPAGATES as `return 2`
+# (was swallowed as `return 0` → "skip-and-boot") so callers can honour the exit:
+# `cco start` aborts before the container boots, `cco resolve[/--all]` stop cleanly.
+# Bindings already written by earlier entries stay valid — the membership record and
+# the summary below are simply skipped for this aborted run; a re-run completes them.
 # Usage: _resolve_unit <unit_dir>
 _resolve_unit() {
     local unit_dir="$1"
@@ -119,7 +262,7 @@ _resolve_unit() {
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
         member_repos+=("$name")
-        path=$(_index_get_path "$name")
+        path=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
@@ -132,7 +275,7 @@ _resolve_unit() {
         _resolve_entry_index "$unit_dir" "repos" "$name" "$url" >/dev/null || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                         # user quit
+            2) return 2 ;;                         # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;   # skipped
         esac
     done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
@@ -142,7 +285,7 @@ _resolve_unit() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        path=$(_index_get_path "$name")
+        path=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$path" ]] && _path_exists "$path"; then
             continue
         fi
@@ -155,7 +298,7 @@ _resolve_unit() {
         _resolve_entry_index "$unit_dir" "extra_mounts" "$name" "$url" >/dev/null || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;
+            2) return 2 ;;                         # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;
         esac
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
@@ -180,7 +323,7 @@ _resolve_unit() {
         _resolve_llms_entry "$name" "$url" "$variant" || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                          # user quit
+            2) return 2 ;;                          # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;    # skipped
         esac
     done < <(yml_get_llms "$project_yml" 2>/dev/null)
@@ -206,7 +349,7 @@ _resolve_unit() {
         _resolve_pack_entry "$name" "$url" || rc=$?
         case $rc in
             0) resolved=$((resolved + 1)) ;;
-            2) return 0 ;;                          # user quit
+            2) return 2 ;;                          # user quit → propagate abort (N3)
             *) unresolved=$((unresolved + 1)) ;;    # skipped
         esac
     done < <(yml_get_pack_coords "$project_yml" 2>/dev/null)
@@ -216,7 +359,7 @@ _resolve_unit() {
     # can always relocate the unit — even when the host repo is not itself listed
     # in the manifest's repos: (a config-only host). Without this, recording
     # membership from repos: alone could drop the only locatable member.
-    local _host_name; _host_name=$(_index_name_for_path "$unit_dir")
+    local _host_name; _host_name=$(_index_name_for_path "$proj_name" "$unit_dir")
     if [[ -n "$_host_name" ]]; then
         local _has=false _m
         for _m in ${member_repos[@]+"${member_repos[@]}"}; do
@@ -226,8 +369,12 @@ _resolve_unit() {
     fi
 
     # Record project -> member repos membership (index projects: section).
+    # S2b: the ok/warn below reports the resolve as done; a silent membership-write
+    # failure would leave the project with bindings but no member list, which every
+    # loop over its members then reads as empty.
     if [[ -n "$proj_name" && ${#member_repos[@]} -gt 0 ]]; then
-        _index_set_project_repos "$proj_name" "${member_repos[@]}"
+        _index_set_project_repos "$proj_name" "${member_repos[@]}" \
+            || die "Resolved '$proj_name', but its membership could not be written to the machine-local index. Check the index bucket's permissions and free space, then re-run."
     fi
 
     if [[ $unresolved -eq 0 ]]; then
@@ -318,6 +465,7 @@ _resolve_render_status() {
     local project_yml="$unit_dir/.cco/project.yml"
     [[ -f "$project_yml" ]] || return 0
     local _ln name url desc variant pref presource p pdir
+    local proj_name; proj_name=$(yml_get "$project_yml" name 2>/dev/null)
     printf '\n  Referenced resources:\n' >&2
 
     # repos / extra_mounts — resolved iff the index path exists on disk.
@@ -325,7 +473,7 @@ _resolve_render_status() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        p=$(_index_get_path "$name")
+        p=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$p" ]] && _path_exists "$p"; then
             printf '    %-5s %-22s ✓ %s\n' "repo" "$name" "$p" >&2
         else
@@ -336,7 +484,7 @@ _resolve_render_status() {
         [[ -z "$_ln" ]] && continue
         _peel_tab "$_ln" name url
         [[ -z "$name" ]] && continue
-        p=$(_index_get_path "$name")
+        p=$(_index_get_path "$proj_name" "$name")
         if [[ -n "$p" ]] && _path_exists "$p"; then
             printf '    %-5s %-22s ✓ %s\n' "mount" "$name" "$p" >&2
         else
@@ -413,10 +561,10 @@ _resolve_scan() {
     [[ -d "$dir" ]] || die "Scan directory not found: $dir"
     dir="$(cd "$dir" && pwd -P)"
 
-    local found=0 bound=0 kept=0
+    local found=0 bound=0 kept=0 failed=0
     local project_yml cco_dir repo_dir proj_name this_name existing
     local _ln name
-    local -a names=()
+    local -a names=() scanned_projects=()
 
     while IFS= read -r project_yml; do
         [[ -z "$project_yml" ]] && continue
@@ -432,30 +580,70 @@ _resolve_scan() {
             name="${_ln%%$'\t'*}"
             [[ -n "$name" ]] && names+=("$name")
         done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
+        # S2b: a scan is a best-effort sweep over many units, so a failed write does
+        # NOT abandon the rest — it is counted and reported in the summary, and the
+        # verb exits non-zero. Silently folding it in would inflate "N binding(s)
+        # upserted", the one number the user reads to decide the scan worked.
         if [[ -n "$proj_name" && ${#names[@]} -gt 0 ]]; then
-            _index_set_project_repos "$proj_name" "${names[@]}"
+            if _index_set_project_repos "$proj_name" "${names[@]}"; then
+                scanned_projects+=("$proj_name")
+            else
+                warn "scan: could not write '$proj_name' membership to the index"
+                failed=$((failed + 1))
+            fi
         fi
 
         # Bind THIS repo dir to its logical name (AD5 keep-existing on conflict).
         this_name=$(_resolve_scan_match_name "$repo_dir" "$project_yml") || this_name=""
         [[ -z "$this_name" ]] && continue
-        if _index_path_conflicts "$this_name" "$repo_dir"; then
-            existing=$(_index_get_path "$this_name")
-            warn "scan: '$this_name' already bound to $existing — keeping existing (AD5); ignoring $repo_dir"
+        if _index_path_conflicts "$proj_name" "$this_name" "$repo_dir"; then
+            existing=$(_index_get_path "$proj_name" "$this_name")
+            warn "scan: '$this_name' already bound in '$proj_name' to $existing — keeping existing (AD5′); ignoring $repo_dir"
             kept=$((kept + 1))
-        else
-            _index_set_path "$this_name" "$repo_dir"
+        elif _index_set_path "$proj_name" "$this_name" "$repo_dir"; then
             bound=$((bound + 1))
+        else
+            warn "scan: could not bind '$this_name' in '$proj_name' to $repo_dir"
+            failed=$((failed + 1))
         fi
     done < <(find "$dir" -type f -path '*/.cco/project.yml' 2>/dev/null)
 
+    # Pass 2 (ADR-0051 D5): bind each project's SHARED members — members it lists
+    # but that are HOSTED by a different unit in the scan — under this project's
+    # OWN scope too, to the same path (path is identity). Without this a member
+    # listed by project A yet hosted by project B stays unresolved under A, so A's
+    # membership names a repo with no A-scoped binding (e.g. `cco sync` from A then
+    # can't reach it). Only adopt a path discovered INSIDE the scanned tree; never
+    # override an existing A-scoped binding (AD5′ keep-existing).
+    local sp mpath
+    for sp in ${scanned_projects[@]+"${scanned_projects[@]}"}; do
+        while IFS= read -r name; do
+            [[ -z "$name" ]] && continue
+            [[ -n "$(_index_get_path "$sp" "$name")" ]] && continue
+            mpath=$(_index_get_path_any "$name")
+            [[ -z "$mpath" ]] && continue
+            case "$mpath" in "$dir"/*|"$dir") ;; *) continue ;; esac
+            if _index_set_path "$sp" "$name" "$mpath"; then
+                bound=$((bound + 1))
+            else
+                warn "scan: could not bind shared member '$name' under '$sp'"
+                failed=$((failed + 1))
+            fi
+        done < <(_index_get_project_repos "$sp" | tr ' ' '\n')
+    done
+
     info "scan: $found unit(s) found, $bound binding(s) upserted, $kept conflict(s) kept"
+    # S2b: never let a partial scan exit 0 — the summary above would otherwise read
+    # as a clean sweep. Exit 1 (a write that started and failed — INV-S3b).
+    if [[ $failed -gt 0 ]]; then
+        die "scan: $failed index write(s) failed — the sweep is incomplete. Check the index bucket's permissions and free space, then re-run."
+    fi
 }
 
 # Resolve every project recorded in the index (best-effort; skips projects with
 # no resolved member to read the manifest from).
 _resolve_all() {
-    local any=false line proj unit_dir
+    local any=false line proj unit_dir rc
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         proj="${line%%=*}"
@@ -466,7 +654,15 @@ _resolve_all() {
         }
         any=true
         info "resolving project '$proj'..."
-        _resolve_unit "$unit_dir"
+        # N3: a user Exit ([q]) mid-sweep stops the whole --all run cleanly rather
+        # than silently rolling on to the next project. Other failures (rc=1) stay
+        # best-effort — warn already emitted, continue.
+        rc=0
+        _resolve_unit "$unit_dir" || rc=$?
+        if [[ $rc -eq 2 ]]; then
+            info "resolve --all stopped at your request (q)."
+            return 0
+        fi
     done < <(_index_list_projects)
     $any || info "no projects in the index to resolve — try 'cco resolve --scan <dir>'"
 }
@@ -541,9 +737,61 @@ EOF
         unit_dir=$(_resolve_find_unit_dir) \
             || die "No .cco/project.yml found in the current directory or its parents. Run from a configured repo, name a project, or use 'cco resolve --scan <dir>'."
     fi
-    _resolve_unit "$unit_dir"
+    # N3: honour a user Exit ([q]) at a heal prompt — stop cleanly (exit 0) without
+    # printing the post-heal status, rather than the old swallow-and-continue.
+    local rc=0
+    _resolve_unit "$unit_dir" || rc=$?
+    if [[ $rc -eq 2 ]]; then
+        info "resolve stopped at your request (q)."
+        return 0
+    fi
     # Always show the post-heal status of every referenced resource (ADR-0033).
     _resolve_render_status "$unit_dir"
+}
+
+# ── RC-4: unscoped-bucket ownership claim (06 §3.2) ─────────────────────────
+# An index row stored project-less (the `unscoped:` bucket) can still be the LIVE
+# mount source for a CURRENT project: _index_get_path falls back to unscoped when a
+# project declares a name it has no project_paths entry for (lib/index.sh) — and
+# FI-23 puts every legacy extra_mount there, including the session's own. Such a row
+# is that project's Pc-visible binding, not "un-owned". These helpers resolve that
+# EFFECTIVE ownership so `cco path list` scopes it correctly (RC-4), classifying a
+# genuinely unattributable row as other-project (Po) per the ratified axis.
+
+# _path_claimed_names — read "<project>\t<ymlpath>" lines on stdin; emit
+# "<name>\t<project>" for every name <project> DECLARES (repos ∪ extra_mounts) and
+# does NOT shadow with its own project_paths binding (so the unscoped fallback is
+# live for it). The manifest path is an INPUT (injectable) so the claim logic is
+# hermetically unit-testable (06 §6.5 opt-1). First claimer wins for a duplicated
+# name — determinism only; every claimer is a current project, so all ride Pc. The
+# inner loops read from process substitutions, so the outer stdin (the project
+# list) is not consumed.
+_path_claimed_names() {
+    local _proj _yml _n _u _r _t _ro _pol
+    while IFS=$'\t' read -r _proj _yml; do
+        [[ -n "$_proj" && -n "$_yml" && -f "$_yml" ]] || continue
+        while IFS=$'\t' read -r _n _u _r; do
+            [[ -n "$_n" ]] || continue
+            [[ -z "$(_index_pp_get "$_proj" "$_n")" ]] && printf '%s\t%s\n' "$_n" "$_proj"
+        done < <(yml_get_repo_coords "$_yml" 2>/dev/null)
+        while IFS=$'\t' read -r _n _u _r _t _ro _pol; do
+            [[ -n "$_n" ]] || continue
+            [[ -z "$(_index_pp_get "$_proj" "$_n")" ]] && printf '%s\t%s\n' "$_n" "$_proj"
+        done < <(yml_get_mount_coords "$_yml" 2>/dev/null)
+    done
+}
+
+# _path_claim_lookup <name> <claimed-map> → the FIRST claiming project for <name>
+# in the newline-delimited "<name>\t<project>" map, else empty. Iterates with
+# `while read` over a here-string (NOT `for x in $map`, which would word-split and
+# glob-expand a name like `*`; 06 §5.3 bash-3.2).
+_path_claim_lookup() {
+    local _want="$1" _map="$2" _cn _cp
+    [[ -n "$_map" ]] || return 0
+    while IFS=$'\t' read -r _cn _cp; do
+        [[ "$_cn" == "$_want" ]] && { printf '%s' "$_cp"; return 0; }
+    done <<< "$_map"
+    return 0
 }
 
 cmd_path() {
@@ -569,34 +817,141 @@ EOF
             [[ $# -lt 2 ]] && die "Usage: cco path set <name> <path>"
             local name="$1" abs
             abs=$(_resolve_to_abs "$2")
-            _index_set_path "$name" "$abs"
-            ok "path set: $name -> $abs"
+            # Per-project scoping (ADR-0051): a name is a per-project label. Bind
+            # it in the project hosting the cwd if there is one; otherwise it is a
+            # project-less pin → the unscoped bucket. Emit a hint when the index
+            # name no longer matches the directory basename (name↔path divergence).
+            local _pset_dir _pset_proj="" _pbase
+            if _pset_dir=$(_resolve_find_unit_dir 2>/dev/null); then
+                _pset_proj=$(yml_get "$_pset_dir/.cco/project.yml" name 2>/dev/null)
+            fi
+            # S2b: `cco path set` IS the write — the ok below asserts nothing else,
+            # so a silent failure makes the verb a complete no-op reporting success.
+            # This is the repair command several other S2b messages point users to,
+            # which is exactly why it must not lie.
+            if [[ -n "$_pset_proj" ]]; then
+                _index_set_path "$_pset_proj" "$name" "$abs" \
+                    || die "Could not bind '$name' -> $abs in project '$_pset_proj'. Check the index bucket's permissions and free space."
+                ok "path set: [$_pset_proj] $name -> $abs"
+            else
+                _index_set_unscoped "$name" "$abs" \
+                    || die "Could not bind '$name' -> $abs (unscoped). Check the index bucket's permissions and free space."
+                ok "path set: $name -> $abs (unscoped — not inside a project)"
+            fi
             _path_exists "$abs" || warn "note: '$abs' does not exist on this machine yet"
+            _pbase=$(basename "$abs")
+            # Use `if`, not `[[ … ]] && info`: as the case's LAST statement the
+            # latter leaks a false condition (path not yet on disk — a legitimate
+            # pre-clone pin) as a non-zero exit, failing the whole `cco path set`.
+            if [[ -d "$abs" && "$name" != "$_pbase" ]]; then
+                info "hint: index name '$name' ≠ directory basename '$_pbase' — 'cco repo rename $name $_pbase' aligns them."
+            fi
             ;;
         list)
             shift
             [[ $# -gt 0 ]] && die "Usage: cco path list (takes no arguments)"
-            local line name path norm count=0 malformed=0
-            while IFS= read -r line; do
-                [[ -z "$line" ]] && continue
-                name="${line%%=*}"; path="${line#*=}"
+            # Read-path honesty (v3 R3 / S4): classify the index BEFORE the read
+            # loop. The dumps below feed a process substitution, which discards
+            # their status, so an unreadable / truncated / stale index would
+            # otherwise fall through to the count==0 branch and be reported as an
+            # empty one at rc=0. Dies (exit 1) naming the real cause; `absent` is
+            # benign and flows on to the honest-empty message.
+            _index_assert_readable
+            local proj name path norm count=0 malformed=0 hidden=0 _vis label _owner
+            # Output scoping (ADR-0043 §4 / ADR-0046 §7, RC-4): the path index is
+            # the raw machine-local name→host-path map (repos/mounts). Each row's
+            # visibility follows its EFFECTIVE owner through the shared layer
+            # predicate _env_in_scope (INV-E — the policy lives in the layer, not a
+            # local re-derivation): a CURRENT owner rides Pc, ANY other rides Po, and
+            # an unattributable (unscoped, project-less) row is classified as
+            # other-project → Po (never exempt — the RC-4 reversal). BUT an unscoped
+            # row a current project actually RESOLVES THROUGH — it declares the name
+            # and does not shadow it, so _index_get_path's unscoped fallback is that
+            # project's live binding — is CLAIMED below and rides Pc, so the fix hides
+            # no resource the session is already mounting (06 §3.2, invariant DISC).
+            # Host paths are ADDITIONALLY gated by show_host_paths, trustworthy behind
+            # the ADR-0047 boundary (S1b): at show_host_paths=off we render logical
+            # names only. Host context is never scoped (INV-A).
+            local _hide_hostpaths=false
+            [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]] && _cco_container_operator \
+                && _hide_hostpaths=true
+            # Claimed-by-current names, computed ONCE before the row loop — the claim
+            # loops must NOT run inside it or they would consume the row stream (the
+            # one new stdin hazard, 06 §5.3). Operator-only; empty on the host (all
+            # rows visible, INV-A). Ranges over PROJECT_NAME ∪ CCO_CONFIG_TARGETS
+            # (the _env_is_current_project set) so a config-editor target claims its
+            # own mounts.
+            local _claimed=""
+            if _cco_container_operator; then
+                local _c _cyml _clist="" _ctargets="${CCO_CONFIG_TARGETS:-}"
+                _ctargets="${_ctargets//,/ }"
+                for _c in "${PROJECT_NAME:-}" $_ctargets; do
+                    [[ -n "$_c" ]] || continue
+                    _cyml=$(_resolve_operator_project_yml "$_c" 2>/dev/null) || continue
+                    _clist="${_clist}${_c}"$'\t'"${_cyml}"$'\n'
+                done
+                [[ -n "$_clist" ]] && _claimed=$(printf '%s' "$_clist" | _path_claimed_names)
+            fi
+            # Emit "<project>\t<name>\t<path>" for every scoped binding, then the
+            # unscoped bucket tagged with the __unscoped__ sentinel (a real empty
+            # first column can't survive `read` — TAB is IFS-whitespace and gets
+            # collapsed; the sentinel is not a valid project name).
+            while IFS=$'\t' read -r proj name path; do
+                [[ -z "$name" ]] && continue
+                [[ "$proj" == "__unscoped__" ]] && proj=""
+                # Per-project label so homonyms across projects stay distinct.
+                if [[ -n "$proj" ]]; then label="[$proj] $name"; else label="$name"; fi
+                # Effective owner: the stored one, or — for an unscoped row a
+                # CURRENT project actually resolves through (06 §3.2) — that project.
+                # Visibility then follows the owner via the shared layer (current →
+                # Pc, other → Po, still-unattributable → Po). INV-A is handled inside
+                # _env_in_scope; no local operator/axis re-derivation (INV-E).
+                _owner="$proj"
+                [[ -z "$_owner" ]] && _owner=$(_path_claim_lookup "$name" "$_claimed")
+                if ! _env_in_scope path "$name" "$_owner"; then
+                    hidden=$((hidden + 1)); _env_note_hidden path; continue
+                fi
+                # show_host_paths gate (S1b): render logical names only when host
+                # paths are masked for this session. The malformed-path check is
+                # moot then (the host path is not shown), so it is skipped.
+                if [[ "$_hide_hostpaths" == true ]]; then
+                    printf '%s\n' "$label"
+                    count=$((count + 1)); continue
+                fi
                 # The index stores absolute paths only (boundary normalization).
                 # Normalize for display, and flag any value that is still
                 # non-absolute (a stale ~/@local entry written before the fix or
                 # hand-edited) instead of printing it as if it were valid.
                 if norm=$(_index_normalize_path "$path"); then
-                    printf '%s\t%s\n' "$name" "$norm"
+                    printf '%s\t%s\n' "$label" "$norm"
                 else
-                    printf '%s\t%s  ⚠ malformed (non-absolute)\n' "$name" "$path"
+                    printf '%s\t%s  ⚠ malformed (non-absolute)\n' "$label" "$path"
                     malformed=$((malformed + 1))
                 fi
                 count=$((count + 1))
-            done < <(_index_list_paths)
-            if [[ $count -eq 0 ]]; then
-                info "the path index is empty — run 'cco resolve' or 'cco resolve --scan <dir>'"
+            done < <(_index_pp_dump_all; _index_section_dump unscoped \
+                | awk '{ i=index($0,"="); if (i>0) printf "__unscoped__\t%s\t%s\n", substr($0,1,i-1), substr($0,i+1) }')
+            if [[ $count -eq 0 && $hidden -eq 0 ]]; then
+                # Reached only for a genuinely empty index — _index_assert_readable
+                # above has already ruled out "the read failed". The report is
+                # shared and context-aware: on the host it is the benign sentence
+                # (which must NOT say "run cco resolve" in a session, R3); IN A
+                # SESSION it is a refusal, because a session is launched from the
+                # index and cannot legitimately see it hold zero rows (ADR-0056 D6,
+                # extended in S6).
+                _index_report_empty
             elif [[ $malformed -gt 0 ]]; then
                 warn "$malformed malformed index entr$([[ $malformed -eq 1 ]] && printf y || printf ies) — run 'cco update' to normalize, or 'cco resolve --scan <dir>' to rebind"
             fi
+            # ADR-0056 D3 / INV-AVAIL: this site used to build the whole notice
+            # itself, and INV-ENV ratified that second spelling as a standing
+            # exception — "the hidden-COUNT notice for path entries, which must say
+            # read-all where the shared notice says read-global; reconciling the
+            # shared one is V4-F-V4-03 / Q-C3". That reconciliation is now done: the
+            # shared builder gets the projects-only case right, and `path` rides Po
+            # exactly as a project does. So the exception is SPENT rather than
+            # re-ratified — the rows are noted and the one shared notice speaks.
+            _env_flush_hidden_notice
             ;;
         *)
             die "Unknown path command: $sub. Use 'cco path set' or 'cco path list'."

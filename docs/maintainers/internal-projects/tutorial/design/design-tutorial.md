@@ -1,10 +1,43 @@
 # Tutorial Project — Design
 
-**Date**: 2026-03-17
+**Date**: 2026-03-17 (access model updated 2026-07-01)
 **Version**: 2.1
 **Scope**: Sprint 5 — Interactive Tutorial Project
-**Status**: Current — tutorial is an internal framework resource
+**Status**: Access model = **implemented** (2026-07-01, branch `feat/config-access/capability-model`)
+per [ADR-0036](../../../configuration/decentralized-config/decisions/0036-session-config-capability-model.md)
+/ [ADR-0041](../../../configuration/decentralized-config/decisions/0041-unified-session-info-surface.md)
+(see §0 — tutorial ships as the `none`/`read` preset). Additive; pending merge into `develop`. **The body below (§1–§12) predates the decentralized + capability model** (it still
+describes the central `user-config/` layout, `cco project create --template`, old paths); it
+needs a broader refresh as part of the docs sweep — out of the config-access design's scope. Read
+§0 for the authoritative access model; treat older mount/permission text below as superseded.
 **Prerequisite**: [analysis.md](../analysis/analysis-001-tutorial.md)
+
+---
+
+## 0. Capability model (target — authoritative)
+
+Under the session config capability model (ADR-0036), the tutorial is the **read preset** — the
+complement of config-editor's edit preset. It shares the one code path (`_setup_internal_*`,
+reserved name, preset resolution, wrapped-`cco` shim); it differs only in knob values:
+
+| Knob | Value | Effect |
+|------|-------|--------|
+| `cco_access` | `read` | read-only wrapped `cco` (`list`, `*show`, `*validate`, `docs`, `list remotes`, `path list`) + R2 global-read over **all** projects' config + global — for context and targeted answers about the user's setup |
+| `claude_access` | `none` | all `.claude` trees **read-only** — the tutorial teaches, never edits (its whole point vs config-editor) |
+| `show_host_paths` | `on` (default) | R1 `path_map` (ADR-0041) so the tutorial can show the user exact host commands |
+
+Implications vs the body below:
+- **Reads all configs + global** (not just its own `user-config/`): the read-only wrapped `cco`
+  + ro mounts give the tutorial visibility into every project's `<repo>/.cco` and `~/.cco`, so
+  guidance is grounded in the user's real setup. **Real secret files (`secrets.env`, `*.key`,
+  `*.pem`) are filtered out of the mounts** (ADR-0036 D4) — the read-all teacher never sees secret
+  values. Host paths are labelled `host → /workspace/<t>` and must not be pasted into external
+  artifacts (`config-safety.md`).
+- **Never edits**: `claude_access=none` + no `edit-*` — the "check for rw / instruct to enable"
+  dance in the skills below is replaced by "for edits, launch config-editor".
+- **R1 self-info** (ADR-0041) supersedes the ad-hoc `user-config/` reading described in §4/§5.
+
+`.managed/`, compose, and resolution order are unchanged (ADR-0041 R1-D1).
 
 ---
 
@@ -772,4 +805,4 @@ Documented but explicitly NOT in scope for v1:
 | Validation exercises | Agent verifies user's project/pack configs against best practices | After v1 feedback |
 | Multi-language curriculum | Curriculum content adapted per language | If there's demand from non-English communities |
 | Interactive demos | Agent demonstrates features in real time (requires Docker socket) | After socket-enabled tutorial is validated |
-| Per-project knowledge | Add `knowledge:` section to project.yml (same schema as packs). `cco start` generates packs.md from project-level knowledge too. Eliminates the current gap where knowledge is only available via packs | Roadmap: Pack Ecosystem sprint or standalone feature |
+| Per-project knowledge | Add `knowledge:` section to project.yml (same schema as packs). `cco start` adds them to workspace.yml's knowledge section too. Eliminates the current gap where knowledge is only available via packs | Roadmap: Pack Ecosystem sprint or standalone feature |

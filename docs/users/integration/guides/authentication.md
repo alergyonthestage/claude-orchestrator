@@ -21,18 +21,20 @@ Both are managed automatically by the framework. In most cases, you just need to
 
 Claude Code uses OAuth to authenticate with the Claude API. On macOS, credentials are saved in the system Keychain. The flow is as follows:
 
-1. **At the first `cco start`**: the CLI reads credentials from the macOS Keychain and copies them to the machine-local STATE store at `~/.local/state/cco/projects/<id>/session/.credentials.json`
+1. **At `cco start` on macOS** (and only when `auth.method` is `oauth`): the CLI reads credentials from the macOS Keychain and writes them to the machine-local STATE store at `~/.local/state/cco/.credentials.json`
 2. **In subsequent sessions**: the container uses the saved credentials. If the access token has expired, Claude automatically renews it with the refresh token
-3. **If you log in on the host** (e.g., after ~90 days of expiry): `cco start` detects the new credentials in the Keychain and automatically updates the file
+3. **If you log in on the host** (e.g., after ~90 days of expiry): the next `cco start` compares the Keychain token's `expiresAt` with the file's and rewrites the file when the Keychain one is newer — no flag needed
 
-Credentials are saved in two files (both gitignored):
+Credentials and preferences live in two files, **at the STATE root and shared by every project** (not per-project) — machine-local, never committed, never synced:
 
 | File | Contents |
 |------|-----------|
-| `~/.local/state/cco/projects/<id>/session/claude.json` | Preferences, onboarding state, MCP |
-| `~/.local/state/cco/projects/<id>/session/.credentials.json` | OAuth tokens (access + refresh) |
+| `~/.local/state/cco/claude.json` | Preferences, onboarding state, MCP servers, session metadata |
+| `~/.local/state/cco/.credentials.json` | OAuth tokens (access + refresh), mode `600` |
 
-Both files are mounted read-write in the container, so renewed credentials are automatically saved.
+Both are mounted read-write in the container (at `~/.claude.json` and
+`~/.claude/.credentials.json`), so a token renewed inside a session is saved for the next
+one — in every project.
 
 ### Prerequisite
 
@@ -154,12 +156,25 @@ cco start my-project --env DEBUG=true --env API_URL=http://localhost:8080
 
 ### How they are injected
 
-Secrets are passed as `-e` flags to `docker compose run` at startup time. They are never written to `docker-compose.yml` or other generated files.
+The two channels are **not** the same, and that decides the precedence:
 
-Precedence order (last one wins):
-1. `~/.cco/secrets.env`
-2. `<repo>/.cco/secrets.env`
-3. `--env` from CLI
+- **`secrets.env` values** (global, then project) are passed as `-e` flags to
+  `docker compose run` at startup. They are never written to `docker-compose.yml` or any
+  other generated file.
+- **`--env` values and `project.yml`'s `docker.env`** are written into the generated
+  compose file's `environment:` block.
+
+A `docker compose run -e` flag **overrides** the compose `environment:` entry for the
+same key, so the effective order is (last one wins):
+
+1. `project.yml` `docker.env` and `cco start --env KEY=VAL` — the compose `environment:` block
+2. `~/.cco/secrets.env` — global secrets, `-e`
+3. `<repo>/.cco/secrets.env` — project secrets, `-e` (project overrides global)
+
+In other words, `--env` is convenient for values that exist nowhere else, but it does
+**not** win over a key of the same name in either `secrets.env`. To override a secret for
+one session, comment it out in `secrets.env` — or set it in the project `secrets.env`,
+which beats the global one.
 
 ### Format
 
@@ -196,6 +211,13 @@ cco pack publish my-pack team
 ```
 
 This is the simplest approach if you have SSH keys configured for GitHub.
+
+> **SSH works on the host, not inside a session.** No SSH key is ever mounted into a
+> container (`cco start` binds `~/.gitconfig` only). `cco pack install` / `cco template
+> install` are reachable in-session at `--cco-access edit-global` or wider, but only over
+> **HTTPS with a token** — an `ssh://` or `git@…` remote will fail to authenticate there.
+> Run those against SSH remotes from your host, or register the remote's HTTPS URL with a
+> token. (`cco pack publish` / `template publish` are host-only at every level.)
 
 ### HTTPS with per-remote tokens
 
@@ -316,7 +338,7 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 2. Claude Code displays a URL for OAuth login
 3. Copy the URL from the terminal (see the copy-paste section in the [Agent Teams guide](agent-teams.md))
 4. Open the URL in your browser and complete authentication
-5. Credentials are saved in `~/.local/state/cco/projects/<id>/session/.credentials.json`
+5. Credentials are saved in `~/.local/state/cco/.credentials.json`
 6. Subsequent sessions use the saved credentials automatically
 
 ---
@@ -333,18 +355,18 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 
 2. **Check the credentials file**:
    ```bash
-   jq '.claudeAiOauth | keys' ~/.local/state/cco/projects/<id>/session/.credentials.json
+   jq '.claudeAiOauth | keys' ~/.local/state/cco/.credentials.json
    ```
 
 3. **Check permissions**:
    ```bash
-   ls -la ~/.local/state/cco/projects/<id>/session/.credentials.json
+   ls -la ~/.local/state/cco/.credentials.json
    # Must be 600 (-rw-------)
    ```
 
-4. **Force re-seeding**:
+4. **Force re-seeding** (macOS):
    ```bash
-   rm ~/.local/state/cco/projects/<id>/session/.credentials.json
+   rm ~/.local/state/cco/.credentials.json
    cco start my-project
    ```
 
@@ -353,8 +375,8 @@ If you don't have credentials in the macOS Keychain (e.g., first installation, o
 This happens when `claude.json` has `hasCompletedOnboarding: false`, typically after logout+login on the host. The CLI automatically forces this value to `true` before starting the container. If the problem persists:
 
 ```bash
-jq '.hasCompletedOnboarding = true' ~/.local/state/cco/projects/<id>/session/claude.json > /tmp/fix.json \
-  && mv /tmp/fix.json ~/.local/state/cco/projects/<id>/session/claude.json
+jq '.hasCompletedOnboarding = true' ~/.local/state/cco/claude.json > /tmp/fix.json \
+  && mv /tmp/fix.json ~/.local/state/cco/claude.json
 ```
 
 ### Expired token (after ~90 days)

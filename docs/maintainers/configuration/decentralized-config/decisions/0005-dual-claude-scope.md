@@ -97,4 +97,20 @@ F1 has a soft dependency on RD-paths (the cache location) but the *decision* —
 generate derived files into committed config — is independent and locked here. F1/F2
 become Phase-0/early-impl action items; F3 is a recorded invariant.
 
+> **Forward annotation (2026-07-26) — F3 is SUPERSEDED by [ADR-0054](0054-framework-owned-mountpoints.md).**
+> "Parent stays rw" was stated here as a *consequence* (in-session edits must land in the
+> committed tree), but the nested-overlay mechanism verified above silently *depended* on it:
+> a child bind whose target does not exist inside a `:ro` parent cannot be created — runc
+> `mkdirat`s the mountpoint through the read-only bind and fails `EROFS`, so the container
+> never starts. **ADR-0049 §2 made `Cp=ro` the default** without revisiting F3, which broke
+> `cco start` for every project adopting a pack that ships `skills`/`rules`/`agents`/knowledge
+> (roadmap FI-31; the `settings.local.json` half of the same class was found and patched on
+> 2026-07-15, see ADR-0049 §5). ADR-0054 replaces the precondition rather than restoring it:
+> cco owns every framework mountpoint (INV-MP), composing the `/workspace/.claude` parent from
+> a mountpoints-only CACHE view when children are injected — so the parent's writability is
+> free to follow policy, and F2's precedence ("a pack `:ro` overlay wins over a committed file
+> of the same path") is now enforced explicitly, by dropping the duplicate bind. F1 gains
+> ground in the same pass: the `settings.local.json` stub moves out of the committed tree and
+> into the view.
+
 **Status: resolved.** Open question owned by this ADR is closed.

@@ -56,8 +56,19 @@ host path is resolved per machine from the local index (set it with
 > Each repo's own `.cco/` config directory is overlaid **read-only** inside the
 > container, even though the repo itself is writable. This protects your
 > structural config (`project.yml`, `secrets.env`) from accidental edits during a
-> normal session. Use `cco start config-editor` (or `cco start --enable-config-edit`)
-> when you actually want to change it.
+> normal session (`cco_access=read-project` — read-only for `.cco`). Use `cco start
+> config-editor` (or, per session, `cco start <project> --cco-access edit-project`) when
+> you actually want to change it.
+> See [Session access](../../reference/cli.md#session-access-capability-model).
+
+> **Config vs internal store.** The `:ro`/`:rw` mount modes above govern your **config
+> content** (`<repo>/.cco`, `~/.cco`). The framework's **internal store** — the machine-local
+> index, the DATA registries (tags, remotes), and CACHE internals — is different: it is never
+> a plain session mount you can widen, but sits behind an OS-level **privilege boundary**
+> (ADR-0047). It lives under a directory owned by a dedicated `cco-svc` user (mode `0700`)
+> that the session's `claude` user cannot traverse; the in-container `cco` reaches it only
+> through a setuid helper that enforces the session's resolved `(G, Pc, Po)` access from a
+> trusted, read-only descriptor. So even a maximal session cannot `cat` the raw index.
 
 ---
 
@@ -109,8 +120,11 @@ docker:
 ```
 
 Now a server bound to `0.0.0.0:3000` inside the container is reachable at
-`http://localhost:3000` on your host. The format is validated as
-`host:container` (an optional `/tcp` or `/udp` suffix is allowed).
+`http://localhost:3000` on your host. cco copies each entry into the generated compose
+file verbatim — **Docker Compose**, not cco, validates the syntax, so any form compose
+accepts works (`8080:80`, `127.0.0.1:8080:80`, `8080:80/udp`). Two parser limits are worth
+knowing: an entry must start with the host port digit (a quoted variable or an interface
+name first is skipped), and only the first 20 entries are read.
 
 **Add ports for one session** without editing `project.yml` with `--port`
 (repeatable):
@@ -214,6 +228,7 @@ persists the full `docker-compose.yml` for inspection.
 | Can't reach a dev server on `localhost:PORT` from the host | Port not declared in `docker.ports` (or via `--port`); or the server is bound to `127.0.0.1` instead of `0.0.0.0` inside the container. |
 | Sibling containers can't see each other | They are not on the same `cc-<project>` network. Add `--network cc-<project>` (or the same `external` network in compose). |
 | `host.docker.internal` not resolving on Linux | Not auto-injected outside browser host mode; publish the host service on a port or use a sibling on the project network instead. |
-| `docker: command not found` / permission denied in session | `docker.mount_socket` is `false` (the default). Set it `true` (and review socket security) to enable Docker-from-Docker. |
+| `Cannot connect to the Docker daemon` in session | `docker.mount_socket` is `false` (the default), so no socket is mounted — the `docker` CLI and the compose plugin are always installed in the image, but have nothing to talk to. Set `mount_socket: true` (and review socket security) to enable Docker-from-Docker. |
+| A `docker` call fails with `cco-docker-proxy: operation denied` | The socket proxy refused it. Container names must start with `cc-<project>-`, bind sources must satisfy the mount policy, and any API write route the proxy does not model (e.g. `docker network rm`) is denied by default. See the [socket security guide](../../security/guides/socket-security.md#4-what-the-socket-proxy-filters). |
 | "Project already has a running session" on start | A `cc-<project>` container is still up. Run `cco stop <project>` first. |
-| Edits to `project.yml` / `secrets.env` rejected inside the session | The committed `<repo>/.cco/` is mounted read-only by design. Use `cco start config-editor` or `cco start --enable-config-edit`. |
+| Edits to `project.yml` / `secrets.env` rejected inside the session | The committed `<repo>/.cco/` is mounted read-only by default (`cco_access=read-project`). Use `cco start config-editor`, or opt in per session with `cco start <project> --cco-access edit-project`. Note: real `secrets.env` values are filtered out of every session — only `*.example` is visible; edit real secrets on the host. |

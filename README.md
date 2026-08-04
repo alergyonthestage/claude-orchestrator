@@ -47,19 +47,22 @@ glue the rest together with shell scripts; cco is that glue, hardened and shared
 
 ## Status
 
-**Alpha (v0.5.1)** — Under active development and already used daily by the
+**Alpha (v0.5.2)** — Under active development and already used daily by the
 author for real-world agentic development. It works well in practice, but APIs,
 configuration format, and defaults may change between releases. cco is
 distributed on npm as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco);
 it ships the decentralized in-repo config model (project config lives in each
 repo's `.cco/`) and the native Claude Code installer (auto-updates in place).
 
-**Platform support:**
-- **macOS** — fully tested, primary development environment. OAuth login supported.
-- **Linux** — functional but not yet thoroughly tested. OAuth login is not yet available; authentication requires `CLAUDE_API_KEY` (API key). Linux OAuth support with subscription-based login is planned — see the [roadmap](docs/maintainers/roadmap.md).
-- **Windows** — use via WSL2 + Docker Desktop (see [Requirements](#requirements)).
+**Platform support:** macOS is the verified platform. Linux runs sessions but
+cco's own in-session commands do not work there yet — the detail is below, and
+the [OS compatibility](#os-compatibility) table says the same thing.
 
-**Planned before stable release:** network hardening (internet access control per project), E2E integration tests, Linux OAuth support. See the [roadmap](docs/maintainers/roadmap.md) for the full plan.
+- **macOS** — the verified platform and primary development environment. OAuth login supported (via Keychain).
+- **Linux** — **partially supported.** Sessions start and Claude Code works on your repos, but the `cco` command *inside* a session cannot reach cco's own internal store. Every verb that reads the machine-local index (`cco list`, `cco path list`, `cco project show`, `cco project validate`…) and every config **write** refuses with an error. The store is created mode `0700` for an elevated identity (`cco-svc`, uid 900) that a session running as your own uid cannot search. The refusal is deliberate and names the limitation: until recently those verbs answered *"the path index is empty — nothing is registered on this machine yet"* at exit 0, which was a confident wrong answer. `cco` on your **host** is unaffected. Fixing this needs host-side setup and is scheduled for the next development cycle as a dedicated architecture decision, not a patch. Separately, OAuth login is not yet available on Linux; authentication requires an API key (`ANTHROPIC_API_KEY`, via `cco start --api-key`). Linux OAuth support with subscription-based login is planned — see the [roadmap](docs/maintainers/roadmap.md).
+- **Windows** — use via WSL2 + Docker Desktop (see [Requirements](#requirements)). WSL2 runs as Linux, so the Linux caveats above apply.
+
+**Planned before stable release:** network hardening (internet access control per project), E2E integration tests, Linux internal-store reachability, Linux OAuth support. See the [roadmap](docs/maintainers/roadmap.md) for the full plan.
 
 Feedback, bug reports, and contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -71,12 +74,20 @@ Each step earns its place — here's what you get from it:
 # 1. Install the CLI from npm — this is the `cco` command and its defaults
 npm install -g @claude-orchestrator/cco
 
-# 2. Initialize — seeds your personal ~/.cco store from defaults and builds the Docker image
+# 2. Initialize — run this INSIDE the repo you want Claude to work in.
+#    It scaffolds that repo's committed .cco/ config and registers it on this
+#    machine; on your very first run it also seeds your personal ~/.cco store
+#    from the defaults and builds the Docker image.
+cd ~/projects/my-repo
 cco init
 
 # 3. Learn by doing — the interactive tutorial walks you through everything
 cco start tutorial
 ```
+
+> `cco init` is the **project** entry verb and works on the current directory — it is
+> not a global setup step to run from wherever you happen to be. The global store is
+> seeded as a first-run side effect, not as the point of the command.
 
 > **Prefer to install from source?** Clone the repo and put `bin/` on your PATH
 > instead of installing from npm — see the [maintainer setup](CONTRIBUTING.md#local-development)
@@ -84,18 +95,25 @@ cco start tutorial
 
 ### Keeping cco up to date
 
-cco has **two independent update tracks** — don't confuse them:
+cco has **three independent update tracks** — don't confuse them, and don't stop
+after the first:
 
 ```bash
-# Upgrade the cco engine itself (the CLI + framework defaults), then apply migrations:
-npm update -g @claude-orchestrator/cco && cco update
+# Upgrade the engine, migrate your config, then rebuild the image:
+npm update -g @claude-orchestrator/cco && cco update && cco build
 ```
 
 - `npm update -g @claude-orchestrator/cco` upgrades the **engine** (the `cco`
-  command and its shipped defaults).
+  command on your host and its shipped defaults).
 - `cco update` runs **migrations + config discovery** for your existing
   projects; it does *not* upgrade the engine. After an engine upgrade it tells
   you the exact command to run for your install method (npm / source).
+- `cco build` rebuilds the **Docker image**, and nothing else does it for you —
+  neither of the other two commands touches it. The image carries the copy of
+  cco that runs *inside* a session, the socket proxy, and the privilege boundary
+  around cco's internal store. Skip it and your sessions keep running the
+  previous release while your host runs the new one, with no warning that the
+  two disagree.
 - Claude Code itself is upgraded separately — the native installer auto-updates
   it in place (see [Always-current Claude Code](#feature-highlights)).
 
@@ -216,9 +234,9 @@ Full index: [docs/README.md](docs/README.md)
 
 | OS | Status | Notes |
 |---|---|---|
-| **macOS 12+** | Fully supported | Keychain integration for OAuth, iTerm2 agent teams |
-| **Linux** | Fully supported | All features except macOS-specific Keychain and iTerm2 |
-| **Windows (WSL2)** | Works, not officially tested | Run as Linux inside WSL2; Docker Desktop with WSL2 backend required |
+| **macOS 12+** | Fully supported — the verified platform | Keychain integration for OAuth, iTerm2 agent teams |
+| **Linux** | Partially supported | Sessions run and Claude Code works on your repos. `cco` **inside** a session cannot reach the internal store, so index-reading verbs and config writes refuse — the store is mode `0700` for the elevated identity `cco-svc` (uid 900), unsearchable by a session running as your uid. `cco` on the host is unaffected. No Keychain OAuth (`ANTHROPIC_API_KEY` required), no iTerm2 agent teams. See [Platform support](#status) |
+| **Windows (WSL2)** | Partially supported, not officially tested | Runs as Linux inside WSL2, so the Linux row applies; Docker Desktop with WSL2 backend required |
 | **Windows (native)** | Not supported | Would require a PowerShell rewrite; not planned |
 
 > **Windows users:** Install WSL2 + Docker Desktop with the WSL2 backend, then use cco from inside the WSL2 terminal. No changes to the tool are needed.

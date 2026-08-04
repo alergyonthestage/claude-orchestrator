@@ -36,6 +36,70 @@ YAML
     assert_output_contains "my-repo"
 }
 
+# ── V1-F2: extra_mounts by LOGICAL NAME ─────────────────────────────────────────
+# The logical name is the key for `cco path` and `extra-mount rename`, and until now
+# `path list` was the only in-container surface that enumerated it — so an agent
+# holding only `project show` could not learn the name it needs to type. Worth more
+# after S7's decision (b): config-editor announces a target's extra_mounts as NOT
+# mounted, which makes a surface that names them the way to act on the announcement.
+# ⚠ FAILS on pre-fix: project show has no extra_mounts section at all.
+test_project_show_lists_extra_mounts_by_name() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local mnt_dir="$tmpdir/assets"
+    mkdir -p "$mnt_dir"
+    seed_index_path "assets" "$mnt_dir" "my-proj"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+extra_mounts:
+  - name: assets
+    target: /workspace/aux
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "Extra mounts:"
+    assert_output_contains "assets"
+    # The declared container target is the other half of what makes the name
+    # actionable — it is where the agent will actually find the mount.
+    assert_output_contains "/workspace/aux"
+}
+
+# An extra_mount DECLARED but with no resolved path must be announced, not dropped.
+# _effective_extra_mounts conscious-skips it (correct for compose generation — an
+# empty bind would be invalid), but an INTROSPECTION surface that silently omits a
+# declared mount teaches the agent the project has fewer than it does. Same lesson as
+# S7: announce every drop.
+test_project_show_extra_mount_unresolved_is_announced() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+extra_mounts:
+  - name: ghost
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "ghost"
+}
+
+test_project_show_no_extra_mounts_says_none() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "my-proj" "$(cat <<YAML
+name: my-proj
+repos: []
+YAML
+)"
+    run_cco project show "my-proj"
+    assert_output_contains "Extra mounts:"
+    assert_output_contains "(none)"
+}
+
 test_project_show_lists_packs() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
@@ -91,11 +155,15 @@ test_project_show_referenced_by() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     mkdir -p "$tmpdir/shared"
-    seed_index_path shared "$tmpdir/shared"
-    index_set_project_repos projB shared
     create_project "$tmpdir" projA "name: projA
 repos:
   - name: shared"
+    # 'shared' is a member of projA AND referenced by projB. Under per-project
+    # scoping (ADR-0051 D5) referenced-by is a PATH property: each project carries
+    # its OWN binding to the same path, so seed 'shared' scoped to both.
+    seed_index_path shared "$tmpdir/shared" projA
+    seed_index_path shared "$tmpdir/shared" projB
+    index_set_project_repos projB shared
     run_cco project show projA
     assert_output_contains "also referenced by: projB"
 }
@@ -128,4 +196,257 @@ YML
     run_cco project show
     assert_output_contains "hosts project: myproj"
     assert_output_contains "api"
+}
+
+# ── R4: bare `cco project show` at the container WORKDIR root ─────────────────
+# The trigger (_project_session_fallback) is env-driven so it is unit-testable
+# without a live /workspace: CCO_WORKDIR points it at a tmp WORKDIR with a flat
+# session manifest, and _cco_container_operator is stubbed for the operator branch.
+
+_ps_fallback() {  # echoes the resolved name (or empty); operator stubbed per $1
+    local operator="$1"
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/cmd-project-query.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _project_session_fallback "$PWD"
+    )
+}
+
+test_project_show_r4_workdir_resolves_session() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ "$out" == "my-session" ]] \
+        || fail "R4: at the WORKDIR root the fallback should resolve PROJECT_NAME, got: '$out'"
+}
+
+test_project_show_r4_no_project_name_no_fallback() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" _ps_fallback yes)   # PROJECT_NAME unset
+    [[ -z "$out" ]] || fail "R4: no PROJECT_NAME → no fallback (usage error), got: '$out'"
+}
+
+test_project_show_r4_only_at_workdir_root() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"; mkdir -p "$ws/sub"
+    local out
+    # A non-WORKDIR cwd (child-wins / no ambiguous deep resolution) → no fallback.
+    out=$(cd "$ws/sub" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ -z "$out" ]] || fail "R4: fallback must fire ONLY at the WORKDIR root, got: '$out'"
+}
+
+test_project_show_r4_host_never_fires() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    : > "$ws/project.yml"
+    local out
+    # Host (not operator) → the fallback is inert even at a matching cwd.
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback no)
+    [[ -z "$out" ]] || fail "R4: host context must never trigger the fallback, got: '$out'"
+}
+
+test_project_show_r4_requires_flat_manifest() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    # No flat project.yml at the WORKDIR → no fallback.
+    local out
+    out=$(cd "$ws" && CCO_WORKDIR="$ws" PROJECT_NAME=my-session _ps_fallback yes)
+    [[ -z "$out" ]] || fail "R4: fallback needs a flat session manifest, got: '$out'"
+}
+
+# ── B-DF1: members are probed at the MOUNT in-container, not the index host path ──
+# The index stores HOST paths; in a session the member is bind-mounted at
+# <workdir>/<name>. Probing the host path in-container always fails and mislabels a
+# mounted repo `[missing]` + `code-only`. Same subshell/stub pattern as R4 above: it
+# exercises the helper directly, so it never reaches the dispatcher (whose
+# store-verb trampoline would re-enter the image-baked cco and defeat the test).
+
+_ps_probe() {  # echoes the probe path; operator stubbed per $1
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _cco_member_probe_path "$@"
+    )
+}
+
+test_member_probe_operator_uses_mount() {
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_probe yes "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "/ws/my-repo" ]] \
+        || fail "B-DF1: in operator mode a member must be probed at the mount, got: '$out'"
+}
+
+test_member_probe_host_uses_index_path() {
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_probe no "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "/Users/alex/code/my-repo" ]] \
+        || fail "B-DF1: on the host the index path must pass through unchanged, got: '$out'"
+}
+
+test_member_probe_empty_name_falls_back() {
+    local out
+    # No name → nothing to build a mount path from; must not invent "/ws/".
+    out=$(CCO_WORKDIR=/ws _ps_probe yes "" "/Users/alex/code/my-repo")
+    [[ "$out" == "/Users/alex/code/my-repo" ]] \
+        || fail "B-DF1: an empty name must fall back to the given path, got: '$out'"
+}
+
+test_member_probe_defaults_to_workspace() {
+    local out
+    out=$(_ps_probe yes "my-repo" "/Users/alex/code/my-repo")   # CCO_WORKDIR unset
+    [[ "$out" == "/workspace/my-repo" ]] \
+        || fail "B-DF1: the probe must default to the /workspace WORKDIR, got: '$out'"
+}
+
+# End-to-end on the classification itself: the same member that reads `code-only`
+# (from `unresolved`) when probed at a non-existent host path must read `host`
+# (synced) once probed at its mount — the exact B-DF1 mislabel.
+_ps_role() {  # echoes the display role; operator stubbed per $1
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh";  source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";   source "$REPO_ROOT/lib/yaml.sh"
+        source "$REPO_ROOT/lib/index.sh";   source "$REPO_ROOT/lib/sync-meta.sh"
+        source "$REPO_ROOT/lib/cmd-project-query.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        # Isolate from the real index: the host path is deliberately absent, and the
+        # fallback re-fetch must not consult a real store.
+        _index_get_path() { printf '%s\n' "$2"; }
+        _project_member_role "$@"
+    )
+}
+
+test_member_role_operator_classifies_via_mount() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    mkdir -p "$ws/my-repo/.cco"
+    printf 'name: my-proj\n' > "$ws/my-repo/.cco/project.yml"
+    local out
+    # Host path absent (as it always is in-container); the mount carries the config.
+    out=$(CCO_WORKDIR="$ws" _ps_role yes "/nonexistent/my-repo" "my-proj" "my-repo")
+    [[ "$out" == "host" ]] \
+        || fail "B-DF1: a mounted config-bearing member must classify as 'host', got: '$out'"
+}
+
+test_member_role_host_context_unaffected() {
+    local ws; ws=$(mktemp -d); trap "rm -rf '$ws'" EXIT
+    mkdir -p "$ws/my-repo/.cco"
+    printf 'name: my-proj\n' > "$ws/my-repo/.cco/project.yml"
+    local out
+    # On the host an absent path is genuinely unresolved → code-only. Unchanged.
+    out=$(CCO_WORKDIR="$ws" _ps_role no "/nonexistent/my-repo" "my-proj" "my-repo")
+    [[ "$out" == "code-only" ]] \
+        || fail "B-DF1: host classification must be unchanged (code-only), got: '$out'"
+}
+
+# ── S6 / v3 R4: `project show` asks the shared classifier ────────────────────
+# The verb used to answer availability with ONE hardcoded sentence — it blamed
+# ACCESS SCOPE and prescribed a scope widening — for two different realities. At
+# read-all/edit-all nothing is hidden by scope and there is no widening left, so
+# the sentence was simply false; meanwhile its sibling `project validate` gave the
+# correct D-M2 answer for the same project in the same session. Three v3 sessions
+# reported it from three vantages (V2-F04 ≡ V4-F-V4-02 ≡ V5-04) against one call
+# site. Both arms below are pinned so the two states cannot re-converge on one
+# spelling. Static counterpart: INV-ENV in test_invariants.sh.
+
+# In scope (read-all sees every project) but NOT bound into this container.
+# ⚠ FAILS on pre-fix: refuses "not available at this access scope … Widen the
+# session's scope", naming a remedy that does not exist at read-all.
+test_project_show_unmounted_is_not_a_scope_refusal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-all alpha
+    operator_mount_unit alpha alpha >/dev/null
+    # beta: bound in the index to a host path that cannot exist here, never mounted.
+    seed_index_path betarepo "/Users/cco-e2e/code/betarepo" beta
+    index_set_project_repos beta betarepo
+
+    local rc=0
+    run_cco project show beta || rc=$?
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not mounted in this session" || return 1
+    [[ "$CCO_OUTPUT" != *"not available at this access scope"* ]] \
+        || { fail "an unmounted project must not be reported as an access-scope problem: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# The scope arm still refuses with the scope wording — replacing the local sentence
+# with _env_unavailable must not cost the out-of-scope message (it routes back into
+# _env_require_visible). Sibling of test_as_project_show_out_of_scope_refused.
+test_project_show_out_of_scope_keeps_scope_wording() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-project alpha
+    operator_mount_unit alpha alpha >/dev/null
+    seed_index_path betarepo "/Users/cco-e2e/code/betarepo" beta
+    index_set_project_repos beta betarepo
+
+    local rc=0
+    run_cco project show beta || rc=$?
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "not available at this access scope" || return 1
+    return 0
+}
+
+# ── ADR-0056 D7 / D-V31-3 (S4): the member badge is asked, not decided ──
+# `project show`'s repos block was the last two-way `[[ -d "$_probe" ]]` test in the
+# codebase, and it is the site the ADR names: a member that is merely NOT MOUNTED
+# rendered `[missing]` plus "run 'cco resolve <p>'" — a remedy the same session
+# refuses at exit 2. Both halves were wrong for one reason: the verb had two answers
+# for three realities. These pin the three-state rendering at the helper level,
+# using the same subshell/stub pattern as the B-DF1 probe tests above (staying out
+# of the dispatcher, whose store-verb trampoline would re-enter the baked cco).
+
+_ps_badge() {  # echoes the badge for a member state; $1=operator yes|no
+    local operator="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/access-scope.sh"
+        if [[ "$operator" == yes ]]; then _cco_container_operator() { return 0; }
+        else _cco_container_operator() { return 1; }; fi
+        _env_state_badge "$(_env_member_state "$@")"
+    )
+}
+
+test_show_member_bound_but_unmounted_is_not_missing() {
+    # A bound member whose mount is absent in this session: the index HAS a binding,
+    # so it is not `[unresolved]`, and it exists on the machine, so it is not
+    # `[missing]` — it is not mounted here.
+    local out
+    out=$(CCO_WORKDIR=/nonexistent-ws _ps_badge yes "my-repo" "/Users/alex/code/my-repo")
+    [[ "$out" == "[not mounted in this session]" ]] \
+        || fail "ADR-0056 D7: a bound-but-unmounted member must be badged not-mounted, got: '$out'"
+    [[ "$out" != *"[missing]"* ]] \
+        || fail "ADR-0056 D7: the retired [missing] badge came back"
+}
+
+test_show_member_without_binding_is_unresolved() {
+    # INV-F.1: no binding at all → `[unresolved]`, the ONE thing it means.
+    local out
+    out=$(CCO_WORKDIR=/ws _ps_badge yes "my-repo" "")
+    [[ "$out" == "[unresolved]" ]] \
+        || fail "ADR-0056 D7: an unbound member must be badged [unresolved], got: '$out'"
+}
+
+test_show_member_mounted_carries_no_badge() {
+    local ws; ws=$(mktemp -d); mkdir -p "$ws/my-repo"
+    local out
+    out=$(CCO_WORKDIR="$ws" _ps_badge yes "my-repo" "/Users/alex/code/my-repo")
+    rm -rf "$ws"
+    [[ -z "$out" ]] || fail "a present member needs no badge, got: '$out'"
+}
+
+test_show_repos_block_has_no_unqualified_resolve_remedy() {
+    # D2: the `⚠ N reference(s) unresolved` line kept its remedy, but a session
+    # cannot run `cco resolve` — the operator gate refuses it. The in-container arm
+    # must name the host; the host arm must not carry the noise.
+    local src="$REPO_ROOT/lib/cmd-project-query.sh"
+    grep -q "cco resolve \$name' on your host" "$src" \
+        || fail "ADR-0056 D2: project show's unresolved remedy must be host-qualified in a session"
+    grep -q "_cco_container_operator" "$src" \
+        || fail "ADR-0056 D2: project show must BRANCH on the print site, not pick one wording"
 }

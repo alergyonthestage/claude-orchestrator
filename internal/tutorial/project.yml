@@ -6,17 +6,20 @@ repos: []
 
 # ── Documentation & Personal Store ───────────────────────────────────
 # The tutorial agent reads cco documentation and your personal config store
-# to provide accurate, up-to-date guidance.
+# to provide accurate, up-to-date guidance. Both are name-based mounts resolved
+# via the in-process session override (_setup_internal_tutorial), never the
+# persistent index — so no host path is committed (AD3/G8), matching the
+# config-editor built-in. Real secret files in the store are masked (ADR-0036 D4).
 extra_mounts:
   # claude-orchestrator documentation (always up to date with your installation)
-  - source: {{CCO_REPO_ROOT}}/docs
+  - name: cco-docs
     target: /workspace/cco-docs
     readonly: true
   # Your personal store ~/.cco (global config, packs, templates), read-only.
   # The tutorial inspects but never modifies — use `cco start config-editor`
   # (built-in) for hands-on config editing. Per-project config lives in each
   # repo's own <repo>/.cco/, not here.
-  - source: {{CCO_CONFIG_DIR}}
+  - name: cco-config
     target: /workspace/cco-config
     readonly: true
 

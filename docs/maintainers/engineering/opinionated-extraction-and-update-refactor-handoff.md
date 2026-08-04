@@ -1,7 +1,7 @@
 # Handover — opinionated-config extraction + `cco update` responsibility refactor
 
 > **Created**: 2026-06-30 (analysis session). · **Track**: architecture / sharing model. · **Sequencing**:
-> runs **after** Handover C ([npm packaging](npm-packaging-distribution-handoff.md)). Packaging does **not**
+> runs **after** Handover C (npm packaging — released, handoff removed). Packaging does **not**
 > depend on this; this is the structural "core-agnostic" workstream.
 > **Design anchor**: realizes **F-opin** (`../configuration/decentralized-config/design.md` §12 Futures),
 > previously deferred post-v1. · **Next free ADR = 0040.**

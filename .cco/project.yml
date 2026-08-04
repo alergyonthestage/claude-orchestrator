@@ -17,6 +17,12 @@ llms:
 # ── Extra mounts (optional) ─────────────────────────────────────────
 # mounts:
 
+# ── cco and claude access policies
+
+## Enable rw access to .claude in claude-orchestator. Required to edit internal and defaults .claude
+## To replace with access all only for claude-orchestrator/{internal;defaults} paths, when FI-25 will be implemented.
+access:
+  claude: all
 
 # ── Knowledge Packs (optional) ───────────────────────────────────────
 # Reference named packs defined in global/packs/<name>/pack.yml.
@@ -72,10 +78,13 @@ docker:
   mount_socket: true    # Set false to disable Docker socket mount (security hardening)
   ports:
     - "3010:3000"
-    - "8081:8080"
+    - "8082:8080"
   env: {}
   # network: cc-claude-orchestrator
 
 # ── Authentication ───────────────────────────────────────────────────
 auth:
   method: oauth         # "oauth" (default) | "api_key"
+
+packs:
+  - name: core-dev-framework

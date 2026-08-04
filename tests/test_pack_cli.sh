@@ -315,7 +315,7 @@ test_pack_remove_cascades_internal_state() {
 
     assert_dir_not_exists "$CCO_PACKS_DIR/cascade-pack"
     assert_dir_not_exists "$CCO_DATA_HOME/packs/cascade-pack"
-    assert_dir_not_exists "$CCO_STATE_HOME/packs/cascade-pack"
+    assert_dir_not_exists "$(state_shared)/packs/cascade-pack"
     run_cco list --tag work
     if echo "${CCO_OUTPUT:-}" | grep -qF "cascade-pack"; then
         fail "tag binding for cascade-pack should be gone after remove"

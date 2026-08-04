@@ -226,6 +226,82 @@ _cco_flatten_global_claude() {
     return 1
 }
 
+# ── Fail-loud version gate (ADR-0052 §1) ─────────────────────────────
+# Refuse to run when on-disk state is NEWER than this binary understands. A newer
+# cco may have upgraded the global schema or the index; an older binary cannot
+# read the newer layout safely — it MISPARSES and prints wrong output (the "path
+# index is empty" mislead FI-16 exists to kill), so a warn-and-read would be a
+# weaker fail-loud. die on EVERY (host) verb, not just writers (no verb
+# classification): reading is exactly where the silent corruption happens. The
+# cost — a developer running an older gated binary against newer state — is removed
+# at the source by the developer sandbox (ADR-0052 §7), not papered over by a warn.
+#
+# Host-only in TWO senses: it self-guards with _cco_host_side_ok, AND it is only
+# reached from _cco_first_run, which the container-operator dispatch branch bypasses
+# entirely — so "every verb" means every HOST verb (a session's whitelisted cco
+# never runs it). Two versioned artifacts, two bounds:
+#   • the index version: vs _latest_index_version (the CCO_INDEX_VERSION constant,
+#     always available — no scan — so this arm is always reliable).
+#   • global .cco/meta schema_version vs _latest_schema_version global (scans
+#     migrations/global/, self-maintaining). Skipped when the latest cannot be
+#     determined (>0 guard) so a mis-resolved FRAMEWORK_ROOT can never brick cco.
+# Per-project .cco/meta is deferred (first_run holds no project in hand).
+#
+# Never TRUST a version we could not cleanly read. An artifact that EXISTS but is
+# unreadable/truncated/malformed cannot be proven older, so the gate dies HONESTLY
+# rather than (a) crash raw through a lenient reader's trailing awk under set -e
+# (review F1) or (b) silently coerce it to a benign default and sail past — the very
+# FI-16 misread it exists to catch (review F2). Probes read by OPENING, never with
+# `test -r` (access(2) answers for the real uid — a false answer under elevation,
+# the rename.sh:174 trap).
+_cco_version_gate() {
+    _cco_host_side_ok || return 0
+
+    # ── Index bound ──────────────────────────────────────────────────
+    # _index_read_state probes by opening (no raw awk error can leak) and tells the
+    # benign `absent` apart from unreadable/truncated/stale — reuse it instead of
+    # trusting _index_version's transitional default of 1 (review F2).
+    local idxf idx_state disk_idx latest_idx
+    idxf=$(_index_file)
+    idx_state=$(_index_read_state)
+    case "$idx_state" in
+        absent) ;;   # nothing registered on this machine — cannot be "newer"
+        ok)
+            disk_idx=$(_index_version)
+            [[ "$disk_idx" =~ ^[0-9]+$ ]] \
+                || die "the cco path index at $idxf has an unreadable version line ('$disk_idx'). Refusing to run rather than risk misreading it — rebuild it with 'cco resolve --scan <dir>', or run cco on the host that wrote it."
+            latest_idx=$(_latest_index_version)
+            if [[ "$disk_idx" -gt "$latest_idx" ]]; then
+                die "the cco path index at $idxf is schema version $disk_idx, newer than this cco supports (max $latest_idx). It was written by a newer cco; this older binary would misread it and lose registered paths. Use the cco that wrote it (or a newer one) — a downgrade cannot read it safely."
+            fi
+            ;;
+        *)  # unreadable | truncated | stale — cannot verify the version safely.
+            die "$(_index_unreadable_sentence "$idx_state" "$idxf")"
+            ;;
+    esac
+
+    # ── Global schema bound ──────────────────────────────────────────
+    local latest_meta metaf disk_meta
+    latest_meta=$(_latest_schema_version global)
+    [[ "$latest_meta" =~ ^[0-9]+$ ]] || latest_meta=0
+    metaf=$(_cco_global_meta)
+    if [[ "$latest_meta" -gt 0 && -e "$metaf" ]]; then
+        # An existing-but-unreadable meta must die honestly, NOT crash raw inside
+        # _read_cco_meta's trailing awk under set -e (review F1) — probe by opening.
+        { : < "$metaf"; } 2>/dev/null \
+            || die "the cco global config at $metaf cannot be read (permission denied). Refusing to run rather than risk misreading your config — fix its permissions, or run cco on the host that owns it."
+        disk_meta=$(_read_cco_meta "$metaf")   # only reached on a confirmed-readable file
+        # Empty ⇒ a present meta with no schema_version line (pre-schema) — benign.
+        if [[ -n "$disk_meta" ]]; then
+            [[ "$disk_meta" =~ ^[0-9]+$ ]] \
+                || die "the cco global config at $metaf has a malformed schema_version ('$disk_meta'). Refusing to run rather than risk misreading it — repair the file, or run cco on the host that wrote it."
+            if [[ "$disk_meta" -gt "$latest_meta" ]]; then
+                die "the cco global config at $metaf is schema version $disk_meta, newer than this cco supports (max $latest_meta). It was written by a newer cco; run that newer cco, or its 'cco update', to work with your state — this older binary would misread it."
+            fi
+        fi
+    fi
+}
+
 # ── Dispatch-time orchestrator ───────────────────────────────────────
 # Run before every command (bin/cco). Bootstrap is universal; the backup net is
 # skipped only for `help` (prints usage, reads no config). Ordering (M8): roots
@@ -234,6 +310,19 @@ _cco_flatten_global_claude() {
 _cco_first_run() {
     local cmd="$1"
     _cco_bootstrap_roots
+    # Fail loud BEFORE any state-mutating self-heal (flatten/backup/reconcile) if
+    # on-disk state is newer than this binary understands (ADR-0052 §1). Placed
+    # after _cco_bootstrap_roots (STATE must exist) and before the self-heals so a
+    # newer schema can never be half-migrated by an older binary. Self-guards to
+    # host-side; dies on any disk>supported.
+    _cco_version_gate
+    # Non-destructive reconcile of a legacy-location index (ADR-0052 §2, the N2
+    # backstop). After the gate (which proved the NEW file is not from a newer
+    # binary) and before the state-mutating self-heals. Host-side only, idempotent
+    # (legacy gone after the first merge → cheap no-op). NON-interactive here — a
+    # conflict keeps both files + warns rather than blocking an arbitrary command
+    # on a prompt; the interactive resolution lives in `cco update`'s 017 arm.
+    _cco_host_side_ok && { _index_reconcile_legacy_location false || true; }
     # Self-heal a pre-flatten layout (ADR-0028) on ANY command, before check_global
     # and any global-config reader run. Host-side only; idempotent no-op otherwise.
     _cco_host_side_ok && { _cco_flatten_global_claude || true; }
@@ -394,7 +483,7 @@ _cco_confirm_overwrite_global() {
     echo "    $archive" >&2
     local ans=""
     if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
-    elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
+    elif _cco_have_tty; then read -rp "  Proceed with the migration? [y/N]: " ans < /dev/tty; fi
     ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
     [[ "$ans" == "y" || "$ans" == "yes" ]] || return 1
     rm -rf "$(_cco_global_claude_dir)"
@@ -483,7 +572,16 @@ _migrate_legacy_repos() {
             if(k=="path")path=val(l); else if(k=="name")name=val(l);
             else if(k=="url")url=val(l); else if(k=="ref")ref=val(l) }
         /^repos:/{r=1;next}
-        r&&/^[^ #]/{flush();r=0}
+        # A top-level comment is NOT the section boundary — it heads the next key,
+        # and skipping it here is what the `#` used to do inside the boundary
+        # class. Spelled as its own rule so the boundary below can be the plain
+        # `/^[^ ]/`: this is a READER (it emits TSV, it never rewrites the file),
+        # so INV-YAML does not govern it, but carrying the insertion-class idiom in
+        # a file the lint scans would make the lint unreadable. Behaviour is
+        # identical to the previous `/^[^ #]/` — a comment line matched no other
+        # rule then either.
+        r&&/^#/{next}
+        r&&/^[^ ]/{flush();r=0}
         r&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
         r&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
         END{flush()}
@@ -518,7 +616,8 @@ _migrate_legacy_mounts() {
         function flush(){ if(source!="" || name!="" || target!="") print name "\t" source "\t" target "\t" ro;
             name=source=target=ro="" }
         /^extra_mounts:/{m=1;next}
-        m&&/^[^ #]/{flush();m=0}
+        m&&/^#/{next}                 # a top-level comment heads the next key — see _migrate_legacy_repos
+        m&&/^[^ ]/{flush();m=0}
         m&&/^  - /{ flush(); line=$0; sub(/^  - /,"",line); field(line); next }
         m&&/^    [a-z]/{ line=$0; sub(/^    /,"",line); field(line) }
         END{flush()}
@@ -636,11 +735,36 @@ _backfill_pack_llms_urls() {
     done
 }
 
-# Backfill recoverable llms urls into a single pack.yml in place. Rewrites the
-# `llms:` block (normalizing to long form) ONLY when at least one url-less entry
-# is recoverable from a global llms `.cco/source`; otherwise leaves the file
-# untouched. Preserves the block's position; per-entry description/variant are
-# carried through.
+# Backfill recoverable llms urls into a single pack.yml in place, ONLY when at
+# least one url-less entry is recoverable from a global llms `.cco/source`;
+# otherwise the file is left untouched. Preserves the block's position.
+#
+# ⚠ THIS REWRITES A USER-AUTHORED FILE, so it INJECTS and never regenerates.
+# Every line is passed through verbatim; the only lines this function writes are
+# the `    url:` / `    variant:` it adds, plus the one short-form `  - <name>`
+# line of an entry receiving an injection — a scalar list item cannot carry
+# sub-keys, so that entry (and only that entry) is rewritten to `  - name: <n>`,
+# its inline comment carried across. An entry that needs nothing is not touched,
+# short form included.
+#
+# WHAT THIS REPLACES (cycle-1.2 S6, reported by S5). The previous implementation
+# BUFFERED each entry and re-emitted it from parsed values, so every line it had
+# no rule for was silently dropped by its final `inblk { next }` catch-all. Two
+# arms, both observed: an INDENTED comment inside the block matched none of the
+# specific rules and vanished; and a TOP-LEVEL comment did not match the section
+# boundary `/^[^ #]/` either (the class excludes `#`), so it fell through to the
+# same catch-all — taking the header comment of the FOLLOWING key with it. Blank
+# lines and any unrecognised sub-key went the same way. Same CLASS as R-E (the
+# `/^[^ #]/` idiom), a different defect: R-E misplaced content, this destroyed it.
+#
+# INV-YAML, the same buffer-and-flush discipline as `_yml_append_coord`
+# (lib/cmd-project-add.sh:50-81, rule order at :103-113): the trailing run of
+# top-level comment and blank lines is buffered and flushed AFTER the injected
+# lines, so an injection lands at the end of its own entry and never in the middle
+# of the next key's header. The boundary rule therefore tests `/^[^ ]/`, not
+# `/^[^ #]/`: the preceding rule has already consumed top-level comments into the
+# buffer, so excluding `#` there would be exactly the comment-blindness the
+# invariant names. `test_invariant_yaml_section_end_one_spelling` guards this file.
 _backfill_one_pack_llms() {
     local yml="$1"
     local mapf; mapf=$(mktemp)
@@ -663,40 +787,52 @@ _backfill_one_pack_llms() {
 
     local tmp; tmp=$(mktemp)
     awk -v mapf="$mapf" '
-        function flush(   nm) {
-            if (!buffering) return
+        # Close the entry currently open: emit ONLY the sub-fields it is missing
+        # and that are recoverable. Everything the entry already carried was
+        # already printed verbatim as it was read.
+        function closeentry(   nm) {
+            if (!inent) return
             nm=ename
-            print "  - name: " nm
-            if (eurl != "")            print "    url: " eurl
-            else if (nm in burl)       print "    url: " burl[nm]
-            if (edesc != "")           print "    description: " edesc
-            if (evar != "")            print "    variant: " evar
-            else if (nm in bvar && bvar[nm] != "") print "    variant: " bvar[nm]
-            buffering=0; ename=""; eurl=""; evar=""; edesc=""
+            if ((nm in burl) && !ehasurl)                    print "    url: " burl[nm]
+            if ((nm in bvar) && bvar[nm] != "" && !ehasvar)  print "    variant: " bvar[nm]
+            inent=0; ename=""; ehasurl=0; ehasvar=0
         }
+        function flushbuf(   i) { for (i=0; i<nbuf; i++) print buf[i]; nbuf=0 }
         BEGIN {
-            FS="\t"
             while ((getline ml < mapf) > 0) {
                 split(ml, a, "\t"); burl[a[1]]=a[2]; bvar[a[1]]=a[3]
             }
         }
         /^llms:/ { print; inblk=1; next }
-        inblk && /^[^ #]/ { flush(); inblk=0; print; next }
-        inblk && /^  - / {
-            flush()
-            buffering=1
-            line=$0
-            if (line ~ /^  - name:/) sub(/^  - name: */, "", line)
-            else                     sub(/^  - */, "", line)
-            gsub(/["\047]/, "", line); sub(/ *#.*$/, "", line); gsub(/^ +| +$/, "", line)
-            ename=line; next
+        # Rule order matters: the blank arm precedes the comment arm, which
+        # precedes the top-level-key arm, so a whitespace-only line is buffered
+        # and a top-level comment is never mistaken for the section boundary.
+        inblk && /^[[:space:]]*$/ { buf[nbuf++]=$0; next }   # blank → candidate trailing run
+        inblk && /^#/             { buf[nbuf++]=$0; next }   # top-level comment → heads the NEXT key
+        inblk && /^[^ ]/ {                                   # next top-level key ends the block
+            closeentry(); flushbuf(); inblk=0; print; next
         }
-        inblk && /^    url:/         { v=$0; sub(/^    url: */,"",v);         gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); eurl=v; next }
-        inblk && /^    variant:/     { v=$0; sub(/^    variant: */,"",v);     gsub(/["\047]/,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); evar=v; next }
-        inblk && /^    description:/ { v=$0; sub(/^    description: */,"",v); sub(/ *#.*$/,"",v); gsub(/^ +| +$/,"",v); edesc=v; next }
-        inblk { next }
+        inblk && /^  - / {
+            closeentry(); flushbuf()
+            line=$0; nm=line
+            if (line ~ /^  - name:/) sub(/^  - name: */, "", nm)
+            else                     sub(/^  - */, "", nm)
+            gsub(/["\047]/, "", nm); sub(/ *#.*$/, "", nm); gsub(/^ +| +$/, "", nm)
+            ename=nm; inent=1; ehasurl=0; ehasvar=0
+            # A short-form entry is a SCALAR list item and cannot carry sub-keys,
+            # so one that is about to receive an injection must become long form.
+            # Only that entry, and its inline comment travels with it.
+            if (line !~ /^  - name:/ && (nm in burl)) {
+                cmt=""; if (match(line, /[ \t]*#.*$/)) cmt=substr(line, RSTART, RLENGTH)
+                print "  - name: " nm cmt
+            } else print
+            next
+        }
+        inblk && /^    url:/      { flushbuf(); ehasurl=1; print; next }
+        inblk && /^    variant:/  { flushbuf(); ehasvar=1; print; next }
+        inblk                     { flushbuf(); print; next }   # indented → section content, verbatim
         { print }
-        END { flush() }
+        END { closeentry(); flushbuf() }
     ' "$yml" > "$tmp" && mv "$tmp" "$yml"
     rm -f "$mapf"
 }
@@ -877,6 +1013,15 @@ secrets.env
 *.pem
 .credentials.json
 !secrets.env.example
+
+# Generated session artifacts — never committed (ADR-0005 F1 / ADR-0042):
+# Level-A context is injected via CCO_SESSION_CONTEXT, not a file.
+claude/workspace.yml
+claude/packs.md
+claude/scheduled_tasks.lock
+# Inert mountpoint stub for the ADR-0049 §5 functional-write floor: cco seeds it
+# so Docker can bind the rw STATE copy over it; the live content lives in STATE.
+claude/settings.local.json
 GI
 }
 
@@ -1030,15 +1175,22 @@ _cco_migrate_project() {
         # AD5 (ADR-0002): never silently re-point a logical name already bound to a
         # different path (mirrors cco init / resolve --scan). Keep the project
         # membership but warn so the user can rebind deliberately (H3).
-        if _index_path_conflicts "$rname" "$rpath"; then
-            warn "Name '$rname' is already bound to $(_index_get_path "$rname") — keeping the existing binding (AD5). Run 'cco resolve' to rebind."
+        if _index_path_conflicts "$mig_name" "$rname" "$rpath"; then
+            warn "Name '$rname' is already bound in '$mig_name' to $(_index_get_path "$mig_name" "$rname") — keeping the existing binding (AD5′). Run 'cco resolve' to rebind."
         else
-            _index_set_path "$rname" "$rpath"
+            # S2b: the .cco/ tree has already been moved into the repo (the atomic
+            # mv above), so an unregistered project is the worst outcome here — the
+            # legacy source is gone and nothing binds the new home.
+            _index_set_path "$mig_name" "$rname" "$rpath" \
+                || die "Migrated .cco/ into $target, but '$rname' could not be bound in the machine-local index. Run 'cco resolve --scan $target' to complete the registration."
         fi
         [[ "$rkind" == "mount" ]] && continue
         repo_names+=("$rname")
     done < "$idx"
-    [[ ${#repo_names[@]} -gt 0 ]] && _index_set_project_repos "$mig_name" "${repo_names[@]}"
+    if [[ ${#repo_names[@]} -gt 0 ]]; then
+        _index_set_project_repos "$mig_name" "${repo_names[@]}" \
+            || die "Migrated .cco/ into $target, but '$mig_name' membership could not be written to the machine-local index. Run 'cco resolve --scan $target' to complete the registration."
+    fi
 
     # Memory → STATE, AFTER index registration (M5): copying it before the index left
     # a window where an interrupted migrate produced a STATE memory dir with NO index
@@ -1089,7 +1241,7 @@ _cco_migrate_project() {
         # otherwise SKIP — never seed a tag silently without a user choice (M4).
         local ans=""
         if [[ "${CCO_ASSUME_YES:-}" == "1" ]]; then ans="y"
-        elif (exec < /dev/tty) 2>/dev/null; then read -rp "  Convert? [Y/n]: " ans < /dev/tty
+        elif _cco_have_tty; then read -rp "  Convert? [Y/n]: " ans < /dev/tty
         else ans="n"; info "Non-interactive: skipping profile→tag conversion (re-run interactively or set CCO_ASSUME_YES=1)."; fi
         ans="$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')"
         if [[ "$ans" != "n" ]]; then

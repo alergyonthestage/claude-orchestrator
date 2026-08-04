@@ -79,6 +79,16 @@ Decided (review F4 — Option A):
 
 ### D2 — Index: ratify the global-flat model for v1; pin the write mechanism (H7)
 
+> **Forward-annotation (2026-07-14) — the global-flat ratification is SUPERSEDED by
+> [ADR-0051](../../../naming/decisions/0051-per-project-name-scoping.md).** The deferral
+> condition set here ("per-project namespacing reserved post-v1; build only when real
+> cross-project name collisions appear") **fired**: sharing/import homonyms + generic
+> extra_mount names (`assets`) collide under global-flat. ADR-0051 makes repo/extra_mount names
+> **per-project scoped** (identity = path, name = per-project label), revising **AD5 → AD5′** and
+> the init/join collision UX exactly as anticipated below. The **write mechanism** decided here
+> (atomic `mktemp`+`mv`, single-writer, `resolve --scan` self-heal) is unchanged. This ADR stays
+> as the v1 decision record.
+
 ADR-0016 D4 and `design.md` §3 already assert a single machine-global `paths:` map with the **AD5
 uniqueness invariant** ("one logical name → one absolute path per machine"), the shared-repo-as-one-entry
 rule, and the `cco init`/`cco join` collision-refusal UX — yet ADR-0016 D4 simultaneously deferred "the

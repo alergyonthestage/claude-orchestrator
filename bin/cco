@@ -4,6 +4,12 @@ set -euo pipefail
 # Catch silent crashes (set -e/set -u violations, syntax errors).
 # Expected errors (die, return 1) are caught by the dispatcher and exit
 # cleanly — only truly unexpected exits trigger this message.
+#
+# The sentinel below is set ONLY by lib/colors.sh's three exit primitives —
+# die (1), refuse (2), _cco_exit (any deliberate status). No other code path
+# may exit this process: see the INV-EXIT note in lib/colors.sh for why a raw
+# `exit` (or an `|| exit $?` propagating a SUBSHELL die) leaves the sentinel
+# false and prints "✗ exited unexpectedly" over a perfectly correct run.
 _cco_completed=false
 trap '_ec=$?; if [[ "$_cco_completed" != "true" ]]; then echo "✗ cco exited unexpectedly (exit $_ec). Run with CCO_DEBUG=1 for details." >&2; [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[cco] last command: ${BASH_COMMAND}" >&2; fi' EXIT
 
@@ -55,14 +61,17 @@ USER_CONFIG_DIR="${CCO_USER_CONFIG_DIR:-$REPO_ROOT/user-config}"
 source "$LIB_DIR/colors.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/paths.sh"
+source "$LIB_DIR/access-scope.sh"
+source "$LIB_DIR/store.sh"
 source "$LIB_DIR/migrate.sh"
 source "$LIB_DIR/index.sh"
+source "$LIB_DIR/rename.sh"
 source "$LIB_DIR/sync-meta.sh"
 source "$LIB_DIR/reminders.sh"
 source "$LIB_DIR/auth.sh"
 source "$LIB_DIR/yaml.sh"
 source "$LIB_DIR/secrets.sh"
-source "$LIB_DIR/workspace.sh"
+source "$LIB_DIR/session-context.sh"
 source "$LIB_DIR/packs.sh"
 source "$LIB_DIR/llms.sh"
 source "$LIB_DIR/local-paths.sh"
@@ -90,6 +99,7 @@ source "$LIB_DIR/cmd-project-validate.sh"
 source "$LIB_DIR/cmd-project-coords.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
 source "$LIB_DIR/cmd-project-rename.sh"
+source "$LIB_DIR/cmd-repo.sh"
 source "$LIB_DIR/cmd-pack.sh"
 source "$LIB_DIR/cmd-llms.sh"
 source "$LIB_DIR/cmd-template.sh"
@@ -100,6 +110,44 @@ source "$LIB_DIR/remote.sh"
 source "$LIB_DIR/cmd-forget.sh"
 source "$LIB_DIR/cmd-join.sh"
 source "$LIB_DIR/cmd-docs.sh"
+source "$LIB_DIR/cmd-whoami.sh"
+
+# R6 — explicit `none` contract (must precede the store-dir resolvers below, whose
+# in-container path resolution would otherwise emit a spurious ADR-0007 warning).
+# At cco_access=none, `cco start` injects the session context (CCO_SESSION_CONTEXT)
+# but NOT the operator env, so the baked `cco` binary is on PATH yet not in
+# operator mode. Without this guard it falls through to the HOST dispatcher —
+# emitting a wrong host-resolve refusal, leaking `cco list` output, and printing
+# raw host help. Refuse EVERY invocation (including --version/--help/docs) cleanly,
+# exit 2 (policy). The CCO_SESSION_CONTEXT marker identifies a genuine session
+# (present at every level, unset by the test harness); the operator check excludes
+# read+/edit sessions (handled by the shim). Robust to absolute-path invocation.
+if _cco_in_container && [[ -n "${CCO_SESSION_CONTEXT:-}" ]] && ! _cco_container_operator; then
+    refuse "cco is not available at this access level (cco_access=none). Start a session with --cco-access read-project (the default) or higher to use cco, or run cco on your host."
+fi
+
+# ── Developer sandbox toggle (ADR-0052 §7) ───────────────────────────
+# Consume a leading/global `--dev-sandbox[-seed]` flag anywhere in the args
+# (equivalently the CCO_DEV_SANDBOX / CCO_DEV_SANDBOX_SEED env) and redirect the
+# internal XDG buckets to an isolated root, so a dev binary never shares STATE/DATA/
+# CACHE with the published one — the multi-version scenario §1's version gate is
+# calibrated for. MUST run before the store resolvers below (PACKS/LLMS) and the
+# first-run gate so every bucket read is already sandboxed. Strip the flag so the
+# command parser never sees it; the env form needs no stripping. Host-only + never
+# clobbering an explicit CCO_*_HOME override is enforced in _cco_apply_dev_sandbox.
+if [[ $# -gt 0 ]]; then
+    _cco_kept=()
+    for _a in "$@"; do
+        case "$_a" in
+            --dev-sandbox)      export CCO_DEV_SANDBOX=1 ;;
+            --dev-sandbox-seed) export CCO_DEV_SANDBOX=1; export CCO_DEV_SANDBOX_SEED=1 ;;
+            *)                  _cco_kept+=("$_a") ;;
+        esac
+    done
+    set -- ${_cco_kept[@]+"${_cco_kept[@]}"}
+    unset _cco_kept _a
+fi
+_cco_apply_dev_sandbox
 
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
@@ -111,7 +159,32 @@ PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
 TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
-usage() {
+# B2: drop section headers left empty after the operator filter removed all their
+# verbs, and collapse the blank line the header would leave. A section header is a
+# non-indented line ending in ':'; verb lines are indented. Buffer a header and emit
+# it only once an indented verb under it is seen; consecutive blanks are collapsed.
+_usage_prune_empty_sections() {
+    awk '
+        /^[A-Za-z].*:$/ { header=$0; pending=1; next }
+        /^[[:space:]]+[^[:space:]]/ {
+            if (pending) { print header; pending=0; prevblank=0 }
+            print; prevblank=0; next
+        }
+        {
+            pending=0
+            if ($0=="" && prevblank) next
+            print; prevblank=($0=="")
+        }
+    '
+}
+
+# The usage text, emitted as a plain heredoc. Kept in its own function — NOT
+# inline as `_body=$(cat <<'EOF' … )` — because bash 3.2's legacy command-
+# substitution scanner does not skip heredoc bodies: the apostrophes in the text
+# (repo's, 'cco help', …) desync its single-quote tracking, it never matches the
+# closing `)`, and `cco help`/`--help` dies with a syntax error on macOS stock
+# /bin/bash. A trivial `$(_cco_usage_text)` sidesteps that scanner entirely.
+_cco_usage_text() {
     cat <<'EOF'
 Usage: cco <command> [options]
 
@@ -138,12 +211,15 @@ Local paths & sync:
 Discovery:
   list [<kind>] [--tag]  Unified index of your resources (all, or one <kind>)
   tag <add|remove>       Tag a pack/project/template (per-user, never team-shared)
+  whoami                 Show this session's resolved access scope (claude/cco/paths)
 
 Resources:
   project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
-  pack <cmd>             Manage knowledge packs (create, install, update, ...)
-  llms <cmd>             Manage llms.txt framework docs (install, update, ...)
-  template <cmd>         Manage project/pack templates (create, show, install, ...)
+  repo rename [<o>] <n>  Rename a repo's per-project label (cwd-first; --move-dir)
+  extra-mount rename <o> <n>  Rename an extra_mount's per-project label
+  pack <cmd>             Manage knowledge packs (create, install, update, rename, ...)
+  llms <cmd>             Manage llms.txt framework docs (install, update, rename, ...)
+  template <cmd>         Manage project/pack templates (create, show, install, rename, ...)
 
 Tools & Sharing:
   chrome <cmd>           Manage Chrome debug session on host
@@ -153,6 +229,61 @@ Tools & Sharing:
 Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
 Use 'cco --version' to print the version, 'cco --help' for this message.
 EOF
+}
+
+usage() {
+    # D7: `--host` (in-container) shows the FULL list with host-only verbs flagged;
+    # the default is the filtered list. Ignored on the host.
+    local _want_host=false _a
+    for _a in "$@"; do [[ "$_a" == "--host" ]] && _want_host=true; done
+    local _body
+    _body=$(_cco_usage_text)
+    # Host mode: print the usage verbatim. Container-operator mode (ADR-0042/D7):
+    # the header caveats are RECOMPUTED from the resolved level (S6-04 — no more
+    # reciting gates that don't apply at edit-all), and the command list is FILTERED
+    # to what this session can run by default; `cco --help --host` shows the full
+    # list with host-only verbs flagged.
+    if _cco_container_operator; then
+        local _level="${CCO_CCO_ACCESS:-read-project}"
+        [[ "$_level" == "read" ]] && _level="read-all"
+        # Derive from the resolved (G,Pc,Po) triple (INV-E). _rs/_ws stay ordinal for
+        # the one-line summary; the caveats are recomputed PER AXIS so edit-global's
+        # dual-write (Pc=rw AND G=rw) is described correctly (the old ordinal caveat
+        # wrongly told edit-global it could not edit the project).
+        local _hg _hpc _hpo; read -r _hg _hpc _hpo <<< "$(_env_triple)"
+        local _rs _ws
+        _rs=$(_env_read_scope)
+        _ws=$(_env_write_scope)
+        local _cav=""
+        [[ "$_hpc" != "rw" ]] && _cav="project-config edits need Pc=rw (edit-project/edit-global/edit-all)"
+        [[ "$_hg"  != "rw" ]] && _cav="${_cav:+$_cav; }global-store writes (pack/template/llms/tag/remote/config save) need G=rw (edit-global/edit-all)"
+        [[ "$_hpo" != "rw" ]] && _cav="${_cav:+$_cav; }cross-project writes need Po=rw (edit-all)"
+        [[ "$(_cco_axis_rank "$_hg")" -lt 1 ]] && _cav="${_cav:+$_cav; }template/remote listing needs G≥ro (read-global+)"
+        printf 'Container session (cco_access=%s) — wrapped cco (read %s, write %s).\n' "$_level" "$_rs" "$_ws"
+        [[ -n "$_cav" ]] && printf 'At this scope: %s.\n' "$_cav"
+        # Fully host-only top-level verbs (mirror the shim blocklist) + `tag` when
+        # this session cannot write (no edit level) — those are above-scope here.
+        local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome'
+        local _filter="$_hostonly"
+        [[ "$_ws" == "none" ]] && _filter="${_filter}|tag"   # tag is write-only → above a read level
+        if $_want_host; then
+            # Full list, host-only verbs flagged (host help escape hatch).
+            printf '\n'
+            printf '%s\n' "$_body" \
+                | sed -E "/^  ($_hostonly)([[:space:]]|\$)/ s/\$/   (host only — run on your host)/"
+        else
+            # D7 default: omit host-only (and above-scope) verbs; note how many hidden.
+            local _n; _n=$(printf '%s\n' "$_body" | grep -cE "^  ($_filter)([[:space:]]|\$)")
+            printf '\n'
+            # B2: after deleting the filtered verbs, drop any section header left with
+            # no verbs under it (else empty "Sessions:"/"Local paths & sync:" headers).
+            printf '%s\n' "$_body" | sed -E "/^  ($_filter)([[:space:]]|\$)/d" \
+                | _usage_prune_empty_sections
+            printf "\n%d host-only/above-scope verbs hidden — run 'cco --help --host' to list them.\n" "$_n"
+        fi
+        return 0
+    fi
+    printf '%s\n' "$_body"
 }
 
 # Print the cco version. Source of truth = package.json `version` at the package
@@ -167,28 +298,315 @@ _cco_print_version() {
     fi
 }
 
+# ── Container-operator whitelist/blocklist shim (ADR-0036 D4) ─────────
+# When cco runs in-container behind the wrapped-cco shim (container-operator
+# mode — see _cco_container_operator in paths.sh), only a safe, path-free subset
+# of verbs is permitted. Everything else dies early with a "run it on the host"
+# hint, so a session agent can never spawn containers, resolve/rewrite host
+# paths, or touch network/credential state. Classification is DEFAULT-DENY: a
+# verb (or subcommand) reaches the real dispatcher only if it is explicitly
+# whitelisted here. Read verbs are allowed from read-project up, but read scope
+# gates the personal-global MANAGEMENT namespaces (`template …`, `remote list`):
+# they need read-global or higher (ADR-0042). Unified discovery (`cco list …`)
+# stays available at any read level — it is the on-demand model's cornerstone.
+# Write verbs that mutate CONFIG or the internal XDG registries through the shared
+# cco functions are allowed only under an edit level (CCO_CCO_ACCESS ∈
+# edit-project|edit-global|edit-all).
+_cco_operator_shim() {
+    local cmd="$1"; shift
+    local sub="${1:-}"
+    local level="${CCO_CCO_ACCESS:-read-project}"
+    # Back-compat: a container launched before ADR-0042 may carry the bare `read`
+    # value — it meant "read everything", so treat it as read-all here too.
+    [[ "$level" == "read" ]] && level="read-all"
+    local host_hint="Run it on the host instead (this is a container session; ADR-0036 D4)."
+    # The session's resolved (G,Pc,Po) triple — the SINGLE source every gate keys
+    # off (access-scope.sh, INV-E; ADR-0046 §7). Authoritative from CCO_ACCESS_TRIPLE
+    # (set host-side by `cco start`), with a preset fallback derived from `level`
+    # (CCO_CCO_ACCESS) for a back-compat launch. read_scope stays as the ordinal
+    # display value; write gating is per-axis (edit-global now grants Pc=rw).
+    local _tg _tpc _tpo; read -r _tg _tpc _tpo <<< "$(_env_triple)"
+    local read_scope; read_scope=$(_env_read_scope)
+
+    # _op_write <verb-label> <target-tree: project|global|all> — a write verb reaches
+    # the dispatcher only if the session triple grants the TARGET TREE's axis (§7:
+    # project→Pc=rw, global→G=rw, all→Po=rw); otherwise refuse (exit 2, D8) before
+    # the ro FS. edit-global's redefined (rw,rw,none) now satisfies BOTH project
+    # (Pc=rw) and global (G=rw), whatever project is named.
+    _op_write() {
+        _cco_triple_write_satisfies "$_tg" "$_tpc" "$_tpo" "$2" && return 0
+        case "$2" in
+            project) refuse "'cco $1' edits project config — needs Pc=rw (an edit-project/edit-global/edit-all session; current cco_access=$level)." ;;
+            global)  refuse "'cco $1' writes the personal store/registry — needs G=rw (an edit-global/edit-all session; current cco_access=$level)." ;;
+            all)     refuse "'cco $1' writes across projects — needs Po=rw (an edit-all session; current cco_access=$level)." ;;
+            *)       refuse "'cco $1' needs a wider edit access level (current cco_access=$level)." ;;
+        esac
+    }
+    # _op_read_scope <required-read-scope: global|all> <verb-label> — a read verb
+    # whose minimum read tier exceeds the session's is refused (exit 2). The
+    # global-class tier (template/remote) is keyed off the G AXIS (needs G≥ro), so a
+    # case-6 `(none,rw,rw)` session (read ordinal 'all' yet G=none) is still refused.
+    _op_read_scope() {
+        case "$1" in
+            all)    [[ "$read_scope" == "all" ]] && return 0 ;;
+            global) [[ "$(_cco_axis_rank "$_tg")" -ge 1 ]] && return 0 ;;
+            *)      return 0 ;;
+        esac
+        refuse "'cco $2' needs read-$1 scope or higher in this session (current cco_access=$level). Widen it on the host with --cco-access read-$1."
+    }
+    # _op_tag_gate <sub> <argv…> — B5 (A1 §4.1): gate `tag add/remove` by the
+    # TAGGED resource's axis, not a blanket global. Kind + ownership are resolved
+    # HERE (ahead of the write), then mapped to a target tree: project(current)→
+    # project (Pc=rw), project(other)→all (Po=rw), pack/template→global (G=rw).
+    # Ownership is config-editor-aware (_env_is_current_project). Detection may be
+    # unreadable in the OUTER (claude) shim — the STATE index sits behind the
+    # ADR-0047 boundary — so a not-found/ambiguous detection DEFERS (return 0) to
+    # the authoritative elevated re-run (store readable) or to cmd_tag's own error;
+    # it never false-refuses a valid project tag before the trampoline. Positive
+    # denials (a pack tag at G=none) still refuse early for UX. In the fallback /
+    # test path (no helper) the store is readable here, so the gate is exact.
+    _op_tag_gate() {
+        local sub="$1"; shift
+        local name="" forced=""
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --pack)     forced="packs" ;;
+                --project)  forced="projects" ;;
+                --template) forced="templates" ;;
+                -*) : ;;                      # other flags → cmd_tag reports
+                *)  [[ -z "$name" ]] && name="$1" ;;
+            esac
+            shift
+        done
+        [[ -z "$name" ]] && return 0          # cmd_tag prints usage / dies
+        local kind="$forced"
+        [[ -n "$kind" ]] || kind=$(_tags_detect_kind "$name") || return 0  # not-found/ambiguous → defer
+        case "$kind" in
+            projects)
+                if _env_is_current_project "$name"; then _op_write "tag $sub" project
+                else _op_write "tag $sub" all; fi ;;
+            packs|templates) _op_write "tag $sub" global ;;
+            *) return 0 ;;                     # unknown → defer to cmd_tag
+        esac
+    }
+    # R9 refusal taxonomy (D8 exit codes): host-only + removed-alias are POLICY
+    # refusals (exit 2), unknown verbs/subcommands are ERRORS (exit 1). Kept as
+    # named helpers so each arm reads as its case, and the message never leaves a
+    # trailing space (the '${x:+ $x}' idiom).
+    _op_hostonly()    { refuse "'cco $1' is host-only. $host_hint"; }                          # exit 2
+    _op_removed_list() { refuse "'cco $1 list' was removed — use 'cco list $1' (ADR-0029)."; }  # exit 2
+    _op_unknown_sub() { die "Unknown '$1' command: '$2'. Run 'cco $1 --help'."; }              # exit 1
+
+    # D7: per-command `--help`/`-h` is INFORMATIONAL and always available — never
+    # refused, even for host-only verbs (the dispatcher prints usage). This is what
+    # makes `cco start --help` show usage rather than refuse (S3-6/S7-04/F5).
+    case "$sub" in -h|--help) return 0 ;; esac
+
+    case "$cmd" in
+        # Host-only: container-spawning, path-resolving / non-transactional
+        # lifecycle, and host-side tooling → policy refusal (exit 2).
+        start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|path)
+            if [[ "$cmd" == "path" && "$sub" == "list" ]]; then return 0; fi   # read-only listing OK
+            _op_hostonly "$cmd${sub:+ $sub}" ;;
+        # Read-only, always available under operator mode. `whoami` is the F4
+        # session-introspection verb — read-safe, no host paths, resolvable rather
+        # than default-denied (it must be in the known-verb set for that).
+        list|docs|help|whoami|--version|-v) return 0 ;;
+        tag)
+            case "$sub" in
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
+                add|remove|rm) _op_tag_gate "$sub" "${@:2}" ;;   # B5: gate by the TAGGED resource's axis (A1 §4.1)
+                *) _op_unknown_sub tag "$sub" ;;
+            esac ;;
+        config)
+            case "$sub" in
+                "") return 0 ;;
+                # host-only: `config validate` sweeps machine-local internal state
+                # (the STATE index of logical→HOST paths, per-id STATE/CACHE dirs,
+                # the STATE token store) to detect orphans. In a container only the
+                # index FILE is mounted (ro, carrying host paths that never resolve
+                # in-container) while the STATE dirs/token store are absent, so the
+                # sweep would flag every entry as an orphan AND print host paths
+                # (INV-4 leak). It is coherent only host-side (CLI-surface review,
+                # 2026-07-02).
+                validate) refuse "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
+                save) _op_write "config save" global ;;   # ~/.cco personal store
+                push|pull) refuse "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
+                *) _op_unknown_sub config "$sub" ;;
+            esac ;;
+        remote)
+            case "$sub" in
+                "") return 0 ;;
+                # FI-45: `remote list` was REMOVED by ADR-0029 D1 (→ `cco list
+                # remotes`), so it is classified with its four sibling removed
+                # aliases — NOT as a live read verb. It used to be gated
+                # `_op_read_scope global` first, which told a read-project session
+                # to widen its access to reach a verb that would then answer "was
+                # removed": a remedy the reader cannot act on, the very class this
+                # cycle closed elsewhere. The removal notice is now level-
+                # independent, exactly like `pack|template|llms|project list`.
+                list) _op_removed_list remote ;;
+                add) _op_write "remote add" global ;;   # DATA registry only (the --token half is refused in cmd-remote.sh)
+                # D-V3-1: remove/rename join the token verbs as host-only. They
+                # CASCADE into the 0600 STATE token store (store.sh remote-drop/
+                # remote-rekey), which deliberately never crosses into a session —
+                # so `remote_get_token` here cannot tell "no token" from "token
+                # invisible", and both ops, written as conditional no-ops on
+                # exactly that test, would pass SILENTLY: rename would orphan the
+                # token and strip the renamed remote's auth with no diagnostic.
+                remove|rename|set-token|remove-token) refuse "'cco remote $sub' is host-only (secrets stay off the container). $host_hint" ;;
+                *) _op_unknown_sub remote "$sub" ;;
+            esac ;;
+        # repo / extra_mount rename write the CURRENT project tree (its project.yml
+        # + the STATE index membership/binding) → gated by Pc=rw (ADR-0050 D7). The
+        # index write crosses the ADR-0047 boundary, so these trampoline (see
+        # _cco_verb_touches_store). These are the first in-container index writers.
+        repo|extra-mount)
+            case "$sub" in
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
+                rename) _op_write "$cmd rename" project ;;
+                *) _op_unknown_sub "$cmd" "$sub" ;;
+            esac ;;
+        # store-op is an INTERNAL boundary-crossing target (RC-3, 05 §3.7), NEVER a
+        # public verb. Reached only through the cco-svc helper's elevated re-entry
+        # (the __store branch dispatches it here). INV-S1 validation runs FIRST — before
+        # the gate, so a malformed op cannot even select a target tree — then INV-S2
+        # re-gates off the trusted :ro descriptor (the authoritative write gate).
+        store-op)
+            [[ "${CCO_STORE_ELEVATED:-}" == "1" ]] \
+                || refuse "'cco store-op' is an internal store-crossing target, not a command — it is reachable only through the cco-svc boundary (ADR-0047)."
+            local _st_mode="$sub"
+            shift || true                 # drop the mode → $1 is the op
+            local _st_op="${1:-}"
+            shift || true                 # → $@ is the op's args
+            _store_validate_args "$_st_op" "$@" || die "Invalid store op '$_st_op'."   # INV-S1, fail-closed, FIRST
+            _op_write "store-op $_st_op" "$(_store_target_tree "$_st_op")"              # INV-S2 gate (refuses exit 2)
+            case "$_st_mode" in
+                plan)  _store_probe   "$_st_op" "$@" ;;
+                apply) _store_dispatch "$_st_op" "$@" ;;
+                *)     die "Unknown store-op mode '$_st_mode' (expected plan|apply)." ;;
+            esac ;;
+        pack|template|llms)
+            case "$sub" in
+                "") return 0 ;;   # bare namespace → dispatcher prints sub-usage
+                list) _op_removed_list "$cmd" ;;   # ADR-0029 redirect (exit 2) — was: pack list executed, project list default-denied
+                show|validate)
+                    # Templates are a personal-global resource (scaffold new
+                    # projects), not a project resource → read-global+ (ADR-0042).
+                    [[ "$cmd" == "template" ]] && _op_read_scope global "template $sub"
+                    return 0 ;;
+                create|update|remove|install|import|internalize|rename) _op_write "$cmd $sub" global ;;
+                publish|export) _op_hostonly "$cmd $sub" ;;
+                *) _op_unknown_sub "$cmd" "$sub" ;;
+            esac ;;
+        project)
+            case "$sub" in
+                "") return 0 ;;
+                show|validate|coords) return 0 ;;
+                list) _op_removed_list project ;;   # ADR-0029 redirect (exit 2)
+                rename) refuse "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
+                export|import|add) _op_hostonly "project $sub" ;;
+                *) _op_unknown_sub project "$sub" ;;
+            esac ;;
+        share|manifest) refuse "'cco $cmd' has been removed." ;;
+        # Unknown TOP-LEVEL verb → an ERROR (exit 1), NOT a host-only refusal. This
+        # removes the "run 'cco whoami' on the host" misfire (NEW-1): an unrecognized
+        # verb is a typo, not something that lives on the host.
+        *) die "Unknown cco command: '$cmd'. Run 'cco help' for the available commands." ;;
+    esac
+}
+
+# Verbs whose execution reads or writes the INTERNAL STORE (STATE index, DATA
+# registries, CACHE internals) — the trees confined behind the cco-svc privilege
+# boundary (ADR-0047). In a container-operator session these are unreachable as the
+# `claude` user (EACCES on the 0700 root); they are re-executed elevated via the
+# setuid helper (see Main), where the (G,Pc,Po) gate + output-scoping run keyed off
+# the trusted :ro session descriptor. Config-content-only verbs (e.g. `config save`,
+# which writes the claude-owned ~/.cco) are deliberately NOT listed — they run as
+# claude so cco-svc never writes a claude-owned tree. Default-deny: unlisted ⇒ not
+# elevated (runs as claude; a store touch would EACCES, surfacing the miss loudly
+# rather than silently leaking). Usage: _cco_verb_touches_store <cmd> <sub>
+_cco_verb_touches_store() {
+    local c="$1" s="${2:-}"
+    case "$c" in
+        list)    return 0 ;;                                          # index + DATA tags + source
+        path)    [[ "$s" == "list" ]] && return 0 ;;                  # index (host paths)
+        repo|extra-mount) [[ "$s" == "rename" ]] && return 0 ;;       # STATE index re-key (project-scoped)
+        tag)     case "$s" in add|remove|rm) return 0 ;; esac ;;      # DATA tags.yml write
+        # `remote list` is unreachable here since FI-45 (the shim refuses it as a
+        # removed alias, and `refuse` exits) — kept deliberately, not dead weight:
+        # the classifier answers "would this verb touch the store", and keeping the
+        # honest answer means a future re-classification cannot silently lose the
+        # trampoline. `tests/test_privilege_boundary.sh` pins it.
+        remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
+        project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
+        pack|template|llms) case "$s" in show|validate) return 0 ;; esac ;;  # DATA source provenance
+    esac
+    return 1
+}
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 cmd="${1:-}"
 # No command → print usage and exit cleanly. Mark completion so the EXIT trap
 # does not misreport this normal exit-0 path as an unexpected crash.
-[[ -z "$cmd" ]] && { usage; _cco_completed=true; exit 0; }
+[[ -z "$cmd" ]] && { usage; _cco_exit 0; }
 shift
 
 # Top-level --version/-v and --help/-h (FI-11): handled before the dispatch (and
 # before the J0 bootstrap below) so they work with no other args and have no side
 # effects — `cco --version` is a pure query. Per-subcommand --help is unaffected.
 case "$cmd" in
-    --version|-v) _cco_print_version; _cco_completed=true; exit 0 ;;
-    --help|-h)    usage;              _cco_completed=true; exit 0 ;;
+    --version|-v) _cco_print_version; _cco_exit 0 ;;
+    --help|-h)    usage "$@";         _cco_exit 0 ;;
 esac
 
-# J0 first-run bootstrap of the four decentralized-config roots + the legacy-
-# vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
-# ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
-# (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
-# that is intentional, cco cannot run without its roots (A5).
-_cco_first_run "$cmd"
+# Container-operator mode (ADR-0036 D4): cco runs in-container behind the
+# whitelist shim. Classify the verb FIRST — host-only ones die with a hint —
+# and SKIP the host first-run bootstrap (the buckets are bind-mounted by
+# `cco start`, never created here). Otherwise fall through to the normal
+# host bootstrap + dispatch.
+_cco_store_helper=/usr/local/bin/cco-svc-helper
+if [[ "$cmd" == "__store" ]] && _cco_container_operator; then
+    # Elevated re-entry (ADR-0047): the setuid helper re-execs `cco __store <verb> …`
+    # as cco-svc to cross the internal-store privilege boundary. Peel the marker verb
+    # and fall through to the gate + dispatch below — now running as cco-svc with the
+    # store reachable and the TRUSTED (G,Pc,Po) triple the helper injected from the
+    # :ro session descriptor (never the agent-mutable env). This re-run of the shim is
+    # the AUTHORITATIVE gate (the outer, claude-side gate keys off forgeable env, so it
+    # is only an early UX check). The single physical enforcement point.
+    cmd="${1:-}"; shift 2>/dev/null || true
+    [[ -z "$cmd" ]] && die "Malformed elevated re-entry: '__store' needs a verb."
+    # store-op (RC-3, 05 §3.7) is dispatched LOCALLY and EXITS — it is deliberately
+    # NOT in the top-level dispatcher, so it never becomes a public host verb. The
+    # shim's store-op arm runs the authoritative gate + validation, then probes/
+    # dispatches; its status is this process's exit status.
+    if [[ "$cmd" == "store-op" ]]; then
+        _cco_store_rc=0
+        _cco_operator_shim store-op "$@" || _cco_store_rc=$?
+        _cco_exit $_cco_store_rc
+    fi
+    _cco_operator_shim "$cmd" "$@"
+elif _cco_container_operator; then
+    _cco_operator_shim "$cmd" "$@"
+    # Trampoline store-touching verbs across the boundary so they run elevated. Guard
+    # on the helper being present + not already elevated: an image built before Phase
+    # II (no helper; the store was mounted the old claude-readable way) and the test
+    # env both fall back to running the verb here, unchanged. The helper injects the
+    # trusted scope and execs `cco __store …`; exec replaces this process, so the
+    # elevated cco's stdio IS the terminal (no capture/relay needed).
+    if [[ "${CCO_STORE_ELEVATED:-}" != "1" && -x "$_cco_store_helper" ]] \
+        && _cco_verb_touches_store "$cmd" "${1:-}"; then
+        exec "$_cco_store_helper" "$cmd" "$@"
+    fi
+else
+    # J0 first-run bootstrap of the four decentralized-config roots + the legacy-
+    # vault safety-net backup, before any command runs (ADR-0017 D3 / ADR-0006 /
+    # ADR-0025). Host-side only (H4); idempotent (M6/F43). The BACKUP step is non-fatal
+    # (|| true); root bootstrap CAN abort under set -e if the dirs can't be created —
+    # that is intentional, cco cannot run without its roots (A5).
+    _cco_first_run "$cmd"
+fi
 
 # Dispatch command — capture return code so expected errors (die, return 1)
 # don't trigger the "exited unexpectedly" trap. Only true crashes (set -e/set -u
@@ -228,7 +646,7 @@ deregister cco's machine-local bookkeeping with 'cco forget' (ADR-0018 D2).
 
 Run 'cco project <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -267,13 +685,14 @@ Commands:
   internalize <name>     Convert source-referencing pack to self-contained
   show <name>            Show pack details (knowledge, agents, rules)
   remove <name>          Remove a pack
+  rename <old> <new>     Rename a pack, re-keying it across stores + project refs
   validate [name]        Validate pack structure (all if no name)
 
 List packs with 'cco list pack' (or 'cco list' for all resources).
 
 Run 'cco pack <command> --help' for command-specific options.
 EOF
-            exit 0
+            _cco_exit 0
         fi
         shift
         case "$subcmd" in
@@ -287,10 +706,13 @@ EOF
             list)         die "'cco pack list' was removed — use 'cco list pack' (ADR-0029)." ;;
             show)     cmd_pack_show "$@" ;;
             remove)   cmd_pack_remove "$@" ;;
+            rename)   cmd_pack_rename "$@" ;;
             validate) cmd_pack_validate "$@" ;;
             *)        die "Unknown pack command: $subcmd. Run 'cco pack --help'." ;;
         esac || _cco_rc=$?
         ;;
+    repo)        cmd_repo "$@"        || _cco_rc=$? ;;
+    extra-mount) cmd_extra_mount "$@" || _cco_rc=$? ;;
     llms)     cmd_llms "$@"     || _cco_rc=$? ;;
     template) cmd_template "$@" || _cco_rc=$? ;;
     chrome)   cmd_chrome "$@"   || _cco_rc=$? ;;
@@ -298,10 +720,10 @@ EOF
     share|manifest) die "'cco $cmd' has been removed. Sharing repos are discovered by structure (no manifest.yml); use 'cco pack|template publish|install' (ADR-0012/0018)." ;;
     update)   cmd_update "$@"   || _cco_rc=$? ;;
     docs)     cmd_docs "$@"     || _cco_rc=$? ;;
+    whoami)   cmd_whoami "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
-    help)     usage ;;
+    help)     usage "$@" ;;
     *)        die "Unknown command: $cmd. Run 'cco help' for usage." ;;
 esac
-_cco_completed=true
-exit $_cco_rc
+_cco_exit $_cco_rc

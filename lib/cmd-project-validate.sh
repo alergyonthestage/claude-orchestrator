@@ -15,7 +15,11 @@
 # one-line tally. Quiet on success unless -v.
 #
 # Provides: cmd_project_validate()
-# Depends:  cmd-resolve.sh (_resolve_find_unit_dir/_resolve_unit_dir_for_project),
+# Depends:  cmd-resolve.sh (_resolve_find_unit_dir + the operator-aware
+#           _resolve_project_yml/_resolve_project_cco_dir),
+#           cmd-project-query.sh (_project_session_fallback — the shared WORKDIR-root
+#           session fallback, so this verb and `project show` agree; V1-F1),
+#           access-scope.sh (_env_project_state/_env_unavailable*/_env_note_*),
 #           yaml.sh (yml_get*, *_coords parsers), index.sh (_index_list_projects),
 #           packs.sh (_pack_resolve_dir, PACKS_DIR), colors.sh.
 
@@ -183,7 +187,18 @@ _pv_validate_packs() {
         if _pv_is_dup "$seen" "$name"; then _pv_flag unique 2 "packs.$name: duplicate id within 'packs'"; fi
         seen="$seen $name"
         if [[ -z "$url" ]]; then
-            # authored-in-repo source
+            # authored-in-repo source — the two checks below read the project's .cco
+            # directory. When it is not reachable in this context (an operator layout
+            # with no resolvable .cco), SKIP them rather than let `-d "/.cco/packs/$name"`
+            # silently invert (every collision missed, every authored pack flagged
+            # sourceless). One informational line; not a finding, so exit severity is
+            # unaffected. Emitted once via the _pv-scoped flag _PV_PACK_SKIP_NOTED.
+            if [[ -z "$cco_dir" ]]; then
+                [[ -n "${_PV_PACK_SKIP_NOTED:-}" ]] \
+                    || info "packs: authored-pack checks skipped — this project's .cco directory is not available here"
+                _PV_PACK_SKIP_NOTED=1
+                continue
+            fi
             if [[ -d "$PACKS_DIR/$name" && -d "$cco_dir/packs/$name" ]]; then
                 _pv_flag collide 2 "packs.$name: authored-in-repo pack collides with a same-named ~/.cco/packs/$name (silent-wrong-build — ADR-0022 D4)"
             elif [[ ! -d "$cco_dir/packs/$name" && ! -d "$PACKS_DIR/$name" ]]; then
@@ -204,7 +219,9 @@ _pv_validate_stray_paths() {
     local yml="$1" skey sval
     while IFS=$'\t' read -r skey sval; do
         [[ -z "$skey" ]] && continue
-        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path')"
+        # ADR-0056 D2 — host-qualified: `project validate` is container-reachable and
+        # both prescribed verbs (`cco resolve`, `cco project add`) are host-only there.
+        _pv_flag agnostic 2 "project.yml: forbidden '$skey: $sval' — host paths live in the index, not in committed config (run 'cco resolve' / 'cco project add ... --path'$(_cco_container_operator && printf ' on your host'))"
     done < <(_pv_scan_stray_paths "$yml")
 }
 
@@ -214,6 +231,7 @@ _pv_validate_unit() {
     local yml="$1" cco_dir="$2" label="$3" reachable="$4" verbose="$5" prefix="$6"
     local -a _PV_FIND=()
     local _PV_SEV=0 _PV_NREACH=0 _PV_NAGN=0 _PV_NUNIQ=0 _PV_NCOLL=0
+    local _PV_PACK_SKIP_NOTED=""   # per-unit: the authored-pack skip note is emitted once
 
     # project.yml 'name' must be present (a content error).
     local pname; pname=$(yml_get "$yml" name)
@@ -281,35 +299,69 @@ EOF
 
     if [[ "$all" == true ]]; then
         [[ -n "$target" ]] && die "'cco project validate --all' takes no project name."
-        local proj unit_dir yml first=true
+        # Read-path honesty (ADR-0056 D6/D7): --all enumerates the STATE index, and
+        # _index_list_projects feeds a process substitution whose status is
+        # discarded — so an unreadable (or, in a session, an absent) index would
+        # validate ZERO projects and return the share-ready exit 0. Same entry-guard
+        # discipline as `project list` / `path list` / `cco list`: classify BEFORE
+        # the loop, so a read failure is never rendered as "nothing to validate".
+        _index_assert_readable
+        local proj yml cco_dir first=true
         while IFS='=' read -r proj _; do
             [[ -z "$proj" ]] && continue
-            unit_dir=$(_resolve_unit_dir_for_project "$proj" 2>/dev/null) || {
-                warn "skipping '$proj' — its repo is unresolved here (run 'cco resolve $proj')"; continue; }
-            yml="$unit_dir/.cco/project.yml"
+            # Output scoping (ADR-0043): at read-project only the current project.
+            if ! _env_in_scope project "$proj"; then _env_note_hidden project; continue; fi
+            # INV-F: resolve through the operator-aware pair, not the host-only index
+            # resolver. A mounted project is validated; a not-mounted one is COUNTED
+            # (not silently skipped as "unresolved — run cco resolve", the RC-2 lie);
+            # a genuinely unresolved one (host only) degrades and warns.
+            case "$(_env_project_state "$proj")" in
+                here)        yml=$(_resolve_project_yml "$proj")
+                             cco_dir=$(_resolve_project_cco_dir "$proj" 2>/dev/null) || cco_dir="" ;;
+                not-mounted) _env_note_unmounted project; continue ;;
+                *)           _env_unavailable_warn unresolved project "$proj"; continue ;;
+            esac
             [[ -f "$yml" ]] || continue
             [[ "$first" == true ]] || echo ""
             first=false
             echo "[$proj]"
-            _pv_validate_unit "$yml" "$unit_dir/.cco" "$proj" "$reachable" "$verbose" "  " || rc=$?
+            _pv_validate_unit "$yml" "$cco_dir" "$proj" "$reachable" "$verbose" "  " || rc=$?
             [[ "${rc:-0}" -gt "$max" ]] && max="${rc:-0}"
             rc=0
         done < <(_index_list_projects)
+        _env_flush_hidden_notice
         return "$max"
     fi
 
-    # Single unit: cwd-first, else resolve [name] via the index.
-    local unit_dir yml
+    # Single unit: cwd-first, else resolve [name] via the operator-aware pair (INV-F).
+    # Both the manifest AND the .cco directory are resolved, so the by-name form and
+    # the cwd form agree and the authored-pack checks have their .cco (or honestly none).
+    local unit_dir="" yml cco_dir label
     if [[ -z "$target" ]]; then
-        unit_dir=$(_resolve_find_unit_dir) \
+        # V1-F1 (S6): child-wins — a repo-local .cco resolves first; failing that, at
+        # the container WORKDIR root fall back to the SESSION project, exactly as
+        # `cco project show` does (_project_session_fallback, shared). /workspace is
+        # the agent's default cwd, and these two sibling introspection verbs used to
+        # disagree there about whether the session has a project at all.
+        unit_dir=$(_resolve_find_unit_dir) || target=$(_project_session_fallback)
+        [[ -n "$unit_dir" || -n "$target" ]] \
             || die "No project here — run from a repo that has .cco/project.yml, or pass a project name (or --all)."
-    else
-        unit_dir=$(_resolve_unit_dir_for_project "$target" 2>/dev/null) \
-            || die "Project '$target' not found (unknown, or its repo is unresolved here — run 'cco resolve $target')."
     fi
-    yml="$unit_dir/.cco/project.yml"
-    [[ -f "$yml" ]] || die "Project has no .cco/project.yml at $unit_dir."
+    if [[ -n "$unit_dir" ]]; then
+        yml="$unit_dir/.cco/project.yml"
+        cco_dir="$unit_dir/.cco"
+        label=$(basename "$unit_dir")
+    else
+        # The single classifier subsumes the old _env_require_visible refusal and,
+        # in a session, resolves the MOUNTED project instead of dying "not found".
+        local _st; _st=$(_env_project_state "$target")
+        [[ "$_st" == here ]] || _env_unavailable "$_st" project "$target"
+        yml=$(_resolve_project_yml "$target")
+        cco_dir=$(_resolve_project_cco_dir "$target" 2>/dev/null) || cco_dir=""
+        label="$target"
+    fi
+    [[ -f "$yml" ]] || die "Project '$label' has no readable project.yml."
 
-    _pv_validate_unit "$yml" "$unit_dir/.cco" "$(basename "$unit_dir")" "$reachable" "$verbose" "" || max=$?
+    _pv_validate_unit "$yml" "$cco_dir" "$label" "$reachable" "$verbose" "" || max=$?
     return "$max"
 }

@@ -53,7 +53,8 @@ _llms_install() {
                 cat <<'EOF'
 Usage: cco llms install <url> [options]
 
-Download an llms.txt file and save it to user-config/llms/<name>/.
+Download an llms.txt file into the machine-local CACHE (default
+~/.cache/cco/llms/<name>/; honours CCO_CACHE_HOME / XDG_CACHE_HOME).
 
 Options:
   --name <name>        Override the auto-detected name (skips confirmation)
@@ -81,21 +82,30 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco llms install <url> [--name <name>] [--variant <v>]"
+    _store_provenance_guard "llms install"   # D-M8/Q-10: CACHE content + DATA/STATE provenance, cycle-2 conversion
 
     # Auto-detect name from URL if not provided
     local name_confirmed=false
     if [[ -z "$name" ]]; then
         name=$(_llms_resolve_name_from_url "$url")
         [[ -z "$name" ]] && die "Cannot determine name from URL. Use --name <name>."
-        # Ask user to confirm the auto-detected name
-        printf "Save as: ${BOLD}%s${NC} [Y/n/custom name] " "$name" >&2
-        local reply
-        read -r reply
-        case "$reply" in
-            ""|[Yy]|[Yy]es) name_confirmed=true ;;
-            [Nn]|[Nn]o) die "Cancelled. Use --name <name> to specify a custom name." ;;
-            *) name="$reply" ;;
-        esac
+        # Confirm the auto-detected name — but only when a real terminal is
+        # reachable. In a non-interactive agent session (S5-04) `read` would block
+        # on a closed stdin; default to the derived name silently instead. An
+        # explicit --name always bypasses this.
+        if _cco_have_tty; then
+            printf "Save as: ${BOLD}%s${NC} [Y/n/custom name] " "$name" >&2
+            local reply
+            read -r reply
+            case "$reply" in
+                ""|[Yy]|[Yy]es) name_confirmed=true ;;
+                [Nn]|[Nn]o) die "Cancelled. Use --name <name> to specify a custom name." ;;
+                *) name="$reply" ;;
+            esac
+        else
+            info "Using derived llms name '$name' (non-interactive; pass --name to override)."
+            name_confirmed=true
+        fi
     fi
 
     # Validate name: safe filesystem component, no path traversal
@@ -244,11 +254,19 @@ EOF
 
     printf "${BOLD}%-20s %-10s %-8s %-14s %s${NC}\n" "NAME" "VARIANT" "LINES" "DOWNLOADED" "SOURCE"
 
+    # D5: this verb enumerates the llms bucket exhaustively, so its notice may speak
+    # about llms — and only llms (ratified 2026-07-30).
+    _env_store_subject llms
     for dir in "$LLMS_DIR"/*/; do
         [[ ! -d "$dir" ]] && continue
         local dname
         dname=$(basename "$dir")
         [[ "$dname" == ".cco" ]] && continue
+        # Output scoping (ADR-0043): the CACHE llms bucket is mounted whole at
+        # every read level, so scope its OUTPUT to the current project's
+        # referenced llms at read-project (INV-B count for the notice).
+        _env_note_seen llms   # D5: enumerated rows, for the host-total supplement
+        if ! _env_in_scope llms "$dname"; then _env_note_hidden llms; continue; fi
 
         local var="?" lines="?" downloaded="?" source_url="?"
         local source_file="$dir/.cco/source"
@@ -283,6 +301,8 @@ EOF
         local dname
         dname=$(basename "$dir")
         [[ "$dname" == ".cco" ]] && continue
+        # Respect scope here too (already counted in the table loop — skip silently).
+        _env_in_scope llms "$dname" || continue
         local users=""
         users=$(_llms_find_users "$dname")
         if [[ -n "$users" ]]; then
@@ -291,6 +311,7 @@ EOF
         fi
     done
     [[ "$any_usage" == "false" ]] && echo "  (none referenced by any pack or project)"
+    _env_flush_hidden_notice
 }
 
 # ── show ─────────────────────────────────────────────────────────────
@@ -320,6 +341,8 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco llms show <name>"
+    # Output scoping (ADR-0043): refuse out-of-scope llms with a scope message.
+    _env_require_visible llms "$name"
 
     local llms_dir="$LLMS_DIR/$name"
     [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found. Run 'cco llms list' to see installed entries."
@@ -353,7 +376,7 @@ EOF
     done
 
     local users
-    users=$(_llms_find_users "$name")
+    users=$(_llms_find_users "$name" flush)
     if [[ -n "$users" ]]; then
         echo -e "${BOLD}Used by:${NC}    $users"
     else
@@ -394,6 +417,8 @@ EOF
                 ;;
         esac
     done
+
+    _store_provenance_guard "llms update"   # D-M8/Q-10: CACHE content + DATA/STATE provenance, cycle-2 conversion
 
     if [[ "$update_all" == "true" ]]; then
         if [[ ! -d "$LLMS_DIR" ]]; then
@@ -522,37 +547,63 @@ EOF
         die "Invalid name '$new_name': must start with alphanumeric and contain only [a-zA-Z0-9._-]"
     fi
 
-    local old_dir="$LLMS_DIR/$old_name"
-    local new_dir="$LLMS_DIR/$new_name"
+    # The llms content lives in the confined CACHE bucket, so existence is a fact of
+    # the plan, never a claude-side -d predicate (INV-S6): behind the ADR-0047 boundary
+    # `[[ -d ]]` reads FALSE for an entry `cco list llms` just showed, producing the
+    # wrong `not found` (RC-13). _store_check refuses on an unreachable/unwritable store
+    # and reports present/collision, checked on the privileged side where they are true.
+    _store_check llms-rekey "$old_name" "$new_name"
+    [[ "$_STORE_PRESENT" == yes ]]  || die "LLMs '$old_name' not found."
+    [[ "$_STORE_COLLISION" == no ]] || die "LLMs '$new_name' already exists."
 
-    [[ ! -d "$old_dir" ]] && die "LLMs '$old_name' not found."
-    [[ -d "$new_dir" ]] && die "LLMs '$new_name' already exists."
+    # Move the CACHE content + carry the per-user tag binding (a no-op today — llms are
+    # not taggable — kept for symmetry, ADR-0050 D6) as one all-or-nothing store op.
+    _store_apply llms-rekey "$old_name" "$new_name"
 
-    mv "$old_dir" "$new_dir"
-
-    # Update references in packs and projects (only in llms: sections).
+    # Update references in packs and projects (only in llms: sections). The shared
+    # rewriter (lib/rename.sh) handles both the scalar (`- name`) and mapping
+    # (`- name: name`) llms forms, section-scoped (ADR-0050 D6).
+    # S2b: _yaml_rename_list_ref is three-valued (0 rewritten / 1 nothing to rewrite /
+    # 2 attempted and NOT persisted). It used to be read as a bare boolean, so a
+    # reference that could not be rewritten was counted as "this file doesn't
+    # reference it" — and the verb reported a clean rename over a store now
+    # inconsistent with a pack.yml or project.yml still naming <old>.
     local updated_refs=0
+    local -a failed_refs=()
+    local _rrc
     # Packs: flat store under PACKS_DIR.
     if [[ -d "$PACKS_DIR" ]]; then
         local pdir
         for pdir in "$PACKS_DIR"/*/; do
             [[ ! -d "$pdir" ]] && continue
             [[ ! -f "${pdir}pack.yml" ]] && continue
-            if _llms_rename_in_yaml "${pdir}pack.yml" "$old_name" "$new_name"; then
-                ((updated_refs++))
-            fi
+            _rrc=0; _yaml_rename_list_ref "${pdir}pack.yml" llms "$old_name" "$new_name" || _rrc=$?
+            case "$_rrc" in
+                0) ((updated_refs++)) ;;
+                1) ;;
+                *) failed_refs+=("${pdir}pack.yml") ;;
+            esac
         done
     fi
     # Projects: decentralized, enumerated via the STATE index (P5).
     local pyml
     while IFS=$'\t' read -r _ _ pyml; do
-        if _llms_rename_in_yaml "$pyml" "$old_name" "$new_name"; then
-            ((updated_refs++))
-        fi
+        _rrc=0; _yaml_rename_list_ref "$pyml" llms "$old_name" "$new_name" || _rrc=$?
+        case "$_rrc" in
+            0) ((updated_refs++)) ;;
+            1) ;;
+            *) failed_refs+=("$pyml") ;;
+        esac
     done < <(_project_foreach)
 
     ok "Renamed llms '$old_name' → '$new_name'"
     [[ $updated_refs -gt 0 ]] && ok "Updated $updated_refs YAML reference(s)"
+    # As in `pack rename`: the store re-key already committed, so report the rename
+    # as real and name what still points at the old entry (INV-S3b → exit 1).
+    if [[ ${#failed_refs[@]} -gt 0 ]]; then
+        die "…but the llms reference could not be rewritten in ${#failed_refs[@]} file(s): ${failed_refs[*]}. They still reference '$old_name' — fix them by hand."
+    fi
+    return 0
 }
 
 # ── remove ───────────────────────────────────────────────────────────
@@ -589,11 +640,18 @@ EOF
 
     [[ -z "$name" ]] && die "Usage: cco llms remove <name>"
 
-    local llms_dir="$LLMS_DIR/$name"
-    [[ ! -d "$llms_dir" ]] && die "LLMs '$name' not found."
+    # Existence is a fact of the plan, never a claude-side -d on the confined CACHE
+    # entry (INV-S6 / RC-13): behind the boundary `[[ -d ]]` reads FALSE for an entry
+    # that exists, producing the wrong `not found`. _store_check refuses on an
+    # unreachable/unwritable store and reports present, checked where it is true.
+    _store_check llms-purge "$name"
+    [[ "$_STORE_PRESENT" == yes ]] || die "LLMs '$name' not found."
 
     # ── Preview + referenced block (ADR-0029 D2) ───────────────────────────
-    info "cco llms remove '$name' will delete the entry at $llms_dir."
+    # Use the repo-relative form (matching pack/template remove previews) — never
+    # the absolute $llms_dir, which is a host path on the host and a container
+    # path in a wrapped-cco session (CLI-surface host-path hygiene).
+    info "cco llms remove '$name' will delete the entry at llms/$name/."
     local users
     users=$(_llms_find_users "$name")
     if [[ -n "$users" ]]; then
@@ -604,32 +662,16 @@ EOF
 
     _confirm_destructive "$yes" "Remove llms '$name'?" || { info "Cancelled."; return 0; }
 
-    rm -rf "$llms_dir"
+    _store_apply llms-purge "$name"
     ok "Removed llms '$name'"
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-# Replace an llms name only within the llms: section of a YAML file.
-# Returns 0 if a replacement was made, 1 otherwise.
-_llms_rename_in_yaml() {
-    local file="$1" old="$2" new="$3"
-    # Only proceed if the file has an llms: section referencing the old name
-    awk -v old="$old" '
-        /^llms:/ { in_llms=1 }
-        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
-        in_llms && $0 ~ "^  - " old "$" { found=1 }
-        END { exit found ? 0 : 1 }
-    ' "$file" || return 1
-
-    awk -v old="$old" -v new="$new" '
-        /^llms:/ { in_llms=1 }
-        in_llms && /^[^ ]/ && !/^llms:/ { in_llms=0 }
-        in_llms && $0 == "  - " old { print "  - " new; next }
-        { print }
-    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-    return 0
-}
+# NOTE: the former _llms_rename_in_yaml (scalar-only, 2-space-fixed llms-section
+# rewriter) is retired — _llms_rename now uses the shared _yaml_rename_list_ref
+# (lib/rename.sh), which also handles the mapping (`- name: <n>`) llms form that
+# the old helper silently skipped (ADR-0050 D6).
 
 # Extract framework name from URL.
 # Uses pure bash parameter expansion for macOS/GNU portability.
@@ -721,8 +763,17 @@ YAML
 
 # Find packs and projects that reference a given llms name.
 # Returns a human-readable string like "my-pack (pack), my-app (project)".
+#
+# Output scoping (ADR-0043 INV-B): the referrers are themselves project-/
+# global-class resources, so an out-of-scope referrer is hidden — its NAME is
+# never printed (INV-B "counts only, never leak hidden names"). Host-open: on
+# the host _env_in_scope always returns visible, so the list is unchanged.
+# When the optional 2nd arg is `flush`, the shared count-only notice is emitted
+# to stderr from inside this call (stderr survives the `$()` capture, so the
+# subshell-local hidden counters are reported correctly); the bulk summary path
+# omits it because it flushes its own llms-level notice.
 _llms_find_users() {
-    local name="$1"
+    local name="$1" notice="${2:-}"
     local users=()
 
     # Check packs
@@ -731,10 +782,15 @@ _llms_find_users() {
             [[ ! -d "$pdir" ]] && continue
             local pyml="$pdir/pack.yml"
             [[ ! -f "$pyml" ]] && continue
-            local names
+            local names pname
             names=$(yml_get_llms_names "$pyml" 2>/dev/null)
             if echo "$names" | grep -qxF "$name"; then
-                users+=("$(basename "$pdir") (pack)")
+                pname=$(basename "$pdir")
+                if _env_in_scope pack "$pname"; then
+                    users+=("$pname (pack)")
+                else
+                    _env_note_hidden pack
+                fi
             fi
         done
     fi
@@ -745,7 +801,11 @@ _llms_find_users() {
         local names
         names=$(yml_get_llms_names "$pyml" 2>/dev/null)
         if echo "$names" | grep -qxF "$name"; then
-            users+=("$proj (project)")
+            if _env_in_scope project "$proj"; then
+                users+=("$proj (project)")
+            else
+                _env_note_hidden project
+            fi
         fi
     done < <(_project_foreach)
 
@@ -753,6 +813,8 @@ _llms_find_users() {
         local IFS=", "
         echo "${users[*]}"
     fi
+    [[ "$notice" == "flush" ]] && _env_flush_hidden_notice
+    return 0
 }
 
 # Add an llms reference to a pack or project YAML file.
@@ -772,9 +834,14 @@ _llms_add_to_yaml() {
     fi
 
     if [[ -n "$project" ]]; then
-        local _ud proj_yml=""
-        _ud=$(_resolve_unit_dir_for_project "$project" 2>/dev/null) && proj_yml="$_ud/.cco/project.yml"
-        [[ -n "$proj_yml" && -f "$proj_yml" ]] || { warn "Project '$project' not found — skipping YAML update."; return; }
+        # INV-F.3: resolve through the operator-aware pair and keep the non-fatal
+        # degrade — in a session a mounted project now gets its YAML updated instead
+        # of being silently skipped with a success exit.
+        local proj_yml _st
+        _st=$(_env_project_state "$project")
+        if [[ "$_st" != here ]]; then _env_unavailable_warn "$_st" project "$project"; return 0; fi
+        proj_yml=$(_resolve_project_yml "$project")
+        [[ -f "$proj_yml" ]] || { warn "Project '$project' has no readable project.yml — skipping YAML update."; return 0; }
         if yml_get_llms_names "$proj_yml" | grep -qxF "$name"; then
             info "LLMs '$name' already in project '$project'"
         else

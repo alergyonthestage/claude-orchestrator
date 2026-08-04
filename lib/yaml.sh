@@ -352,8 +352,8 @@ yml_get_mount_coords() {
         /^extra_mounts:/ { in_m=1; next }
         in_m && /^[^ #]/ { exit }
         in_m && /^  - / {
-            if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro
-            name=""; url=""; ref=""; target=""; ro=""
+            if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro "\t" policy
+            name=""; url=""; ref=""; target=""; ro=""; policy=""
             if (/^  - name:/) { sub(/^  - name: */, "") } else { sub(/^  - */, "") }
             gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); name=$0
             next
@@ -362,7 +362,8 @@ yml_get_mount_coords() {
         in_m && /^    ref:/      { sub(/^    ref: */, "");      gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ref=$0 }
         in_m && /^    target:/   { sub(/^    target: */, "");   gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); target=$0 }
         in_m && /^    readonly:/ { sub(/^    readonly: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); ro=$0 }
-        END { if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro }
+        in_m && /^    config_access_policy:/ { sub(/^    config_access_policy: */, ""); gsub(/["\047]/, ""); sub(/ *#.*$/, ""); gsub(/^ +| +$/, ""); policy=$0 }
+        END { if (name != "") print name "\t" url "\t" ref "\t" target "\t" ro "\t" policy }
     ' "$file"
 }
 

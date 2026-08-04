@@ -115,11 +115,14 @@ flowchart TB
 This tree holds **authored config only** (ADR-0016 D8). **No internal data lives here**
 (ADR-0013, fixes inventory C4): `source`, `meta`, `base/`, `local-paths.yml`, generated
 `docker-compose.yml`, generated `managed/`, `claude-state/`, and `memory/` are all
-**evicted** to DATA/STATE/CACHE. Framework-generated files (`packs.md`, `workspace.yml`,
-`managed/{browser,github,policy}.json`) are NOT written here — they would pollute the
+**evicted** to DATA/STATE/CACHE. Framework-generated files (`managed/{browser,github,policy}.json`,
+the session descriptor, the mountpoint view) are NOT written here — they would pollute the
 truthful `git diff` and the sync (ADR-0002/0004). They are produced in the machine-local
-cache (§2.2) and overlaid into `/workspace/.claude` via nested `:ro` mounts, exactly like
-pack/llms resources (RD-claude-mount, ADR-0005). `packs/` and `llms/` are framework-reserved
+cache (§2.2) and overlaid `:ro`, exactly like pack/llms resources (RD-claude-mount, ADR-0005).
+The former generated **`workspace.yml`/`packs.md` overlay files are retired** (ADR-0041/0042): the
+session-info surface is now the `CCO_SESSION_CONTEXT` env var (base64, computed host-side by
+`lib/session-context.sh`, emitted by the SessionStart/SubagentStart hooks) — **no file is written
+into the session `.claude` overlay at all** (INV-2), and `cco start` deletes any stale copy. `packs/` and `llms/` are framework-reserved
 sub-paths within `/workspace/.claude`; committed config must not author into them.
 **H5**: `mcp.json`/`setup.sh`/`mcp-packages.txt` are project config (here); the generated
 `.cco/managed/` follows F1 → CACHE (§2.2). `.cco/.gitignore` (committed):
@@ -173,7 +176,12 @@ reverse-looking-up `url` in the `remotes` registry (so nothing machine-local rid
 non-portable (`never`); partitioned by sync-eligibility (ADR-0013 D2):
 ```
 <state>/cco/
-  index                          # name→abs-path + project→members — SUBSUMES @local + per-repo local-paths.yml (§3)
+  shared/index                   # per-project name→abs-path + project→members — SUBSUMES @local +
+                                 #   per-repo local-paths.yml (§3). v2 nested `project_paths:`
+                                 #   (identity = the path, name = a per-project label — ADR-0051);
+                                 #   in the `shared/` sub-bucket so the container binds a DIRECTORY
+                                 #   (never a file — ADR-0052 / design-docker §1.2.2.1)
+  running/<project>              # session running-registry markers (ADR-0045), :ro in-container
   remotes-token                  # SECRET, isolated, 0600, never-sync (split from the DATA registry; M3)
   last_seen / last_read          # global changelog markers
   claude.json / .credentials.json  # seeded auth
@@ -207,8 +215,11 @@ future P8 state-sync from ever sweeping base/hashes/tokens.
   installed/                     # Config-Repo clones for install/update
   remote_cache                   # remote HEAD + ts (avoids network on update checks)
   # coords-lookup                # v1: derived name→url lookup is computed ON DEMAND, NOT persisted (ADR-0022/F45)
-  projects/<id>/.claude/         # generated overlays (packs.md, workspace.yml) → :ro into /workspace/.claude (F1)
+  projects/<id>/claude-view/     # framework-owned mountpoint view for /workspace/.claude (ADR-0054),
+                                 #   rebuilt every start — replaces the retired workspace.yml overlay (F1)
+  projects/<id>/session-access   # trusted (G,Pc,Po) session descriptor → /etc/cco (:ro, ADR-0047)
   projects/<id>/managed/         # generated browser.json / github.json / policy.json → :ro overlay (H5)
+  claude-install/{bin,share}     # native Claude Code install, bind-mounted into ~/.local (ADR-0039)
   *.bak   dry-run/               # update artifacts (cco clean)
 ```
 
@@ -387,10 +398,15 @@ command's full contract is **ADR-0023 D2** (share-readiness validate).
 
 ## 3. Machine-Agnostic Config & the Local Path Index
 
-The single source of machine-specific truth is the **index** (`<state>/cco/index`),
-never committed, never synced:
+The single source of machine-specific truth is the **index** (`<state>/cco/shared/index`),
+never committed, never synced. It is **v2** (nested `project_paths:` — per-project logical
+name → absolute path; identity is the path, name is a per-project label — ADR-0051), and it is
+**version-gated + self-healed** on upgrade: a host-only gate `die`s if the on-disk version is
+newer than the binary supports, and a legacy-location index (`<state>/cco/index`, older cco) is
+MERGED into `shared/index` non-destructively rather than overwritten (ADR-0052). The v1 shape
+below is the legacy form the in-index self-upgrade (ADR-0051 D6) converts on the first host write:
 ```yaml
-version: 1
+version: 1                   # legacy shape — self-upgraded in-index to v2 project_paths: on first write
 paths:                       # logical name -> absolute path (repos AND extra mounts), quoted
   repo1: "/Users/me/dev/repo1"
   repo2: "/Users/me/dev/repo2"
@@ -399,7 +415,9 @@ projects:                    # subsumes the old registry — member repo names, 
   projectA: "repo1 repo2 repo3"
 ```
 > Format note: values are stored double-quoted; `projects:` holds a space-separated
-> member-name string (not a nested mapping) — this matches `lib/index.sh`.
+> member-name string (not a nested mapping) — this matches `lib/index.sh`. The current
+> on-disk shape is v2 (`project_paths:`/`unscoped:`); see ADR-0051 for the schema and
+> ADR-0052 for the version gate + non-destructive location reconcile.
 > The index **subsumes** both `@local` markers and the per-repo `<repo>/.cco/local-paths.yml`
 > (ADR-0016 D4): the per-repo file is removed (it was internal data inside a config bucket — a P6
 > violation, C4-class). The index is the **local-path materialization** of the repo coordinate
@@ -412,15 +430,25 @@ projects:                    # subsumes the old registry — member repo names, 
   one entry); per-project namespacing is **reserved post-v1** (ADR-0022 D2). Writes are **atomic**
   (`mktemp` + `mv`, the existing `local-paths.sh` convention), single-writer, **no file lock** in v1 —
   writes are user-serial; a rare race is last-writer-wins and self-heals via `cco resolve --scan`.
-- **Absolute paths only — enforced at the write boundary.** Every write goes through
-  `_index_set_path`, which normalizes the value (expands `~`/`$HOME`) and **refuses** anything still
-  non-absolute (relative / empty / a bare `@local` marker), returning non-zero so the caller skips it.
-  CLI commands additionally absolutize cwd-relative paths before storing. `_index_path_conflicts`
-  normalizes **both** sides before comparing, so two spellings of the *same* dir (`~/x` vs
-  `/home/me/x`) are never a false AD5 conflict. `cco path list` normalizes for display and flags any
-  stale non-absolute entry as `⚠ malformed`; the one-shot migration `016_normalize-index` cleans
-  entries written before this boundary existed (idempotent; unrecoverable values dropped, self-heal
-  via `cco resolve --scan`).
+- **Canonical absolute paths only — enforced at the write boundary (ADR-0053).** Canonicalization
+  is two-tier. **Tier 1 (lexical, pure string)** lives in `_index_normalize_path` — the shared
+  normalizer every read/compare site calls: it expands `~`/`$HOME`, **refuses** anything still
+  non-absolute (relative / empty / a bare `@local` marker), and collapses lexical noise (`//`, `/./`,
+  a trailing `/.`, a trailing `/`) so `/a//b`, `/a/b/.` and `/a/b/` compare equal. It never touches
+  the filesystem (correct on a not-yet-existing path; `..` is left intact — collapsing it lexically
+  is wrong across a symlink). **Tier 2 (physical, best-effort)** lives in `_index_canonicalize_path`,
+  called **only** at the write boundary (`_index_pp_set` / `_index_set_unscoped`, and the
+  probe-deriving `_resolve_to_abs`): when the path exists it resolves symlinks via `cd … && pwd -P`
+  (the portable builtin — the codebase carries no `realpath`), so a symlink alias (`/var/x`) and its
+  physical target (`/private/var/x`, the same dir on macOS) key identically — enforcing the ADR-0051
+  D1 path identity. Physical resolution is **host-only** (the index is unwritable in-container under
+  the ADR-0047 boundary, and host paths do not exist in a container; INV-CANON). `_index_path_conflicts`
+  normalizes **both** sides before comparing, so a `~/x`-vs-`/home/me/x` spelling — or a canonical-vs-
+  physical probe — is never a false AD5 conflict. `cco path list` normalizes for display and flags a
+  non-absolute entry as `⚠ malformed`. Existing divergent entries self-heal on the next write and are
+  repairable in bulk by `cco config validate` (the **re-key** lane, ADR-0053 D5); the one-shot
+  migration `016_normalize-index` cleaned the pre-boundary non-absolute entries (idempotent;
+  unrecoverable values dropped, self-heal via `cco resolve --scan`).
 - **Resolution CLI — consolidated on `cco resolve` (ADR-0017 D2)**: `cco resolve [project]`
   (interactively resolve each unresolved repo/mount: *specify local path* · *clone-from-`url`* ·
   *skip*), `cco resolve --all` (all projects), and `cco resolve --scan <dir>` (auto-discover by
@@ -743,13 +771,13 @@ ADR-0018/0019/0020/0023.
 | Entry: join | `cco join <project> [--sync] [--name <name>]` (add the current repo to `<project>` as a **member**: embed its coordinate — `name` + `url` derived from `git remote get-url origin` — into the project's `repos[]` + bind its name→path in the index; ADR-0034). The `repos[]` edit is applied to **every in-sync member** (Case B); in a divergent project (Case C) join **prompts** which member's `project.yml` to update, or all, and refuses non-interactively. Because `repos[]` is not the `name:` sync discriminator, a partial edit converges via `cco sync` — join is **not** strict (unlike rename, ADR-0031). The joining repo gets **no `.cco/`** (code-only member) **unless** `--sync`, which copies the project's `.cco/` into it (ADR-0024 D2 clobber-guard) — **alternative to `cco init`** | NEW |
 | Entry: migrate | `cco init --migrate <project> [--sync]` (current repo, from the legacy vault backup: hydrate `.cco/` with the migrated project config; `--sync` propagates to all member repos, symmetric to `cco join --sync`) — a **mode of `cco init`**, NOT a top-level `cco migrate` (ADR-0021, resolves the `migrate`↔`update` clash) | NEW |
 | Lifecycle: forget | `cco forget <project> [-y] [--purge]` (deregister: remove cco's internal id-keyed state — index/tags/source/STATE/CACHE — **without** touching the repo or its committed `.cco/` by default; ADR-0021). **`--purge`** also deletes the committed `.cco/` of every member repo the project **owns** (status synced/divergent) — never a foreign/shared/unresolved repo — each backed up first (ADR-0006), with `--purge` as the explicit consent (ADR-0029 D2) | NEW |
-| Run | `cco start [project] [--from <repo>] [--mount <src>[:<tgt>][:ro\|:rw]]… [--enable-config-edit]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without). **`--mount`** = repeatable reference mount, **`:ro` default** (ADR-0027 D2). **`--enable-config-edit`** = escape hatch re-enabling rw on `<repo>/.cco` for one session; by default a normal session overlays the committed `<repo>/.cco` (structural framework config: `project.yml`/`secrets`/metadata) **`:ro`** while the project Claude config (`/workspace/.claude`) stays rw for `/init`/authoring (agentic edit-protection, ADR-0027 D3 — narrow; container-only; the host IDE is unaffected) | transform |
+| Run | `cco start [project] [--from <repo>] [--mount <src>[:<tgt>][:ro\|:rw]]… [--enable-config-edit]` (cwd-aware source; `--from` picks the Case-C source `<repo>/.cco`, ADR-0017 D2; index-resolve names; on unresolved → prompt resolve\|proceed-without). **`--mount`** = repeatable reference mount, **`:ro` default** (ADR-0027 D2). **`--enable-config-edit`** = escape hatch re-enabling rw on `<repo>/.cco` for one session; by default a normal session overlays the committed `<repo>/.cco` (structural framework config: `project.yml`/`secrets`/metadata) **`:ro`** while the project Claude config (`/workspace/.claude`) stays rw for `/init`/authoring (agentic edit-protection, ADR-0027 D3 — narrow; container-only; the host IDE is unaffected). **→ generalized and SHIPPED (ADR-0036/0041/0042 → 0046/0048/0049): `--enable-config-edit` is a deprecated alias for `--cco-access edit-project`; edit-protection is now the capability model — `cco_access` (`none\|read-project\|read-global\|read-all\|edit-project\|edit-global\|edit-all`, default `read-project`) as **presets over an explicit `(G,Pc,Po)` triple** (global store · current project · other projects; ADR-0046, granular `--cco-access global=…,current=…,others=…` also accepted), `claude_access` (`none\|repo\|all` + granular `(Cr,Cp,Cg,Co)`) which has **no fixed default — it DERIVES from the resolved cco triple** (ADR-0049 §2; a discordant explicit value is allowed with a note), and `show_host_paths`. Enforcement is a real privilege boundary for the internal store (ADR-0047), not output filtering** | transform |
 | Run: ad-hoc | `cco new [--repo <path>]… [--name\|--port\|--teammate-mode]` (ephemeral scratch session: **literal** paths, no `project.yml`, **no index** read/write, no coordinates; shares the Phase-0 compose/mount primitives with `cco start` but **skips H1 resolution**; J0 still bootstraps the four roots but writes nothing to the index — ADR-0023 D5) | transform |
 | Sync | `cco sync [target] [--from <src>] [--dry-run\|--auto-approve\|--check]` | NEW |
 | Paths/resolve | `cco resolve [project]` (resolve each unresolved repo/mount: specify local path · clone-from-`url` · skip), `cco resolve --all` (all projects), `cco resolve --scan <dir>` (auto-discover + **reconcile/upsert** index, non-destructive, AD5-conflict; no `--prune` in v1 — ADR-0022 D3; **absorbs** `cco index refresh`), `cco path set/list` (low-level index editor — **internal/demoted**: kept but removed from `cco help`, documented under `cco resolve --help`, ADR-0029 D4) — ADR-0017 D2 | NEW |
 | Discovery | `cco list [<kind>] [--tag <t>] [--sort name]` (**one listing surface** — ADR-0029 D1: bare = compact cross-resource index KIND·NAME·TAGS; `<kind>` = the rich per-kind view; `--tag` filters globally or within a kind; **subsumes** the old tags-only `cco list`; the per-noun `cco <noun> list` verbs are removed → redirect stubs), `cco tag add/remove` (canonical `remove`, `rm` kept as alias — ADR-0029 D3; reads/writes the per-user `<data>/cco/tags.yml`, DATA bucket — ADR-0011/0015) | transform |
 | Project config / coordinates (cwd `<repo>/.cco`) | `cco project add repo\|mount\|llms\|pack <name> [--url --ref --variant --readonly] [--path]` (**embed-at-add**, P14 layer-a: coordinate → manifest **and** optional `--path` → index, in one call; `url` auto-derived from `origin` when `--path` is a clone — ADR-0023 D3; `add-pack` kept as alias of `add pack`), `cco project coords --diff [--sync --from <unit>]` (cross-unit coordinate consistency; `--sync` explicit-`--from`, never auto-elect — ADR-0016 D3 / ADR-0022 F48), `cco project validate [--all] [--reachable]` (**share-readiness**: every referenced id has a reachable coordinate + machine-agnostic + the pack-collision ERROR; cwd-first, exit 0/1/2, detect-only, never blocks — ADR-0023 D2) | NEW |
-| Authoring | Direct `~/.cco` edit (IDE or the `config-editor` **built-in** session); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010). The **config-editor** is a framework built-in (the tutorial model, not scaffolded): `cco start config-editor` mounts `~/.cco` rw (**global mode**); `cco start config-editor --project <name>` (or a cwd hosting a configured repo) also mounts that project's `<repo>/.cco` rw (**project mode**) — ADR-0027 D1 | transform |
+| Authoring | Direct `~/.cco` edit (IDE or the `config-editor` **built-in** session); cco only **scaffolds**: `cco pack create`, `cco template create` (ADR-0008/0010). The **config-editor** is a framework built-in (the tutorial model, not scaffolded): `cco start config-editor` mounts `~/.cco` rw (**global mode**); `cco start config-editor --project <name>` (or a cwd hosting a configured repo) also mounts that project's `<repo>/.cco` rw (**project mode**) — ADR-0027 D1. **→ generalized and SHIPPED, then refined to minimum privilege by mode (ADR-0044 §3 → ADR-0048 WS-A): config-editor is no longer a blanket `edit-all`. Project mode (cwd in a project, or repeatable `--project <name>`) resolves to `(G=ro, Pc=rw, Po=none)` — it edits the target project's `<repo>/.cco` while `~/.cco` stays **read-only**; bare outside a project → `(rw,none,none)` (edit the store only); `--all` → `edit-all`. Two floors hold: `G ≥ ro` (an authoring tool always sees the store — a narrower `--cco-access` is clamped up with a notice) and `claude_access` follows `G`. Writing `~/.cco` from project mode is the explicit `--cco-access edit-global` `(rw,rw,none)`. It also adds the whitelisted wrapped-`cco` in-container surface + R1 self-info (ADR-0041/0042)** | transform |
 | Global store (`~/.cco` + internal) | `cco config save [-m] / push / pull` (version + sync the personal `~/.cco` store; ADR-0008) + **`cco config validate [--dry-run\|--fix]`** (**orphan-sanitization** of global id-keyed internal state after manual deletion: detect/report, optionally prune preview-first/confirmed; warn-never-hide, never automatic; ADR-0021. STATE/CACHE freely rebuildable via `cco resolve --scan`; DATA pruned only on confirm). *Share-readiness* validate is `cco project validate` (below), **not** this verb — ADR-0023 D1 | transform |
 | Sharing (2×2, ADR-0018 D2) | **packs**: `cco pack publish\|install\|export\|import`; **templates**: `cco template publish\|install\|export\|import` (distribution; scaffolded output stays one-shot — D7/ADR-0023 D4); **projects**: `cco project export\|import` **only** (no publish/install — ride the repo remote, P5/P13). `cco remote …` manages sharing-repo endpoints. **Verdicts** (ADR-0023 D4): project publish/install **REMOVED**; pack publish/remote **REFACTORED**; manifest **DROPPED**; pack import + project export/import + template 2×2 **BUILD-NEW** | transform |
 | Lifecycle: internalize (ADR-0023 D4) | `cco <res> internalize [--as <name>]` = **sever the resource's external coupling** (one intent, per-resource mechanism): **pack/template** cut the upstream `url` → authored source (P15); **project** = Case-C disconnect (`<repo>/.cco`→`~/.cco/projects`, **post-v1**, ADR-0018 D6). `--as` forks (keeps the original tracked). **Inverse** = `cco project add … --url` (adopt) / `cco pack publish` (publish yours) / drop the cache dir. Caching a referenced pack (**Locality**, keeps the coordinate) is **separate**: the opt-in resolve prompt (ADR-0019 D6) + `export --bundle-packs`, **no `vendor` verb in v1** | NEW |
@@ -917,9 +945,13 @@ is in §11.
     compose↔entrypoint container-path contract is an **invariant** the host-source re-point preserves.
   - **Test-harness migration**: `tests/helpers.sh` (`minimal_project_yml` → name+url/ref schema) and
     `tests/mocks.sh` → the new model — the substrate every later test rewrite builds on (§11).
-  - **Carried RD-claude-mount items (ADR-0005)**: (F1) generate `packs.md`/`workspace.yml` into CACHE
+  - **Carried RD-claude-mount items (ADR-0005)**: (F1) generate `workspace.yml` into CACHE
     and overlay `:ro` instead of writing into committed `.cco/claude/`; (F2) treat `packs/`/`llms/` as
     reserved + warn on cross-tree name collisions; (F3) keep the parent mount rw, overlays `:ro`.
+    *(As built at the time. Both F1 and F3 were later superseded: the `workspace.yml` overlay is
+    retired in favour of the `CCO_SESSION_CONTEXT` env var — ADR-0041/0042 — and F3's "parent stays
+    rw" was invalidated by ADR-0049 `Cp=ro` and replaced by the framework-owned mountpoint view of
+    ADR-0054. §2.1/§2.2 above carry the current truth.)*
 - **Phase 1 — Core local commands (consume the substrate).** `lib/cmd-sync.sh` (the 4 command
   forms, diff+confirm, copy; no merge engine, no sync-base). `cco resolve`/`cco path` (index-backed,
   incl. clone-from-`url` resolution using the Phase-0 coordinates; `cco resolve --scan` absorbs the
@@ -1262,7 +1294,7 @@ design is persisted.
 | # | Resolution |
 |---|----------|
 | **RD-repo-multi-project** | ✅ 2026-06-22 (ADR-0024). **Option 1**: a repo hosts **one** project config (`<repo>/.cco/`, by `project.yml` `name`) = one dev scope; referenced by N via the index + coordinate (Case A). `cco sync` **skips+warns** a target hosting a different project (no override — D2); `cco start` cwd → hosted project (D3). **No schema change → P2 build-once intact.** Also: `.claude` scope clarity + no cross-project leak (D4), repo↔project observability (D5), **sync-set = whole committed `.cco/` minus `secrets.env`, authored packs only** (D6, refines ADR-0003), Axis-1/2 distributed sharing + future `~/.cco/projects` opt-in compatible (D7). Distilled into P18. |
-| **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `packs.md`/`workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). |
+| **RD-claude-mount** | ✅ 2026-06-16 (ADR-0005). Nested-overlay composition is source-agnostic → no bind-mount shadowing. Surfaced F1 (generate `workspace.yml` into cache + `:ro` overlay, not into committed `.cco/claude/`), F2 (reserve `packs/`/`llms/`, warn on cross-tree collisions), F3 (parent rw, overlays `:ro`). **Superseded in part**: F1's file is retired (session info is the `CCO_SESSION_CONTEXT` env var — ADR-0041/0042) and F3 no longer holds (ADR-0049 made `Cp=ro`; the parent is now the framework-owned mountpoint view of ADR-0054). F2 stands. |
 | **RD-paths** | ✅ 2026-06-16 (ADR-0007). XDG on both OSes: STATE `$CCO_STATE_HOME`→`$XDG_STATE_HOME/cco`→`~/.local/state/cco`, CACHE `$CCO_CACHE_HOME`→`$XDG_CACHE_HOME/cco`→`~/.cache/cco`; index in STATE; CONFIG keeps `~/.cco` dotdir; host-side resolution, `0700`, XDG-validation. |
 | **RD-home** | ✅ 2026-06-16 (ADR-0008). Unified **explicit manual commit** model for `~/.cco` + `<repo>/.cco` (semantic user-named snapshots; **no auto-commit** in v1 — deferred for atomic config-mutating commands). Non-blocking **reminders** (old clean-tree gate, now advisory) flag uncommitted `~/.cco`, uncommitted involved `<repo>/.cco`, cross-repo divergence. Allowlist double-barrier (whitelist `.gitignore` + explicit staging, never `git add -A`); 2-pass secret scan + `.example` exemption; explicit `cco config push/pull` (sync transports commits, never fabricates them); auto-sync → RD-triggers. |
 | **RD-memory** | ✅ 2026-06-16 (ADR-0009). Auto-memory is **machine-local STATE** (`<state>/cco/projects/<id>/memory/`), co-located with transcripts — not config, never in `~/.cco`/`<repo>/.cco`. **No versioning/sync in v1**: the vault auto-commit (D33) + `.gitkeep` (D32) machinery is dropped; `cco migrate` relocates memory from the backup (lossless). Team-shared project knowledge stays in committed docs/rules (not memory). **Satisfies the Phase-3 gate (BL2).** Cross-PC/cross-team *state* sync (memory + transcripts) deferred → R-state-sync (§12). |

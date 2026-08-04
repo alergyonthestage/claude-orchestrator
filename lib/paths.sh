@@ -3,7 +3,8 @@
 #
 # Provides: XDG 4-bucket resolver — _cco_config_dir(), _cco_data_dir(),
 #           _cco_state_dir(), _cco_cache_dir() (+ _cco_in_container(),
-#           _cco_resolver_guard(), _cco_first_abs(), _cco_ensure_dir());
+#           _cco_resolver_guard(), _cco_member_probe_path(), _cco_first_abs(),
+#           _cco_ensure_dir());
 #           legacy dual-read helpers — _cco_remotes_file(), _cco_global_meta(),
 #           _cco_global_base_dir(), _cco_project_meta(), _cco_project_base_dir(),
 #           _cco_project_managed(), _cco_project_compose(),
@@ -95,6 +96,15 @@ _cco_claude_version_file() {
     printf '%s\n' "$(_cco_config_dir)/claude-version"
 }
 
+# Session access defaults → CONFIG `~/.cco/access.yml` (ADR-0036 D3, level 3 of the
+# precedence CLI > project.yml `access:` > this global default > built-in preset). A
+# single user-authored, git-versioned datum holding the three capability-model knobs
+# (`claude`, `cco`, `show_host_paths`), read at `cco start`. Absent/partial → the
+# built-in defaults apply per-knob (repo / none / on).
+_cco_access_file() {
+    printf '%s\n' "$(_cco_config_dir)/access.yml"
+}
+
 # Echo the effective channel/version preference, defaulting to `latest` when the
 # file is absent or blank. First non-comment, non-empty line wins.
 _cco_claude_version_pref() {
@@ -179,6 +189,19 @@ _cco_project_cache_managed() {
     printf '%s\n' "$(_cco_cache_dir)/projects/$1/managed"
 }
 
+# The framework-owned mountpoint view for /workspace/.claude (ADR-0054, INV-MP).
+# Holds mountpoints ONLY — empty dirs/files, never content — so every
+# framework-injected child bind (pack rules/agents/skills/knowledge, llms docs)
+# has a target that exists before the container starts, whatever mode the
+# `claude` policy gives the parent. Rebuilt from scratch on every `cco start`:
+# CACHE by ADR-0004 (regenerable, machine-local), and NOT an ADR-0047-confined
+# bucket — it carries no cross-project or host-path data, only stub names from
+# the session's own project. $1 = project NAME (the `<id>`), matching
+# _cco_project_cache_managed above.
+_cco_project_claude_view() {
+    printf '%s\n' "$(_cco_cache_dir)/projects/$1/claude-view"
+}
+
 # Session-scoped machine-local state for a project (ADR-0009 / design §2.2):
 # auto-memory + session transcripts, mounted into the container by cmd-start and
 # hydrated by `cco init --migrate`. Both memory and transcripts live under the
@@ -216,14 +239,16 @@ _cco_pack_source() {
     printf '%s\n' "$(_cco_data_dir)/packs/$(basename "$1")/source"
 }
 
-# Pack-scoped merge artifacts → STATE, keyed by pack name (= the flat-store dir
-# basename). <state>/cco/packs/<name>/update/{meta,base}.
+# Pack-scoped merge artifacts → STATE/shared, keyed by pack name (= the flat-store
+# dir basename). <state>/cco/shared/packs/<name>/update/{meta,base}. In the
+# shareable sub-bucket because `cco pack remove|rename` must re-key them from a
+# container session (the sidecar-purge/sidecar-rekey store ops) — v3 R1.
 _cco_pack_meta() {
-    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/meta"
+    printf '%s\n' "$(_cco_state_shared_dir)/packs/$(basename "$1")/update/meta"
 }
 
 _cco_pack_base_dir() {
-    printf '%s\n' "$(_cco_state_dir)/packs/$(basename "$1")/update/base"
+    printf '%s\n' "$(_cco_state_shared_dir)/packs/$(basename "$1")/update/base"
 }
 
 # Project install-provenance `source` → DATA, keyed by project identity (the
@@ -238,18 +263,19 @@ _cco_template_source() {
     printf '%s\n' "$(_cco_data_dir)/templates/$(basename "$1")/source"
 }
 
-# Template-scoped install meta → STATE, keyed by template dir basename. Mirrors
-# `_cco_pack_meta`: holds the machine-local `installed_commit` (+ install/update
-# dates) the `cco update --check` advancement test reads (ADR-0022 D1/D6, P5-5).
+# Template-scoped install meta → STATE/shared, keyed by template dir basename.
+# Mirrors `_cco_pack_meta`: holds the machine-local `installed_commit` (+
+# install/update dates) the `cco update --check` advancement test reads
+# (ADR-0022 D1/D6, P5-5). Shareable for the same reason as the pack sidecars.
 _cco_template_meta() {
-    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/meta"
+    printf '%s\n' "$(_cco_state_shared_dir)/templates/$(basename "$1")/update/meta"
 }
 
-# Template-scoped merge artifacts → STATE, keyed by template name (the flat-store
-# basename, matching the flat sharing-repo templates/<name>/). Mirrors the pack
-# form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.
+# Template-scoped merge artifacts → STATE/shared, keyed by template name (the
+# flat-store basename, matching the flat sharing-repo templates/<name>/). Mirrors
+# the pack form; the sync-before-publish merge ancestor (ADR-0022 D5). Never-sync.
 _cco_template_base_dir() {
-    printf '%s\n' "$(_cco_state_dir)/templates/$(basename "$1")/update/base"
+    printf '%s\n' "$(_cco_state_shared_dir)/templates/$(basename "$1")/update/base"
 }
 
 _cco_pack_install_tmp() {
@@ -280,20 +306,131 @@ _cco_pack_install_tmp() {
 # is daemon-injected, not part of the image, so it cannot be stripped.
 _cco_in_container() {
     [[ "${CCO_IN_CONTAINER:-}" == "1" ]] && return 0
+    # An explicit ==0 forces HOST semantics deterministically, short-circuiting the
+    # /.dockerenv sniff (ADR-0052 §1): the override honoured only the ==1 direction,
+    # so host code paths (e.g. the first-run version gate) could not be exercised on
+    # a machine where /.dockerenv happens to exist — such as cco's own self-dev
+    # container. Both directions of the override now win over the marker.
+    [[ "${CCO_IN_CONTAINER:-}" == "0" ]] && return 1
     [[ -f /.dockerenv ]] && return 0
     return 1
 }
 
+# D8 (ADR-0036) — the canonical caller-context signal. cco reasons about *where*
+# it runs — a user on the host vs an agent inside a session container — in ONE
+# place, so any command body can guard or branch on it without re-detecting the
+# environment. Two contexts: `host` | `container-agent`. Container-agent is
+# detected via the same daemon-injected /.dockerenv marker as _cco_in_container
+# (above); the deliberate container-operator mode (ADR-0036 D4 — mounted buckets
+# + CCO_*_HOME) layers on TOP of this signal and is never inferred here, keeping
+# ADR-0007's invariant intact. The anti-in-container resolver guard below is
+# re-expressed on this one signal rather than duplicating the detection.
+_cco_caller_context() {
+    if _cco_in_container; then
+        printf 'container-agent'
+    else
+        printf 'host'
+    fi
+}
+
+# Container-operator mode (ADR-0036 D4). The ONE deliberate in-container entry
+# where cco is allowed to resolve buckets: the whitelisted wrapped `cco` shim,
+# launched by `cco start` under `--cco-access ≥ read` with the real DATA/STATE/
+# CACHE buckets bind-mounted and the CCO_*_HOME overrides pointing AT those
+# mounts. True (0) only when the explicit CCO_CONTAINER_OPERATOR=1 flag is set
+# AND all three bucket overrides are absolute paths (the mounts) — so it can
+# NEVER be inferred from a plain agent env; `cco start` establishes the flag and
+# the mounts together. Layered ON TOP of the D8 caller-context signal, never
+# folded into it. CONFIG (~/.cco) needs no override here: `cco start` bind-mounts
+# it at the container's natural $HOME/.cco, so _cco_config_dir resolves to the
+# mount unchanged (that is why D4 lists only DATA/STATE/CACHE).
+_cco_container_operator() {
+    [[ "${CCO_CONTAINER_OPERATOR:-}" == "1" ]] || return 1
+    [[ "${CCO_DATA_HOME:-}"  == /* ]] || return 1
+    [[ "${CCO_STATE_HOME:-}" == /* ]] || return 1
+    [[ "${CCO_CACHE_HOME:-}" == /* ]] || return 1
+    return 0
+}
+
+# Echo the path at which a member repo/extra_mount is INSPECTABLE on this machine
+# (B-DF1). The STATE index is the machine-local map and stores HOST paths; inside
+# a session those paths do not exist — `cco start` bind-mounts each member at the
+# flat WORKDIR path <workdir>/<name> instead. So an existence/status check in
+# operator mode must probe the MOUNT, never the index host path: testing the host
+# path in-container always fails and mislabels a perfectly resolved repo as
+# missing/unresolved. On the host (and whenever <name> is empty) the index path is
+# returned unchanged.
+#
+# Not-mounted members resolve correctly by construction: only the session's own
+# project is mounted, so another project's member (visible at read-all) probes a
+# <workdir>/<name> that does not exist and reads as genuinely unavailable here —
+# which it is. This resolves what to PROBE; what to DISPLAY is the caller's
+# host-path-hygiene decision (show_host_paths), deliberately kept separate.
+#
+# INV-F.1 — an EMPTY index path means "no binding", so no path may be synthesized
+# from a name alone: empty in ⇒ empty out. Without this an unbound member would be
+# rendered present at <workdir>/<name> (the RC-5/INV-B absent-reported-as-present
+# inversion). INV-F.2 — a member's declared container target is honoured verbatim
+# in operator mode when passed (an extra_mount may set target:); when omitted the
+# <workdir>/<name> default stands (repos always mount there). The optional 3rd arg
+# is ignored on the host (INV-A) and by every existing 2-arg caller.
+# Usage: _cco_member_probe_path <name> <index_host_path> [<declared_target>]
+_cco_member_probe_path() {
+    local name="$1" host_path="$2" target="${3:-}"
+    [[ -n "$host_path" ]] || { printf '\n'; return 0; }
+    if [[ -n "$name" ]] && _cco_container_operator; then
+        printf '%s\n' "${target:-${CCO_WORKDIR:-/workspace}/$name}"
+    else
+        printf '%s\n' "$host_path"
+    fi
+}
+
+# What to DISPLAY for a member path (INV-4 host-path hygiene) — the deliberate
+# sibling of _cco_member_probe_path (what to PROBE). Single source for the
+# "show the mount instead of leaking the host path" predicate: in operator mode
+# with show_host_paths OFF it renders the probe (the container path the agent can
+# actually use); otherwise it renders the index host path unchanged. Empty in ⇒
+# empty out (INV-F.1), so a caller's `[[ -n "$p" ]] && … || "(unresolved)"` keeps
+# its truth table. Usage: _cco_display_path <name> <index_host_path> [<declared_target>]
+_cco_display_path() {
+    local name="$1" host_path="$2" target="${3:-}"
+    [[ -n "$host_path" ]] || { printf '\n'; return 0; }
+    if _cco_container_operator && [[ "${CCO_SHOW_HOST_PATHS:-true}" != "true" ]]; then
+        _cco_member_probe_path "$name" "$host_path" "$target"
+    else
+        printf '%s\n' "$host_path"
+    fi
+}
+
+# Reverse of _cco_member_probe_path: a session mount ROOT → the member NAME.
+# Operator-only and deliberately narrow — the IMMEDIATE child of the WORKDIR only.
+# Sound because its ONLY caller is the repo cwd-first branch, and repos always
+# mount at <workdir>/<name> (INV-F.2's exception is extra_mounts, which have no
+# cwd-first form). Returns 1 (no output) on the host, off the WORKDIR, or for a
+# nested path. Usage: _cco_member_name_from_mount <dir>
+_cco_member_name_from_mount() {
+    local d="${1%/}" wd="${CCO_WORKDIR:-/workspace}"; wd="${wd%/}"
+    _cco_container_operator || return 1
+    [[ "$d" == "$wd"/* ]] || return 1
+    local rest="${d#"$wd"/}"
+    case "$rest" in ""|*/*) return 1 ;; esac
+    printf '%s\n' "$rest"
+}
+
 # Anti-in-container guard (H4, ADR-0007 Robustness). cco resolves host paths
 # host-side only; a hook or agent that invokes cco from inside a session
-# container must not create/read state under the container's home. The escape
-# hatch CCO_ALLOW_HOST_RESOLVE=1 is for the test suite / a knowing developer
-# only — real hooks/agents never set it, so the guard still protects them.
+# container must not create/read state under the container's home. Expressed on
+# the D8 caller-context signal (container-agent ⇒ refuse). Two sanctioned
+# bypasses: the container-operator mode above (deliberate, mounted buckets —
+# ADR-0036 D4), and the CCO_ALLOW_HOST_RESOLVE=1 escape hatch for the test suite
+# / a knowing developer only. Real hooks/agents set neither, so the guard still
+# protects them.
 # NOTE: when a resolver is called via $(...), die() exits only that subshell;
 # in genuine host use the guard never fires, and in tests the hatch bypasses it.
 _cco_resolver_guard() {
     [[ "${CCO_ALLOW_HOST_RESOLVE:-}" == "1" ]] && return 0
-    if _cco_in_container; then
+    _cco_container_operator && return 0
+    if [[ "$(_cco_caller_context)" == "container-agent" ]]; then
         die "cco refuses to resolve host paths inside a container (anti-in-container guard, ADR-0007). cco runs host-side only; set CCO_ALLOW_HOST_RESOLVE=1 only for tests/dev."
     fi
 }
@@ -331,6 +468,18 @@ _cco_global_claude_dir() {
     printf '%s\n' "$(_cco_config_dir)/.claude"
 }
 
+# The three INTERNAL-STORE buckets (DATA/STATE/CACHE) nest under the cco-svc-owned
+# privileged root in a container-operator session (ADR-0047): CCO_*_HOME point at
+# /var/lib/cco-internal/{share,state,cache}/cco, which the `claude` user cannot
+# traverse (EACCES). So the resolvers must NOT try to create/stat those paths as
+# claude — `_cco_ensure_dir` would EACCES on its `[[ -d ]]`/mkdir. The buckets are
+# pre-created + bind-mounted host-side by `cco start`, so ensuring is a host-only
+# concern; skip it whenever cco runs as a container operator (both the outer claude
+# cco and the helper-elevated cco-svc cco resolve the same confined paths). CONFIG
+# (~/.cco, _cco_config_dir) is unaffected — it stays a claude-owned mount and keeps
+# ensuring. The bucket string itself is always returned; only the side-effecting
+# ensure is gated.
+
 # DATA — internal-but-synced (required, never-team).
 _cco_data_dir() {
     _cco_resolver_guard
@@ -339,7 +488,7 @@ _cco_data_dir() {
         "${CCO_DATA_HOME:-}" \
         "${XDG_DATA_HOME:+${XDG_DATA_HOME%/}/cco}" \
         "$HOME/.local/share/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
 
@@ -351,7 +500,27 @@ _cco_state_dir() {
         "${CCO_STATE_HOME:-}" \
         "${XDG_STATE_HOME:+${XDG_STATE_HOME%/}/cco}" \
         "$HOME/.local/state/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
+    printf '%s\n' "$base"
+}
+
+# STATE/shared — the ONLY STATE member that crosses the ADR-0047 boundary into a
+# container session. An explicit ALLOW-LIST: a new file added anywhere else under
+# STATE is unmounted by default (fail-safe). The complement is load-bearing —
+# `remotes-token` (0600 auth), `projects/<id>/session/{memory,claude-state}`
+# (transcripts + memory) and the global update state MUST NOT reach a container,
+# which is why the whole-STATE bind is not an option (v3 R1; see
+# e2e-review/fix-design-v3/00-plan.md §2.2).
+#
+# It exists because the members that DO cross are written with the atomic
+# `mktemp "$f.XXXXXX"` + `mv` pattern, which needs a writable PARENT — and a
+# file-shaped bind gives none (the parent is a container-local root:root dir
+# Docker materialises for the mountpoint), while `mv` onto a bound file is EBUSY.
+# One directory bind restores both. Keep this the single shareable STATE member:
+# to expose something new to sessions, move it UNDER here, never widen the mount.
+_cco_state_shared_dir() {
+    local base; base="$(_cco_state_dir)/shared"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
 
@@ -388,6 +557,83 @@ _cco_cache_dir() {
         "${CCO_CACHE_HOME:-}" \
         "${XDG_CACHE_HOME:+${XDG_CACHE_HOME%/}/cco}" \
         "$HOME/.cache/cco")
-    _cco_ensure_dir "$base"
+    _cco_container_operator || _cco_ensure_dir "$base"
     printf '%s\n' "$base"
+}
+
+# ── Developer sandbox (ADR-0052 §7) ─────────────────────────────────
+# The fail-loud version gate (§1) dies whenever on-disk internal state is NEWER
+# than the running binary. The only realistic way a developer trips it is running a
+# dev `bin/cco` and the published one against the SAME machine — shared XDG state is
+# the root cause, not the reaction. This toggle redirects the three INTERNAL buckets
+# to an isolated root so the two binaries never touch each other's STATE/DATA/CACHE;
+# with it, §1's die-on-newer-state costs a developer nothing and still protects the
+# ordinary user completely.
+#
+# CONFIG (~/.cco) stays SHARED — this cycle's §7 call (recorded in the ADR
+# forward-annotation): it holds user-authored, git-versioned config (packs/
+# templates/.claude), NOT the versioned internal state the gate reads. All three
+# gate/reconcile inputs live in the redirected buckets — the index in STATE
+# (shared/index), the global schema_version in STATE (global/update/meta), the
+# registries/provenance in DATA — so isolating STATE/DATA/CACHE is sufficient;
+# forking CONFIG too would needlessly duplicate the developer's authored store.
+#
+# Host-only: a real session's operator buckets are the sacred mounts and are never
+# redirected. Never clobbers an explicit CCO_*_HOME override (tests, power users).
+
+# True (0) when the developer sandbox toggle is engaged (the CCO_DEV_SANDBOX env, or
+# the `--dev-sandbox` flag which bin/cco normalises onto that env before this runs).
+_cco_dev_sandbox_active() { [[ "${CCO_DEV_SANDBOX:-}" == "1" ]]; }
+
+# The sandbox root: an explicit absolute CCO_DEV_SANDBOX_ROOT wins, else
+# ~/.cco-devsandbox. Buckets nest as <root>/{state,data,cache}.
+_cco_dev_sandbox_root() {
+    _cco_first_abs "${CCO_DEV_SANDBOX_ROOT:-}" "$HOME/.cco-devsandbox"
+}
+
+# One-shot seed (opt-in, CCO_DEV_SANDBOX_SEED=1): copy the real STATE + DATA into a
+# fresh sandbox so a dev binary starts against realistic internal state (an existing
+# index + registries) rather than an empty machine. CACHE is deliberately NOT seeded
+# — it is re-fetchable and potentially large (claude-install, llms downloads); a
+# fresh dev cache is harmless. Runs ONLY when the sandbox STATE bucket does not yet
+# exist, so it never overwrites a sandbox already in use. Reads the REAL buckets —
+# so it MUST run BEFORE the CCO_*_HOME overrides are pointed at the sandbox. A copy
+# failure is non-fatal (warn, not die): a partial seed is a dev convenience, not a
+# correctness guarantee.
+_cco_dev_sandbox_seed() {
+    local root="$1"
+    [[ -d "$root/state" ]] && return 0          # already seeded / in use → no-op
+    local real_state real_data
+    real_state=$(_cco_state_dir)
+    real_data=$(_cco_data_dir)
+    _cco_ensure_dir "$root"
+    if [[ -d "$real_state" ]]; then
+        cp -a "$real_state" "$root/state" 2>/dev/null || warn "dev-sandbox: STATE seed was incomplete"
+    else
+        _cco_ensure_dir "$root/state"
+    fi
+    if [[ -d "$real_data" ]]; then
+        cp -a "$real_data" "$root/data" 2>/dev/null || warn "dev-sandbox: DATA seed was incomplete"
+    else
+        _cco_ensure_dir "$root/data"
+    fi
+    warn "dev-sandbox: seeded STATE+DATA from your real buckets into $root (one-shot)"
+}
+
+# Engage the sandbox: redirect the internal buckets and announce it. A strict no-op
+# when the toggle is off (the regression guard for every other path) or when running
+# in-container (operator buckets are the real mounts — host-only, per the section
+# note). Never clobbers an explicit CCO_*_HOME override. Exports the resolved root so
+# `cco whoami` and any child process see the same sandbox. Banner on stderr so it
+# never corrupts a machine-readable stdout (e.g. `cco path list`).
+_cco_apply_dev_sandbox() {
+    _cco_dev_sandbox_active || return 0
+    _cco_in_container && return 0               # host-only (covers operator + plain agent)
+    local root; root=$(_cco_dev_sandbox_root)
+    [[ "${CCO_DEV_SANDBOX_SEED:-}" == "1" ]] && _cco_dev_sandbox_seed "$root"
+    [[ "${CCO_DATA_HOME:-}"  == /* ]] || export CCO_DATA_HOME="$root/data"
+    [[ "${CCO_STATE_HOME:-}" == /* ]] || export CCO_STATE_HOME="$root/state"
+    [[ "${CCO_CACHE_HOME:-}" == /* ]] || export CCO_CACHE_HOME="$root/cache"
+    export CCO_DEV_SANDBOX_ROOT="$root"
+    warn "dev-sandbox active — internal state isolated under $root (NOT your real cco state)"
 }

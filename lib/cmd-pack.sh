@@ -53,13 +53,16 @@ EOF
     local pack_dir="$PACKS_DIR/$name"
     [[ -d "$pack_dir" ]] && die "Pack '$name' already exists at packs/$name/"
 
-    # Ensure the packs store exists (CONFIG bucket, ~/.cco/packs).
-    mkdir -p "$PACKS_DIR"
+    # Ensure the packs store exists (CONFIG bucket, ~/.cco/packs). Defense-in-depth
+    # (R5): fail loudly if the store is read-only — the operator write-gate refuses
+    # `pack create` below edit-global first, but a silent mkdir/cp failure must not
+    # let the success message print on a tree that was never written.
+    mkdir -p "$PACKS_DIR" || die "Cannot create packs store at $PACKS_DIR (read-only?)."
 
     # Resolve and copy template
     local template_dir
     template_dir=$(_resolve_template "pack" "${template_name:-base}")
-    cp -r "$template_dir" "$pack_dir"
+    cp -r "$template_dir" "$pack_dir" || die "Failed to create pack at $pack_dir (read-only?)."
 
     # Replace name placeholder in pack.yml if present
     if [[ -f "$pack_dir/pack.yml" ]]; then
@@ -104,9 +107,17 @@ EOF
     printf "${BOLD}%s %-11s %-8s %-8s %-8s %s${NC}\n" \
         "$(_fit_col "NAME" "$namew")" "KNOWLEDGE" "SKILLS" "AGENTS" "RULES" "TAGS"
 
+    # D5: this verb enumerates the pack store exhaustively, so its notice may speak
+    # about packs — and only packs (ratified 2026-07-30).
+    _env_store_subject pack
     for dir in "$PACKS_DIR"/*/; do
         [[ -d "$dir" ]] || continue
         name=$(basename "$dir")
+        # Output scoping (ADR-0043): show only packs referenced by the current
+        # project at read-project (the read-project mount already narrows to
+        # these; routing through the layer makes it intentional + uniform).
+        _env_note_seen pack   # D5: enumerated rows, for the host-total supplement
+        if ! _env_in_scope pack "$name"; then _env_note_hidden pack; continue; fi
 
         local pack_yml="$dir/pack.yml"
         local k_count="-" s_count="-" a_count="-" r_count="-"
@@ -124,6 +135,7 @@ EOF
         printf "%s %-11s %-8s %-8s %-8s %s\n" \
             "$(_fit_col "$name" "$namew")" "$k_count" "$s_count" "$a_count" "$r_count" "${tags:-—}"
     done
+    _env_flush_hidden_notice
 }
 
 cmd_pack_show() {
@@ -151,10 +163,20 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco pack show <name>"
+    # Output scoping (ADR-0043): refuse out-of-scope packs with a scope message
+    # instead of a raw "not found at packs/<name>" (the narrowed mount hides them).
+    _env_require_visible pack "$name"
 
     local pack_dir="$PACKS_DIR/$name"
     local pack_yml="$pack_dir/pack.yml"
-    [[ ! -d "$pack_dir" ]] && die "Pack '$name' not found at packs/$name/"
+    # INV-AVAIL (ADR-0056 D1), the sibling of the `pack validate` site: in scope but
+    # absent from the mount is NOT-MOUNTED. The comment above _env_require_visible
+    # already anticipated "the narrowed mount hides them" — the scope refusal covers
+    # an out-of-scope pack, and this covers the in-scope-but-unbound one.
+    if [[ ! -d "$pack_dir" ]]; then
+        if _cco_container_operator; then _env_unavailable not-mounted pack "$name"; fi
+        die "Pack '$name' not found at packs/$name/"
+    fi
 
     # Name
     local yml_name=""
@@ -298,12 +320,12 @@ EOF
     done < <(_project_foreach)
 
     # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    # Never probe the confined DATA/STATE buckets here (INV-S6): behind the ADR-0047
+    # boundary the -d predicate reads FALSE for a path that exists, so the preview
+    # would silently omit sidecars that ARE about to be removed. Announce them plainly.
     info "cco pack remove '$name' will delete:"
     info "  • packs/$name/ (the pack)"
-    [[ -d "$(_cco_data_dir)/packs/$name"  ]] && info "  • DATA:  install-provenance"
-    [[ -d "$(_cco_state_dir)/packs/$name" ]] && info "  • STATE: merge base/meta"
-    local _ptags; _ptags=$(_tags_get packs "$name")
-    [[ -n "$_ptags" ]] && info "  • tags:  [$_ptags]"
+    info "  • its machine-local DATA/STATE sidecars + per-user tag binding"
 
     # In-use is a --force block (not a confirm): a still-referenced pack is only
     # removable with --force, which overrides the block and implies -y.
@@ -315,16 +337,15 @@ EOF
 
     _confirm_destructive "$yes" "Remove pack '$name'?" || { info "Aborted"; return 0; }
 
-    rm -rf "$pack_dir"
-
-    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state this
-    # pack created, not just the CONFIG copy — DATA install-provenance (`source`),
-    # STATE merge base+meta (`<state>/cco/packs/<name>/update/`), and the tags.yml
-    # binding. Otherwise removal orphans bookkeeping that `cco config validate`
-    # would later have to sweep.
-    rm -rf "$(_cco_data_dir)/packs/$name"
-    rm -rf "$(_cco_state_dir)/packs/$name"
-    _tags_forget packs "$name"
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state this pack
+    # created, not just the CONFIG copy — DATA install-provenance, STATE merge
+    # base/meta, and the tags.yml binding. These live behind the ADR-0047 boundary, so
+    # they go through lib/store.sh: a fail-closed pre-flight (crossing #1) refuses
+    # BEFORE the claude-owned CONFIG dir is touched if the store cannot be written,
+    # then the cascade applies (crossing #2) — all-or-nothing, never a false ✓.
+    _store_check sidecar-purge packs "$name"
+    rm -rf "$pack_dir" || die "Failed to remove packs/$name."
+    _store_apply sidecar-purge packs "$name"
 
     ok "Pack '$name' removed"
 }
@@ -356,18 +377,34 @@ EOF
     done
 
     if [[ -n "$name" ]]; then
-        [[ ! -d "$PACKS_DIR/$name" ]] && die "Pack '$name' not found"
+        # Output scoping (ADR-0043): refuse out-of-scope packs with a scope message.
+        _env_require_visible pack "$name"
+        # INV-AVAIL (ADR-0056 D1/D5): in scope but absent from the mount is the
+        # NOT-MOUNTED state, not "not found". At G=none `~/.cco` is not bound at
+        # all, so this raw probe answered "Pack 'X' not found" for a pack that
+        # certainly exists — hidden rendered as absent, the managed rule's exact
+        # inverse. Ask the owner for the sentence, the remedy and the exit code.
+        if [[ ! -d "$PACKS_DIR/$name" ]]; then
+            if _cco_container_operator; then _env_unavailable not-mounted pack "$name"; fi
+            die "Pack '$name' not found"
+        fi
         _validate_single_pack "$name"
     else
         local has_errors=false
+        # D5 subject: the --all arm sweeps the whole pack store (see cmd_pack_list).
+        _env_store_subject pack
         for dir in "$PACKS_DIR"/*/; do
             [[ ! -d "$dir" ]] && continue
             local pack_name
             pack_name=$(basename "$dir")
+            # Output scoping (ADR-0043): only validate packs in the session's scope.
+            _env_note_seen pack   # D5: enumerated rows, for the host-total supplement
+            if ! _env_in_scope pack "$pack_name"; then _env_note_hidden pack; continue; fi
             if ! _validate_single_pack "$pack_name"; then
                 has_errors=true
             fi
         done
+        _env_flush_hidden_notice
         if [[ "$has_errors" == true ]]; then
             return 1
         fi
@@ -424,6 +461,7 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco pack install <source> [--pick <name>]\n\n<source> can be a git URL or a registered remote name."
+    _store_provenance_guard "pack install"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     # Resolve remote name → URL + token
@@ -512,6 +550,155 @@ EOF
     trap - EXIT
 }
 
+# ── cco pack rename ───────────────────────────────────────────────────
+# Re-key a pack across every store its name lives in (ADR-0050): the CONFIG store
+# dir (packs/<old> → packs/<new>) + its pack.yml `name:`, the id-keyed DATA
+# install-provenance + STATE merge base/meta, the per-user tag binding, and the
+# `packs[]` reference in every project that uses it (pack names are globally
+# scoped — unaffected by ADR-0051's per-project index scoping). Strict (ADR-0031
+# D3): refuse if a referencing project has a member whose replicated project.yml
+# copy cannot be rewritten from here, since it would drift under cco sync's
+# clobber-guard. That is TWO conditions, not one (FI-41): a member with no binding
+# at all is a configuration error (`cco resolve`, exit 1), while a member bound on
+# this machine but not bound into THIS container is a session shape (run it on the
+# host, exit 2 per D8). Both answers come from _env_member_state, never from the
+# index-level status word, which cannot tell them apart in operator mode.
+cmd_pack_rename() {
+    local old="" new="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes) yes=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco pack rename <old> <new>
+
+Rename a knowledge pack, re-keying it across the CONFIG store (packs/<name>/ +
+pack.yml name:), the machine-local DATA/STATE sidecars, the per-user tags, and the
+packs[] reference in every project that uses it. Every referencing project must be
+resolved on this machine
+(run 'cco resolve' on your host first). After renaming, commit + push
+the updated .cco/project.yml in each changed repo and run 'cco sync'.
+
+Options:
+  -y, --yes   Skip the confirmation prompt
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1. Run 'cco pack rename --help'." ;;
+            *)
+                if [[ -z "$old" ]]; then old="$1"
+                elif [[ -z "$new" ]]; then new="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+
+    [[ -z "$old" || -z "$new" ]] && die "Usage: cco pack rename <old> <new>"
+    [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
+
+    local old_dir="$PACKS_DIR/$old" new_dir="$PACKS_DIR/$new"
+    [[ -d "$old_dir" ]] || die "Pack '$old' not found at packs/$old/."
+    _rename_validate pack "$new"
+    [[ -e "$new_dir" ]] && die "Pack '$new' already exists at packs/$new/. Choose a different name."
+
+    # ── Strict pre-scan: referencing projects must be fully resolved ────
+    # Peel the member record by hand: _project_iter_members' column 2 (path) is EMPTY
+    # for an unresolved member, so `IFS=$'\t' read` would fold the middle field and
+    # never see status=unresolved (E6B-04). The enumeration is now non-vacuous
+    # in-container (index §3.6), so this guard actually classifies mounted members.
+    local proj unit yml mname mpath mstatus _mrec _mstate
+    local -a affected=() blocked=() unmounted=()
+    while IFS=$'\t' read -r proj unit yml; do
+        _yaml_list_has_ref "$yml" packs "$old" || continue
+        affected+=("$proj")
+        while IFS= read -r _mrec; do
+            [[ -z "$_mrec" ]] && continue
+            _peel_tab "$_mrec" mname mpath mstatus
+            [[ "$mstatus" == unresolved ]] || continue
+            # FI-41 — `unresolved` here is _project_member_status's word, and it means
+            # "the probe is not inspectable in THIS context". Column 2 is the container
+            # MOUNT in operator mode (index.sh:1432-1434), so in a session that word
+            # covers TWO realities and this branch used to answer both with `cco
+            # resolve` — advice the host would answer "already resolved", leaving the
+            # operator in a loop. Ask the availability owner instead of re-reading the
+            # index-level vocabulary (ADR-0056 D1): the state, its sentence and its exit
+            # code all come from one place.
+            _mstate=$(_env_member_state "$mname" "$(_index_get_path "$proj" "$mname")")
+            case "$_mstate" in
+                here)        ;;                            # inspectable after all
+                not-mounted) unmounted+=("$mname") ;;
+                *)           blocked+=("$proj:$mname") ;;
+            esac
+        done < <(_project_iter_members "$proj")
+    done < <(_project_foreach)
+    # Session shape before naming error (D8): a member that merely is not bound here
+    # is not a broken configuration, and its remedy is the host — so it refuses at
+    # exit 2 through the owner, while a genuinely unresolved member still dies at 1.
+    # Naming only the first offender is deliberate: every offender carries the SAME
+    # remedy, so enumerating them adds no action. Whether a refusal may name the whole
+    # set is FI-40's open question, and it belongs to both guards at once — not to
+    # this one alone, pre-empted here.
+    [[ ${#unmounted[@]} -gt 0 ]] && _env_unavailable not-mounted repo "${unmounted[0]}"
+    [[ ${#blocked[@]} -gt 0 ]] && \
+        # ADR-0056 D2 — a remedy is a function of the print site. `pack rename` is
+        # container-reachable at edit-global, and `cco resolve` is host-only there
+        # (the operator gate refuses it at exit 2), so the unqualified form told the
+        # agent to run a verb this same session rejects.
+        die "Cannot rename pack '$old': unresolved member(s) in referencing project(s): ${blocked[*]}. Run 'cco resolve'$(_cco_container_operator && printf ' on your host') first (ADR-0031)."
+
+    # ── Fail-closed pre-flight (RC-3 §3.4 Phase 0) ──────────────────────
+    # Crossing #1: the DATA/STATE sidecar re-key must be writable BEFORE any store is
+    # touched — never the E6B-04 half-apply of a renamed CONFIG dir with orphaned
+    # sidecars. Also carries the unmounted-project census (§3.5): a project referencing
+    # this pack that is not mounted here cannot have its packs[] rewritten in-container,
+    # so it would drift — refuse (never silently narrow). On the host the census is 0.
+    _store_check sidecar-rekey packs "$old" "$new"
+    if [[ "${_STORE_REFS:-0}" -gt 0 ]]; then
+        die "Cannot rename pack '$old' in this session: $_STORE_REFS project(s) on this machine are not mounted here, so a packs[] reference they may carry cannot be updated (it would drift). Run 'cco pack rename $old $new' on your host, or start a session that mounts them."
+    fi
+
+    # ── Preview + confirm (ADR-0029 D2) ─────────────────────────────────
+    local -a bullets=(
+        "packs/$old/ → packs/$new/ (+ pack.yml name:)"
+        "DATA install-provenance + STATE merge base/meta + per-user tags"
+    )
+    [[ ${#affected[@]} -gt 0 ]] && bullets+=("packs[] reference in project(s): ${affected[*]}")
+    _rename_preview_confirm "$yes" "Rename pack '$old' → '$new'" "${bullets[@]}" \
+        || { info "Aborted — nothing changed."; return 0; }
+
+    # ── Store re-key ────────────────────────────────────────────────────
+    # CONFIG store dir first (claude-owned), then the DATA/STATE sidecar+tags cascade
+    # through lib/store.sh (crossing #2, all-or-nothing behind the ADR-0047 boundary).
+    mv "$old_dir" "$new_dir" || die "Failed to move packs/$old → packs/$new."
+    [[ -f "$new_dir/pack.yml" ]] && _sed_i "$new_dir/pack.yml" "^name:.*" "name: $new"
+    _store_apply sidecar-rekey packs "$old" "$new"
+
+    # ── Cross-project packs[] fan-out (delegate to git, P17) ────────────
+    local tag val
+    local -a changed=() failed=()
+    while IFS=$'\t' read -r tag val _; do
+        case "$tag" in
+            changed) changed+=("$val") ;;
+            failed)  failed+=("$val") ;;
+        esac
+    done < <(_rename_fanout_projectyml packs "$old" "$new")
+
+    ok "Renamed pack '$old' → '$new'."
+    # S2b: a packs[] rewrite that could not be persisted. Unlike `repo rename` this
+    # cannot stop before the store — the pack dir move and the sidecar/tags cascade
+    # already committed above — so the honest report is: the rename HAPPENED, and
+    # these repos still point at the old name. Exit 1 (a write that started and
+    # failed — INV-S3b), after the ok, so the user is not told to revert a rename
+    # that is real.
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        die "…but packs[] could not be rewritten in ${#failed[@]} repo(s): ${failed[*]}. They still reference '$old' — fix them by hand, or re-run this rename in reverse once the cause is resolved."
+    fi
+    if [[ ${#changed[@]} -gt 0 ]]; then
+        warn "Commit + push the updated .cco/project.yml in each changed repo, then run 'cco sync':"
+        printf '%s\n' "${changed[@]}" | sort -u | while IFS= read -r p; do info "  $p"; done
+    fi
+}
+
 cmd_pack_update() {
     local name="" force=false update_all=false
 
@@ -543,6 +730,7 @@ EOF
         esac
     done
 
+    _store_provenance_guard "pack update"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     if $update_all; then
@@ -652,6 +840,7 @@ EOF
 
     [[ -z "$archive" ]] && die "Usage: cco pack import <archive>"
     [[ -f "$archive" ]] || die "Archive not found: $archive"
+    _store_provenance_guard "pack import"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     local tmpdir; tmpdir=$(mktemp -d)
     tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
@@ -835,6 +1024,7 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco pack internalize <name> [--as <new-name>]"
+    _store_provenance_guard "pack internalize"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     local pack_dir="$PACKS_DIR/$name"

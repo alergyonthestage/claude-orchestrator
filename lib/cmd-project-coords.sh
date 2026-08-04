@@ -16,8 +16,9 @@
 # it previews first and confirms (or -y).
 #
 # Provides: cmd_project_coords()
-# Depends:  index.sh (_index_list_projects), cmd-resolve.sh
-#           (_resolve_unit_dir_for_project), yaml.sh (*_coords parsers),
+# Depends:  index.sh (_index_list_projects), cmd-resolve.sh (the operator-aware
+#           _resolve_project_yml via _env_project_state), access-scope.sh
+#           (_env_project_state/_env_unavailable), yaml.sh (*_coords parsers),
 #           colors.sh.
 
 # Emit "<name>\t<unit>\t<section>\t<url>\t<yml>" for every url-bearing entry of
@@ -42,13 +43,22 @@ _coords_scan_section() {
 # projects. A url-less entry (authored pack, local-only repo/mount) carries no
 # coordinate and is skipped — it cannot diverge.
 _coords_scan() {
+    local only="${1:-}"   # optional: restrict to a single project name (F3)
     local unit yml
     while IFS=$'\t' read -r unit _ yml; do
+        [[ -n "$only" && "$unit" != "$only" ]] && continue
+        # Output scoping (ADR-0043): at read-project, only the current project's
+        # coordinates are in scope (cross-project consistency needs read-global+).
+        if ! _env_in_scope project "$unit"; then _env_note_hidden project; continue; fi
         _coords_scan_section "$unit" "$yml" repos        yml_get_repo_coords  2
         _coords_scan_section "$unit" "$yml" extra_mounts yml_get_mount_coords 2
         _coords_scan_section "$unit" "$yml" llms         yml_get_llms         4
         _coords_scan_section "$unit" "$yml" packs        yml_get_pack_coords  2
     done < <(_project_foreach)
+    # Flush inside the scan: this runs in a $() subshell, so the hidden-counter
+    # state does not survive to the caller — but the stderr notice does escape
+    # the command substitution (INV-B/C).
+    _env_flush_hidden_notice
 }
 
 # Names that carry >1 distinct url across units (one per line).
@@ -113,7 +123,7 @@ _coords_set_url() {
 }
 
 cmd_project_coords() {
-    local mode=table from="" force=false
+    local mode=table from="" force=false only=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --diff) [[ "$mode" == sync ]] || mode=diff; shift ;;
@@ -122,7 +132,10 @@ cmd_project_coords() {
             -y|--yes) force=true; shift ;;
             --help|-h)
                 cat <<'EOF'
-Usage: cco project coords [--diff] [--sync --from <unit>] [-y]
+Usage: cco project coords [<name>] [--diff] [--sync --from <unit>] [-y]
+
+A positional <name> restricts the check to one project (useful in a session,
+where only the current project's coordinates are in scope).
 
 Check (and optionally reconcile) coordinate consistency across your projects.
 The index is global-flat (one logical name → one path), so a name's url should
@@ -145,11 +158,31 @@ Options:
 EOF
                 return 0 ;;
             -*) die "Unknown option: $1" ;;
-            *)  die "Unexpected argument: $1" ;;
+            *)  [[ -z "$only" ]] || die "Unexpected argument: $1"
+                only="$1"; shift ;;   # optional project-name filter (F3)
         esac
     done
 
-    local recs; recs=$(_coords_scan)
+    # Read-path honesty (ADR-0056 D6/D7), same discipline as `project list` /
+    # `project validate --all` / `cco list`: the scan enumerates the STATE index
+    # through _project_foreach, and an unreadable (or, in a session, an absent)
+    # index would yield ZERO records — rendered below as the reassuring "no url
+    # coordinates to check" at exit 0. Classify BEFORE the scan.
+    _index_assert_readable
+
+    # INV-AVAIL (ADR-0056 D1). A NAMED unit gets the shared classifier's answer, in
+    # the shared vocabulary, at the shared exit code. This lane answered a hidden or
+    # misspelt <name> with "No url coordinates to check" at exit 0 — the one place
+    # in the `project` family where an unavailable target is not a refusal, so an
+    # agent could not tell "this project has no url-bearing resources" from "this
+    # project is not visible to you" from "you typed it wrong". Its siblings
+    # (`project show`, `project validate`) both refuse at exit 2.
+    if [[ -n "$only" ]]; then
+        local _ost; _ost=$(_env_project_state "$only")
+        [[ "$_ost" == here ]] || _env_unavailable "$_ost" project "$only"
+    fi
+
+    local recs; recs=$(_coords_scan "$only")
     if [[ -z "$recs" ]]; then
         info "No url coordinates to check — none of your projects reference a url-bearing repo/mount/llms/pack."
         info "(Distinct from 'cco project validate', which flags resources missing a url; 'coords' only checks url-bearing resources for cross-project consistency.)"
@@ -163,8 +196,12 @@ EOF
 
     # ---- --sync ----
     [[ -n "$from" ]] || die "--sync requires --from <unit> (cco never auto-elects an authoritative coordinate; ADR-0016 F48)."
-    local from_dir; from_dir=$(_resolve_unit_dir_for_project "$from" 2>/dev/null) \
-        || die "--from unit '$from' not found (unknown, or its repo is unresolved here — run 'cco resolve $from')."
+    # INV-F.3: classify --from through the operator-aware pair — the scan below runs
+    # over _project_foreach (operator-aware), so this is a pure existence check (the
+    # unit dir itself is never read). In a session a mounted --from resolves instead
+    # of the host-only "run cco resolve" refusal.
+    local _st; _st=$(_env_project_state "$from")
+    [[ "$_st" == here ]] || _env_unavailable "$_st" "--from unit" "$from"
 
     local -a names=()
     local n

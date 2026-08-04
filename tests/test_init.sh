@@ -31,6 +31,35 @@ test_init_seeds_global_when_absent() {
     assert_file_exists "$HOME/.cco/.claude/rules/language.md"
 }
 
+test_init_scaffolds_commented_access_yml() {
+    # ADR-0049 §9: cco init writes ~/.cco/access.yml FULLY commented (nothing set
+    # implicitly) so the user sees the global access escape exists.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    ( cd "$repo" && run_cco init --name myrepo --lang "English" )
+    local f="$HOME/.cco/access.yml"
+    assert_file_exists "$f"
+    assert_file_contains "$f" "claude_access, ADR-0049"
+    # Every non-blank line is a comment → no knob is set implicitly.
+    if grep -vE '^\s*(#|$)' "$f"; then
+        echo "ASSERTION FAILED: scaffolded access.yml must be fully commented"
+        return 1
+    fi
+}
+
+# A second init must not clobber an edited access.yml (idempotent, user-owned).
+test_init_access_yml_not_clobbered() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo1; repo1=$(_init_repo "$tmpdir" repo-one)
+    ( cd "$repo1" && run_cco init --name repo-one --lang "English" )
+    printf 'cco: read-global\n' > "$HOME/.cco/access.yml"   # user edit
+    local repo2; repo2=$(_init_repo "$tmpdir" repo-two)
+    ( cd "$repo2" && run_cco init --name repo-two --lang "English" )
+    assert_file_contains "$HOME/.cco/access.yml" "cco: read-global"
+}
+
 test_init_global_setup_scripts_to_cco_root() {
     # setup.sh / setup-build.sh / mcp-packages.txt land at the ~/.cco top level.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -231,7 +260,7 @@ test_init_registers_index() {
     setup_cco_env "$tmpdir"
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name acme-app --lang "English" )
-    local index="$CCO_STATE_HOME/index"
+    local index="$(cco_index_file)"
     assert_file_exists "$index"
     assert_file_contains "$index" "acme-app"
     assert_file_contains "$index" "$repo"
@@ -295,4 +324,136 @@ test_init_accepts_valid_name_with_hyphens() {
     local repo; repo=$(_init_repo "$tmpdir" myrepo)
     ( cd "$repo" && run_cco init --name "my-valid-project-123" --lang "English" )
     assert_file_contains "$repo/.cco/project.yml" "name: my-valid-project-123"
+}
+
+# B-DF2: bash writes a `read -p` prompt to stderr, so a `2>/dev/null` on the
+# interactive project-name read hides the prompt and the command looks hung. Guard
+# the regression at the source — a real PTY test is too platform-fragile for the
+# suite, and the prompt path only fires on an interactive tty.
+test_init_name_prompt_not_swallowed() {
+    local line
+    line=$(grep -n 'Project name \[\$base\]' "$REPO_ROOT/lib/cmd-init.sh" | head -1)
+    [[ -n "$line" ]] || fail "could not find the init project-name prompt read"
+    [[ "$line" != *"2>/dev/null"* ]] \
+        || fail "B-DF2 regression: the init name prompt read swallows stderr (2>/dev/null hides the prompt)"
+    return 0
+}
+
+# ── repos[] seeding (the hosting repo is seeded into project.yml) ─────
+# `cco init` runs inside a repo that becomes the project's sole member, so it
+# seeds that repo into repos[] (machine-agnostic coordinate) + binds it in the
+# index keyed by its LOGICAL name. Without this, repos[] shipped empty and
+# `cco start` mounted nothing (init/start inconsistency).
+
+test_init_seeds_current_repo_into_repos() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # A non-git repo: the repo name defaults to the dir basename, no url derived.
+    local repo; repo=$(_init_repo "$tmpdir" backend)
+    ( cd "$repo" && run_cco init --name app --lang "English" )
+    # repos[] is no longer the empty stub, and the hosting repo is seeded by
+    # its basename as the logical name.
+    assert_file_not_contains "$repo/.cco/project.yml" "repos: []"
+    assert_file_contains "$repo/.cco/project.yml" "- name: backend"
+}
+
+test_init_seeds_repo_url_from_origin() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" backend)
+    # A git repo with an origin remote → the coordinate url is derived from it.
+    git -C "$repo" init -q
+    git -C "$repo" remote add origin "git@github.com:acme/backend.git"
+    ( cd "$repo" && run_cco init --name app --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "- name: backend"
+    assert_file_contains "$repo/.cco/project.yml" "url: git@github.com:acme/backend.git"
+}
+
+test_init_repo_name_override_and_index_keying() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # --repo-name is an axis independent of --name: the member logical name.
+    local repo; repo=$(_init_repo "$tmpdir" somedir)
+    ( cd "$repo" && run_cco init --name app --repo-name api --lang "English" )
+    assert_file_contains "$repo/.cco/project.yml" "- name: api"
+    local index="$(cco_index_file)"
+    # Membership is keyed by the REPO name (project 'app' → member 'api'), and the
+    # path is bound under the repo name — NOT the project name.
+    assert_file_contains "$index" 'app: "api"'
+    assert_file_contains "$index" 'api: "'
+}
+
+# B-DF2 (repo-name prompt): same stderr-swallow guard as the project-name read.
+test_init_repo_name_prompt_not_swallowed() {
+    local line
+    line=$(grep -n 'Repo name \[\$base\]' "$REPO_ROOT/lib/cmd-init.sh" | head -1)
+    [[ -n "$line" ]] || fail "could not find the init repo-name prompt read"
+    [[ "$line" != *"2>/dev/null"* ]] \
+        || fail "B-DF2 regression: the init repo-name prompt read swallows stderr (2>/dev/null hides the prompt)"
+    return 0
+}
+
+# ── S2b item 2: the index registration cco init ANNOUNCES ───────────────────
+# Both index writes were bare, while the success message asserts them verbatim —
+# "registered it in the index (1 repo)". So a failed write made the tool contradict
+# itself one command later: `cco start <name>` answers "is not resolvable yet".
+# The scaffold IS on disk, so the fix is a truthful report plus the repair command,
+# not a rollback. errexit cannot cover it (bin/cco's `|| _cco_rc=$?` dispatch).
+# ⚠ FAILS on pre-fix: rc=0 and the "registered it in the index" claim prints.
+test_init_unwritable_index_does_not_claim_registration() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+
+    mkdir -p "$(state_shared)"
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(cd "$repo" && \
+          CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" init --name myrepo --lang "English" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    # (a) non-zero — the registration could not be written
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    # (b) the claim that asserts the failed write must NOT be made
+    [[ "$out" != *"registered it in the index"* ]] \
+        || { fail "cco init must not claim an index registration that failed: $out"; return 1; }
+    # (c) the scaffold IS real, so say so, and name the repair — not a rollback
+    [[ "$out" == *"Scaffolded"* && "$out" == *"cco resolve --scan"* ]] \
+        || { fail "the failure must report the scaffold that landed and the repair command: $out"; return 1; }
+    return 0
+}
+
+# FI-27 / ADR-0053: a re-init through a SYMLINKED cwd must not raise a false AD5'
+# conflict. Reaching a repo via a symlink alias makes $PWD the LOGICAL path while
+# the physical path (pwd -P) differs — exactly macOS /tmp and /var. Because the
+# writer stores the canonical (physical) path, cmd-init must canonicalize its
+# probe too, or the AD5' pre-check would compare a logical probe against the
+# physical stored value and die "already bound to <physical>".
+test_init_reinit_from_symlinked_cwd_no_false_conflict() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo; repo=$(_init_repo "$tmpdir" myrepo)
+    local phys; phys=$(cd "$repo" && pwd -P)
+    local link="$tmpdir/repo-link"
+    ln -sfn "$repo" "$link"
+
+    # First init through the symlink alias.
+    ( cd "$link" && run_cco init --name myrepo --repo-name myrepo --lang "English" )
+
+    # The binding is stored CANONICAL (physical), not the symlink alias.
+    local got
+    got=$( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+           source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+           _index_get_path myrepo myrepo )
+    assert_equals "$phys" "$got"
+
+    # Re-init --force through the SAME symlinked cwd: no false AD5' conflict.
+    local rc=0
+    ( cd "$link" && run_cco init --name myrepo --repo-name myrepo --force --lang "English" ) || rc=$?
+    [[ $rc -eq 0 ]] || fail "re-init from a symlinked cwd raised a false AD5' conflict (rc=$rc)"
 }

@@ -23,9 +23,9 @@ test_update_first_run_no_meta() {
     # Simulate pre-update install (no .cco/meta)
     setup_global_from_defaults "$tmpdir"
     # Substitute language placeholders manually (as old init would)
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     run_cco update
     assert_file_exists "$(state_global_meta)" \
@@ -188,9 +188,9 @@ test_update_migrations_run_in_order() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     # Create .cco/meta with schema_version 0
     create_cco_meta "$(state_global_meta)" "schema_version: 0
@@ -205,8 +205,13 @@ languages:
 manifest:"
 
     run_cco update
-    # Schema version should be updated to the latest global migration id.
-    assert_file_contains "$(state_global_meta)" "schema_version: 16"
+    # Schema version should be updated to the latest global migration id. Derived,
+    # not hardcoded: the assertion is "tracks the newest migration", so pinning a
+    # literal only guaranteed this test would break on every migration added.
+    local latest
+    latest=$(awk -F= '/^MIGRATION_ID=/ {if ($2+0 > m) m=$2+0} END {print m}' \
+        "$REPO_ROOT"/migrations/global/*.sh)
+    assert_file_contains "$(state_global_meta)" "schema_version: $latest"
 }
 
 test_update_migration_failure_stops() {
@@ -216,9 +221,9 @@ test_update_migration_failure_stops() {
     setup_global_from_defaults "$tmpdir"
 
     # Substitute language placeholders
-    sed -i "s/{{COMM_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{DOCS_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
-    sed -i "s/{{CODE_LANG}}/English/g" "$HOME/.cco/.claude/rules/language.md"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{COMM_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{DOCS_LANG}}/English/g"
+    _t_sed_i "$HOME/.cco/.claude/rules/language.md" "s/{{CODE_LANG}}/English/g"
 
     # Create a failing migration with higher ID (in the framework sandbox — the
     # tracked migrations/ tree is never touched).
@@ -954,7 +959,7 @@ test_update_dry_run_shows_migrations() {
 
     # Lower schema_version to simulate pending migrations
     local meta="$(state_global_meta)"
-    sed -i "s/^schema_version: .*/schema_version: 0/" "$meta"
+    _t_sed_i "$meta" "s/^schema_version: .*/schema_version: 0/"
 
     run_cco update --dry-run
     assert_output_contains "migration(s) pending"
@@ -2481,21 +2486,33 @@ test_migration_016_normalizes_index() {
     source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
 
-    # Seed a dirty index (pre-fix values) via the low-level setter, bypassing the
+    # Seed a dirty LEGACY v1 (global-flat) index directly on disk, bypassing the
     # normalizing boundary: a tilde repo, a $HOME repo, an @local mount, a clean
-    # absolute entry, plus a project membership row that must survive untouched.
-    _index_section_set paths repotilde "~/dev/api"
-    _index_section_set paths repohome  '$HOME/dev/web'
-    _index_section_set paths mountbad  "@local"
-    _index_section_set paths clean     "/abs/clean"
-    _index_set_project_repos myapp repotilde repohome
+    # absolute entry, plus a project membership row. Migration 016 must upgrade it
+    # to v2 (re-home members under their project) AND normalize every value.
+    local idx="$(cco_index_file)"
+    mkdir -p "$(dirname "$idx")"
+    cat > "$idx" <<EOF
+# legacy index
+version: 1
+paths:
+  repotilde: "~/dev/api"
+  repohome: "\$HOME/dev/web"
+  mountbad: "@local"
+  clean: "/abs/clean"
+projects:
+  myapp: "repotilde repohome"
+EOF
 
     source "$REPO_ROOT/migrations/global/016_normalize-index.sh"
     migrate "$tmpdir/home/.cco/.claude" || return 1
 
-    local idx="$CCO_STATE_HOME/index"
+    # Upgraded to v2, members re-homed under project_paths[myapp] + normalized.
+    grep -q '^version: 2$' "$idx" || fail "index must be upgraded to v2"
     assert_file_contains "$idx" "repotilde: \"$HOME/dev/api\"" || return 1
     assert_file_contains "$idx" "repohome: \"$HOME/dev/web\"" || return 1
+    # clean/mountbad were in no membership → the unscoped bucket; clean normalized,
+    # mountbad (@local, unrecoverable) dropped.
     assert_file_contains "$idx" "clean: \"/abs/clean\"" || return 1
     assert_file_not_contains "$idx" "@local" || return 1
     assert_file_not_contains "$idx" "mountbad" || return 1
@@ -2508,4 +2525,121 @@ test_migration_016_normalizes_index() {
     migrate "$tmpdir/home/.cco/.claude" || return 1
     after=$(cat "$idx")
     [[ "$before" == "$after" ]] || fail "migration 016 must be idempotent (content drifted)"
+}
+
+# ── Migration 014 — remove committed generated artifacts + gitignore them ──────
+# (ADR-0042 / ADR-0005 F1). migrate() receives <repo>/.cco; the generated files
+# live under claude/. Tracked copies are git-rm'd, untracked leftovers rm'd, and
+# .cco/.gitignore gains the exclusions. Idempotent.
+
+# Build a git repo with a project .cco whose claude/ holds the given generated
+# files (all committed). Echoes the .cco dir. $1=tmpdir; rest=relative files.
+_mk014_repo() {
+    local tmpdir="$1"; shift
+    local repo="$tmpdir/repo" cco
+    cco="$repo/.cco"
+    mkdir -p "$cco/claude"
+    git -C "$repo" init -q
+    printf 'name: p\n' > "$cco/project.yml"
+    printf 'secrets.env\n*.env\n!secrets.env.example\n' > "$cco/.gitignore"
+    local f
+    for f in "$@"; do
+        mkdir -p "$(dirname "$cco/$f")"
+        printf 'generated\n' > "$cco/$f"
+    done
+    git -C "$repo" add -A >/dev/null 2>&1
+    git -C "$repo" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+    printf '%s' "$cco"
+}
+
+test_migration_014_removes_tracked_generated() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/workspace.yml" "claude/scheduled_tasks.lock" "claude/CLAUDE.md")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_not_exists "$cco/claude/workspace.yml"        "workspace.yml must be removed"
+    assert_file_not_exists "$cco/claude/scheduled_tasks.lock" "scheduled_tasks.lock must be removed"
+    # A legit committed file is untouched.
+    assert_file_exists "$cco/claude/CLAUDE.md" "CLAUDE.md must survive"
+    # The removals are staged (no longer tracked).
+    if git -C "$cco" ls-files --error-unmatch "claude/workspace.yml" >/dev/null 2>&1; then
+        fail "workspace.yml should be git-removed (untracked after migrate)"
+    fi
+    # .gitignore now excludes the generated files.
+    assert_file_contains "$cco/.gitignore" "claude/workspace.yml"
+    assert_file_contains "$cco/.gitignore" "claude/packs.md"
+    assert_file_contains "$cco/.gitignore" "claude/scheduled_tasks.lock"
+}
+
+test_migration_014_removes_untracked_packs_md() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    # packs.md present but NEVER committed (the reappearing 0-byte leftover, A7).
+    printf '' > "$cco/claude/packs.md"
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_not_exists "$cco/claude/packs.md" "untracked packs.md must be removed"
+}
+
+test_migration_014_idempotent() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/workspace.yml")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+    local first; first=$(cat "$cco/.gitignore")
+    migrate "$cco"   # second run: clean no-op
+    local second; second=$(cat "$cco/.gitignore")
+    [[ "$first" == "$second" ]] || fail "migration 014 must be idempotent (.gitignore drifted)"
+    # No duplicate exclusion lines.
+    local n; n=$(grep -cxF "claude/workspace.yml" "$cco/.gitignore")
+    [[ "$n" -eq 1 ]] || fail "claude/workspace.yml exclusion duplicated ($n times)"
+}
+
+test_migration_014_creates_gitignore_when_missing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    rm -f "$cco/.gitignore"
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco"
+
+    assert_file_exists "$cco/.gitignore" "a missing .gitignore must be authored"
+    # Full skeleton: secret + generated exclusions (single-source writer).
+    assert_file_contains "$cco/.gitignore" "secrets.env"
+    assert_file_contains "$cco/.gitignore" "claude/workspace.yml"
+}
+
+test_migration_014_noop_on_clean_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    local cco; cco=$(_mk014_repo "$tmpdir" "claude/CLAUDE.md")
+    # Bring .gitignore to the post-migration state already.
+    printf 'secrets.env\nclaude/workspace.yml\nclaude/packs.md\nclaude/scheduled_tasks.lock\n' > "$cco/.gitignore"
+    local before; before=$(cat "$cco/.gitignore")
+
+    source "$REPO_ROOT/migrations/project/014_remove_generated_artifacts.sh"
+    migrate "$cco" || fail "clean project must migrate as a no-op (rc 0)"
+
+    assert_file_exists "$cco/claude/CLAUDE.md"
+    [[ "$(cat "$cco/.gitignore")" == "$before" ]] || fail "clean .gitignore must be untouched"
+}
+
+# New projects: the single-source writer now scaffolds the generated exclusions.
+test_project_gitignore_writer_includes_generated() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_migration_deps
+    _cco_write_project_gitignore "$tmpdir/.gitignore"
+    assert_file_contains "$tmpdir/.gitignore" "secrets.env"
+    assert_file_contains "$tmpdir/.gitignore" "claude/workspace.yml"
+    assert_file_contains "$tmpdir/.gitignore" "claude/packs.md"
+    assert_file_contains "$tmpdir/.gitignore" "claude/scheduled_tasks.lock"
 }

@@ -23,6 +23,7 @@ cmd_init() {
     local migrate_project=""
     local do_sync=false
     local name_arg=""
+    local repo_name_arg=""
     local tmpl_name=""
 
     while [[ $# -gt 0 ]]; do
@@ -35,6 +36,9 @@ cmd_init() {
             --name)
                 [[ -z "${2:-}" ]] && die "--name requires a value (cco init --name <project>)"
                 name_arg="$2"; shift 2 ;;
+            --repo-name)
+                [[ -z "${2:-}" ]] && die "--repo-name requires a value (cco init --repo-name <name>)"
+                repo_name_arg="$2"; shift 2 ;;
             --template)
                 [[ -z "${2:-}" ]] && die "--template requires a template name (cco init --template <name>)"
                 tmpl_name="$2"; shift 2 ;;
@@ -43,17 +47,22 @@ cmd_init() {
                 lang_arg="$2"; shift 2 ;;
             --help|-h)
                 cat <<'EOF'
-Usage: cco init [--name <project>] [--template <name>] [--force] [--lang <language>]
+Usage: cco init [--name <project>] [--repo-name <name>] [--template <name>] [--force] [--lang <language>]
        cco init --migrate <project> [--sync]   (run inside a cloned repo)
 
 Run inside a repo, `cco init` ensures your global config (~/.cco/.claude, only the
 first time) and scaffolds this repo's committed .cco/ project config, registering
-it on this machine. `--template` scaffolds from a named project template instead
+it on this machine. The current repo is seeded into the project's repos[] (its url
+derived from `git remote get-url origin` when present), so `cco start` mounts it
+without a manual edit. `--template` scaffolds from a named project template instead
 of the base. `--migrate` instead brings one legacy-vault project into this
 repo's .cco/.
 
 Options:
   --name <project>       Project name (default: prompt with the repo basename)
+  --repo-name <name>     Logical name of the current repo, seeded into repos[]
+                         (default: prompt with the repo basename; an axis
+                         independent of --name)
   --template <name>      Scaffold from project template <name> (user store first,
                          then native; default: base)
   --force                Overwrite an existing <repo>/.cco/ scaffold
@@ -90,7 +99,7 @@ EOF
     fi
 
     # 2. Scaffold the committed <repo>/.cco/ in the current repo + register it.
-    _cco_init_scaffold_repo "$name_arg" "$force" "$tmpl_name"
+    _cco_init_scaffold_repo "$name_arg" "$force" "$tmpl_name" "$repo_name_arg"
 
     # 3. Build the Docker image only on a fresh global seed (first run); a
     #    project-only re-init does not rebuild. Skipped under CCO_SKIP_BUILD=1.
@@ -116,6 +125,52 @@ EOF
 }
 
 # ── Global-config ensure (ADR-0026 step 1) ───────────────────────────
+# Scaffold ~/.cco/access.yml COMMENTED, only when absent (ADR-0049 §9). It is the
+# user's explicit GLOBAL access default — the level-3 tier below CLI flags and a
+# project.yml `access:` block, above the built-in cco-derived defaults. Written
+# fully commented so nothing is set implicitly: the user sees the escape exists but
+# every knob keeps its derived default until they uncomment a line. Idempotent —
+# never clobbers an existing (possibly edited) file. Both knobs accept a scalar
+# preset OR a granular map (symmetric with project.yml `access:`).
+_write_access_scaffold() {
+    local f; f=$(_cco_access_file)   # ~/.cco/access.yml
+    [[ -f "$f" ]] && return 0
+    mkdir -p "$(dirname "$f")" || return 0
+    cat > "$f" <<'YAML'
+# ~/.cco/access.yml — your GLOBAL session-access defaults (all OPTIONAL).
+# Precedence: CLI flags > a project's project.yml `access:` block > THIS file >
+# built-in defaults. Everything here is commented: uncomment only what you want to
+# change globally. Both knobs take a scalar preset OR a granular map.
+
+# ── .cco config access (cco_access, ADR-0046) ────────────────────────
+# Scalar preset:
+# cco: read-project        # none | read-project (default) | read-global |
+#                          #   read-all | edit-project | edit-global | edit-all
+# …or a granular map — three axes on the lattice none < ro < rw:
+# cco:
+#   global: ro             # G  — the rest of the personal ~/.cco store
+#   current: ro            # Pc — this project's config (never none while enabled)
+#   others: none           # Po — other projects' config (Po <= Pc)
+
+# ── .claude authoring access (claude_access, ADR-0049) ───────────────
+# By DEFAULT claude_access DERIVES from cco (never more permissive): a read-only
+# cco session keeps .claude read-only too. Set this only to author .claude.
+# Scalar preset:
+# claude: none             # none (all .claude read-only) | repo (author repo-native
+#                          #   + this project's .claude) | all (author every tree)
+# …or a granular map — four axes on the lattice ro < rw (omitted axes derive from cco):
+# claude:
+#   repo: ro               # Cr — <repo>/.claude repo-native (default ro)
+#   current: ro            # Cp — <repo>/.cco/claude       (default = cco current)
+#   global: ro             # Cg — ~/.cco/.claude           (default = cco global)
+#   others: ro             # Co — other projects' .claude  (default = cco others)
+
+# ── Host path map (show_host_paths) ──────────────────────────────────
+# show_host_paths: true    # show the host<->container path map (default: true)
+YAML
+    return 0
+}
+
 # Seed ~/.cco/.claude from the framework defaults ONLY when absent. Idempotent:
 # returns 0 (and seeds) on a fresh user, 1 (no-op) when the global already exists.
 # Targets $(_cco_global_claude_dir) = ~/.cco/.claude (flat, ADR-0028 — no `global/`
@@ -141,7 +196,7 @@ _cco_init_ensure_global() {
         comm_lang="${comm_lang:-English}"
         docs_lang="${docs_lang:-$comm_lang}"
         code_lang="${code_lang:-English}"
-    elif (exec < /dev/tty) 2>/dev/null; then
+    elif _cco_have_tty; then
         echo "" >&2
         info "Language configuration"
         echo "  Common choices: English, Italian, Spanish, French, German, Portuguese" >&2
@@ -193,6 +248,7 @@ _cco_init_ensure_global() {
     # Decomposed config/state datums (ADR-0013 D4): languages → ~/.cco,
     # changelog markers → STATE top-level.
     _write_languages "$comm_lang" "$docs_lang" "$code_lang"
+    _write_access_scaffold   # ~/.cco/access.yml commented escape (ADR-0049 §9)
     _write_last_seen_changelog "$latest_changelog"
     _write_last_read_changelog "$latest_changelog"
 
@@ -212,8 +268,13 @@ _cco_init_ensure_global() {
 # Write the committed <repo>/.cco/ in the current repo from templates/project/base
 # and register it in the STATE index. Refuses an existing .cco/ unless --force.
 _cco_init_scaffold_repo() {
-    local name_arg="$1" force="$2" tmpl_name="${3:-}"
-    local target="$PWD"
+    local name_arg="$1" force="$2" tmpl_name="${3:-}" repo_name_arg="${4:-}"
+    # Canonicalize the repo dir (ADR-0053): $PWD is the LOGICAL cwd (symlinks not
+    # resolved), but the index stores the physical path, so the AD5′ pre-check
+    # (_index_path_conflicts below) and the write must probe the same canonical
+    # form — else a re-init from a symlinked cwd (macOS /tmp, /var) would raise a
+    # false "already bound to <physical>" conflict.
+    local target; target=$(_index_canonicalize_path "$PWD") || target="$PWD"
     local ccodir="$target/.cco"
 
     if [[ -d "$ccodir" ]] && [[ "$force" != "true" ]]; then
@@ -226,18 +287,30 @@ _cco_init_scaffold_repo() {
         || die "Invalid project name '$name' — must be lowercase letters, numbers, and hyphens, starting alphanumeric. Pass --name <name>."
     _check_reserved_project_name "$name"
 
-    # F12 name-uniqueness: the name must not already bind a DIFFERENT repo. Binding
-    # the same name to the same repo is a legitimate re-init (e.g. --force).
-    local existing_path; existing_path=$(_index_get_path "$name" 2>/dev/null || true)
-    if [[ -n "$existing_path" && "$existing_path" != "$target" ]]; then
-        die "A project named '$name' is already registered to $existing_path. Choose another name (--name) or 'cco forget' it first."
-    fi
-    # A migrated/joined project records its name in the projects: registry but its
-    # host repo path under the member repo names, not under the project name — so the
-    # paths: check above can miss it. Reject a name already taken there too (H3).
+    # F12 name-uniqueness (project identity stays global — ADR-0051). The project
+    # name must be free, EXCEPT a re-init of the same location (e.g. --force): a
+    # project already registered under this name is allowed only if it already
+    # binds the target path (path is the resource identity, §12).
     local existing_repos; existing_repos=$(_index_get_project_repos "$name" 2>/dev/null || true)
-    if [[ -n "$existing_repos" && "$existing_path" != "$target" ]]; then
-        die "A project named '$name' is already registered. Choose another name (--name) or 'cco forget' it first."
+    if [[ -n "$existing_repos" ]]; then
+        if ! _index_paths_get_bindings "$target" 2>/dev/null | cut -f1 | grep -qxF "$name"; then
+            die "A project named '$name' is already registered. Choose another name (--name) or 'cco forget' it first."
+        fi
+    fi
+
+    # Resolve the hosting repo's LOGICAL name (its repos[] entry + index member
+    # key). Its default is the dir basename — an axis independent of the project
+    # name, both editable (--repo-name / prompt). The member is keyed by THIS name
+    # (not the project name) so a repo name that diverges from the project name
+    # still resolves — the same coordinate model as `cco join` (ADR-0017 D1/D2).
+    local repo_name; repo_name=$(_cco_init_resolve_repo_name "$repo_name_arg")
+    _cco_valid_project_name "$repo_name" \
+        || die "Invalid repo name '$repo_name' — must be lowercase letters, numbers, and hyphens, starting alphanumeric. Pass --repo-name <name>."
+    # The repo logical name must not already bind a DIFFERENT path WITHIN THIS
+    # project (AD5′, ADR-0051 — a same name in another project is a different
+    # resource). Re-binding the same repo on a --force re-init is legitimate.
+    if _index_path_conflicts "$name" "$repo_name" "$target" 2>/dev/null; then
+        die "A repo named '$repo_name' is already bound in project '$name' to $(_index_get_path "$name" "$repo_name"). Choose another --repo-name, or 'cco forget' it first."
     fi
 
     # Resolve the source project-template: --template <name> (user store first,
@@ -303,10 +376,34 @@ _cco_init_scaffold_repo() {
     [[ -d "$ccodir" ]] && rm -rf "$ccodir"     # only when --force
     mv "$stage" "$ccodir" || die "Failed to install the scaffolded .cco/ into $target."
 
+    # Seed the hosting repo into the committed project.yml repos[]: a
+    # machine-agnostic coordinate (logical name + OPTIONAL url from origin). The
+    # local path never enters project.yml — it lives only in the index (AD3/G8).
+    # Without this the manifest would ship an empty repos[] and `cco start` would
+    # mount nothing despite the index knowing the repo (init/start inconsistency).
+    local repo_url=""
+    if git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
+        repo_url=$(git -C "$target" remote get-url origin 2>/dev/null || true)
+    fi
+    local -a _repo_fields=()
+    [[ -n "$repo_url" ]] && _repo_fields+=("url=$repo_url")
+    _yml_append_coord "$ccodir/project.yml" repos "$repo_name" ${_repo_fields[@]+"${_repo_fields[@]}"}
+
     # Register in the STATE index: this repo hosts the project and is its own
-    # (sole) member, keyed by the project name (same shape as migrate/join).
-    _index_set_path "$name" "$target"
-    _index_set_project_repos "$name" "$name"
+    # (sole) member, keyed by the repo's LOGICAL name (same shape as migrate/join;
+    # repo_name defaults to — but may diverge from — the project name).
+    #
+    # S2b: called bare, these are the writes the success message below ASSERTS
+    # ("registered it in the index (1 repo)") — so a silent failure makes the tool
+    # contradict itself one command later: `cco start <name>` answers "is not
+    # resolvable yet". errexit cannot catch it (bin/cco dispatches command bodies in
+    # a `|| _cco_rc=$?` context, which disables it for the whole call tree), so
+    # propagate explicitly. This is a report, not a rollback: the scaffold IS on
+    # disk, so name what landed and the one command that repairs the missing half.
+    if ! _index_set_path "$name" "$repo_name" "$target" \
+       || ! _index_set_project_repos "$name" "$repo_name"; then
+        die "Scaffolded project '$name' in $ccodir/, but it could not be registered in the machine-local index — 'cco start $name' will not resolve it yet. Run 'cco resolve --scan $target' to bind it."
+    fi
 
     # Born at the latest schema (decentralized projects are scaffolded in final
     # form) + seed the 3-way-merge base, so `cco update` runs zero migrations and
@@ -314,8 +411,12 @@ _cco_init_scaffold_repo() {
     _cco_project_seed_update_state "$ccodir" "${tmpl_name:-base}"
 
     ok "Scaffolded project '$name' in $ccodir/"
-    echo "  Registered in the index (1 repo)." >&2
-    echo "  Next: edit .cco/project.yml, then  cco start $name" >&2
+    if [[ -n "$repo_url" ]]; then
+        echo "  Seeded repos[] with '$repo_name' (url: $repo_url) + registered it in the index (1 repo)." >&2
+    else
+        echo "  Seeded repos[] with '$repo_name' + registered it in the index (1 repo; no origin url — add one later in project.yml)." >&2
+    fi
+    echo "  Next: cco start $name" >&2
     return 0
 }
 
@@ -329,8 +430,30 @@ _cco_init_resolve_name() {
     base=$(basename "$PWD")
     if [[ -n "$name_arg" ]]; then
         name="$name_arg"
-    elif (exec < /dev/tty) 2>/dev/null; then
-        read -rp "  Project name [$base]: " name < /dev/tty 2>/dev/null || name=""
+    elif _cco_have_tty; then
+        # B-DF2: no `2>/dev/null` on the read — bash writes the `-p` prompt to stderr,
+        # so redirecting it swallows the prompt and the command looks hung. The tty is
+        # already proven available by the guard above; `|| name=""` handles a read fail.
+        read -rp "  Project name [$base]: " name < /dev/tty || name=""
+        name="${name:-$base}"
+    else
+        name="$base"
+    fi
+    printf '%s' "$name"
+}
+
+# Resolve the hosting repo's LOGICAL name: --repo-name › prompt(basename) ›
+# basename. An axis independent of the project name (both default to the dir
+# basename). Same TTY discipline as _cco_init_resolve_name (B-DF2: no 2>/dev/null
+# on the read, or the bash `-p` prompt written to stderr is swallowed and the
+# command looks hung). Echoes the chosen name on stdout.
+_cco_init_resolve_repo_name() {
+    local repo_arg="$1" base name=""
+    base=$(basename "$PWD")
+    if [[ -n "$repo_arg" ]]; then
+        name="$repo_arg"
+    elif _cco_have_tty; then
+        read -rp "  Repo name [$base]: " name < /dev/tty || name=""
         name="${name:-$base}"
     else
         name="$base"

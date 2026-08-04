@@ -105,10 +105,13 @@ not exist for the next session.
   `project.yml` and `.claude/` directories, all tracked in git. Analysis and design
   documents go in `docs/` within your repo. The agent's context comes from the repo,
   not from chat history.
-- **Auto memory is project-scoped.** Each project's machine-local STATE store
-  (`~/.local/state/cco/projects/<id>/session/`) is mounted to `~/.claude/projects/-workspace/`,
-  isolating session transcripts and memory per project. Memory persists across sessions within
-  the project but never leaks between projects.
+- **Auto memory is project-scoped.** Each project's machine-local STATE store lives at
+  `~/.local/state/cco/projects/<id>/session/` and is mounted in two pieces: the transcripts
+  bucket (`session/claude-state`) becomes the whole `~/.claude/projects/` tree, and memory
+  (`session/memory`) is a child mount at `~/.claude/projects/-workspace/memory` —
+  isolating session transcripts and memory per project. Transcripts persist for every session
+  key — the main session, subagents and teammates started inside a repo, worktree and background
+  sessions. Memory persists across sessions within the project but never leaks between projects.
 
 ### 1.2 Commit Discipline
 
@@ -268,8 +271,9 @@ work correctly.
 - **Packs are shareable.** The sharing-repo system (`cco pack publish`, `cco pack install`)
   allows sharing packs across machines, teams, and organizations.
 - **Knowledge is catalogued at start, loaded on demand.** At session start, `cco start`
-  generates a `packs.md` index listing available pack documents with descriptions. The
-  agent reads individual pack files when relevant, keeping the active context lean.
+  records available pack documents with descriptions in the `knowledge` section of the
+  injected session context (`CCO_SESSION_CONTEXT` — no file). The agent reads individual
+  pack files when relevant, keeping the active context lean.
 
 ### 2.5 Separation of Knowledge and Instructions
 

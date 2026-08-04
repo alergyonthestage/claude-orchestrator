@@ -2,7 +2,7 @@
 
 **Status**: Accepted (2026-06-28) — migration-completeness fix (host e2e dogfooding blocker)
 **Deciders**: maintainer + migration-completeness fix session
-**Context docs**: [`../migration-completeness-fix-handoff.md`](../migration-completeness-fix-handoff.md)
+**Context docs**: `../migration-completeness-fix-handoff.md` (consumed)
 (the blocker + the A–D phase plan); `../design.md` §9 (migration — "complete final
 `project.yml` in one pass") and §11 (phase-2 test plan); `../e2e-validation-checklist.md`
 (the gate this unblocked)

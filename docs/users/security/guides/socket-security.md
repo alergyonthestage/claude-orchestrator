@@ -33,9 +33,10 @@ docker:
   mount_socket: false   # default — Claude has no Docker access
 ```
 
-With the default, `docker` is unavailable in the session and the whole class of
-socket-based escapes does not apply. This is the secure-by-default posture: the
-most restrictive option is the implicit one.
+With the default, no socket is mounted: the `docker` CLI is still in the image but has
+no daemon to reach (`Cannot connect to the Docker daemon`), and the whole class of
+socket-based escapes does not apply. This is the secure-by-default posture: the most
+restrictive option is the implicit one.
 
 **Disable it for a single session** even if `project.yml` enables it:
 
@@ -82,13 +83,28 @@ The proxy enforces, on container create and related operations:
 
 | Filter | What it does |
 |---|---|
-| **Container name** | New containers must match the project's `name_prefix` (default `cc-<project>-`). |
-| **Container labels** | The project's `required_labels` (default `cco.project: <project>`) are injected; listings are filtered so Claude only "sees" its own containers. |
-| **Mount paths** | Bind mounts are validated against the mount policy. `project_only` allows only your project's repo paths; an implicit deny always blocks the socket itself, `/etc/shadow`, `/etc/sudoers`, etc. |
-| **Security constraints** | Blocks `--privileged`, blocks sensitive mounts (`/proc`, `/sys`), can drop capabilities (default `SYS_ADMIN`, `NET_ADMIN`) and cap resources (memory, CPUs, max containers). |
+| **Container name** | New containers must match the project's `name_prefix` (default `cc-<project>-`). A create with no name is refused too — Docker's auto-generated name cannot carry the prefix. |
+| **Container labels** | The project's `required_labels` (default `cco.project: <project>`) are injected on create; listings are filtered to containers that match the name prefix **or** carry those labels (which is why cco's own session container is visible despite its compose-generated name). |
+| **Container access** | Every per-container call — inspect, logs, stats, start/stop, exec, delete — is checked against the same set. A call naming a container outside it is denied, **including read-only ones**. |
+| **Mount paths** | Bind mounts are validated against the mount policy. `project_only` allows exactly your project's **`repos:`** host paths — `extra_mounts` are *not* included, so a sibling that needs one requires `policy: allowlist` plus a `mounts.allow` entry. An implicit deny always blocks the socket itself, `/etc/shadow`, `/etc/sudoers`. Sources are translated from container paths to their host equivalents first (see below), then validated. |
+| **Networks** | Networks a sibling may create or join must match the project prefix (`cc-<project>`, or your `docker.network`); network listings are filtered the same way. |
+| **Security constraints** | Blocks `--privileged`, blocks `/proc` and `/sys` bind mounts, **refuses** a create that adds a dropped capability (default `SYS_ADMIN`, `NET_ADMIN` — the request is denied, not silently stripped), and caps memory, CPUs, and the number of containers. |
 
-A denied request gets a `403` with an explanation; read-only API calls
-(`/_ping`, `/version`, GETs) pass through.
+**What passes through unfiltered**: `/_ping`, `/version`, `/info`; image, build/BuildKit
+and volume endpoints; the follow-up `/exec/{id}/…` calls of an already-validated exec;
+and any other route the proxy does not model, **if** the method is `GET` or `HEAD`. Every
+other unmodelled write is denied — including some that look routine, such as
+`docker network rm`.
+
+A denied request gets a `403` carrying a Docker-style error message
+(`cco-docker-proxy: operation denied — <reason>`), so the reason appears in the CLI
+output rather than as an opaque failure.
+
+**Path translation.** Bind-mount sources reference the *host* filesystem, but paths you
+type inside the session are container paths. The proxy rewrites them using the session's
+path map (longest prefix wins), so `docker run -v /workspace/myrepo:/app …` mounts the
+right host directory — and the mount policy is evaluated against that host path, not the
+container one.
 
 ---
 
@@ -127,7 +143,9 @@ Rules of thumb:
   privileged blocked, sensitive mounts blocked — this covers most workflows.
 - **Loosen narrowly.** Need to talk to an existing container (e.g. a shared
   database)? Use `containers.policy: allowlist` with a tight `allow:` list rather
-  than `unrestricted`.
+  than `unrestricted`. Note the asymmetry: `allow:` widens which containers may be
+  *reached*; **creating** one still requires the `name_prefix` under every policy except
+  `unrestricted`.
 - **Avoid `unrestricted` / `mounts.policy: any`.** They remove the protection
   the proxy exists to provide; use them only in a fully trusted, throwaway
   environment.

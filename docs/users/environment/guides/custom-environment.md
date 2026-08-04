@@ -84,13 +84,15 @@ Executed at every `cco start`, **before** the project setup script. Runs as user
 
 - Writing/appending to dotfiles in `~/.` or `/home/claude/`
 - `tmux` commands (e.g., `tmux bind-key ...`)
-- `pip3 install --user <lightweight-package>`
-- `npm install -g <small-package>`
+- `pip3 install --user --break-system-packages <lightweight-package>` — the base image is
+  a PEP 668 "externally managed" Debian, so a bare `pip3 install` (with or without
+  `--user`) is refused. `python3 -m venv` needs `python3.11-venv`, which only
+  `setup-build.sh` can install
 - `git config --global <key> <value>`
 
 ### Invalid Operations (use `setup-build.sh` instead)
 
-- `apt-get install` (requires root — this script runs as `claude`)
+- `apt-get install` (requires root — this script runs as `claude`, and the image ships no `sudo`)
 - Heavy downloads or compilations
 - System-level configuration
 
@@ -137,12 +139,19 @@ Executed by the entrypoint at every container startup (`cco start`), after the g
 #!/bin/bash
 # <repo>/.cco/setup.sh  (ml-project)
 
-# Install Python ML dependencies
-pip3 install --quiet pandas numpy scikit-learn 2>/dev/null
+# Install Python ML dependencies (user scope — the script runs as `claude`)
+pip3 install --quiet --user --break-system-packages pandas numpy scikit-learn
 
-# Create project-specific symlinks
-ln -sf /workspace/shared-libs/bin/lint /usr/local/bin/project-lint
+# Put a project tool on PATH without touching a system directory
+grep -q 'shared-libs/bin' ~/.bashrc 2>/dev/null \
+    || echo 'export PATH="/workspace/shared-libs/bin:$PATH"' >> ~/.bashrc
 ```
+
+> Do not write into `/usr/local/bin`: it is root-owned and the script has no `sudo`.
+> `~/.local/bin` **is** writable and on `PATH`, but it is the bind-mounted Claude Code
+> install directory shared by every project — anything you drop there is visible to your
+> other sessions and is discarded by `cco build --no-cache`. Prefer `PATH` edits, or a
+> path inside the repo.
 
 ### Notes
 
@@ -245,13 +254,16 @@ docker build -t claude-orchestrator-devops:latest \
 
 Setup mechanisms execute in this order at `cco start`:
 
-1. Docker socket GID fix (entrypoint)
-2. MCP server injection (entrypoint)
-3. GitHub authentication (entrypoint)
-4. **Global runtime setup** (`~/.cco/setup.sh`) — as user `claude`
-5. **Project setup** (`<repo>/.cco/setup.sh`) — as user `claude`
-6. **Project MCP packages** (`<repo>/.cco/mcp-packages.txt`)
-7. Launch Claude
+1. Docker socket GID fix, and the socket proxy when `mount_socket: true` (entrypoint)
+2. Internal-store privilege boundary lock-down (entrypoint)
+3. MCP server injection into `~/.claude.json` (entrypoint)
+4. GitHub authentication, when `GITHUB_TOKEN` is present (entrypoint)
+5. **Global runtime setup** (`~/.cco/setup.sh`) — as user `claude`
+6. **Project setup** (`<repo>/.cco/setup.sh`) — as user `claude`
+7. **Project MCP packages** (`<repo>/.cco/mcp-packages.txt`) — `npm install -g` as `claude`
+8. Claude Code native install / re-pin into the persistent CACHE mount, on first start or
+   a channel change (ADR-0039 — the binary is not baked into the image)
+9. Launch Claude (inside tmux unless `--teammate-mode` says otherwise)
 
 This means project setup can override global setup when needed.
 
@@ -266,7 +278,7 @@ Which mechanism to use based on your needs:
 | apt package for all projects | `~/.cco/setup-build.sh` | Single rebuild, fast startup |
 | tmux config / dotfiles for all projects | `~/.cco/setup.sh` | Applies at every start, no rebuild |
 | Shell aliases for all projects | `~/.cco/setup.sh` | Runtime, user-level |
-| apt package for one project (light) | `<repo>/.cco/setup.sh` | No rebuild needed |
+| apt package for one project | Custom image (or `~/.cco/setup-build.sh` if every project can carry it) | `setup.sh` runs as `claude` and the image has no `sudo`, so apt is not available at runtime |
 | apt package for one project (heavy) | Custom image | Zero startup penalty |
 | npm MCP server for all projects | `~/.cco/mcp-packages.txt` | Pre-installed at build |
 | npm MCP server for one project | `<repo>/.cco/mcp-packages.txt` | Runtime, no rebuild |

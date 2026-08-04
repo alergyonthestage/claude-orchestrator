@@ -92,7 +92,7 @@ Reference documentation files. They are read-only material that Claude reads dur
 
 - **Mounted** as Docker read-only volumes at `/workspace/.claude/packs/<name>/`
 - **Not copied** to the project's `.claude/` directory
-- **Injected** into context via `packs.md` and the `session-context.sh` hook
+- **Injected** into context via the `knowledge` section of `workspace.yml` and the `session-context.sh` hook
 
 Each file can have an optional `description` that guides Claude on when to read it. Files without a description still appear in the list but without usage indication.
 
@@ -114,7 +114,7 @@ Official framework documentation files following the [llms.txt standard](https:/
 
 - **Referenced** by name in `pack.yml` and `project.yml` (`llms:` section)
 - **Mounted** read-only at `/workspace/.claude/llms/<name>/` at `cco start`
-- **Listed** in `.claude/packs.md` under "Official Framework Documentation"
+- **Listed** in the `llms` section of `.claude/workspace.yml`
 - **Managed** via `cco llms install|update|remove` CLI commands
 
 See [llms design doc](../../configuration/llms/design/design-llms.md) for full architecture.
@@ -161,24 +161,25 @@ The order of packs in `project.yml` determines precedence.
 
 Knowledge files are not automatically loaded by Claude Code (they are not under `.claude/`). Injection occurs via a chain of three components:
 
-### 6.1 Generation of `packs.md`
+### 6.1 The `knowledge` section of `workspace.yml`
 
-At `cco start`, the CLI generates the `.claude/packs.md` file in the project with an instructional list of available knowledge files:
+At `cco start`, the CLI generates the `.claude/workspace.yml` overlay (into CACHE, mounted `:ro`). Among its sections it carries a `knowledge` list of the available knowledge files, each entry a `{ path, description }` pair pointing at a file under `/workspace/.claude/packs/<pack>/`:
 
-```markdown
-The following knowledge files provide project-specific conventions and context.
-Read the relevant files BEFORE starting any implementation, review, or design task.
-
-- /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
-- /workspace/.claude/packs/my-client/business-overview.md — Read for business context
-- /workspace/.claude/packs/my-client/testing-guidelines.md
+```yaml
+# Excerpt of the generated workspace.yml
+knowledge:
+  - path: /workspace/.claude/packs/my-client/backend-coding-conventions.md
+    description: Read when writing backend code
+  - path: /workspace/.claude/packs/my-client/business-overview.md
+    description: Read for business context
+  - path: /workspace/.claude/packs/my-client/testing-guidelines.md
 ```
 
-Files without a description appear without the `—` suffix.
+Files without a description carry only a `path`.
 
 ### 6.2 Hook `session-context.sh`
 
-The `session-context.sh` hook (type `SessionStart`, defined in `defaults/managed/managed-settings.json`) is executed at Claude Code session startup. If the `.claude/packs.md` file exists, its content is injected into the hook response as `additionalContext`.
+The `session-context.sh` hook (type `SessionStart`, defined in `defaults/managed/managed-settings.json`) is executed at Claude Code session startup. It reads the `knowledge` (and `llms`) sections from `.claude/workspace.yml`, renders the instructional preamble ("Read the relevant files BEFORE starting any implementation…"), and injects the result into the hook response as `additionalContext`. The `subagent-context.sh` hook does the same for teammates.
 
 This means the list of knowledge files appears automatically in Claude's initial context, without needing to modify the project's `CLAUDE.md`.
 
@@ -193,11 +194,11 @@ sequenceDiagram
 
     CLI->>CLI: Read project.yml → packs list
     CLI->>CLI: Add pack resource mounts to docker-compose.yml
-    CLI->>CLI: Generate .claude/packs.md
+    CLI->>CLI: Generate .claude/workspace.yml (knowledge section)
     CLI->>Docker: docker compose run (all pack resources mounted :ro)
     Docker->>Claude: Start session
     Claude->>Hook: SessionStart trigger
-    Hook->>Hook: Read .claude/packs.md
+    Hook->>Hook: Read knowledge section from .claude/workspace.yml
     Hook-->>Claude: additionalContext with knowledge list
     Claude->>Claude: Knowledge available in context
 ```
@@ -239,11 +240,9 @@ Here's what happens, step by step, when `cco start` processes packs:
    - `~/.cco/packs/<name>/agents/<agent>.md` → `/workspace/.claude/agents/<agent>.md:ro` (file mount)
    - `~/.cco/packs/<name>/rules/<rule>.md` → `/workspace/.claude/rules/<rule>.md:ro` (file mount)
 
-5. **Generation of `packs.md`** — `.claude/packs.md` is generated with the instructional list of knowledge files and their descriptions.
+5. **Generation of `workspace.yml`** — `.claude/workspace.yml` is generated with a structured summary of the project (repos, packs) plus the `knowledge` and `llms` sections listing available files and their descriptions (used by the `/init-workspace` skill and injected by the hook).
 
-6. **Generation of `workspace.yml`** — `.claude/workspace.yml` is generated with a structured summary of the project (used by the `/init` command).
-
-7. **Container launch** — `docker compose run` starts the container. All pack resources are mounted read-only. At `SessionStart`, the hook injects `packs.md` into context.
+6. **Container launch** — `docker compose run` starts the container. All pack resources are mounted read-only. At `SessionStart`, the hook injects the `workspace.yml` knowledge/llms sections into context.
 
 ---
 

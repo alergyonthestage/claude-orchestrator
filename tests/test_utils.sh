@@ -106,3 +106,24 @@ test_compose_vol_quotes_reserved_leading_char() {
     local out; out=$(_compose_vol "@local" "/workspace/x" "ro")
     assert_equals '      - "@local:/workspace/x:ro"' "$out" "a reserved leading char must be quoted"
 }
+
+# ── _strip_surrounding_quotes (ADR-0050 D8 — path-input quote hygiene) ──
+
+test_strip_quotes_single_and_double() {
+    _utils_test_env
+    [[ "$(_strip_surrounding_quotes "'/my/repo'")" == "/my/repo" ]] || fail "single-quote strip"
+    [[ "$(_strip_surrounding_quotes '"/my/repo"')" == "/my/repo" ]] || fail "double-quote strip"
+}
+
+test_strip_quotes_noop_on_unquoted_and_unbalanced() {
+    _utils_test_env
+    [[ "$(_strip_surrounding_quotes "/my/repo")"  == "/my/repo" ]]  || fail "unquoted must be untouched"
+    [[ "$(_strip_surrounding_quotes "'/my/repo")" == "'/my/repo" ]] || fail "unbalanced leading quote must be literal"
+    [[ "$(_strip_surrounding_quotes '"')"          == '"' ]]         || fail "a lone quote must be literal"
+}
+
+test_strip_quotes_preserves_inner_characters() {
+    _utils_test_env
+    # only the OUTER pair is stripped; an inner quote survives.
+    [[ "$(_strip_surrounding_quotes '"/a/O'\''Brien"')" == "/a/O'Brien" ]] || fail "inner quote must survive"
+}

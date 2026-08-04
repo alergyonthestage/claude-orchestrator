@@ -229,15 +229,17 @@ test_dry_run_ssh_not_mounted() {
 # ── Volume mounts: auto memory (Design Invariant 3) ──────────────────
 
 test_dry_run_auto_memory_exact_path() {
-    # Design Invariant 3: claude-state MUST be mounted at this exact container path
-    # /workspace → -workspace (root slash replaced by dash per Claude Code convention)
+    # Design Invariant 3 (ADR-0055 D5): claude-state IS the ~/.claude/projects tree,
+    # not the single -workspace key — Claude Code derives one key per cwd, and every
+    # key must persist. The closing quote anchors the target: without it the old
+    # ".../projects/-workspace" line would satisfy this assertion as a prefix.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" \
-        "session/claude-state:/home/claude/.claude/projects/-workspace"
+        "session/claude-state:/home/claude/.claude/projects\""
 }
 
 test_dry_run_memory_child_mount() {
@@ -262,7 +264,7 @@ test_dry_run_memory_mount_after_claude_state() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local state_line memory_line
-    state_line=$(grep -n "session/claude-state.*-workspace\"\?$" "$compose" | head -1 | cut -d: -f1)
+    state_line=$(grep -n "session/claude-state:/home/claude/.claude/projects\"$" "$compose" | head -1 | cut -d: -f1)
     memory_line=$(grep -n "memory.*-workspace/memory" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$state_line" || -z "$memory_line" ]]; then
         echo "ASSERTION FAILED: could not find claude-state or memory mount line"
@@ -278,41 +280,44 @@ test_dry_run_memory_mount_after_claude_state() {
 
 # ── Volume mounts: project config (Design Invariant 2 - read-write) ──
 
-test_dry_run_project_claude_mounted_readwrite() {
-    # ADR-0005 F3 / P17: the parent project .claude stays rw so /init and normal
-    # project-config authoring work (the generated overlays layered on top are
-    # :ro — see the F1 test below). Edit-protection (ADR-0027 D3) is narrow: it
-    # protects only the structural <repo>/.cco via a separate :ro overlay, not
-    # this Claude config tree. Host mount sources are absolute (Commit B).
+test_dry_run_project_claude_mounted_readonly_by_default() {
+    # ADR-0049 §6 reverses P17: the parent project .claude is :ro by default
+    # (claude_access derives from cco read-project → Cp=ro), so a normal session
+    # no longer authors it. An explicit --claude-access repo re-opens it (Cp=rw).
+    # Host mount sources are absolute (Commit B).
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Parent mount present: a volume line whose container side is exactly
-    # /workspace/.claude (the child overlays carry a deeper path).
-    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
-        echo "ASSERTION FAILED: project .claude parent mount not found"
+    # Parent mount present, and :ro by default (the child overlays carry a deeper path).
+    if ! grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
+        echo "ASSERTION FAILED: project .claude must be mounted :ro by default (ADR-0049 reverses P17)"
         cat "$compose"
         return 1
     fi
-    # The parent must NOT be read-only (it stays rw so in-session edits persist).
+    # --claude-access repo re-opens the parent rw so in-session edits persist.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    if ! grep -qE ':/workspace/\.claude"?$' "$compose"; then
+        echo "ASSERTION FAILED: --claude-access repo must mount project .claude rw"
+        return 1
+    fi
     if grep -qE ':/workspace/\.claude:ro"?$' "$compose"; then
-        echo "ASSERTION FAILED: project .claude must be rw, not :ro"
+        echo "ASSERTION FAILED: --claude-access repo must not leave project .claude :ro"
         return 1
     fi
 }
 
-test_dry_run_claude_overlays_cache_readonly() {
-    # ADR-0005 F1: packs.md and workspace.yml are generated into the CACHE bucket
-    # and overlaid :ro onto /workspace/.claude — never written into the committed
-    # project .claude/ (keeps the repo's git diff truthful, P6/G8).
+test_dry_run_session_context_injected_no_overlay() {
+    # ADR-0042: the session-info surface is injected as the CCO_SESSION_CONTEXT
+    # env var (base64) — NOT a generated workspace.yml overlay. No file is written
+    # to CACHE or the committed tree (INV-2), and no :ro overlay is mounted.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
-    # A pack with a knowledge file makes packs.md non-empty (it is otherwise
-    # omitted); workspace.yml is always generated.
+    # A pack with a knowledge file exercises the knowledge section of the block.
     local pack_src="$CCO_PACKS_DIR/k-pack/knowledge"
     mkdir -p "$pack_src"
     create_pack "$tmpdir" "k-pack" "$(printf 'name: k-pack\nknowledge:\n  source: %s\n  files:\n    - overview.md\n' "$pack_src")"
@@ -320,18 +325,18 @@ test_dry_run_claude_overlays_cache_readonly() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - k-pack\n')"
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
-    # Both overlays mounted :ro from the CACHE bucket (host-absolute, exact).
-    # (|| return 1 — bare asserts are masked under the runner's set -e.)
-    assert_file_contains "$compose" \
-        "$CCO_CACHE_HOME/projects/test-proj/.claude/workspace.yml:/workspace/.claude/workspace.yml:ro" || return 1
-    assert_file_contains "$compose" \
-        "$CCO_CACHE_HOME/projects/test-proj/.claude/packs.md:/workspace/.claude/packs.md:ro" || return 1
-    # The committed project .claude/ never receives the generated files.
-    assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/packs.md" || return 1
+    # The context env var is injected and decodes to the knowledge section.
+    grep -q 'CCO_SESSION_CONTEXT=' "$compose" || { echo "ASSERTION FAILED: CCO_SESSION_CONTEXT env expected"; return 1; }
+    local ctx; ctx=$(decode_session_context "$compose")
+    echo "$ctx" | grep -q -- "- /workspace/.claude/packs/k-pack/overview.md" \
+        || { echo "ASSERTION FAILED: injected context should carry the knowledge path"; return 1; }
+    # No workspace.yml / packs.md overlay is mounted, and no file is written.
+    if grep -qE "workspace.yml|/workspace/.claude/packs.md:ro" "$compose"; then
+        echo "ASSERTION FAILED: compose must not mount a workspace.yml/packs.md overlay"; return 1
+    fi
     assert_file_not_exists "$(host_cco_dir "$tmpdir" test-proj)/claude/workspace.yml" || return 1
-    # The --dump inspection copy still lands under the dump .claude/ (unchanged).
-    assert_file_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
-    assert_file_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/workspace.yml" || return 1
+    assert_file_not_exists "$DRY_RUN_DIR/.claude/packs.md" || return 1
 }
 
 # ── Docker socket (Docker-from-Docker) ───────────────────────────────
@@ -466,6 +471,126 @@ YAML
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" "${rw_dir}:/workspace/rw"
     assert_file_not_contains "$compose" "${rw_dir}:/workspace/rw:ro"
+}
+
+# ADR-0049 §7: nested .claude/.cco inside a WRITABLE extra_mount is STRICT :ro by
+# default (extra_mounts aren't config repos), even though the mount itself is rw.
+test_dry_run_extra_mount_nested_config_strict_ro() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    mkdir -p "$rw_dir/proj/.cco"; printf 'name: sub\n' > "$rw_dir/proj/.cco/project.yml"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+    assert_file_contains "$c" "${rw_dir}/proj/.cco:/workspace/rw/proj/.cco:ro"
+}
+
+# RC-1 T8 (defect a, the USER-mount half of the class no e2e session exercised).
+# The nested clamp governs trees nested INSIDE a mount; the mount's own readonly:
+# flag governs the root (ADR-0049 §7). _find_nested_config_dirs used to return its
+# own search root as rel ".", so a rw extra_mount whose SOURCE directory is itself
+# named .claude — or .cco carrying a project.yml — re-bound itself :ro and silently
+# contradicted its own `readonly: false`.
+test_dry_run_extra_mount_root_dotdir_not_self_clamped() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    # Source dir literally named .claude, plus a genuinely nested one to prove the
+    # clamp still fires where it should.
+    local cl_dir="$tmpdir/mnt/.claude"; mkdir -p "$cl_dir/inner/.claude"
+    local cc_dir="$tmpdir/mnt2/.cco"; mkdir -p "$cc_dir"
+    printf 'name: mounted\n' > "$cc_dir/project.yml"
+    seed_index_path "dotclaude" "$cl_dir"
+    seed_index_path "dotcco" "$cc_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: dotclaude
+    target: /workspace/dotclaude
+    readonly: false
+  - name: dotcco
+    target: /workspace/dotcco
+    readonly: false
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    # The lines that MUST appear: the rw mounts themselves …
+    assert_file_contains "$c" "${cl_dir}:/workspace/dotclaude" || return 1
+    assert_file_contains "$c" "${cc_dir}:/workspace/dotcco" || return 1
+    # … and the genuinely nested .claude, still strictly clamped (D-M1: the strict
+    # ro default is UNCHANGED for user extra_mounts).
+    assert_file_contains "$c" "${cl_dir}/inner/.claude:/workspace/dotclaude/inner/.claude:ro" || return 1
+    # The lines that must NOT appear: the self-match overlays.
+    assert_file_not_contains "$c" "${cl_dir}/.:/workspace/dotclaude/.:ro" || return 1
+    assert_file_not_contains "$c" "${cc_dir}/.:/workspace/dotcco/.:ro" || return 1
+    return 0
+}
+
+# config_access_policy: write → nested config is left writable (no :ro overlay).
+test_dry_run_extra_mount_config_policy_write() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+    config_access_policy: write
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+}
+
+# config_access_policy: project → nested config follows the session knobs. Under a
+# default session (Cr=ro) the nested .claude is :ro; under --claude-access repo it's rw.
+test_dry_run_extra_mount_config_policy_project() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    local rw_dir="$tmpdir/rw"; mkdir -p "$rw_dir/sub/.claude"
+    seed_index_path "rw" "$rw_dir"
+    create_project "$tmpdir" "test-proj" "$(cat <<YAML
+name: test-proj
+repos:
+  - name: dummy-repo
+extra_mounts:
+  - name: rw
+    target: /workspace/rw
+    readonly: false
+    config_access_policy: project
+YAML
+)"
+    run_cco start "test-proj" --dry-run --dump
+    local c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
+    # --claude-access repo → Cr=rw → nested .claude follows, no :ro overlay.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    c="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_not_contains "$c" "${rw_dir}/sub/.claude:/workspace/rw/sub/.claude:ro"
 }
 
 # ── Reference mounts (--mount, ADR-0027 D2) ──────────────────────────
@@ -769,7 +894,9 @@ test_dry_run_volume_order_global_before_project() {
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local settings_line project_line
     settings_line=$(grep -n "settings.json:/home/claude" "$compose" | head -1 | cut -d: -f1)
-    project_line=$(grep -nE ":/workspace/\.claude\"?$" "$compose" | head -1 | cut -d: -f1)
+    # B2 is :ro by default now (ADR-0049 §6) — match the container side with or
+    # without the trailing :ro so the ordering check is mode-agnostic.
+    project_line=$(grep -nE ":/workspace/\.claude(:ro)?\"?$" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$settings_line" || -z "$project_line" ]]; then
         echo "ASSERTION FAILED: could not find settings or project config line"
         return 1
@@ -791,7 +918,7 @@ test_dry_run_volume_order_memory_before_git() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     local memory_line git_line
-    memory_line=$(grep -n "session/claude-state.*-workspace" "$compose" | head -1 | cut -d: -f1)
+    memory_line=$(grep -n "session/claude-state:/home/claude/.claude/projects\"$" "$compose" | head -1 | cut -d: -f1)
     git_line=$(grep -n ".gitconfig:ro" "$compose" | head -1 | cut -d: -f1)
     if [[ -z "$memory_line" || -z "$git_line" ]]; then
         echo "ASSERTION FAILED: could not find memory or git line"

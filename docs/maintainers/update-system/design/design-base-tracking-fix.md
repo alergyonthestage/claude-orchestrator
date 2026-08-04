@@ -1,8 +1,23 @@
 # Update System — Base Tracking Fix Design
 
 **Date**: 2026-03-18
-**Status**: Implemented — extended by `ux-improvements-design.md` Phase 1
-**Related**: `design.md` (update system design), `../../decisions/framework-improvements.md` (FI-7), `ux-improvements-design.md` (Phase 1 completes the sync-path fix)
+**Status**: Implemented — extended by [`design-ux-improvements.md`](design-ux-improvements.md) Phase 1
+**Related**: [`design-update-system.md`](design-update-system.md) (the update-system design; §4.4
+policy arrays, §4.11 meta schema), `../../decisions/framework-improvements.md` (FI-7)
+
+> **How to read this document** (re-verified 2026-08-03, G6 living-docs sweep).
+> §1 is a **bug record**: it describes the 2026-03 defect in the vocabulary of that time,
+> including verbs (`cco project create`, `cco project install`, `cco project publish`) that
+> the decentralized-config cutover has since removed — a project is now scaffolded in place
+> by `cco init` / `cco join` (ADR-0017 D2 / ADR-0018 D2). That history is left as written.
+> §2 (the mechanism) and §3 (where it lives) are **living**: the mechanism shipped and is
+> still load-bearing, so their code pointers are kept current — where a §2 snippet quotes
+> the original patch, the current home is noted inline.
+>
+> Shorthand: `.cco/base/` and `.cco/meta` throughout mean the **STATE** locations
+> (`<state>/cco/{global,projects/<id>}/update/{base,meta}`), resolved by `lib/paths.sh` —
+> not files inside the committed config tree. See
+> [`design-update-system.md`](design-update-system.md) §4.3.
 
 ---
 
@@ -293,6 +308,16 @@ manifest:
 `_collect_file_changes`, compare saved policies against current
 `PROJECT_FILE_POLICIES`. Handle each transition type:
 
+> **As shipped** (`lib/update-hash-io.sh:147`) the handler is **scope-parametric** — it
+> takes two more arguments than this sketch, `<scope: global|project>` and
+> `<dry_run>`, selects `GLOBAL_FILE_POLICIES` or `PROJECT_FILE_POLICIES` from the
+> former, and skips every disk write under the latter (so `--diff`/`--dry-run` detect
+> transitions without performing them). It returns early when the meta file is absent.
+> On the `untracked → tracked` and bootstrap paths the *project* scope seeds from the
+> interpolated template while the *global* scope copies the default verbatim (global
+> tracked files carry no placeholders). §4.10's "should also work for global scope"
+> is therefore **shipped**, not pending.
+
 ```bash
 _handle_policy_transitions() {
     local project_dir="$1"
@@ -444,16 +469,18 @@ fi
 
 ## 3. Files to Modify
 
-| File | Change | Type |
-|---|---|---|
-| `lib/cmd-project-create.sh` | Save base from `$project_dir/.claude` in `cmd_project_create()` | Bug fix |
-| `lib/cmd-project-install.sh` | Save base from `$target_dir/.claude` in `cmd_project_install()` | Bug fix |
-| `lib/update-hash-io.sh` | Add `_seed_base_from_interpolated_template()` helper | Helper |
-| `lib/update-discovery.sh` | Add `_handle_policy_transitions()` with self-persisting policies | Policy automation |
-| `lib/update-discovery.sh` | Interpolate `{{PROJECT_NAME}}` before hashing in `_collect_file_changes()` | Safety net |
-| `lib/update-meta.sh` | Write `policies:` section in `_generate_cco_meta()` and `_generate_project_cco_meta()` | Policy persistence |
-| `lib/update.sh` | Call `_handle_policy_transitions()` unconditionally before `_collect_file_changes()` | Integration |
-| `.claude/rules/update-system.md` | Document policy change rules | Rule update |
+As modified in 2026-03, and **where each piece lives today** (verified 2026-08-03):
+
+| File (2026-03) | Change | Type | Current home |
+|---|---|---|---|
+| `lib/cmd-project-create.sh` | Save base from `$project_dir/.claude` in `cmd_project_create()` | Bug fix | **Gone** — `cco project create` was removed (ADR-0017 D2). A project's base is no longer written at scaffold time at all: it is seeded on the project's first `cco update` by the bootstrap path below (`lib/update.sh:373-377`) |
+| `lib/cmd-project-install.sh` | Save base from `$target_dir/.claude` in `cmd_project_install()` | Bug fix | **Gone** — `cco project install` was removed (ADR-0018 D2); a project rides its code-repo remote |
+| `lib/update-hash-io.sh` | Add `_seed_base_from_interpolated_template()` helper | Helper | ✅ `lib/update-hash-io.sh:60` |
+| `lib/update-discovery.sh` | Add `_handle_policy_transitions()` with self-persisting policies | Policy automation | ⚠ **`lib/update-hash-io.sh:147`** — it moved next to the base-I/O primitives it drives; `update-discovery.sh` no longer defines it |
+| `lib/update-discovery.sh` | Interpolate `{{PROJECT_NAME}}` before hashing in `_collect_file_changes()` | Safety net | ✅ `lib/update-discovery.sh` |
+| `lib/update-meta.sh` | Write `policies:` section in `_generate_cco_meta()` and `_generate_project_cco_meta()` | Policy persistence | ✅ both generators write it |
+| `lib/update.sh` | Call `_handle_policy_transitions()` unconditionally before `_collect_file_changes()` | Integration | ✅ `lib/update.sh:156` (global) and `:466` (project) |
+| `.claude/rules/update-system.md` | Document policy change rules | Rule update | ✅ |
 
 **No migration needed**: `_handle_policy_transitions` is self-bootstrapping.
 
@@ -619,7 +646,12 @@ After this fix is implemented:
   Done — analysis content integrated into §1 (2026-03-19)
 - Consider whether `BASE_MISSING` status should trigger the safety net
   interpolation automatically in `_show_file_diffs` (display-level improvement)
-- Update `docs/maintainer/configuration/update-system/design.md` to document
-  policy transitions as a first-class update system concept
-- Update `docs/maintainer/configuration/update-system/analysis.md` to include
-  policy transitions in the resource taxonomy
+- ~~Update the update-system design to document policy transitions as a first-class
+  concept~~ **Done** — [`design-update-system.md`](design-update-system.md) §4.4 states
+  the single-array policy model and points here for the transition mechanism.
+- ~~Update the update-system analysis to include policy transitions in the resource
+  taxonomy~~ **Obsolete** — that analysis was archived in the decentralized-config
+  cutover; the surviving taxonomy was re-homed into
+  [`design-update-system.md`](design-update-system.md) §3–§4.4, which is now its single
+  canonical source. *(The two bullets above named `docs/maintainer/...` paths that no
+  longer exist; corrected 2026-08-03.)*

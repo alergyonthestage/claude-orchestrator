@@ -1,0 +1,184 @@
+name: demo
+description: "Demo project"
+
+# ── Session access (optional) ────────────────────────────────────────
+# Control how much of your config a session for this project may edit
+# (ADR-0036). All optional — omit the block to use the defaults shown.
+# Precedence: CLI flags > this block > ~/.cco/access.yml > defaults.
+#
+# access:
+#   claude: none            # .claude authoring, SCALAR (preset): none | repo | all
+#                           #   (default: DERIVED from cco — see below)
+#   cco: read-project       # .cco config, SCALAR (preset) form: none |
+#                           #   read-project (default) | read-global | read-all |
+#                           #   edit-project | edit-global | edit-all
+#                           #   (bare `read` = read-all, deprecated)
+#   show_host_paths: true   # show the host<->container path map (default: true)
+#
+# The `cco` field also accepts a granular MAP form (ADR-0046) — three independent
+# axes on the lattice none < ro < rw. Unspecified axes auto-promote to the
+# invariant floor; presets above are sugar for the symmetric triples.
+#
+#   cco:
+#     global: ro            # G  — the rest of the personal ~/.cco store
+#     current: rw           # Pc — this project's config (never none while enabled)
+#     others: none          # Po — other projects' config (Po <= Pc)
+#     include_member_configs: false  # widen Pc's rw span from the hosting repo's
+#                           #   <repo>/.cco to ALL member repos' divergent copies
+#
+# `claude` (Axis B, ADR-0049) governs the .claude AUTHORING trees. By DEFAULT it
+# DERIVES from `cco` (never more permissive): a read-only cco session keeps .claude
+# read-only too, so a normal session no longer authors .claude by default. Set it
+# only to author .claude. It accepts the same grammar — a scalar preset (none =
+# all read-only · repo = author repo-native + this project · all = author every
+# tree) OR a granular MAP on the lattice ro < rw (omitted axes derive from cco):
+#
+#   claude:
+#     repo: ro              # Cr — <repo>/.claude repo-native      (default ro)
+#     current: rw           # Cp — <repo>/.cco/claude (this project) (default = cco current)
+#     global: ro            # Cg — ~/.cco/.claude                  (default = cco global)
+#     others: ro            # Co — other projects' .claude         (default = cco others)
+
+# ── Repositories ─────────────────────────────────────────────────────
+# Each repo is referenced by a logical name + an optional machine-agnostic
+# coordinate (url/ref). Local paths live in the machine-local index — set them
+# with `cco resolve`, never here (keeps `git diff` truthful, AD3/G8).
+repos:
+  - name: alpha
+    url: https://ex.com/a.git
+  # - name: my-repo
+  #   url: git@github.com:org/my-repo.git   # optional bootstrap pointer for `cco resolve`
+  #   ref: main                             # optional git ref (default: remote default branch)
+  #   description: "Backend API service"    # optional; shown to the agent in the session context
+  - name: beta
+    url: https://ex.com/b.git
+
+# ── Extra mounts (optional) ─────────────────────────────────────────
+# Auxiliary mounts by logical name; they join the same coordinate model.
+# extra_mounts:
+#   - name: api-specs
+#     url: git@github.com:org/api-specs.git   # optional (git-backed mount); absent → local-only via the index
+#     target: /workspace/docs/api-specs       # optional container path (default /workspace/<name>)
+#     readonly: true
+#     description: "OpenAPI specs (reference)" # optional; shown to the agent in the session context
+#     config_access_policy: ro                # nested .claude/.cco inside this mount:
+#                           #   ro (default, strict) | project (follow session
+#                           #   access) | write. extra_mounts aren't config repos,
+#                           #   so nested config is read-only by default (ADR-0049).
+
+# ── Knowledge Packs (optional) ───────────────────────────────────────
+# Reference packs by logical name + an OPTIONAL coordinate (url/ref). A pack with
+# a url resolves from ~/.cco/packs (or its sharing repo); a pack with no url is a
+# project-local authored pack in <repo>/.cco/packs/.
+# See: docs/users/configuration/reference/project-yaml.md § Knowledge Packs for schema and examples.
+#
+# packs:
+#   - name: shared-pack
+#     url: https://github.com/org/cco-sharing.git   # optional → the pack's sharing repo
+#   - name: project-local-pack                       # no url → authored in <repo>/.cco/packs/
+
+# ── LLMs.txt Framework Docs (optional) ─────────────────────────────
+# Reference official framework documentation installed via 'cco llms install'.
+# Content is cached per-machine in ~/.cache/cco/llms/ and mounted read-only at
+# session start (re-fetchable from the coordinate; ADR-0007/0014).
+# See: docs/users/configuration/reference/project-yaml.md § LLMs.txt for schema and examples.
+#
+# llms:
+#   - svelte
+#   - name: shadcn-svelte
+#     description: "Component index — WebFetch for details"
+
+# ── GitHub Integration (optional) ────────────────────────────────────
+# Enable Claude to interact with GitHub via MCP (issues, PRs, code search).
+# Requires a GitHub token with appropriate scopes (repo, read:org, etc.).
+# Set GITHUB_TOKEN in ~/.cco/secrets.env (global) or <repo>/.cco/secrets.env
+# (project, gitignored) before use.
+#
+# github:
+#   enabled: false            # true to activate github MCP server
+#   token_env: GITHUB_TOKEN   # env var containing the GitHub token (default: GITHUB_TOKEN)
+
+# ── Browser Automation (optional) ───────────────────────────────────
+# Enable Claude to control a browser via chrome-devtools-mcp (CDP).
+# The browser runs on your host OS and is visible while Claude operates it.
+#
+# Prerequisites:
+#   1. Run: cco chrome start   (launches Chrome with remote debugging)
+#   2. Set: browser.enabled: true in this file (or use --chrome flag)
+#
+# browser:
+#   enabled: false          # true to activate chrome-devtools-mcp
+#   mode: host              # "host" = Chrome on host (default and only mode)
+#   cdp_port: 9222          # Chrome remote debugging port (default: 9222)
+#   mcp_args: []            # extra flags for chrome-devtools-mcp
+
+# ── Docker options ───────────────────────────────────────────────────
+docker:
+  # image: claude-orchestrator:latest  # Custom Docker image for this project
+  mount_socket: false       # Set true to enable Docker-from-Docker (socket mount)
+  ports:
+    - "3000:3000"
+    - "8080:8080"
+  env: {}
+  # network: cc-demo
+
+  # ── Container access policy (requires mount_socket: true) ──────────
+  # Controls which containers Claude can see and manage.
+  # Policies: project_only | allowlist | denylist | unrestricted
+  #
+  # containers:
+  #   policy: project_only             # Default: only project-network containers
+  #   allow: []                        # Glob patterns (allowlist policy only)
+  #   deny: []                         # Glob patterns (denylist policy only)
+  #   create: true                     # Allow creating new containers
+  #   name_prefix: "cc-demo-"  # Prefix enforced on new containers
+  #   required_labels:                 # Labels auto-injected on creation
+  #     cco.project: "demo"
+
+  # ── Mount restrictions (requires mount_socket: true) ───────────────
+  # Controls which host paths Claude can mount into containers.
+  # Policies: none | project_only | allowlist | any
+  #
+  # mounts:
+  #   policy: project_only             # Default: only repos in this project
+  #   allow: []                        # Absolute paths (allowlist policy only)
+  #   deny: []                         # Paths always denied (all policies)
+  #   force_readonly: false            # Force all mounts read-only
+
+  # ── Security constraints (requires mount_socket: true) ─────────────
+  # Enforced on all containers Claude creates. Secure defaults applied
+  # automatically even if this section is omitted.
+  #
+  # security:
+  #   no_privileged: true              # Block --privileged flag
+  #   no_sensitive_mounts: true        # Block /proc, /sys, /etc/shadow mounts
+  #   force_non_root: false            # Block root user in containers
+  #   drop_capabilities:               # Linux capabilities to drop
+  #     - SYS_ADMIN
+  #     - NET_ADMIN
+  #   resources:                       # Per-container resource limits
+  #     memory: "4g"
+  #     cpus: "4"
+  #     max_containers: 10
+
+# ── Authentication ───────────────────────────────────────────────────
+auth:
+  method: oauth         # "oauth" (default) | "api_key"
+
+# ── MCP Servers (optional) ──────────────────────────────────────────
+# Create mcp.json in this directory using Claude Code's native .mcp.json format.
+# ${VAR} syntax is expanded natively by Claude Code inside the container.
+# Env vars must be set in ~/.cco/secrets.env, docker.env above, or --env flag.
+# IMPORTANT: Unresolvable ${VAR} will cause Claude Code to ignore the entire file.
+# Example mcp.json:
+#   {
+#     "mcpServers": {
+#       "github": {
+#         "type": "stdio",
+#         "command": "npx",
+#         "args": ["-y", "@modelcontextprotocol/server-github"],
+#         "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+#       }
+#     }
+#   }
+# See: https://modelcontextprotocol.io/docs

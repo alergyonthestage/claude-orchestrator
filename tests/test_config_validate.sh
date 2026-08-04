@@ -12,7 +12,7 @@ _cv_seed_orphans() {
     seed_index_path "ghost-repo" "$tmpdir/gone-repo"
     index_set_project_repos "ghost-proj" "ghost-repo"
     # local: STATE per-id dir for a pack that no longer exists in ~/.cco/packs
-    mkdir -p "$CCO_STATE_HOME/packs/ghost-spack/update/base"
+    mkdir -p "$(state_shared)/packs/ghost-spack/update/base"
     # local: CACHE per-id dir for an untracked project
     mkdir -p "$CCO_CACHE_HOME/projects/ghost-cproj/managed"
     # local: STATE remote token with no DATA url registry entry
@@ -49,9 +49,9 @@ test_config_validate_detects_all_buckets_read_only() {
     assert_output_contains "DATA source pack 'ghost-dpack'"
 
     # Read-only: nothing is touched without --fix.
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_exists "$CCO_DATA_HOME/packs/ghost-dpack"
-    assert_file_contains "$CCO_STATE_HOME/index" "ghost-repo:"
+    assert_file_contains "$(cco_index_file)" "ghost-repo:"
 }
 
 test_config_validate_dry_run_no_change() {
@@ -60,7 +60,7 @@ test_config_validate_dry_run_no_change() {
     _cv_seed_orphans "$tmpdir"
     run_cco config validate --dry-run
     assert_output_contains "Found"
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
 }
 
 test_config_validate_fix_prunes_with_yes() {
@@ -73,10 +73,10 @@ test_config_validate_fix_prunes_with_yes() {
     assert_output_contains "propagates to your other machines"   # DATA second-confirm warning
 
     # Machine-local orphans pruned.
-    assert_dir_not_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_not_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_not_exists "$CCO_CACHE_HOME/projects/ghost-cproj"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "ghost-repo:"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "ghost-proj:"
+    assert_file_not_contains "$(cco_index_file)" "ghost-repo:"
+    assert_file_not_contains "$(cco_index_file)" "ghost-proj:"
     if grep -q "^ghost-remote=" "$CCO_STATE_HOME/remotes-token" 2>/dev/null; then
         fail "orphan token should be pruned"
     fi
@@ -115,6 +115,156 @@ test_config_validate_fix_dies_without_confirmation() {
     run_cco config validate --fix </dev/null || rc=$?
     [[ "$rc" -ne 0 ]] || fail "expected non-interactive --fix without -y to exit non-zero"
     assert_output_contains "re-run with -y"
-    assert_dir_exists "$CCO_STATE_HOME/packs/ghost-spack"
+    assert_dir_exists "$(state_shared)/packs/ghost-spack"
     assert_dir_exists "$CCO_DATA_HOME/packs/ghost-dpack"
+}
+
+# ── WS-5 — malformed index lane (ADR-0052 §5, FI-22) ─────────────────
+# A non-absolute index value is MALFORMED, not an orphan: reported in its own lane
+# and NEVER pruned (format repair is the user's call). A genuine (absolute, missing)
+# orphan next to it must still be pruned by --fix.
+_cv_unscoped_get() { ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"; source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"; _index_section_get unscoped "$1" ); }
+_cv_pp_get()       { ( source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"; source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"; _index_pp_get "$1" "$2" ); }
+
+test_config_validate_malformed_reported_never_pruned() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    # Hand-write the index: the API rejects non-absolute writes, so a malformed
+    # value can only arrive via a stale spelling or a hand-edit. `weird` is
+    # malformed (non-absolute); `goodmissing` is a genuine orphan (absolute, gone).
+    cat > "$(cco_index_file)" <<IDX
+version: 2
+projects:
+project_paths:
+  app:
+    weird: "relative/not-abs"
+    goodmissing: "$tmpdir/does-not-exist"
+llms:
+unscoped:
+IDX
+    run_cco config validate
+    assert_output_contains "malformed index record"
+    assert_output_contains "weird"
+    assert_output_contains "goodmissing"          # the orphan is reported too
+
+    # --fix prunes the orphan, NEVER the malformed record.
+    run_cco config validate --fix -y
+    assert_file_not_contains "$(cco_index_file)" "goodmissing"
+    assert_file_contains "$(cco_index_file)" "weird"
+    [[ "$(_cv_pp_get app weird)" == "relative/not-abs" ]] || fail "malformed record must survive --fix, got: $(_cv_pp_get app weird)"
+
+    # A re-validate still reports it (flag-on-read, never pruned).
+    run_cco config validate
+    assert_output_contains "malformed index record"
+    assert_output_contains "weird"
+}
+
+# ── WS-4 — FI-23 residue re-home via config validate --fix (ADR-0052 §4) ──
+# An extra_mount a project declares but the index parks in unscoped: is a mis-scoped
+# residue (a pre-WS-4 migration). It is its OWN lane — a re-home MOVES the binding,
+# it is not an orphan prune — and --fix re-homes it under the declaring project.
+test_config_validate_fi23_residue_rehomed() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    local repo="$tmpdir/repos/appx-repo"
+    mkdir -p "$repo/.cco/claude" "$tmpdir/assets-dir"
+    cat > "$repo/.cco/project.yml" <<'YML'
+name: appx
+repos:
+  - name: app-repo
+extra_mounts:
+  - name: assets
+    target: /workspace/assets
+YML
+    seed_index_path "app-repo" "$repo" "appx"
+    index_set_project_repos "appx" "app-repo"
+    seed_index_path "assets" "$tmpdir/assets-dir"     # parked unscoped (the residue)
+
+    # Report: surfaced as a re-home, not an orphan; not pruned without --fix.
+    run_cco config validate
+    assert_output_contains "mis-scoped extra_mount"
+    assert_output_contains "assets"
+    assert_output_not_contains "orphaned internal"    # a re-home is not an orphan
+    [[ "$(_cv_unscoped_get assets)" == "$tmpdir/assets-dir" ]] || fail "report mode must not move the binding"
+
+    # --fix re-homes it under appx and clears unscoped.
+    run_cco config validate --fix -y
+    assert_output_contains "Re-homed"
+    [[ "$(_cv_pp_get appx assets)" == "$tmpdir/assets-dir" ]] || fail "assets not re-homed under appx, got: $(_cv_pp_get appx assets)"
+    [[ -z "$(_cv_unscoped_get assets)" ]] || fail "assets must be cleared from unscoped, got: $(_cv_unscoped_get assets)"
+
+    # Idempotent: the residue is gone, so a re-validate no longer flags it.
+    run_cco config validate
+    assert_output_not_contains "mis-scoped extra_mount"
+}
+
+# ── FI-27 / ADR-0053: non-canonical index path re-key lane ────────────────
+
+# Seed the index RAW (bypassing the canonicalizing writer) with a project-scoped
+# and an unscoped entry that carry a trailing /. over an EXISTING dir (so they are
+# non-canonical, not orphaned) plus one non-absolute (malformed) entry. $real is
+# already physical (mktemp output is canonicalized), so canon only strips the /.
+_cv_seed_noncanon() {
+    local tmpdir="$1" real="$2"
+    mkdir -p "$real"
+    local idxf; idxf=$(cd "$REPO_ROOT" \
+        && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_file)
+    mkdir -p "$(dirname "$idxf")"
+    cat > "$idxf" <<EOF
+version: 2
+projects:
+  myproj: "myrepo"
+project_paths:
+  myproj:
+    myrepo: "$real/."
+unscoped:
+  umount: "$real/."
+  bad: "relative/nope"
+EOF
+}
+
+# --dry-run reports non-canonical entries in the re-key lane, keeps the
+# non-absolute one in the SEPARATE malformed lane, and flags neither as an orphan.
+test_config_validate_reports_noncanonical_index_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _cv_seed_noncanon "$tmpdir" "$tmpdir/real"
+
+    run_cco config validate
+    assert_output_contains "non-canonical"
+    assert_output_contains "myrepo"
+    assert_output_contains "umount"
+    assert_output_contains "re-key"
+    # The non-absolute entry stays in the malformed lane, never the re-key lane.
+    assert_output_contains "malformed"
+    assert_output_contains "bad"
+    # An existing (if non-canonical) path is NOT an orphan.
+    assert_output_not_contains "myrepo' -> $tmpdir/real/. (missing)"
+}
+
+# --fix re-keys the non-canonical entries to their canonical form and leaves the
+# malformed one untouched; a re-validate is then clean of non-canonical entries.
+test_config_validate_fix_rekeys_noncanonical_index_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _cv_seed_noncanon "$tmpdir" "$tmpdir/real"
+
+    run_cco config validate --fix -y
+    assert_output_contains "Re-keyed"
+
+    # The stored values are now canonical (no trailing /.).
+    local got
+    got=$(cd "$REPO_ROOT" && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_get_path myproj myrepo)
+    assert_equals "$tmpdir/real" "$got"
+    got=$(cd "$REPO_ROOT" && source lib/colors.sh && source lib/utils.sh \
+        && source lib/paths.sh && source lib/index.sh && _index_get_path myproj umount)
+    assert_equals "$tmpdir/real" "$got"
+
+    # Re-validate: no non-canonical left; the malformed entry is still reported
+    # (never fixed).
+    run_cco config validate
+    assert_output_not_contains "non-canonical"
+    assert_output_contains "malformed"
 }

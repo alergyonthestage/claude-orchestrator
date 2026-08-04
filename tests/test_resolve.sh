@@ -109,11 +109,12 @@ test_resolve_scan_ad5_keeps_existing_on_conflict() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
 
-    # Pre-bind repo1 to a DIFFERENT path than the one the scan will discover.
-    mkdir -p "$tmp/elsewhere"
-    run_cco path set repo1 "$tmp/elsewhere" || return 1
-
+    # Pre-bind repo1 (scoped to demo, from within the demo repo) to a DIFFERENT
+    # path than the one the scan will discover — a genuine AD5′ in-project clash.
     _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
+    mkdir -p "$tmp/elsewhere"
+    _rsv_cco_in "$tmp/dev/repo1" path set repo1 "$tmp/elsewhere" || return 1
+
     run_cco resolve --scan "$tmp/dev" || return 1
     assert_output_contains "keeping existing" || return 1
 
@@ -127,7 +128,8 @@ test_resolve_scan_no_prune_keeps_stale_entries() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
 
-    run_cco path set ghost "$tmp/ghost-not-scanned" || return 1
+    # From a neutral cwd (no project) → an unscoped pin.
+    _rsv_cco_in "$tmp" path set ghost "$tmp/ghost-not-scanned" || return 1
     _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
     run_cco resolve --scan "$tmp/dev" || return 1
 
@@ -162,10 +164,11 @@ test_path_set_and_list_roundtrip() {
     setup_cco_env "$tmp"
 
     mkdir -p "$tmp/somedir"
-    run_cco path set myrepo "$tmp/somedir" || return 1
+    # Neutral cwd (no project) → an unscoped pin.
+    _rsv_cco_in "$tmp" path set myrepo "$tmp/somedir" || return 1
     assert_output_contains "path set: myrepo" || return 1
 
-    run_cco path list || return 1
+    _rsv_cco_in "$tmp" path list || return 1
     assert_output_contains "myrepo" || return 1
     assert_output_contains "$tmp/somedir" || return 1
 }
@@ -216,9 +219,10 @@ test_resolve_cwd_first_resolves_and_records_membership() {
 repos:
   - name: repo1
   - name: repo2' > "$tmp/dev/repo1/.cco/project.yml"
-    # Pre-bind both members so non-TTY resolution is a clean no-op success.
-    run_cco path set repo1 "$tmp/dev/repo1" || return 1
-    run_cco path set repo2 "$tmp/dev/repo2" || return 1
+    # Pre-bind both members (scoped to demo, from within the demo repo) so
+    # non-TTY resolution is a clean no-op success.
+    _rsv_cco_in "$tmp/dev/repo1" path set repo1 "$tmp/dev/repo1" || return 1
+    _rsv_cco_in "$tmp/dev/repo1" path set repo2 "$tmp/dev/repo2" || return 1
 
     _rsv_cco_in "$tmp/dev/repo1" resolve || return 1
     assert_output_contains "resolved" || return 1
@@ -293,7 +297,7 @@ extra_mounts:
     local got
     got=$(
         source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_get_path mymount
+        _index_get_path demo mymount
     )
     [[ "$got" == "/resolved/mymount" ]] \
         || { echo "ASSERTION FAILED: resolve must prompt + bind an unresolved mount on a TTY (got: '$got')"; return 1; }
@@ -381,12 +385,14 @@ test_path_list_normalizes_and_flags_malformed() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
     mkdir -p "$tmp/real"
-    run_cco path set good "$tmp/real" || return 1
+    _rsv_cco_in "$tmp" path set good "$tmp/real" || return 1
     (
         source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
         source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_section_set paths legacy "@local"
-        _index_section_set paths tildey "~/somewhere"
+        # Seed malformed values directly into the unscoped bucket (bypass the
+        # normalizing boundary) — the v2 index has no flat paths: section.
+        _index_section_set unscoped legacy "@local"
+        _index_section_set unscoped tildey "~/somewhere"
     ) || return 1
 
     run_cco path list || return 1
@@ -510,4 +516,432 @@ repos:
     )
     [[ "$out" == "$tmp/hostrepo" ]] \
         || fail "by-name resolution must relocate the unit after repeated resolve, got: $out"
+}
+
+# ── A.4 add-time disambiguation (ADR-0051 D4) ────────────────────────────────
+# When a repo/mount name already exists in OTHER projects, resolution surfaces the
+# existing paths and lets the user REUSE one (same resource) or specify a fresh
+# path (a homonym). A cross-project name match is a reuse-or-homonym choice, not a
+# collision. url divergence (git origin ≠ the incoming coordinate) is flagged.
+
+_da_src() {
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh";   source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh";  source "$REPO_ROOT/lib/local-paths.sh"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+}
+
+test_resolve_disambiguate_lists_other_project_bindings() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a" "$tmp/be-b"
+    seed_index_path backend "$tmp/be-a" proj-a
+    seed_index_path backend "$tmp/be-b" proj-b
+
+    CCO_OUTPUT=$( _da_src; _resolve_reuse_menu backend extra_mounts "" proj-c )
+    assert_output_contains "$tmp/be-a" || return 1
+    assert_output_contains "$tmp/be-b" || return 1
+    assert_output_contains "already bound in other projects" || return 1
+}
+
+test_resolve_disambiguate_excludes_self_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a" "$tmp/be-b"
+    seed_index_path backend "$tmp/be-a" proj-a
+    seed_index_path backend "$tmp/be-b" proj-b
+
+    CCO_OUTPUT=$( _da_src; _resolve_name_reuse_candidates backend proj-a )
+    assert_output_contains "$tmp/be-b" || return 1
+    if printf '%s' "$CCO_OUTPUT" | grep -qF "$tmp/be-a"; then
+        fail "reuse candidates must exclude the querying project's own binding"
+    fi
+}
+
+test_resolve_disambiguate_flags_url_divergence() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a"
+    seed_index_path backend "$tmp/be-a" proj-a
+    git -C "$tmp/be-a" init -q
+    git -C "$tmp/be-a" remote add origin https://example.com/OTHER.git
+
+    CCO_OUTPUT=$( _da_src; _resolve_reuse_menu backend repos https://example.com/backend.git proj-c )
+    assert_output_contains "probably a different resource" || return 1
+    assert_output_contains "OTHER.git" || return 1
+}
+
+test_resolve_disambiguate_no_candidates_returns_1() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local rc=0
+    ( _da_src; _resolve_reuse_menu loner repos "" proj-c ) >/dev/null || rc=$?
+    [[ $rc -eq 1 ]] || fail "a name bound in no other project must yield no menu (rc=1, got $rc)"
+}
+
+test_resolve_reuse_binds_the_chosen_path() {
+    # Integration: on a TTY, _resolve_entry_index offers reuse first; when the user
+    # picks an existing other-project path it is bound into THIS project's scope
+    # (the explicit (V) convenience) without touching project.yml.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/shared"
+    seed_index_path backend "$tmp/shared" proj-a
+    _rsv_unit "$tmp" hostrepo 'name: demo
+repos:
+  - name: hostrepo
+extra_mounts:
+  - name: backend
+    target: /workspace/backend'
+    seed_index_path hostrepo "$tmp/hostrepo" demo
+
+    (
+        _da_src
+        _cco_have_tty()        { return 0; }
+        # Stub the interactive picker: user reuses proj-a's existing path.
+        _resolve_disambiguate() { printf '%s\n' "$tmp/shared"; return 0; }
+        _resolve_unit "$tmp/hostrepo" >/dev/null 2>&1
+    )
+
+    local got
+    got=$( _da_src; _index_get_path demo backend )
+    [[ "$got" == "$tmp/shared" ]] \
+        || fail "reuse must bind demo/backend to the chosen path, got: '$got'"
+}
+
+test_resolve_homonym_mounts_coexist() {
+    # ADR-0051 D4 case 2: two projects with a generic 'assets' mount at DIFFERENT
+    # paths coexist — each keeps its own scoped binding, never merged.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/a-assets" "$tmp/b-assets"
+    seed_index_path assets "$tmp/a-assets" proj-a
+    seed_index_path assets "$tmp/b-assets" proj-b
+
+    local pa pb
+    pa=$( _da_src; _index_get_path proj-a assets )
+    pb=$( _da_src; _index_get_path proj-b assets )
+    [[ "$pa" == "$tmp/a-assets" ]] || fail "proj-a/assets must stay its own path, got: '$pa'"
+    [[ "$pb" == "$tmp/b-assets" ]] || fail "proj-b/assets must stay its own path, got: '$pb'"
+}
+
+# ── cco path set — quote hygiene (ADR-0050 D8 / B.5) ─────────────────
+# A path pasted with surrounding shell quotes must absolutize to the literal
+# directory, not a bogus quoted string (analysis §9.2).
+
+test_path_set_strips_surrounding_single_quotes() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local d="$tmp/pasted/repo"; mkdir -p "$d"
+    run_cco path set myrepo "'$d'" || fail "path set failed: $CCO_OUTPUT" || return 1
+    assert_output_contains "-> $d" || return 1
+    assert_output_not_contains "'$d'" || return 1
+}
+
+test_path_set_strips_surrounding_double_quotes() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local d="$tmp/pasted/repo2"; mkdir -p "$d"
+    run_cco path set myrepo "\"$d\"" || fail "path set failed: $CCO_OUTPUT" || return 1
+    assert_output_contains "-> $d" || return 1
+}
+
+# ── Read-path honesty: empty ≠ unreadable (v3 R3 / S4) ────────────────
+#
+# T-R3, the behavioural guard for the read half of the R1 symptom set. The verb
+# reads the index through `done < <(_index_pp_dump_all; …)`, and a process
+# substitution DISCARDS its status — so a permission-denied, truncated or
+# stranded index fell through to the count==0 branch and was announced as an
+# empty index at rc=0 (v3 V2-F02). The user is told the opposite of the truth on
+# the one question they asked.
+#
+# Assertions (b) and (c) are what make this a guard rather than a smoke test: a
+# fix that returned non-zero while still printing "the path index is empty", or
+# that went quiet without naming a cause, still fails here.
+# ⚠ FAILS on pre-fix code: rc=0 with "the path index is empty".
+test_path_list_unreadable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    _rsv_unit "$tmp/dev" repo1 "$_RSV_TWO_REPO_YML"
+    run_cco resolve --scan "$tmp/dev" || return 1
+
+    local idx; idx=$(_rsv_index_file)
+    chmod 000 "$idx"
+    local rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    chmod 644 "$idx"
+
+    # (a) an ERROR (exit 1, D8 — a broken dependency, not a policy refusal), and
+    #     above all never rc=0
+    assert_rc 1 "$rc" "path list on an unreadable index" || return 1
+    # (b) it must NOT claim the index is empty — the false-success class itself
+    [[ "$CCO_OUTPUT" != *"index is empty"* ]] \
+        || { fail "an unreadable index must not be reported as an empty one: $CCO_OUTPUT"; return 1; }
+    # (c) the message names the real cause, so the user can act on it
+    [[ "$CCO_OUTPUT" == *"cannot be read"* ]] \
+        || { fail "the failure must name the real cause: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# The vocabulary half of R3, at the verb. In a session `cco resolve` is HOST-ONLY
+# (bin/cco's operator gate refuses it), so pointing the agent at it is advice the
+# shim rejects — the string RC-2 retired, still live on this path because cycle 1
+# never audited it. Asserted on BOTH surfaces the stage touches, since the
+# zero-row and the unreadable arms carry separate sentences and a fix to one does
+# not imply the other.
+#
+# ⚠ ARM (1)'s CONTRACT CHANGED in S6, deliberately — this is not a test bent to
+# fit the code. ADR-0056's ratified annotation "D6 — extended to a zero-row index
+# in a session (S6)" removes the premise this arm was written on: there is no
+# "genuinely empty index" in a session, because a session is LAUNCHED from the
+# index. What the arm exists to guard — the R3 vocabulary rule — is unchanged and
+# still asserted here; only the answer it guards moved from a benign rc=0 line to
+# a refusal. The benign arm did not disappear: it is asserted on the HOST, in
+# tests/test_index_session_axis.sh (…_stays_benign_on_the_host, and the verb-level
+# …_verbs_stay_benign_on_the_host).
+test_path_list_operator_never_emits_the_retired_resolve_hint() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    setup_operator_session "$tmp" read-all
+
+    # (1) the ZERO-ROW arm: a present, readable, non-zero index holding nothing.
+    local idx; idx=$(_rsv_index_file)
+    mkdir -p "$(dirname "$idx")"
+    printf 'version: 2\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$idx"
+    local rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    assert_rc 1 "$rc" "path list on a zero-row index inside a session" || return 1
+    [[ "$CCO_OUTPUT" != *"nothing is registered on this machine yet"* ]] \
+        || { fail "a session is launched from the index — it may not be told nothing is registered on this machine: $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || { fail "in a session the empty-index remedy must not name host-only 'cco resolve': $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"host"* ]] \
+        || { fail "the session remedy must point at the host: $CCO_OUTPUT"; return 1; }
+
+    # (2) the FAILURE arm: same rule, different sentence.
+    chmod 000 "$idx"
+    rc=0
+    _rsv_cco_in "$tmp" path list || rc=$?
+    chmod 644 "$idx"
+    assert_rc 1 "$rc" "path list on an unreadable index (operator)" || return 1
+    [[ "$CCO_OUTPUT" != *"cco resolve"* ]] \
+        || { fail "in a session the failure remedy must not name host-only 'cco resolve': $CCO_OUTPUT"; return 1; }
+    [[ "$CCO_OUTPUT" == *"host"* ]] \
+        || { fail "the session remedy must point at the host: $CCO_OUTPUT"; return 1; }
+    return 0
+}
+
+# ── S2b item 3: `cco path set` is the repair command — it must not lie ─────────
+# The index write IS this verb; nothing else lands. Called bare, a failed write made
+# it a complete no-op that printed "✓ path set". It matters more than its size
+# suggests: several other S2b failure messages point the user HERE to repair a
+# missing binding, so a silent no-op would strand them in a loop.
+# ⚠ FAILS on pre-fix: rc=0 and the ✓ prints over an unwritten index.
+test_path_set_unwritable_index_fails_loud() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/somewhere" "$(state_shared)"
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" path set thing "$tmp/somewhere" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    [[ "$out" != *"path set:"* ]] \
+        || { fail "no '✓ path set' over a binding that was never written: $out"; return 1; }
+    return 0
+}
+
+# A partial `--scan` must not exit 0: the summary line ("N binding(s) upserted") is
+# the number the user reads to decide the sweep worked, and a swallowed failure both
+# deflates it and hides that the index is now incomplete. The scan still sweeps every
+# unit — it counts failures rather than abandoning the rest on the first one.
+# ⚠ FAILS on pre-fix: rc=0 with a clean-looking summary.
+test_resolve_scan_partial_failure_is_not_success() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/dev/alpha/.cco" "$(state_shared)"
+    printf 'name: alpha\nrepos:\n  - name: alpha\n' > "$tmp/dev/alpha/.cco/project.yml"
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" resolve --scan "$tmp/dev" 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "a scan whose index writes failed must not exit 0: $out"; return 1; }
+    [[ "$out" == *"incomplete"* ]] \
+        || { fail "the summary must say the sweep is incomplete: $out"; return 1; }
+    return 0
+}
+
+# ── N3: q/Exit honours the exit (ADR-0052 §6) ────────────────────────
+# A user Exit ([q]) at a heal prompt surfaces rc=2 from the per-entry healers.
+# _resolve_unit must PROPAGATE it (return 2, not the old swallow-to-0), so
+# `cco start` aborts before booting and `cco resolve[/--all]` stop cleanly.
+
+_RSV_N3_YML='name: demo
+repos:
+  - name: repo1
+    url: https://example.com/repo1.git'
+
+# The heal loop reaches _resolve_entry_index only for an UNRESOLVED member; a stub
+# returning 2 stands in for the user pressing [q] at the clone/path prompt.
+test_resolve_unit_propagates_user_quit_rc2() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"          # repo1 has no index binding → unresolved
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty()        { return 0; }
+        _resolve_entry_index() { return 2; }         # user pressed [q]
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "a user Exit must propagate as rc=2 from _resolve_unit, got: $rc"
+}
+
+# The crux of N3 (per the 2026-07-22 incident): Exit at a SUBSEQUENT unresolved
+# member, AFTER an earlier one was resolved (e.g. via [p]ath), must still abort —
+# not just Exit at the very first prompt. The old `2) return 0` swallowed it, so the
+# loop fell through to the membership write + success and the start booted. Here the
+# first member resolves (rc=0) and the SECOND is quit (rc=2): rc=2 must propagate.
+_RSV_N3_TWO_YML='name: demo
+repos:
+  - name: repoA
+    url: https://example.com/a.git
+  - name: repoB
+    url: https://example.com/b.git'
+
+test_resolve_unit_propagates_quit_at_subsequent_member() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_TWO_YML"       # repoA + repoB both unresolved
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty() { return 0; }
+        # 1st member → resolved ([p]ath, rc=0); 2nd member → Exit ([q], rc=2).
+        _N3_ROUND=0
+        _resolve_entry_index() {
+            _N3_ROUND=$((_N3_ROUND + 1))
+            [[ $_N3_ROUND -ge 2 ]] && return 2 || return 0
+        }
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "Exit at a SUBSEQUENT member (after an earlier resolve) must propagate rc=2, got: $rc"
+}
+
+# A SKIP (rc=1) is not an abort — _resolve_unit stays best-effort (counts the
+# unresolved member, returns 0). This guards against over-propagating.
+test_resolve_unit_skip_is_not_an_abort() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _cco_have_tty()        { return 0; }
+        _resolve_entry_index() { return 1; }         # user chose [s]kip
+        _resolve_unit "$tmp/myrepo"
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 0 ]] \
+        || fail "a skip must NOT abort — _resolve_unit should return 0, got: $rc"
+}
+
+# cmd_resolve maps rc=2 to a clean exit (0) and skips the post-heal status render.
+test_cmd_resolve_honours_user_quit() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _rsv_unit "$tmp" myrepo "$_RSV_N3_YML"
+    local out rc=0
+    out=$(
+        {
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_find_unit_dir()   { printf '%s\n' "$tmp/myrepo"; }
+        _resolve_unit()            { return 2; }             # user Exit
+        _resolve_render_status()   { echo "STATUS-RENDERED"; }
+        cmd_resolve
+        } 2>&1
+    ) || rc=$?
+    [[ $rc -eq 0 ]] \
+        || fail "cco resolve must exit cleanly (0) on a user Exit, got: $rc"
+    [[ "$out" == *"stopped at your request"* ]] \
+        || fail "cco resolve must acknowledge the Exit, got: $out"
+    [[ "$out" != *"STATUS-RENDERED"* ]] \
+        || fail "cco resolve must NOT render the status after an Exit, got: $out"
+}
+
+# _start_resolve_paths turns a resolve Exit into a start ABORT (return 2), which
+# cmd_start maps to a clean no-boot exit. Here we assert the propagation.
+test_start_resolve_paths_aborts_on_user_quit() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo/.cco"
+    local rc=0
+    (
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/access-scope.sh"; source "$REPO_ROOT/lib/cmd-start.sh"
+        is_internal=false
+        project_dir="$tmp/myrepo/.cco"
+        _resolve_unit() { return 2; }                # user Exit at a mount prompt
+        _start_resolve_paths
+    ) >/dev/null 2>&1 || rc=$?
+    [[ $rc -eq 2 ]] \
+        || fail "_start_resolve_paths must propagate a user Exit as rc=2 (start abort), got: $rc"
+}
+
+# FI-27 / ADR-0053: _resolve_to_abs canonicalizes its output (symlink + /.), so the
+# value it feeds to BOTH the pre-write AD5' conflict check and the write is the same
+# canonical spelling the writer would store.
+test_resolve_to_abs_canonicalizes_path() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/real"
+    ln -sfn "$tmpdir/real" "$tmpdir/link"
+    local phys; phys=$(cd "$tmpdir/real" && pwd -P)
+    local got
+    got=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_to_abs "$tmpdir/link"
+    )
+    [[ "$got" == "$phys" ]] || fail "_resolve_to_abs must resolve the symlink (got '$got', want '$phys')"
+    got=$(
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/cmd-resolve.sh"
+        _resolve_to_abs "$tmpdir/real/."
+    )
+    [[ "$got" == "$phys" ]] || fail "_resolve_to_abs must collapse a trailing /. (got '$got', want '$phys')"
 }

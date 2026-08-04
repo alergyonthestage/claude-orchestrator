@@ -1,9 +1,13 @@
 # Design: llms.txt Integration
 
-> Status: Draft
+> Status: **Implemented** — shipped design, re-verified against `lib/cmd-llms.sh` /
+> `lib/llms.sh` on **2026-08-03** (G6 living-docs sweep). Written as a draft on 2026-03-24;
+> where the shipped surface diverged from the draft (the `list` verb, `rename`, the
+> retired `workspace.yml`, the mandatory llms `url`), this document now states the
+> **shipped** behaviour.
 > Date: 2026-03-24
 > Analysis: [analysis.md](../analysis/analysis-001-llms.md)
-> Related: [Packs design](../../../packs/design/design-packs.md) | [project-yaml.md](../../../../users/configuration/reference/project-yaml.md)
+> Related: [Packs design](../../../packs/design/design-packs.md) | [project-yaml.md](../../../../users/configuration/reference/project-yaml.md) | [ADR-0032](../../decentralized-config/decisions/0032-pack-llms-coordinate-coherence.md) (llms `url` invariant)
 
 ---
 
@@ -107,53 +111,88 @@ knowledge:
     - path: frontend-coding-conventions.md
       description: "Read when writing frontend code"
 
-# NEW: llms.txt references
+# llms.txt references — each carries its own re-fetch coordinate
 llms:
-  - svelte
-  - svelte-kit
+  - name: svelte
+    url: https://svelte.dev/docs/svelte/llms.txt
+  - name: svelte-kit
+    url: https://svelte.dev/docs/kit/llms.txt
   - name: shadcn-svelte
+    url: https://shadcn-svelte.com/llms.txt
     description: "Component index — read index, then WebFetch specific component pages"
 
 rules:
   - frontend-rules.md
 ```
 
-**Short form**: `- svelte` — references `~/.cache/cco/llms/svelte/`, uses default
-variant resolution and auto-generated description.
+> ⚠ **The `url` is MANDATORY on every llms reference** — in `pack.yml` exactly as in
+> `project.yml` (ADR-0017 D1, uniform coordinate schema ADR-0016 D2, enforced for packs by
+> [ADR-0032 D1](../../decentralized-config/decisions/0032-pack-llms-coordinate-coherence.md)).
+> The whole reachability model depends on it: llms content is the *sole* resource kind that
+> is never vendored, precisely because it is always re-fetchable from its coordinate
+> (ADR-0019 D6). A pack whose llms have no url is **not shareable for those llms** — which
+> is the drift ADR-0032 was written to close.
 
-**Long form**: `- name: shadcn-svelte` with optional `description:` and
-`variant:` overrides.
+**Short form**: `- svelte` — a bare name. Still **parsed** (back-compat: `yml_get_llms`
+returns an empty url for it), but it is a **share-readiness gap, not a valid steady
+state**: with no url anywhere, a teammate or a second machine has nothing to re-fetch
+from. `_validate_llms_refs` (`lib/llms.sh:201`) reports it as
+*"llms '<name>' has no url coordinate — required to share/re-fetch"* whenever the content
+is not already present locally, and `cco pack validate` / `cco project validate` surface
+that finding. Prefer the long form everywhere.
+
+**Long form** (the intended shape):
+
+```yaml
+llms:
+  - name: shadcn-svelte
+    url: https://shadcn-svelte.com/llms.txt   # REQUIRED — the re-fetch coordinate
+    description: "Component index — read index, then WebFetch component pages"
+    variant: index                            # optional
+```
 
 ### 3.2 Project Reference (`project.yml`)
 
 ```yaml
 name: my-svelte-app
 repos:
-  - path: ~/projects/my-app
-    name: my-app
+  - name: my-app
+    url: git@github.com:org/my-app.git   # coordinate, never a host path (ADR-0014)
 
 packs:
   - frontend-stack
 
-# NEW: project-level llms (in addition to pack llms)
+# Project-level llms (in addition to pack llms)
 llms:
-  - drizzle-orm
+  - name: drizzle-orm
+    url: https://orm.drizzle.team/llms.txt
   - name: tailwind
+    url: https://tailwindcss.com/llms.txt
     variant: medium
 ```
 
-Same syntax as pack references. Project llms are merged with pack llms
-(deduplicated by name, project takes precedence for variant/description
-overrides).
+Same syntax as pack references — including the mandatory `url`. Project llms are merged
+with pack llms (deduplicated by name; the project wins on a name clash, for variant and
+description alike).
+
+> The `repos:` entry above is a **coordinate**, not a path. A committed `project.yml`
+> never carries a host path; the logical name → absolute path binding is machine-local,
+> in the STATE index (ADR-0014 / ADR-0051).
 
 ### 3.3 Full Long-Form Schema
 
 ```yaml
 llms:
-  - name: svelte              # Required: matches directory in ~/.cache/cco/llms/
-    description: "..."        # Optional: override for packs.md (default: auto from file H1)
-    variant: full             # Optional: force specific variant (default: auto-resolve)
+  - name: svelte              # Required: matches the directory in <cache>/cco/llms/
+    url: https://svelte.dev/docs/svelte/llms.txt   # Required (ADR-0017 D1): re-fetch coordinate
+    description: "..."        # Optional: override for the session-context llms entry
+                              #           (default: auto from the file's H1)
+    variant: full             # Optional: force a variant (default: auto-resolve, §2.3)
 ```
+
+`yml_get_llms` emits one `name\tdescription\tvariant\turl` tuple per entry; consumers
+must read all four columns (`_peel_tab` preserves empty fields, so an absent description
+cannot shift the url column).
 
 ---
 
@@ -212,9 +251,14 @@ Saved to ~/.cache/cco/llms/svelte/
   llms-full.txt (primary — 17140 lines)
 ```
 
-### 4.2 `cco llms list`
+### 4.2 `cco list llms`
 
-Lists all installed llms entries with metadata.
+Lists all installed llms entries with metadata. **`cco llms list` was removed**
+(ADR-0029 D1 → the unified index); it now answers with a migration hint on the host and
+is refused with the same notice in-container. The renderer behind the kind view is still
+`_llms_list`; `cco list` (unified) also surfaces llms rows, scoped to the session's read
+scope (ADR-0043 — at `read-project` only the llms this project references are shown, with
+a count-only stderr notice for the rest).
 
 ```
 Name             Variant   Lines   Downloaded    Source URL
@@ -296,6 +340,25 @@ cco llms show svelte
 #   project my-svelte-app
 ```
 
+### 4.6 `cco llms rename <old> <new>`
+
+Renames an installed entry: the CACHE directory `<llms>/<old>/` → `<llms>/<new>/`, and
+every `llms:` reference to it in the packs and projects that name it. **Only llms has
+`rename`** among the resource families' download-shaped verbs — entries are auto-named
+from their URL, so a bad auto-name is a real and llms-specific need (`cmd_llms`,
+`lib/cmd-llms.sh:21-22`).
+
+> **The llms verb set is smaller than pack's / template's.** Shipped: `install`, `show`,
+> `update`, `rename`, `remove` (+ the removed `list` alias). There is deliberately **no**
+> `llms create` (an entry is a download, not something you author), **no** `import` /
+> `export` / `publish` / `internalize` (the coordinate is shared inside `project.yml` /
+> `pack.yml`, and the content is re-fetchable — §12), and **no** `llms validate` (llms
+> references are validated as part of `cco pack validate` / `cco project validate`, via
+> `_validate_llms_refs` in `lib/llms.sh`). The operator shim classifies
+> `pack|template|llms` as one family, so those absent verbs pass its gate and then die at
+> the dispatcher with `Unknown llms command` — see the
+> [CLI surface matrix](../../../cli/reference/cli-surface-matrix.md) §2.2/§2.3.
+
 ---
 
 ## 5. Mount Strategy
@@ -342,39 +405,43 @@ Implementation lives in a new `lib/llms.sh` module, called from
 
 ## 6. Context Injection
 
-### 6.1 Enhanced `packs.md` Generation
+### 6.1 The llms section of the session context
 
-The generated `.claude/packs.md` file gains a new section for llms docs:
+> **The `workspace.yml` file is retired (ADR-0042).** The agent-facing session-info
+> surface is no longer a generated file in the `.claude` overlay: it is computed
+> host-side by `lib/session-context.sh` and passed to the container as the base64
+> **`CCO_SESSION_CONTEXT`** env var, which the SessionStart hook decodes and appends
+> verbatim. `cco start` actively deletes any stale `workspace.yml`/`packs.md` a
+> pre-ADR-0042 session left behind. The *content* below is unchanged in substance — the
+> block still carries the same llms entries — only its carrier changed.
 
-```markdown
-<!-- Auto-generated by cco start — do not edit manually -->
-The following knowledge files provide project-specific conventions and context.
-Read the relevant files BEFORE starting any implementation, review, or design task.
-Do not ask the user for context that is covered by these files.
+`_build_session_context` renders an **Official Framework Documentation (llms.txt)**
+section from `_llms_render_entries "$project_yml" "$pack_names" "$project_dir"`, which
+merges the project's and its packs' `llms:` references (project wins on a name clash)
+and resolves each to its primary file under the mount:
 
-- /workspace/.claude/packs/frontend-stack/frontend-coding-conventions.md — Read when writing frontend code
-- /workspace/.claude/packs/frontend-stack/backend-coding-conventions.md — Read when writing backend code
-
-## Official Framework Documentation (llms.txt)
-
-The following official framework documentation files are installed.
-Consult them BEFORE writing code that uses these frameworks — do not rely solely on training data.
-For large files, read selectively using offset/limit. For index files, WebFetch specific pages as needed.
-
-- /workspace/.claude/llms/svelte/llms-full.txt — Official Svelte 5 documentation (17140 lines)
-- /workspace/.claude/llms/svelte-kit/llms-full.txt — Official SvelteKit documentation (16210 lines)
-- /workspace/.claude/llms/shadcn-svelte/llms.txt — shadcn-svelte component index (117 lines, WebFetch for details)
+```
+Official Framework Documentation (llms.txt). Consult these BEFORE
+writing code that uses these frameworks:
+- /workspace/.claude/llms/svelte/llms-full.txt — Official Svelte 5 documentation
+- /workspace/.claude/llms/svelte-kit/llms-full.txt — Official SvelteKit documentation
+- /workspace/.claude/llms/shadcn-svelte/llms.txt — component index (WebFetch for details)
 ```
 
-**Description resolution**: If the YAML reference provides a `description:`, use
-it. Otherwise, auto-generate from the llms.txt H1 heading + line count + type
-hint (index vs full).
+A declared llms entry that resolves to nothing on this machine is **not silently
+dropped**: `_declared_unresolved_llms` lists it as `- llms: <name> — unresolved`, so the
+agent sees a named gap rather than a short list it would read as complete.
+
+**Description resolution**: if the YAML reference provides a `description:`, use it.
+Otherwise auto-generate from the llms.txt H1 heading + line count + type hint (index vs
+full).
 
 ### 6.2 Injection Flow
 
-No changes to `session-context.sh` — it already injects the full `packs.md`
-content into `additionalContext`. The llms section is appended to `packs.md`
-automatically.
+`config/hooks/session-context.sh` decodes `CCO_SESSION_CONTEXT` and injects it into
+`additionalContext` — it does not read or parse any file. Teammates get the parallel,
+deliberately leaner `CCO_SUBAGENT_CONTEXT` (knowledge + llms **paths only**, no
+descriptions) through `config/hooks/subagent-context.sh`.
 
 ```mermaid
 sequenceDiagram
@@ -386,11 +453,11 @@ sequenceDiagram
     CLI->>CLI: Read project.yml + pack.yml llms: sections
     CLI->>CLI: Resolve llms mounts (deduplicate)
     CLI->>CLI: Add llms mounts to docker-compose.yml
-    CLI->>CLI: Append llms section to .claude/packs.md
-    CLI->>Docker: docker compose run (llms mounted :ro)
+    CLI->>CLI: Build the context block, base64 -> CCO_SESSION_CONTEXT
+    CLI->>Docker: docker compose run (llms mounted :ro, env set)
     Docker->>Claude: Start session
     Claude->>Hook: SessionStart trigger
-    Hook->>Hook: Read .claude/packs.md (includes llms section)
+    Hook->>Hook: Decode CCO_SESSION_CONTEXT (no file read)
     Hook-->>Claude: additionalContext with knowledge + llms list
     Claude->>Claude: Framework docs available for selective reading
 ```
@@ -476,7 +543,7 @@ Following the existing pattern (`lib/cmd-pack.sh`), a new module handles all
 `cco llms` subcommands:
 
 ```bash
-# lib/cmd-llms.sh — LLMs.txt management: install, list, update, show, remove
+# lib/cmd-llms.sh — LLMs.txt management: install, show, update, rename, remove
 #
 # Provides: cmd_llms()
 # Dependencies: colors.sh, utils.sh, paths.sh
@@ -484,17 +551,23 @@ Following the existing pattern (`lib/cmd-pack.sh`), a new module handles all
 
 cmd_llms() {
     local subcmd="${1:-}"
-    shift || true
+    # A bare invocation (or --help/-h) prints the sub-usage and returns 0.
+    shift
     case "$subcmd" in
-        install)  _llms_install "$@" ;;
-        list)     _llms_list "$@" ;;
-        update)   _llms_update "$@" ;;
-        show)     _llms_show "$@" ;;
-        remove)   _llms_remove "$@" ;;
-        *)        _llms_usage ;;
+        install) _llms_install "$@" ;;
+        list)    die "'cco llms list' was removed — use 'cco list llms' (ADR-0029)." ;;
+        show)    _llms_show "$@" ;;
+        update)  _llms_update "$@" ;;
+        rename)  _llms_rename "$@" ;;
+        remove)  _llms_remove "$@" ;;
+        *)       die "Unknown llms command: $subcmd. Run 'cco llms --help'." ;;
     esac
 }
 ```
+
+Note the `*)` arm **dies** rather than printing usage: an unknown subcommand is an error
+(exit 1), which is what makes a mis-documented verb such as `llms create` fail loudly
+instead of silently showing help.
 
 ### 9.2 URL Parsing and Variant Detection
 
@@ -560,37 +633,47 @@ A `changelog.yml` entry is required to notify users of the new feature.
 
 ## 11. Implementation Plan
 
+All five phases are **shipped**; the file map below is kept as the implementation
+index, corrected to where each piece landed (verified 2026-08-03).
+
 ### Phase 1: Core Infrastructure
 
-1. **`lib/llms.sh`** — shared helpers: path resolution, primary file detection,
-   mount generation, validation
+1. **`lib/llms.sh`** — shared helpers: path resolution (`_llms_resolve_primary_file`),
+   collection (`_collect_llms_names`), context rendering (`_llms_render_entries`),
+   validation (`_validate_llms_refs`), freshness (`_update_check_llms_freshness`)
 2. **`lib/yaml.sh`** — `yml_get_llms()`, `yml_get_llms_names()` parsers
-3. **`lib/cmd-start.sh`** — integrate llms mount generation and packs.md
-   enhancement
+3. **`lib/cmd-start.sh`** — llms mount generation
 4. **`lib/packs.sh`** — extend `_validate_single_pack()` for llms references,
    update top-level key regex
 
 ### Phase 2: CLI Commands
 
-5. **`lib/cmd-llms.sh`** — `install`, `list`, `show`, `update`, `remove`
-6. **`bin/cco`** — register `llms` subcommand in dispatcher
+5. **`lib/cmd-llms.sh`** — `install`, `show`, `update`, `rename`, `remove`
+6. **`bin/cco`** — register `llms` in the dispatcher (and in `_cco_operator_shim`)
 
 ### Phase 3: Agent Guidance
 
 7. **`defaults/managed/.claude/rules/use-official-docs.md`** — managed rule
-8. **`lib/cmd-start.sh`** — enhanced `packs.md` generation with llms section
+8. **`lib/session-context.sh`** — emit the llms section into the `CCO_SESSION_CONTEXT`
+   block (§6; not a `workspace.yml` file — ADR-0042)
 
 ### Phase 4: Update Integration
 
-9. **`lib/cmd-update.sh`** — llms freshness check in discovery phase
+9. **`lib/llms.sh`** — `_update_check_llms_freshness`, called from the `cco update`
+   discovery phase (the check lives with the other llms helpers, not in `cmd-update.sh`)
 10. **`changelog.yml`** — additive change entry
 
 ### Phase 5: Documentation & Templates
 
-11. **`docs/user-guides/llms-txt.md`** — user guide
-12. **`docs/reference/cli.md`** — CLI reference updates
-13. **`docs/reference/project-yaml.md`** — schema updates
-14. **`templates/project/base/project.yml`** — add commented `llms:` section
+11. **User guide** — ⚠ *no dedicated llms user guide was ever written*. The user-facing
+    coverage is distributed across `docs/users/configuration/reference/project-yaml.md`
+    (§ LLMs.txt schema), `docs/users/reference/cli.md` (the `cco llms` verbs) and
+    `docs/users/packs/guides/knowledge-packs.md` (pack-provided llms). The planned
+    `llms-txt.md` does not exist — raised at the G6 sweep, 2026-08-03; whether to write
+    one is a maintainer call, not a doc-sweep fix.
+12. **`docs/users/reference/cli.md`** — CLI reference ✅
+13. **`docs/users/configuration/reference/project-yaml.md`** — schema ✅
+14. **`templates/project/base/project.yml`** — commented `llms:` section ✅
 
 ---
 

@@ -91,16 +91,38 @@ step "npm pack hygiene"
 "$REPO_ROOT/scripts/check-pack-hygiene.sh" || die "pack hygiene failed."
 
 # ── Bump, commit, tag, push ──────────────────────────────────────────
-step "Bump package.json → $VERSION"
+# `package.json` is the single source of truth, but README.md states the version in
+# prose on the repo's front page — and that copy DRIFTED: it shipped reading v0.5.1
+# while package.json was already 0.5.2, because nothing kept the duplicate honest.
+# Rewriting it here does. The marker is REQUIRED: if the line is reworded the script
+# dies instead of silently skipping the bump, which is how the drift happened in the
+# first place. The status word is matched generically so Alpha → Beta needs no change.
+_readme_version() {
+    grep -oE '\*\*[A-Za-z]+ \(v[0-9]+\.[0-9]+\.[0-9]+\)\*\*' README.md | head -1 \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'
+}
+
+step "Bump package.json + README → $VERSION"
+readme_was="$(_readme_version || true)"
+[[ -n "$readme_was" ]] || die "README.md has no '**<Status> (vX.Y.Z)**' version marker, so this script cannot keep it in step with package.json. Restore the marker, or update _readme_version in scripts/release.sh."
+if [[ "$readme_was" != "$CURRENT" ]]; then
+    info "README said v$readme_was while package.json said $CURRENT — they had drifted; realigning both to $VERSION."
+fi
 if $DRY_RUN; then
     info "[dry-run] would set package.json .version = $VERSION"
+    info "[dry-run] would set README.md marker v$readme_was → v$VERSION"
 else
     tmp="$(mktemp)"; jq --arg v "$VERSION" '.version = $v' package.json > "$tmp" && mv "$tmp" package.json
     ok "package.json version = $(jq -r .version package.json)"
+    # Not `sed -i`: BSD sed needs an argument there and GNU sed must not have one.
+    tmp="$(mktemp)"
+    sed "s/\*\*\([A-Za-z][A-Za-z]*\) (v${readme_was})\*\*/**\1 (v${VERSION})**/" README.md > "$tmp" && mv "$tmp" README.md
+    [[ "$(_readme_version)" == "$VERSION" ]] || die "README.md rewrite did not take (still reads v$(_readme_version))."
+    ok "README.md version = v$(_readme_version)"
 fi
 
 step "Commit + annotated tag + push"
-run "git add package.json"
+run "git add package.json README.md"
 run "git commit -m 'chore(release): $TAG'"
 run "git tag -a '$TAG' -m 'Release $TAG'"
 run "git push --follow-tags"

@@ -68,7 +68,11 @@ _tags_set() {
     csv=$(printf '%s' "$tags" | awk '{ for (i=1;i<=NF;i++){ printf "%s%s", (i>1?", ":""), $i } }')
     grep -qE "^${kind}:" "$f" 2>/dev/null || printf '%s:\n' "$kind" >> "$f"
 
-    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    # Defense-in-depth (R5): fail loudly (exit 1) if the DATA registry is read-only
+    # — the operator write-gate refuses tag writes below edit-global before we get
+    # here, but a mktemp/awk/mv that silently fails must not let the caller echo
+    # success onto a tree it never wrote (closes S5-01 at the source).
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX") || die "Cannot write tags registry at $f (read-only?)."
     awk -v sec="${kind}:" -v key="  ${name}:" -v newline="  ${name}: [${csv}]" '
         $0 == sec { print; in_sec = 1; seen_key = 0; next }
         in_sec && /^[^ #]/ {
@@ -78,7 +82,7 @@ _tags_set() {
         in_sec && index($0, key) == 1 { print newline; seen_key = 1; next }
         { print }
         END { if (in_sec && !seen_key) print newline }
-    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f" || { rm -f "$tmpf"; die "Failed to update tags registry at $f (read-only?)."; }
 }
 
 # Add <tag> to <kind>/<name> (idempotent — no duplicate). Usage: _tags_add <kind> <name> <tag>
@@ -102,28 +106,44 @@ _tags_remove() {
 # `cco pack/template remove` and `cco forget` to drop a resource's tag binding
 # when the resource itself is gone — distinct from _tags_remove, which drops a
 # single tag while keeping the entry. Usage: _tags_forget <kind> <name>
+# RC-3/INV-S3: a store primitive reached from lib/store.sh's elevated cascades (and
+# from host-only verbs), so it must FAIL LOUD rather than silently orphan a binding.
+# The registry lives in the confined DATA bucket; behind an OPAQUE parent `[[ -f ]]`
+# reads FALSE for a file that exists (§1.3), so a plain `[[ -f ]] || return 0` would
+# swallow the miss. Distinguish "no registry yet" (genuine no-op, return 0) from an
+# UNREACHABLE parent (opaque boundary → return 1) by probing the parent's traversal.
 _tags_forget() {
-    local kind="$1" name="$2" f
+    local kind="$1" name="$2" f d
     f=$(_tags_file)
-    [[ -f "$f" ]] || return 0
+    if [[ ! -f "$f" ]]; then
+        d=$(dirname "$f")
+        [[ -d "$d" && ! -x "$d" ]] && return 1   # parent present but opaque ⇒ fail loud
+        return 0                                  # genuinely no registry
+    fi
 
-    local tmpf; tmpf=$(mktemp "${f}.XXXXXX")
+    local tmpf; tmpf=$(mktemp "${f}.XXXXXX") || return 1
     awk -v sec="${kind}:" -v key="  ${name}:" '
         $0 == sec { print; in_sec = 1; next }
         in_sec && /^[^ #]/ { in_sec = 0 }
         in_sec && index($0, key) == 1 { next }
         { print }
-    ' "$f" > "$tmpf" && mv "$tmpf" "$f"
+    ' "$f" > "$tmpf" && mv "$tmpf" "$f" || { rm -f "$tmpf" 2>/dev/null; return 1; }
+    return 0
 }
 
 # Re-key a resource's tag entry from <old> to <new> within <kind>, carrying the
 # tag set over (the identity re-key primitive for `cco project rename`, ADR-0031
 # D2). No-op when <old> has no tags (nothing to carry). Usage: _tags_rename <kind> <old> <new>
 _tags_rename() {
-    local kind="$1" old="$2" new="$3" cur
+    local kind="$1" old="$2" new="$3" cur d
+    # INV-S3: fail loud behind an opaque boundary rather than silently no-op the
+    # re-key (an unreadable registry makes _tags_get echo empty, indistinguishable
+    # from "no tags" — §1.3). Probe the parent's traversal first.
+    d=$(dirname "$(_tags_file)")
+    [[ -d "$d" && ! -x "$d" ]] && return 1
     cur=$(_tags_get "$kind" "$old")
     [[ -z "$cur" ]] && return 0
-    _tags_set "$kind" "$new" "$cur"
+    _tags_set "$kind" "$new" "$cur" || return 1
     _tags_forget "$kind" "$old"
 }
 
@@ -238,8 +258,8 @@ EOF
 # Canonical kind order for the compact index (lower = first).
 _list_kind_rank() {
     case "$1" in
-        project) echo 0 ;; pack) echo 1 ;; template) echo 2 ;;
-        llms)    echo 3 ;; remote) echo 4 ;; *) echo 9 ;;
+        project) echo 0 ;; builtin) echo 1 ;; pack) echo 2 ;; template) echo 3 ;;
+        llms)    echo 4 ;; remote) echo 5 ;; *) echo 9 ;;
     esac
 }
 
@@ -291,27 +311,63 @@ _list_collect() {
             done < "$rf"
         fi
     fi
+    # Internal built-ins (R3): reserved framework sessions, not index rows. Emitted
+    # in the unified view and for the explicit `builtin` kind. cmd_list decides
+    # whether to keep a STOPPED one (running-only default vs --include-internal).
+    if [[ -z "$want" || "$want" == builtin ]]; then
+        while IFS= read -r b; do
+            [[ -n "$b" ]] && printf 'builtin\t%s\n' "$b"
+        done < <(_cco_internal_builtins)
+    fi
+}
+
+# Sort rank for the compact-list STATUS column: running first, then stopped,
+# unknown, and the non-project '-' placeholder last.
+_list_status_rank() {
+    case "$1" in running) printf 0 ;; stopped) printf 1 ;; unknown) printf 2 ;; *) printf 3 ;; esac
+}
+
+# Render a fixed-width, color-coded STATUS cell padded by VISIBLE length (so the
+# color escapes never skew alignment). running=green, unknown=yellow, else plain.
+_list_status_cell() {
+    local s="$1" w=8 color="" pad
+    case "$s" in running) color="$GREEN" ;; unknown) color="$YELLOW" ;; esac
+    pad=$(( w - ${#s} )); (( pad < 0 )) && pad=0
+    printf '%b%s%b%*s' "$color" "$s" "${color:+$NC}" "$pad" ""
 }
 
 cmd_list() {
-    local filter="" sort_by="" kind="" reverse=""
+    local filter="" sort_by="" kind="" reverse="" include_internal=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h|help)
                 cat <<'EOF'
-Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag] [--reverse|-r]
+Usage: cco list [<kind>] [--tag <tag>] [--sort kind|name|tag|status] [--reverse|-r]
+                [--include-internal]
 
 Unified index of your resources. <kind> is one of:
   project | pack | template | llms | remote   (plural forms accepted)
+  builtin                                      (internal sessions, see below)
 
   cco list                       Compact index of every resource (KIND NAME
-                                 TAGS), ordered by kind then name.
+                                 STATUS TAGS), ordered by kind then name.
   cco list <kind>                Detailed view for one kind (repos/status,
                                  resource counts, variants, …).
   cco list [<kind>] --tag <t>    Filter to resources carrying tag <t>.
   cco list [<kind>] --sort name  Sort by name (default: by kind, then name).
   cco list [<kind>] --sort tag   Sort by first tag (untagged last), then name.
+  cco list [<kind>] --sort status  Sort by session status (running first), then name.
   cco list [<kind>] --reverse    Reverse the chosen order (alias: -r).
+  cco list --include-internal    Also list internal built-ins (config-editor,
+                                 tutorial) even when stopped.
+  cco list builtin               Only the internal built-ins, with status.
+
+STATUS is a session state (running | stopped | unknown) for projects and
+built-ins; other kinds show '—'. In-container, `unknown` means the running
+registry is out of scope/unreachable — never a false `stopped` (ADR-0045).
+Internal built-ins (KIND 'builtin') are the reserved `cco start config-editor`
+/`tutorial` sessions; they are shown only when RUNNING by default (add
+--include-internal, or `cco list builtin`, to see them all).
 
 Full detail for one resource: cco <kind> show <name>.
 Tags are per-user (project/pack/template only); manage them with 'cco tag'.
@@ -319,23 +375,31 @@ EOF
                 return 0
                 ;;
             --tag)  [[ $# -lt 2 ]] && die "--tag requires a value."; filter="$2"; shift 2 ;;
-            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind', 'name', or 'tag'."; sort_by="$2"
-                    [[ "$sort_by" == kind || "$sort_by" == name || "$sort_by" == tag ]] \
-                        || die "--sort must be 'kind', 'name', or 'tag'."
+            --sort) [[ $# -lt 2 ]] && die "--sort requires 'kind', 'name', 'tag', or 'status'."; sort_by="$2"
+                    [[ "$sort_by" == kind || "$sort_by" == name || "$sort_by" == tag || "$sort_by" == status ]] \
+                        || die "--sort must be 'kind', 'name', 'tag', or 'status'."
                     shift 2 ;;
             --reverse|-r)       reverse=1;         shift ;;
+            --include-internal) include_internal=1; shift ;;
             project|projects)   kind="project";  shift ;;
             pack|packs)         kind="pack";      shift ;;
             template|templates) kind="template";  shift ;;
             llms)               kind="llms";      shift ;;
             remote|remotes)     kind="remote";    shift ;;
+            builtin|builtins|internal) kind="builtin"; include_internal=1; shift ;;
             -*) die "Unknown option: $1. Run 'cco list --help'." ;;
             *)  die "Unknown resource kind: $1. Use project|pack|template|llms|remote. Run 'cco list --help'." ;;
         esac
     done
 
     # A bare kind (no filter, no sort, no reverse) shows the rich per-kind view.
-    if [[ -n "$kind" && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
+    # 'builtin' has no dedicated rich view — it always flows to the compact index.
+    if [[ -n "$kind" && "$kind" != builtin && -z "$filter" && -z "$sort_by" && -z "$reverse" ]]; then
+        # R3: route the bare per-kind view through the scope layer too — the
+        # aggregate `cco list` path already filters per row, but this branch bypassed
+        # it, letting a global-class kind (template/remote) leak at read-project.
+        # Project-class kinds fall through and filter their own rows + notice.
+        _env_require_kind_visible "$kind"
         case "$kind" in
             project)  cmd_project_list ;;
             pack)     cmd_pack_list ;;
@@ -347,38 +411,82 @@ EOF
     fi
 
     # Compact unified index (default, or whenever --tag/--sort/--reverse/scoped-with-filter).
+    #
+    # Read-path honesty (v3 R3 / S4). The unified index is the worst place for this
+    # class to hide: an unreadable index drops every project row while
+    # packs/templates/remotes still list, so the output looks plausible rather than
+    # empty. Guard HERE and not inside _list_collect — that runs in the process
+    # substitution below, where `die` would exit only the subshell and the loop
+    # would carry on at rc=0, which is the very shape this stage closes.
+    if [[ -z "$kind" || "$kind" == project ]]; then _index_assert_readable; fi
+
     [[ -z "$sort_by" ]] && sort_by="kind"
-    local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30
+    # D5 subject (ratified 2026-07-30): the unified index enumerates EVERY store kind,
+    # so it may speak about all of them; `cco list <kind>` reaching this path (with a
+    # --tag/--sort/--reverse filter) speaks about that one kind only. The bare per-kind
+    # view returned above instead, and each rich lister declares its own subject.
+    if [[ -z "$kind" ]]; then _env_store_subject $_ENV_STORE_KINDS
+    else                      _env_store_subject "$kind"; fi
+    local rows="" rk rn tags tkind sortkey t found ftag namew=4 cap=30 st_raw
     while IFS=$'\t' read -r rk rn; do
         [[ -z "$rk" ]] && continue
-        tkind=$(_list_tag_kind "$rk"); tags=""
-        [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
+        if [[ "$rk" == builtin ]]; then
+            # Built-ins (R3) are framework sessions, not the user's private config →
+            # never scope-hidden and never tagged. Default keeps only RUNNING ones
+            # (clean list); --include-internal / `cco list builtin` shows all with status.
+            st_raw=$(_cco_session_status "$rn"); tags=""
+            [[ -z "$include_internal" && "$st_raw" != running ]] && continue
+        else
+            # Output scoping (ADR-0043): in operator mode, hide resources outside the
+            # session's access scope and count them for the trailing notice (INV-B).
+            # D5: every ENUMERATED row is counted, shown or hidden — the shared
+            # layer derives what the mount could not show at all as
+            # host_total - seen (see _env_apply_store_supplement).
+            _env_note_seen "$rk"
+            if ! _env_in_scope "$rk" "$rn"; then _env_note_hidden "$rk"; continue; fi
+            tkind=$(_list_tag_kind "$rk"); tags=""
+            [[ -n "$tkind" ]] && tags=$(_tags_get "$tkind" "$rn")
+            # Session status is a project-only concept (B3, tri-state B4); other kinds
+            # carry the '-' placeholder. Rows already passed _env_in_scope, so a status
+            # read here never reveals an out-of-scope project.
+            if [[ "$rk" == project ]]; then st_raw=$(_cco_session_status "$rn"); else st_raw="-"; fi
+        fi
         if [[ -n "$filter" ]]; then
             found=false
             for t in $tags; do [[ "$t" == "$filter" ]] && { found=true; break; }; done
             [[ "$found" == true ]] || continue
         fi
         case "$sort_by" in
-            name) sortkey="${rn}	${rk}" ;;
-            tag)  ftag="${tags%% *}"
-                  # tagged sort before untagged (0/1 prefix), then by first tag, then name.
-                  if [[ -n "$tags" ]]; then sortkey="0${ftag}	${rn}"; else sortkey="1	${rn}"; fi ;;
-            *)    sortkey="$(_list_kind_rank "$rk")	${rn}" ;;
+            name)   sortkey="${rn}	${rk}" ;;
+            tag)    ftag="${tags%% *}"
+                    # tagged sort before untagged (0/1 prefix), then by first tag, then name.
+                    if [[ -n "$tags" ]]; then sortkey="0${ftag}	${rn}"; else sortkey="1	${rn}"; fi ;;
+            status) sortkey="$(_list_status_rank "$st_raw")	${rn}" ;;
+            *)      sortkey="$(_list_kind_rank "$rk")	${rn}" ;;
         esac
         (( ${#rn} > namew )) && namew=${#rn}
-        rows+="${sortkey}	${rk}	${rn}	${tags:-—}"$'\n'
+        rows+="${sortkey}	${rk}	${rn}	${st_raw}	${tags:-—}"$'\n'
     done < <(_list_collect "$kind")
 
     if [[ -z "$rows" ]]; then
-        [[ -n "$filter" ]] && { info "No resources tagged '$filter'."; return 0; }
-        info "Nothing to list yet."
+        # Nothing visible: if scope hid everything, the notice explains why
+        # (hidden ≠ absent, INV-B); otherwise there is genuinely nothing.
+        if [[ "${_ENV_HIDDEN_ANY:-}" == "1" ]]; then
+            _env_flush_hidden_notice
+        elif [[ -n "$filter" ]]; then
+            info "No resources tagged '$filter'."
+        else
+            info "Nothing to list yet."
+        fi
         return 0
     fi
     (( namew > cap )) && namew=$cap
 
     local -a sortargs=(-t'	' -k1,2); [[ -n "$reverse" ]] && sortargs+=(-r)
-    printf "${BOLD}%-10s %s %s${NC}\n" "KIND" "$(_fit_col "NAME" "$namew")" "TAGS"
-    printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn tags; do
-        printf '%-10s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$tags"
+    printf "${BOLD}%-10s %s %-8s %s${NC}\n" "KIND" "$(_fit_col "NAME" "$namew")" "STATUS" "TAGS"
+    printf '%s' "$rows" | LC_ALL=C sort "${sortargs[@]}" | while IFS=$'\t' read -r _k1 _k2 rk rn st_raw tags; do
+        printf '%-10s %s %s %s\n' "$rk" "$(_fit_col "$rn" "$namew")" "$(_list_status_cell "$st_raw")" "$tags"
     done
+    # Trailing count-only notice on stderr (INV-B/C); no-op when nothing hidden.
+    _env_flush_hidden_notice
 }

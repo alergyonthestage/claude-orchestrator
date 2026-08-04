@@ -6,6 +6,17 @@ RUN go mod download 2>/dev/null || true
 COPY proxy/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o cco-docker-proxy ./cmd/cco-docker-proxy/
 
+# ── Stage 1b: Build the cco-svc internal-store boundary helper (ADR-0047) ──
+# A minimal setuid-cco-svc C binary — the ONLY path across the privilege boundary
+# that confines the internal XDG store. Compiled dynamically (getpwnam needs NSS;
+# the loader ignores LD_* for setuid binaries, so dynamic linking is safe here).
+FROM debian:bookworm-slim AS helper-builder
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY config/cco-svc-helper.c .
+RUN gcc -Wall -Wextra -O2 -o cco-svc-helper cco-svc-helper.c
+
 # ── Stage 2: Main image ───────────────────────────────────────────
 FROM node:22-bookworm
 
@@ -105,14 +116,71 @@ RUN if [ -n "$SETUP_BUILD_SCRIPT_CONTENT" ]; then \
 # Create docker group with placeholder GID (adjusted at runtime by entrypoint
 # to match host socket GID). Pre-creating ensures `chown claude:docker` never
 # fails due to missing group.
+# INV-MP, container side (ADR-0055 D4). THE RULE, not the instance: for every
+# bind cco generates, every ancestor of the target that the runtime would
+# otherwise have to materialise is pre-created here, claude-owned. When a
+# mountpoint ancestor is missing the container runtime creates it root-owned;
+# an ancestor that is itself a mount target is then harmless (the bind lands on
+# top of it), but a PASS-THROUGH ancestor stays root:root 0755 and `claude`
+# cannot create anything beside the bind — the failure is EACCES at runtime,
+# not at start, so it surfaces as a broken feature rather than a broken boot.
+#
+# Whenever a new bind target is added to lib/cmd-start.sh or lib/cmd-new.sh,
+# add its pass-through ancestors here. `test_invariant_mount_ancestry_owned`
+# checks a really-generated compose file against this list, so a forgotten
+# ancestor fails the suite instead of shipping.
+#
+#   .local/{bin,share,state}, .cache  — operator buckets (ADR-0036 D4) and the
+#                                       native Claude Code install (ADR-0039)
+#   .claude                           — global authoring entries + runtime state
+#   .claude/projects                  — per-cwd session keys. Both `cco start` and
+#                                       `cco new` bind the whole tree here today
+#                                       (ADR-0055 D5), so it is a mount TARGET and
+#                                       the lint exempts it by construction — which
+#                                       is exactly why the entry stays: it is the
+#                                       only thing standing between a future lane
+#                                       that binds a single key again and R-D.
+#   .cco/packs                        — at the DEFAULT project read scope the
+#                                       CONFIG mount is narrowed to the referenced
+#                                       packs, bound one by one at
+#                                       .cco/packs/<name>, so both .cco and
+#                                       .cco/packs are pass-through. (At broader
+#                                       scope ~/.cco is itself the mount and this
+#                                       is moot — the narrow shape is the default,
+#                                       which is why it went unnoticed.)
 RUN groupadd -g 999 docker \
     && useradd -m -s /bin/bash claude \
-    && mkdir -p /home/claude/.claude /workspace \
+    && mkdir -p /home/claude/.claude /home/claude/.claude/projects \
+       /home/claude/.cco/packs \
+       /home/claude/.local/bin /home/claude/.local/share \
+       /home/claude/.local/state /home/claude/.cache /workspace \
     && chown -R claude:claude /home/claude /workspace
+
+# ── cco-svc privilege boundary (ADR-0047) ────────────────────────────
+# A dedicated, login-less service uid that OWNS the internal-store root. The store
+# (STATE index, DATA registries, CACHE internals) is bind-mounted UNDER this root at
+# runtime; because the root is mode 0700 cco-svc on the REAL container FS, the `claude`
+# user cannot traverse it (EACCES) even though bind-mount CONTENT ignores DAC on macOS
+# Docker Desktop (fakeowner) — the kernel checks traversal on the real parent inode
+# (empirical basis, ADR-0047 §8 Test B). The setuid helper (baked below) is the sole
+# crossing. Fixed uid 900 for determinism. This also removes the design-docker.md
+# §1.2.2 sibling-EACCES collision — cco no longer mounts under ~/.local/state|.cache.
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin --uid 900 cco-svc \
+    && install -d -o cco-svc -g cco-svc -m 0700 /var/lib/cco-internal
 
 # ── Docker socket proxy (from builder stage) ──────────────────────
 COPY --from=proxy-builder /build/cco-docker-proxy /usr/local/bin/cco-docker-proxy
 RUN chmod +x /usr/local/bin/cco-docker-proxy
+
+# ── cco-svc internal-store boundary helper (from builder stage) ────
+# setuid-cco-svc (least privilege — never root). owner cco-svc + group claude + mode
+# 4750: only the claude user may EXEC it (group-exec, no world bit), and it elevates to
+# cco-svc to reach the confined store. The (G,Pc,Po) gate + output-scoping run inside
+# the elevated `cco __store` it execs, keyed off the trusted :ro session descriptor —
+# so even a direct agent invocation cannot forge a wider scope or leak raw store data.
+COPY --from=helper-builder /build/cco-svc-helper /usr/local/bin/cco-svc-helper
+RUN chown cco-svc:claude /usr/local/bin/cco-svc-helper \
+    && chmod 4750 /usr/local/bin/cco-svc-helper
 
 # ── Config files ─────────────────────────────────────────────────────
 COPY config/tmux.conf /home/claude/.tmux.conf
@@ -121,6 +189,37 @@ COPY config/hooks/ /usr/local/bin/cco-hooks/
 RUN chown claude:claude /home/claude/.tmux.conf \
     && chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /usr/local/bin/cco-hooks/*.sh
+
+# ── cco CLI (wrapped-cco shim — ADR-0036 D4) ─────────────────────────
+# Bake the tool code so `cco` runs in-container behind the whitelist shim under
+# container-operator mode (P9: cco on PATH, never a reimplementation). Only the
+# code the whitelisted verbs need is baked: bin/ + lib/ (the CLI), templates/
+# (pack|template create), changelog.yml + package.json (version/news). defaults/
+# and migrations/ are NOT baked — the verbs that read them (init/update/sync) are
+# host-only and refused by the shim. bin/cco resolves REPO_ROOT via its symlink,
+# so /opt/cco is the framework root; jq is already installed above.
+COPY bin/ /opt/cco/bin/
+COPY lib/ /opt/cco/lib/
+COPY templates/ /opt/cco/templates/
+# docs/users is the user-facing subset the npm package already ships (ADR-0037 D3)
+# — exactly what an in-session agent should see. `cco docs` (cmd-docs.sh) reads
+# $REPO_ROOT/docs/users, i.e. /opt/cco/docs/users; without this bake it fails in
+# every session (R10). defaults/, migrations/, and docs/maintainers stay unbaked.
+COPY docs/users /opt/cco/docs/users
+COPY changelog.yml package.json /opt/cco/
+RUN chmod +x /opt/cco/bin/cco \
+    && ln -sf /opt/cco/bin/cco /usr/local/bin/cco
+
+# Build provenance (V1-F3 ≡ V5-8): which source ref this image was built from, as
+# `<branch>@<shortsha>`. `.git/` is excluded from the build context, so the value is
+# computed host-side by _cco_build_ref (lib/cmd-build.sh) and passed in. World-readable
+# and OUTSIDE the ADR-0047 privilege boundary on purpose: it carries no project or
+# store data, and a `cco_access=none` session — where cco itself is refused wholesale
+# — must still be able to answer "which code is this image running?".
+# This is what makes the e2e launch rule 0 self-verifying instead of a claim about
+# what the launcher believes it built.
+ARG CCO_BUILD_REF=unknown
+RUN printf '%s\n' "$CCO_BUILD_REF" > /opt/cco/BUILD && chmod 644 /opt/cco/BUILD
 
 # ── Managed settings (framework infrastructure — non-overridable) ────
 COPY --chown=root:root defaults/managed/ /etc/claude-code/

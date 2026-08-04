@@ -50,14 +50,18 @@ See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for the full dev/release workflo
 
 `cco init` is the **single project entry verb**. It is idempotent: it ensures the
 personal global config store (`~/.cco/`) exists, then scaffolds a clean `<repo>/.cco/`
-in the current repo and registers it in the machine-local index.
+in the current repo, **seeds that repo into the project's `repos[]`**, and registers
+it in the machine-local index.
 
 ```
-Usage: cco init [--name <project>] [--template <name>] [--force]
+Usage: cco init [--name <project>] [--repo-name <name>] [--template <name>] [--force]
                 [--migrate <project> [--sync]] [--sync] [--lang <language>]
 
 Options:
   --name <project>     Project name (default: prompt with the repo basename)
+  --repo-name <name>   Logical name of the current repo, seeded into repos[]
+                       (default: prompt with the repo basename). An axis
+                       independent of --name.
   --template <name>    Scaffold from project template <name> (user store first,
                        then framework defaults) instead of the base template
   --force              Overwrite an existing <repo>/.cco/ scaffold
@@ -83,8 +87,14 @@ Examples:
    lives in `~/.cco/`. This step is idempotent — an existing `~/.cco/` is left untouched.
 2. **Scaffold `<repo>/.cco/`** — write a clean `project.yml` (logical names + coordinates),
    `secrets.env.example`, `.gitignore`, and the `claude/` config tree in the current repo.
-3. **Register in the index** — record the repo's logical name → absolute path in the
-   machine-local STATE index (`<state>/cco/index`).
+3. **Seed the current repo into `repos[]`** — the repo `cco init` runs in becomes the
+   project's first member: its logical name (default the dir basename, or `--repo-name`)
+   and, when the repo has an `origin` remote, its `url` coordinate (derived from
+   `git remote get-url origin`) are written into `project.yml` `repos[]`. Without this the
+   list would ship empty and `cco start` would mount nothing.
+4. **Register in the index** — record the repo's logical name → absolute path in the
+   machine-local STATE index (`<state>/cco/index`), with project membership keyed by that
+   repo name (the same coordinate model as `cco join`).
 
 `cco init`, `cco init --migrate`, and `cco join` are **mutually exclusive** entry points
 for a repo: `cco init` = clean config; `cco init --migrate <old>` = bring a legacy vault
@@ -162,6 +172,12 @@ Arguments:
 
 Options:
   --from <repo>        Pick which member's <repo>/.cco to use (Case-C divergence source)
+  --project <name>     config-editor only: target <name>'s .cco/ + its repos (rw;
+                       repeatable). Also selects config-editor's project mode
+  --repo <name>        config-editor only: also mount repo <name> (rw; repeatable)
+  --all                config-editor only: explicit widener — every resolvable
+                       project's .cco/ (no code repos, edit-all). Cannot be
+                       combined with --project/--repo
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -172,9 +188,34 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
-                       in this session (off by default — see 'cco start
-                       config-editor' for the sanctioned config-editing session)
+  --claude-access <m>  .claude authoring access for this session. Either a preset
+                       scalar (none | repo | all) or a granular map over the four
+                       authoring trees (repo,current,global,others), each ro|rw
+                       (comma-separated, order-free, partial): e.g.
+                       current=rw,global=ro. UNSET → DERIVES from --cco-access
+                       (Cg=G, Cp=Pc, Co=Po, repo-native always read-only), so the
+                       default never authors .claude more broadly than your config
+                       access. An explicit value wider than cco is honored with a
+                       note. `settings.json`/`settings.local.json` stay writable
+                       regardless (ADR-0049)
+  --cco-access <m>     .cco/framework config access for this session. Either a
+                       preset scalar:
+                       none | read-project (default) | read-global | read-all |
+                       edit-project | edit-global | edit-all
+                       or a granular triple over the (global,current,others) config
+                       trees, each none|ro|rw (comma-separated, order-free, partial):
+                       e.g. global=ro,current=rw,others=none. Presets are sugar for
+                       the symmetric triples; any read level enables the whitelisted
+                       in-session 'cco' and scopes its read output to that level;
+                       bare 'read' is a back-compat alias for read-all
+                       (ADR-0036/0042/0043/0046)
+  --show-host-paths    Include the host<->container path map in the session
+                       (default on) so the agent can hand you host commands
+  --no-show-host-paths Omit the host path map from the session
+  --enable-config-edit DEPRECATED — alias for '--cco-access edit-project'. Allow
+                       the agent to edit this repo's committed .cco/ config in this
+                       session (see 'cco start config-editor' for the sanctioned
+                       config-editing session)
   --dry-run            Show the generated docker-compose without running
                        (uses ephemeral staging via mktemp, no persistent files)
   --dump               With --dry-run: write output to .tmp/ for inspection
@@ -196,7 +237,8 @@ Examples:
   cco start my-saas --port 9090:9090
   cco start my-saas --dry-run
   cco start tutorial                 # built-in tutorial (see below)
-  cco start config-editor            # built-in config editor (mounts ~/.cco rw)
+  cco start config-editor            # built-in config editor (bare: edits ~/.cco)
+  cco start config-editor --project x  # edit x's .cco + its repos (~/.cco read-only)
 ```
 
 **Source selection & resolution**: from a repo dir, `cco start` uses the invoking repo's
@@ -211,10 +253,35 @@ coordinate carries a `url`), or **[s]kip** — it never launches with a silent e
 **Reserved names: `tutorial`, `config-editor`**
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
-`internal/tutorial/`; `cco start config-editor` launches the built-in config editor
-(mounts `~/.cco` rw in global mode; `--project <name>` or a cwd hosting a configured repo
-also mounts that project's `<repo>/.cco` rw). They are not user projects — they always
-reflect the current framework version. These names are reserved.
+`internal/tutorial/`; `cco start config-editor` launches the built-in config editor.
+It is **minimum-privilege by mode** (ADR-0044 → ADR-0048): **inside a project** (a cwd
+hosting a configured repo, or `--project <name>`, **repeatable**) it mounts **that project's**
+`<repo>/.cco` **and its code repos** read-write while the store `~/.cco` is mounted
+**read-only** — you edit the project and *reference* the store (`(ro,rw,none)`); to also
+**write** the store, add `--cco-access edit-global`. Bare **outside a project** it mounts
+`~/.cco` **read-write only** (`(rw,none,none)` — edit the personal store, no project in
+scope). `--repo <name>` adds a single resolvable repo. The broad, every-project surface is
+the **explicit widener** `--all` (or `--cco-access edit-all`) → mounts every resolvable
+project's `<repo>/.cco` rw (no code repos, `edit-all`). They are not user projects — they
+always reflect the current framework version. These names are reserved.
+
+config-editor **never mounts a target's `extra_mounts`** — it authors *config*, and those are
+reference material for a working session, not authoring surface — and it **announces** them
+rather than dropping them silently, because `cco path list` shows those bindings as live host
+paths. It announces every other drop for the same reason: a target the index knows but cannot
+mount, a member repo whose recorded path is gone, and a name collision each get a line naming
+the remedy (`cco init` when the repo is present but unconfigured, `cco resolve` when it is not
+on this machine). Announcements are per-target, so `--all` — which mounts no member surfaces by
+design — reports at the project level only.
+
+Built-ins are **presets** of the session capability model (below): tutorial runs read-only
+over your whole config (`--claude-access none --cco-access read-all`); config-editor takes the
+**least privilege its mode needs** — project mode reads the store and writes only the project,
+global mode writes only the store, `edit-all` only with `--all`. Its `~/.cco` is always at
+least *readable* (an authoring tool must see the store, so a narrower `--cco-access` is clamped
+up to `read-global`), and its `.claude` authoring follows the store's write level. You can
+narrow a built-in for one session with an explicit `--cco-access` (e.g.
+`cco start config-editor --cco-access read-global`).
 
 **Flow**:
 
@@ -223,7 +290,7 @@ reflect the current framework version. These names are reserved.
    - From a repo dir: use the invoking repo's <repo>/.cco/ (the project it hosts);
      by name: resolve via the index (--from > entry > prompt on divergence)
    - Resolve each member repo/mount via the index; unresolved → prompt resolve|clone|skip
-   - Check no existing running session for this project (die if container cc-<name> is running)
+   - Check no existing running session for this project (by the `cco.project` label; die if one is running)
    - Check Docker image exists (suggest `cco build` if not)
 
 2. GENERATE docker-compose.yml (into CACHE, host-absolute mount sources)
@@ -238,8 +305,9 @@ reflect the current framework version. These names are reserved.
 3. GENERATE pack + framework resources (into CACHE, overlaid :ro)
    - Detect name conflicts across packs (warn if same agent/rule/skill in multiple packs)
    - Add pack resource mounts (knowledge dirs, per-file rules/agents, per-dir skills — all :ro)
-   - Generate packs.md (instructional list of knowledge files) + workspace.yml (project summary)
-     into <cache>/cco/projects/<id>/.claude/ and overlay :ro onto /workspace/.claude
+   - Compute the session context (project summary + knowledge/llms instructional file
+     lists) and pass it to the container as the base64 CCO_SESSION_CONTEXT env var
+     (no workspace.yml file is written — ADR-0042)
 
 4. CREATE state dirs (if needed)
    - <state>/cco/projects/<id>/claude-state/  (session transcripts; enables /resume across rebuilds)
@@ -253,6 +321,105 @@ reflect the current framework version. These names are reserved.
    - Container auto-removed (--rm)
    - Print summary: "Session ended. Changes are in your repos."
 ```
+
+---
+
+#### Session access (capability model)
+
+Every session resolves three orthogonal **capability knobs** that decide how much of
+your config it can read or edit (ADR-0036 + ADR-0042 + ADR-0043 + ADR-0046 + ADR-0047).
+A plain `cco start <project>` defaults to a **read-only, project-scoped** in-session `cco`
+(`cco_access=read-project`).
+
+Under the hood `cco_access` is an explicit **`(G, Pc, Po)` triple** — three independent
+config trees, each on the lattice `none < ro < rw`:
+
+- **`G` — global**: the rest of your personal `~/.cco` store (packs, templates, llms, remotes).
+- **`Pc` — current**: this project's committed `<repo>/.cco` config.
+- **`Po` — others**: other projects' `<repo>/.cco` config.
+
+The **preset scalars are sugar** for the symmetric triples; a **granular form**
+(`--cco-access global=…,current=…,others=…`, comma-separated, order-free, partial) sets the
+axes directly and unlocks two intents the presets cannot spell. Unspecified axes auto-promote
+to the invariant floor (`Pc` is never `none` while `cco` is enabled; `Po ≤ Pc`); an explicit
+triple that violates an invariant is rejected. **Enforcement is a real OS-level privilege
+boundary** (ADR-0047), not just output filtering — see the note below the matrix.
+
+| Knob | Values (default **bold**) | Governs |
+|------|---------------------------|---------|
+| `claude_access` | preset none · repo · all — **or** a granular `(Cr,Cp,Cg,Co)` triple. **Default: DERIVED from `cco_access`** (never authored more broadly than config access) | `.claude` authoring trees — repo-native (Cr), project (Cp), global (Cg), other projects (Co). `settings.json`/`settings.local.json` stay rw regardless (functional-write floor). A normal session's `.claude` is **read-only by default**. |
+| `cco_access` | preset **read-project** (default) · read-global · read-all · edit-project · edit-global · edit-all · none — **or** a granular `(G,Pc,Po)` triple | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
+| `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
+
+Both knobs share one grammar in every source: a **scalar preset** or a **granular map**
+(`{repo,current,global,others}` for `claude`, `{global,current,others}` for `cco`). For
+`claude`, omitted map axes derive from `cco`; the `none|repo|all` presets are fixed triples
+(`none`=all read-only, `repo`=`(rw,rw,ro,ro)`, `all`=all-rw). An explicit `claude` **more
+permissive** than the cco-concordant default is honored with a one-line note — never refused
+(ADR-0049).
+
+**Where to set them** (precedence, highest first):
+
+1. **CLI** — `--claude-access`, `--cco-access`, `--show-host-paths` / `--no-show-host-paths`
+2. **Per project** — an optional `access:` block in `<repo>/.cco/project.yml`
+   (`access.claude` / `access.cco` / `access.show_host_paths`, each scalar **or** map)
+3. **Machine baseline** — `~/.cco/access.yml` (`claude` / `cco` / `show_host_paths`, each
+   scalar **or** map; scaffolded commented at `cco init`)
+4. **Default** — `cco` = `read-project`; `claude` = **derived from the resolved `cco`**
+   (concordant). config-editor = min-privilege **by mode** (project `(ro,rw,none)`, global
+   `(rw,none,none)`, `edit-all` with `--all`); its `claude` column is just the general
+   cco-derived default (no bespoke rule). tutorial = `none`/`read-all`
+
+**The seven intents** (six presets + two granular-only):
+
+| Intent | `cco_access` | `(G, Pc, Po)` | Read / write reach |
+|--------|--------------|---------------|--------------------|
+| read own project | **`read-project`** (default) | `(none, ro, none)` | read this project + its referenced globals |
+| read the whole store | `read-global` | `(ro, ro, none)` | + read all of `~/.cco` (other projects hidden) |
+| read everything | `read-all` | `(ro, ro, ro)` | + read other projects |
+| edit own project | `edit-project` | `(none, rw, none)` | write this project's `.cco` only (not `~/.cco`) |
+| edit store + own project | `edit-global` | `(rw, rw, none)` | write `~/.cco` **and** this project |
+| edit everything | `edit-all` | `(rw, rw, rw)` | write the store + every project |
+| edit all projects, not the store | *granular only* | `(none, rw, rw)` | `--cco-access global=none,current=rw,others=rw` |
+| edit store, read all projects | *granular only* | `(rw, rw, ro)` | `--cco-access global=rw,current=rw,others=ro` |
+
+> **`edit-global` redefined.** It is now `(rw, rw, none)` — it writes the global store
+> **and** the current project's config (it was global-only before). The two granular-only
+> intents exist because `edit-all` is the only *preset* that grants cross-project write, and
+> it forces `G=rw` **and** `Po=rw` together — the triple lets you separate them.
+
+> **Enforcement — a real privilege boundary (ADR-0047).** The confidentiality of the internal
+> store (the machine-local index, DATA registries, and CACHE internals) does not rely on the
+> in-session `cco` filtering its own output. Those live behind an OS-level boundary: a
+> directory owned by a dedicated `cco-svc` user, mode `0700`, that the agent user cannot
+> traverse, plus a small setuid helper that applies the resolved `(G, Pc, Po)` from a trusted,
+> read-only session descriptor (never argv/env, fail-closed). A `read-project` agent that
+> tries to `cat` the index gets `EACCES`. Output-scoping (below) remains as defense-in-depth.
+
+**Wrapped `cco` in-session** (when `cco_access` != `none`): read verbs (`cco list`,
+`cco … show`, `cco … validate`, `cco docs`, `cco path list`, `cco list remotes`,
+`cco project coords`) run inside the container; edit levels also allow the path-free
+write verbs (`cco tag`, `cco remote add`, `cco pack|template|llms create|update|…`,
+`cco config save`, and `cco repo|extra-mount rename` at `Pc=rw`). **Output is scoped to the
+access level** (ADR-0043): at `read-project`
+the read verbs show only the current project and the packs/llms it references —
+templates, other projects, and unreferenced packs are hidden, with a count-only
+"hidden by access scope" notice on stderr telling you how to widen (`read-global`/`read-all`,
+or run `cco` on your host); a `show` of an out-of-scope resource degrades to a clear scope
+message instead of a raw "not found". Read output is **symmetric** with the level's write
+reach: `read-project`/`edit-project` see project scope, `read-global`/`edit-global` the whole
+store (other projects hidden), `read-all`/`edit-all` everything.
+**Host-only** verbs are refused in-session with a hint: session/image
+lifecycle (`start|stop|build|new`), path-resolving lifecycle (`resolve|sync|init|join|
+forget|update|clean`, `project rename`), and network/credential ops (`config push`/`pull`,
+`remote set-token`/`remove-token`, `remote remove`/`rename`). The last two join the
+credential set because they **cascade into the 0600 token store**, which never crosses into
+a session: with the token file unmounted, cco cannot tell "no token" from "token invisible",
+so both would silently succeed while orphaning the token and stripping the remote's auth.
+`cco remote add` stays available in-session (it writes only the url registry; its `--token`
+half is refused separately). Real secret files (`secrets.env`, `*.env`, `*.key`,
+`*.pem`) are filtered from every config mount (only `*.example` is visible); tokens,
+transcripts, and memory are never mounted. Requires a rebuilt image (`cco build`).
 
 ---
 
@@ -421,7 +588,7 @@ The per-noun `cco project list` verb was **removed** (ADR-0029 D1): listing is n
 unified under `cco list` (§3.5b). Running the old verb prints a one-line redirect.
 
 ```
-cco list project             # projects only (NAME · REPOS · STATUS · TAGS)
+cco list project             # projects only (NAME · REPOS · STATUS)
 cco list                     # all resources, grouped by kind
 cco list project --tag work  # projects carrying the "work" tag
 ```
@@ -429,7 +596,8 @@ cco list project --tag work  # projects carrying the "work" tag
 **Implementation** (under `cco list project`):
 - List projects registered in the machine-local index (`<state>/cco/index` `projects:` map)
 - Parse each repo's `<repo>/.cco/project.yml` for repo count
-- Check Docker for running containers (`cc-<name>`)
+- Resolve each project's session STATUS (`running` | `stopped` | `unknown`) by the
+  `cco.project` label — see §3.6
 
 ---
 
@@ -448,28 +616,42 @@ grouped by kind, with a **TAGS** column. `cco list <kind>` narrows to one kind
 Long names are ellipsized so columns stay aligned in any terminal width.
 
 ```
-Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag] [--reverse|-r]
+Usage: cco list [<kind>] [--tag <t>] [--sort kind|name|tag|status] [--reverse|-r]
+                [--include-internal]
 
 Arguments:
   <kind>               One of: project | pack | template | llms | remote
                        (plural forms accepted, e.g. `packs`)
+                       builtin — the internal sessions (see below)
 
 Options:
   --tag <t>            Show only resources carrying tag <t>
-  --sort kind|name|tag Order by kind (default), name, or first tag
-                       (--sort tag: untagged resources sort last, then by name)
+  --sort <field>       Order by kind (default), name, tag, or status
+                       (--sort tag: untagged resources sort last, then by name;
+                        --sort status: running sessions first, then by name)
   --reverse, -r        Reverse the chosen order
+  --include-internal   Also list internal built-ins even when stopped
 
 Examples:
-  cco list                     # All resources, grouped by kind (KIND · NAME · TAGS)
+  cco list                     # All resources, grouped by kind (KIND · NAME · STATUS · TAGS)
   cco list packs               # Packs only, with resource counts and tags
   cco list --tag work          # Every resource tagged "work"
   cco list project --tag work  # Projects tagged "work"
   cco list --sort tag          # Group resources by their first tag
   cco list packs --sort name -r  # Packs, name descending
+  cco list --include-internal  # Also show config-editor / tutorial (any status)
+  cco list builtin             # Only the internal built-ins, with status
 ```
 
-> `--sort`/`--reverse` always render the compact index (KIND · NAME · TAGS), even
+**Internal built-ins** (KIND `builtin`). The reserved framework sessions
+`config-editor` and `tutorial` are launched by name (`cco start config-editor`),
+not registered projects, so they are not index rows. `cco list` still surfaces
+them by their fixed names as KIND `builtin`, showing their session **STATUS** —
+by default only when **running** (so the list stays uncluttered), and always
+(any status) under `--include-internal` or the explicit `cco list builtin`. They
+carry no tags and are never scope-hidden (framework sessions, not your config).
+
+> `--sort`/`--reverse` always render the compact index (KIND · NAME · STATUS · TAGS), even
 > when a `<kind>` is given — so `cco list packs --sort tag` sorts packs by tag.
 
 > The per-noun `cco project|pack|template|llms|remote list` verbs were removed;
@@ -495,6 +677,40 @@ Tags are organizational only; they carry no privilege and never affect resolutio
 
 ---
 
+### 3.5c `cco whoami`
+
+Report the **current session's** resolved access state, so an agent (or you) can tell what
+it may read and write without probing the shim by trial and error. Read-only: it consumes
+the session's own environment, never the filesystem or the internal store. Available at
+every read level; refused only at `cco_access=none`, where `cco` itself is refused (§3.2).
+
+```
+Usage: cco whoami
+```
+
+On the **host** there is no session envelope, so it prints one line — *"Not in a cco
+session (host context) — cco runs unrestricted here."* — plus the redirected bucket paths
+when a developer sandbox is active (§3.34).
+
+**In a session** it prints four blocks and a closing note:
+
+| Block | Contents |
+|-------|----------|
+| **Session** | `identity` (the project name) · `editing target` (config-editor's `--project` targets, only when set) · `code repos` (mounted repos, or `— (config only)`) · `image built from` (the source ref baked into the image at build time) |
+| **Access** | `level` — the **preset name** when the resolved triple is symmetric, else `custom (global=…,current=…,others=…)`, which is the copy-pasteable `--cco-access` value · `triple` (`G`/`Pc`/`Po` + read/write scope) · `claude_access` and its `(Cr,Cp,Cg,Co)` triple · `show_host_paths` |
+| **Config trees (.cco)** | `rw` / `ro` / `—` per tree: project config (`<repo>/.cco`), personal store + registry (`~/.cco`), llms cache, and other projects' config (shown only when `Po ≥ ro`) |
+| **Authoring trees (.claude)** | `rw` / `ro` / `—` per tree: repo-native `Cr`, project `Cp`, global `Cg`, and other projects' `Co` (shown only when `Co = rw`) |
+
+The closing **Enforcement** note restates that the internal store sits behind the
+ADR-0047 privilege boundary: these values are enforced by the setuid `cco-svc` helper
+(a raw read of the store fails), not merely by output filtering.
+
+> `image built from` is the line to check before trusting a probe: a `lib/` edit is
+> invisible to any store-touching verb until the next `cco build`, so it names the ref
+> the running image was built from rather than the working tree.
+
+---
+
 ### 3.6 `cco stop [project]`
 
 Stop a running session.
@@ -510,14 +726,21 @@ Examples:
   cco stop              # Stop all running sessions
 ```
 
-**Implementation**:
+**Implementation**: session identity is the compose **`cco.project` label**, not the
+container name. `cco start` launches with `docker compose run --rm`, which discards
+`container_name`, so a `name=cc-…` filter never matches a live session.
+
 ```bash
 # Specific project
-docker stop cc-<project>
+docker ps --filter "label=cco.project=<project>" --format '{{.ID}}' | xargs docker stop
 
 # All sessions
-docker ps --filter "name=cc-" -q | xargs docker stop
+docker ps --filter "label=cco.project" --format '{{.ID}}' | xargs docker stop
 ```
+
+`cco stop` also reconciles the STATE running registry (dropping the marker for each
+session it stops) and clears that project's generated runtime state in CACHE
+(`browser.json`, `.browser-port`, `github.json`).
 
 ---
 
@@ -776,10 +999,15 @@ Examples:
    - Name and description (from project.yml)
    - Repos: list with path existence check ([missing] marker for absent paths),
      and each member's role: host / synced copy / divergent / code-only member
-   - Referenced-by: other projects that reference this repo (reverse index lookup)
+   - Referenced-by: other projects that mount this repo's PATH (path-based reverse
+     lookup — ADR-0051 D5; "same resource" is path coincidence, not name)
+   - Extra mounts: list by LOGICAL NAME → container target, with the resolved
+     source ([unresolved] marker when no path is bound). The logical name is the
+     key `cco path` and `cco extra-mount rename` take
    - Packs: list with existence check ([not found] marker for absent packs)
    - Docker config: auth method, ports, network name
-   - Status: checks Docker for running container (cc-<name>)
+   - Status: the session state `running` | `stopped` | `unknown`, by the `cco.project`
+     label (`unknown` = the running registry is unreachable, never a false `stopped`)
    - ⚠ passive badge: unresolved/unreachable references, if any
 ```
 
@@ -822,6 +1050,44 @@ un-rewritten members. For a single-repo project this is always satisfiable from 
 
 **After renaming**, commit + push the updated `.cco/project.yml` in each member repo and run
 `cco sync` — the cross-repo edits live in your git working trees (cco delegates them to git, P17).
+
+---
+
+### 3.13c `cco repo rename` / `cco extra-mount rename` (ADR-0050)
+
+Rename a **repo** or **extra_mount**. Their name is a **per-project label** for a host path —
+identity is the path, the name is a label local to one project (ADR-0051) — so a rename is
+**project-scoped and path-anchored**: it re-keys **only the current project's** index binding and
+that project's `project.yml` entry. Another project that binds the *same name to a different path*
+is a different resource (untouched), and another project labeling the *same path* keeps its own
+label. This never renames a **project** of the same name (use `cco project rename` for that).
+
+```
+Usage: cco repo rename [<old>] <new>          # cwd-first when <old> omitted
+       cco extra-mount rename <old> <new>
+
+Options:
+  -y, --yes        Skip the confirmation prompt
+      --move-dir   (repo/extra-mount) also move the on-disk directory
+                   (basename must equal <old>; default is name-only)
+```
+
+- **cwd-first** (`cco repo rename <new>`): renames the repo hosting the working directory.
+  `extra-mount rename` always takes an explicit `<old> <new>`.
+- **Directory move** is opt-in: by default only the logical name is re-keyed (the working tree, its
+  git identity, and the url/ref coordinate are unchanged). Interactively you are asked whether to
+  also `mv` the directory (default No), offered only when its basename equals `<old>`; `--move-dir`
+  drives the move non-interactively. External references to the old path are **not** updated.
+- **Strict**: the member must be resolved on this machine; multi-repo projects rewrite the entry in
+  every owned member's `project.yml` copy — commit + push each and run `cco sync` afterwards.
+
+**Renaming pack / template / remote** — `cco pack rename <old> <new>` re-keys the pack store dir
+(+ `pack.yml name:`), its DATA/STATE sidecars and tags, and fans out the `packs[]` reference across
+**every** referencing project (pack names stay globally scoped; strict — all referencing projects
+must be resolved). `cco template rename` / `cco remote rename` re-key their user-template store /
+url-registry+token similarly. All are kind-scoped: a rename touches only its own kind's stores.
+`cco remote rename` is **host-only** — re-keying the token is a credential operation, and the
+token store never crosses into a session (see §3.2).
 
 ---
 
@@ -884,6 +1150,13 @@ machine-local STATE **index** (`<state>/cco/index`), never in `project.yml` and 
 `project.yml` carries logical names + `url`/`ref` coordinates only — there are no `@local`
 markers and no per-repo `local-paths.yml`.
 
+Names are **per-project scoped** (ADR-0051): a logical name is a label *within one project*,
+not a global key. Identity is the **path** — two projects may bind the same name to different
+paths (independent resources), and one path may carry different names in different projects.
+The index is version 2 (nested `project_paths: <project> → <name> → path`, plus an `unscoped:`
+bucket for project-less `cco path set` pins). A pre-v2 index upgrades transparently on the first
+write; nothing to run.
+
 #### `cco resolve [project]`
 
 Resolve each unresolved repo/mount of a project: specify a local path, clone from the
@@ -920,6 +1193,14 @@ referenced-resource kinds** — repos, extra mounts, **llms**, and **packs** —
   offers **install from `<url>`** (via `cco pack install --pick`) · **use a different url** ·
   **skip**; a pack already present in a local layer is a clean skip.
 
+**Add-time disambiguation** (ADR-0051 D4): when a repo/mount name you are resolving already
+exists in **another** project on this machine, `cco resolve` lists those existing paths and lets
+you **reuse one** (the same resource — the path is filled for you) or **specify a different path**
+(a homonym — a genuinely different resource). For repos, a candidate whose on-disk `git remote
+get-url origin` diverges from the incoming coordinate `url` is flagged *"probably a different
+resource"*. A cross-project name match is therefore **not** a collision — only a *same-project*
+same-name-different-path clash is refused.
+
 After healing, `cco resolve` prints a **status row per referenced resource** (`✓ resolved` /
 `⚠ unresolved [+url]`) across all four kinds, so it always shows the complete picture — not only the
 references it prompted for. Nothing ever hard-blocks: an unresolved reference is a conscious-skip
@@ -927,10 +1208,12 @@ references it prompted for. Nothing ever hard-blocks: an unresolved reference is
 point — no duplicated resolution loop).
 
 `--scan` is **non-destructive**:
-it upserts each discovered `name → path` + `repos[]`, never deletes out-of-`<dir>` mappings or
-manual `cco path set` overrides, and on a name-already-bound-to-a-different-path conflict it
-warns and keeps the existing mapping (uniqueness invariant). There is no `--prune` in v1.
-`cco resolve --scan` also bootstraps a fresh machine (populates an empty index).
+it upserts each discovered project's `name → path` bindings (scoped to that project) + `repos[]`,
+never deletes out-of-`<dir>` mappings or manual `cco path set` overrides, and on a same-project
+name-already-bound-to-a-different-path conflict it warns and keeps the existing mapping (AD5′). A
+member SHARED across scanned projects (listed by A, hosted by B) is bound under each referencing
+project too, to the same path. There is no `--prune` in v1. `cco resolve --scan` also bootstraps a
+fresh machine (populates an empty index).
 
 #### `cco path set` / `cco path list` (advanced)
 
@@ -948,12 +1231,27 @@ Examples:
   cco path list                          # Show all name → path mappings
 ```
 
-Manual index edits are allowed but discouraged — prefer `cco resolve`. A logical name maps to
-exactly one absolute path per machine (`cco init`/`cco join` refuse a name already bound to a
-different path). The index stores **absolute paths only**: every write is normalized (`~`/`$HOME`
-expanded) and a value that cannot be made absolute is refused. `cco path list` normalizes each value
-for display and flags any stale non-absolute entry (e.g. a legacy `@local`) as `⚠ malformed`; run
-`cco update` (which normalizes the index) or `cco resolve --scan <dir>` to clean it.
+Manual index edits are allowed but discouraged — prefer `cco resolve`. `cco path set` binds the
+name **in the project hosting the cwd** if you run it inside one; run outside any project it lands
+in the project-less `unscoped:` bucket. A logical name maps to one absolute path **per project**
+(different projects may bind the same name to different paths — ADR-0051); only a same-project
+same-name-different-path clash is refused. If the name diverges from the directory basename,
+`cco path set` prints a hint (`cco repo rename` aligns them). The index stores **absolute paths
+only**: every write is normalized (`~`/`$HOME` expanded, and one pair of surrounding quotes
+stripped so a pasted `'/my/repo'` or `"/my/repo"` resolves to the literal directory) and a value
+that cannot be made absolute is refused. `cco path list` labels each row with its owning project and prints one
+**TAB-separated** `[project] name<TAB>path` row (a bare, unbracketed label is an unscoped entry),
+normalizes each value for display, and flags any stale non-absolute entry (e.g. a legacy `@local`)
+as `⚠ malformed`; run `cco update` (which normalizes the index) or `cco resolve --scan <dir>` to
+clean it.
+
+In a **container session** each row is scoped by its owning project, exactly like `cco list project`:
+the current project's rows are always shown; rows owned by **other** projects — and rows stored
+under **no** project (the project-less `unscoped:` bucket) — require a `read-all` session and are
+otherwise hidden and counted in the notice. A **bare** (unbracketed) row is stored under no project,
+but if the current project actually resolves through it (a name it declares and does not otherwise
+bind) it stays visible, because it is one of *this* session's own mounts — the bracket means "stored
+under a project", not "in use by one". Nothing changes on the host or at `read-all`.
 
 ---
 
@@ -1126,10 +1424,12 @@ Install packs from a remote **sharing repo** (a git repo whose layout holds `pac
 in `~/.cco/packs/`.
 
 ```
-Usage: cco pack install <url> [OPTIONS]
+Usage: cco pack install <source> [OPTIONS]
 
 Arguments:
-  url                  URL of the sharing repo (git repository)
+  source               A git URL of the sharing repo, or the name of a remote
+                       registered with `cco remote add` (§3.28). A URL may carry
+                       an `@<branch-or-tag>` suffix to pin the ref.
 
 Options:
   --pick <name>        Install only a specific pack from the repo
@@ -1138,7 +1438,8 @@ Options:
 
 Examples:
   cco pack install https://github.com/team/cco-sharing
-  cco pack install https://github.com/team/cco-sharing --pick react-guidelines
+  cco pack install https://github.com/team/cco-sharing@v1.2
+  cco pack install team --pick react-guidelines      # `team` = a registered remote
   cco pack install https://github.com/team/cco-sharing --token ghp_... --force
 ```
 
@@ -1176,17 +1477,24 @@ Examples:
 The tar-snapshot half of the pack sharing 2×2 (`publish`/`install` is the live-source half).
 
 ```
-Usage: cco pack export <name>          # Write ~/.cco/packs/<name>/ to a .tar.gz archive
-       cco pack import <archive>       # Install a pack from a .tar.gz archive into ~/.cco/packs/
+Usage: cco pack export <name>                   # Write ~/.cco/packs/<name>/ to a .tar.gz archive
+       cco pack import <archive> [--force]      # Install a pack from a .tar.gz archive into ~/.cco/packs/
 
 Arguments:
   name                 Pack name to export
   archive              Path to a .tar.gz pack archive
 
+Options:
+  --force              (import) Overwrite an existing pack of the same name
+
 Examples:
   cco pack export react-guidelines
   cco pack import ./react-guidelines.tar.gz
+  cco pack import ./react-guidelines.tar.gz --force
 ```
+
+An imported pack is an **internalized snapshot** (`source: local`) — `cco pack update`
+does not apply to it.
 
 ---
 
@@ -1270,14 +1578,30 @@ Examples:
 
 #### `cco config validate [--dry-run | --fix [-y]]`
 
-**Orphan-sanitization** of the global id-keyed internal state after a manual deletion: detect
-and report orphaned entries (index paths/memberships, tags, install provenance, STATE/CACHE
-per-id dirs, remote tokens) whose backing resource no longer resolves; with `--fix`, prune them
-(preview-first / confirmed). Warn, never hide; never automatic. STATE/CACHE are freely
-rebuildable (`cco resolve --scan`) and pruned under the main confirmation; synced DATA
-(tags/source) is pruned under a **second** confirmation, since a wrong prune propagates across
-your machines — a non-resolving DATA resource may simply live on another machine. The read-only
-report exits 0 (reminder-style).
+**Internal-state sanitization** of the global id-keyed state after a manual deletion or an
+upgrade. The report has **four distinct lanes**, each handled differently (ADR-0052 §4/§5, ADR-0053):
+
+1. **Orphans** (the original lane) — index paths/memberships, tags, install provenance,
+   STATE/CACHE per-id dirs, remote tokens whose backing resource no longer resolves. With
+   `--fix`, these are **pruned** (preview-first / confirmed). STATE/CACHE are freely rebuildable
+   (`cco resolve --scan`) and pruned under the main confirmation; synced DATA (tags/source) is
+   pruned under a **second** confirmation, since a wrong prune propagates across your machines.
+2. **Re-home** — a legacy `extra_mount` bound in the project-less `unscoped:` bucket that a
+   project's `project.yml` actually declares. With `--fix`, it is **MOVED** under its declaring
+   project (its own confirmation), never pruned — restoring per-project scoping (FI-23). This is
+   a distinct lane from orphan pruning: it relocates a valid binding, it does not delete one.
+3. **Re-key** — an existing index path stored under a non-canonical spelling (an unresolved
+   symlink like `/var` vs `/private/var`, or a trailing `/.`). With `--fix`, it is **rewritten**
+   to its canonical form (its own confirmation) — the same resource, data-preserving, never
+   deleted. This keeps the index consistent with the physical path identity on macOS (FI-27).
+4. **Malformed** — unparseable/non-absolute internal index records. These are **REPORTED** under
+   their own heading with remediation advice and are **NEVER auto-pruned**: format repair is your
+   call (`cco update` normalizes the index, or `cco resolve --scan <dir>` rebuilds it). FI-22.
+
+Warn, never hide; never automatic. The read-only report exits 0 (reminder-style). With `--fix`,
+the summary counts what was **actually** pruned/re-homed: if a store write could not complete, the
+affected records are reported as surviving and the command exits non-zero, rather than asserting
+the requested total.
 
 ```
 Usage: cco config validate [--dry-run | --fix [-y]]
@@ -1511,10 +1835,11 @@ Convert a pack to fully self-contained and locally owned (see also the unified
 `cco <res> internalize`, §3.23).
 
 ```
-Usage: cco pack internalize <name>
+Usage: cco pack internalize <name> [--as <new-name>]
 
 Examples:
   cco pack internalize my-docs-pack
+  cco pack internalize team-rules --as team-rules-local   # fork, leaving the original linked
 ```
 
 Performs two independent operations as needed:
@@ -1556,7 +1881,8 @@ Examples:
 #### `cco remote remove <name> [-y]`
 
 Unregister a remote and its saved token (if any). Previews and confirms first
-(ADR-0029 D2).
+(ADR-0029 D2). **Host-only** — it cascades into the 0600 token store, which never
+crosses into a container session (see §3.2).
 
 ```
 Usage: cco remote remove <name> [-y]
@@ -1577,6 +1903,20 @@ prints a one-line redirect.
 
 ```
 cco list remotes
+```
+
+#### `cco remote rename <old> <new> [-y]`
+
+Rename a registered remote, re-keying its url-registry entry **and** migrating any saved
+auth token, so url and token survive under the new name. Previews and confirms first.
+**Host-only** — see §3.13c for the rename family and §3.2 for why the token cascade keeps
+it off the container.
+
+```
+Usage: cco remote rename <old> <new> [-y]
+
+Options:
+  -y, --yes            Skip the confirmation prompt
 ```
 
 #### `cco remote set-token <name> <token>`
@@ -1618,10 +1958,16 @@ internalize · show · remove · validate** (ADR-0029 D3). Listing is unified un
 #### Listing templates → `cco list templates`
 
 ```
-cco list templates           # native + user templates (KIND · NAME · TAGS)
+cco list templates           # native + user templates, grouped by kind
 ```
 
-The old `cco template list [--project|--pack]` verb prints a one-line redirect.
+The bare per-kind view is the **rich** one, not the compact `KIND · NAME · STATUS ·
+TAGS` index (add `--tag`/`--sort` to get that instead — §3.5b): two headings,
+`Project templates:` and `Pack templates:`, each row `<name>  (native|user)` plus the
+`template.yml` description for project templates. In a container session it needs
+`read-global` or higher — templates are a personal-global resource, so `read-project`
+refuses it by name rather than printing an empty list. The old
+`cco template list [--project|--pack]` verb prints a one-line redirect.
 
 #### `cco template update <name> [--all] [--force]`
 
@@ -1758,10 +2104,11 @@ via the `llms:` section.
 Usage: cco llms install <url> [OPTIONS]
 
 Options:
-  --name <name>        Override the auto-detected framework name
+  --name <name>        Override the auto-detected framework name (skips confirmation)
   --variant <v>        Force variant: full, medium, small, index (default: auto)
   --pack <pack>        Add reference to this pack's pack.yml
   --project <project>  Add reference to this project's project.yml
+  --force              Overwrite an existing entry with the same name
 
 Examples:
   cco llms install https://svelte.dev/docs/svelte/llms.txt
@@ -1853,6 +2200,34 @@ Usage: cco docs [<topic>]
 
 ---
 
+### 3.34 Developer sandbox (`--dev-sandbox`)
+
+A **global flag** (not a subcommand) for the rare case of running a development build of
+cco alongside the published one on the **same machine**. cco refuses to run when its on-disk
+state is newer than the binary understands (the version gate, ADR-0052) — the only realistic
+way to hit that is two cco versions sharing one machine's internal buckets. The sandbox removes
+the collision at the source: it redirects cco's **internal** buckets (STATE/DATA/CACHE) to an
+isolated root so the two binaries never touch — or corrupt — each other's state.
+
+```
+cco --dev-sandbox <command>        # redirect STATE/DATA/CACHE to ~/.cco-devsandbox/{state,data,cache}
+cco --dev-sandbox-seed <command>   # same, plus a one-shot copy of your real STATE+DATA into the sandbox
+```
+
+- Equivalent env toggles: `CCO_DEV_SANDBOX=1` and `CCO_DEV_SANDBOX_SEED=1`. The sandbox root is
+  `~/.cco-devsandbox` by default, overridable with `CCO_DEV_SANDBOX_ROOT=<abs-path>`.
+- **`~/.cco` (your personal config store) stays SHARED** — the gate's inputs (the index, the
+  schema version, the registries) all live in STATE/DATA/CACHE, so only those are isolated; your
+  authored packs/templates/`.claude` are not duplicated.
+- Never clobbers an explicit `CCO_STATE_HOME`/`CCO_DATA_HOME`/`CCO_CACHE_HOME` override; **host-only**
+  (a real session's mounted buckets are never redirected); OFF by default is a strict no-op.
+- `--dev-sandbox-seed` copies your real **STATE + DATA** (not CACHE — it is re-fetchable) once, so a
+  dev build starts against realistic state. It runs only when the sandbox is fresh.
+- `cco whoami` reports when a sandbox is active, with the redirected bucket paths — so a sandbox
+  session is never mistaken for the real one.
+
+---
+
 ## 4. Project Configuration Format (project.yml)
 
 `project.yml` lives in `<repo>/.cco/project.yml` and is **machine-agnostic**: it carries
@@ -1907,7 +2282,9 @@ sources are **host-absolute** (config, state, and cache live under three roots, 
 services:
   claude:
     image: claude-orchestrator:latest
-    container_name: cc-my-saas-platform
+    container_name: cc-my-saas-platform   # cosmetic — `run --rm` discards it
+    labels:
+      cco.project: "my-saas-platform"     # the session-identity contract (§3.6)
     stdin_open: true
     tty: true
     environment:
@@ -1927,11 +2304,11 @@ services:
       - /home/me/.cco/.claude/rules:/home/claude/.claude/rules:ro
       - /home/me/.cco/.claude/agents:/home/claude/.claude/agents:ro
       - /home/me/.cco/.claude/skills:/home/claude/.claude/skills:ro
-      # Project config (the invoking repo's <repo>/.cco/claude/) + generated overlays (CACHE, :ro)
+      # Project config (the invoking repo's <repo>/.cco/claude/) — no generated overlay:
+      # the session context is injected via the CCO_SESSION_CONTEXT env var (above), not a file
       - /home/me/dev/backend/.cco/claude:/workspace/.claude
-      - /home/me/.cache/cco/projects/projectA/.claude/packs.md:/workspace/.claude/packs.md:ro
-      # Session transcripts (STATE; enables /resume across rebuilds)
-      - /home/me/.local/state/cco/projects/projectA/claude-state:/home/claude/.claude/projects/-workspace
+      # Session transcripts, every cwd key (STATE; enables /resume across rebuilds)
+      - /home/me/.local/state/cco/projects/projectA/session/claude-state:/home/claude/.claude/projects
       # Memory (STATE; machine-local, no sync in v1; separate from transcripts)
       - /home/me/.local/state/cco/projects/projectA/session/memory:/home/claude/.claude/projects/-workspace/memory
       # Global MCP servers (optional, merged into ~/.claude.json by entrypoint)
@@ -2017,7 +2394,7 @@ If the proxy fails to start, the real socket remains locked (`chmod 600`). Docke
 | Scenario | Behavior |
 |----------|----------|
 | Project not found | `Error: Project 'foo' not found. Run 'cco list project' to see available projects.` |
-| Session already running | `Error: Project 'foo' already has a running session (container cc-foo). Run 'cco stop foo' first.` |
+| Session already running | `Error: Project 'foo' already has a running session. Run 'cco stop foo' first.` |
 | Repo path doesn't exist | `Error: Repository path ~/projects/foo does not exist.` |
 | Docker image not built | `Error: Docker image 'claude-orchestrator:latest' not found. Run 'cco build' first.` |
 | Docker not running | `Error: Docker daemon is not running. Start Docker Desktop.` |

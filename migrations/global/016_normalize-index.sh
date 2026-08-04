@@ -14,6 +14,11 @@
 # change. A value that cannot be made absolute (relative / empty / a bare @local
 # with no recovery) is DROPPED — it self-heals on the next `cco resolve --scan`.
 # The projects: membership section is left untouched.
+#
+# Per-project scoping (ADR-0051): the index is now v2 (nested project_paths + an
+# unscoped bucket). A still-v1 index is first upgraded transparently (re-homing
+# each global name under every project that lists it as a member), then every
+# stored value is normalized in its own scope.
 
 MIGRATION_ID=16
 MIGRATION_DESC="Normalize STATE path index to absolute paths (drop stale ~/@local)"
@@ -23,20 +28,34 @@ migrate() {
     local f; f=$(_index_file)
     [[ -f "$f" ]] || return 0
 
-    # _index_list_paths dumps the whole paths: section into the pipe up front, so
-    # rewriting $f inside the loop (atomic mktemp+mv per entry) is safe.
-    local line name val
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        name="${line%%=*}"; val="${line#*=}"
+    # Upgrade a legacy v1 (global-flat) index to v2 first (verbatim re-home).
+    _index_migrate_if_needed
+
+    # Normalize every per-project binding. Snapshot the dump up front so the
+    # in-loop rewrites (atomic mktemp+mv per entry) don't perturb the iteration.
+    local dump proj name val
+    dump=$(_index_pp_dump_all)
+    while IFS=$'\t' read -r proj name val; do
         [[ -z "$name" ]] && continue
-        # Re-write through the normalizing boundary: _index_set_path expands
-        # ~/$HOME and refuses a non-absolute value (return 1), in which case the
-        # prior _index_remove_path has already dropped the stale entry.
-        _index_remove_path "$name"
-        if ! _index_set_path "$name" "$val"; then
-            warn "index: dropped non-absolute entry '$name'=\"$val\" — run 'cco resolve --scan <dir>' to rebind"
+        if _index_normalize_path "$val" >/dev/null; then
+            _index_set_path "$proj" "$name" "$val"   # rewrites normalized (no-op if clean)
+        else
+            _index_remove_path "$proj" "$name"
+            warn "index: dropped non-absolute entry '[$proj] $name'=\"$val\" — run 'cco resolve --scan <dir>' to rebind"
         fi
-    done < <(_index_list_paths)
+    done <<< "$dump"
+
+    # Normalize the unscoped (project-less) bucket the same way.
+    local udump
+    udump=$(_index_section_dump unscoped)
+    while IFS='=' read -r name val; do
+        [[ -z "$name" ]] && continue
+        if _index_normalize_path "$val" >/dev/null; then
+            _index_set_unscoped "$name" "$val"
+        else
+            _index_remove_path "" "$name"
+            warn "index: dropped non-absolute unscoped entry '$name'=\"$val\" — run 'cco resolve --scan <dir>' to rebind"
+        fi
+    done <<< "$udump"
     return 0
 }

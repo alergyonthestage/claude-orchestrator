@@ -444,3 +444,836 @@ entries:
       usage — the same as `cco help`. The version is read from package.json (the
       single source of truth), so it never drifts from the published package.
       Both are handled before any command runs and have no side effects (FI-11).
+
+  - id: 28
+    date: "2026-07-01"
+    type: additive
+    title: "Session access knobs: control .claude / .cco edit access per session"
+    description: >
+      `cco start` now resolves three orthogonal capability knobs that control how
+      much of your config a session can edit (ADR-0036): `claude_access`
+      (none | repo | all) governs the .claude authoring trees, `cco_access`
+      (none | read | edit-project | edit-global | edit-all) governs the .cco
+      framework config, and `show_host_paths` (on by default) toggles the
+      host<->container path map. Defaults are unchanged (repo / none / on), so
+      existing sessions behave exactly as before. Set them per session on the CLI
+      (`--claude-access`, `--cco-access`, `--show-host-paths` / `--no-show-host-paths`),
+      per project via an optional `access:` block in `project.yml`
+      (`access.claude` / `access.cco` / `access.show_host_paths`), or as your
+      machine-wide baseline in `~/.cco/access.yml`. Precedence: CLI > project.yml >
+      ~/.cco/access.yml > default. `--enable-config-edit` still works as a
+      deprecated alias for `--cco-access edit-project`.
+
+  - id: 29
+    date: "2026-07-01"
+    type: additive
+    title: "Wrapped cco in-session: run safe read/edit cco commands inside a container"
+    description: >
+      Under `--cco-access read` (or an edit level), `cco` now runs INSIDE the
+      session container behind a whitelist shim (ADR-0036 D4). Read verbs
+      (`list`, `*show`, `*validate`, `docs`, `path list`, `list remotes`,
+      `project coords`) work in-session; edit levels also allow the path-free
+      write verbs that go through the shared cco functions (`tag`,
+      `remote add|remove`, `pack|template|llms create|update|...`, `config save`).
+      Host-only verbs are refused with a "run it on the host" hint:
+      container-spawning (`start/stop/build/new`), path-resolving lifecycle
+      (`resolve/sync/init/join/forget/update/clean`, `project rename`), and
+      network/credential ops (`config push`/`config pull`, `remote
+      set-token`/`remove-token`). The real buckets are bind-mounted (DATA/CACHE
+      per the edit level, STATE index-only read-only); remote tokens and real
+      secret files (`secrets.env`, `*.env`/`*.key`/`*.pem`) never reach the
+      container — only `*.example` skeletons are visible. Requires a rebuilt image
+      (`cco build`). Default sessions (`cco_access=none`) are unaffected.
+
+  - id: 30
+    date: "2026-07-01"
+    type: additive
+    title: "Built-in sessions become capability presets; config-editor --all / --project"
+    description: >
+      The config-editor and tutorial built-ins are now presets of the session
+      capability knobs (ADR-0036 D6): config-editor runs at claude_access=all /
+      cco_access=edit-all, the tutorial at none / read. Both gain the wrapped
+      `cco` (config-editor read+write, tutorial read-only) operating on the real
+      mounted buckets, with real secret files filtered from every config mount.
+      `cco start config-editor` accepts `--project <name>` (now repeatable) and a
+      new `--all` to mount every resolvable project's `<repo>/.cco` for editing
+      (only `<repo>/.cco`, never full repos; unresolved projects are skipped). You
+      can still narrow a built-in with an explicit `--cco-access` (e.g.
+      `--cco-access edit-project`). Requires a rebuilt image (`cco build`).
+
+  - id: 31
+    date: "2026-07-01"
+    type: additive
+    title: "Unified session-info surface: workspace.yml absorbs packs.md, adds path_map"
+    description: >
+      The agent-facing session context is now a single file,
+      `/workspace/.claude/workspace.yml` (ADR-0041 R1). It absorbs the former
+      `packs.md` as new `knowledge` and `llms` sections, so the SessionStart /
+      SubagentStart hooks and the `init-workspace` skill all read one surface —
+      `packs.md` is no longer generated. When `show_host_paths` is on (the
+      default), the file also carries an optional `path_map`: labelled
+      host↔container pairs for the mounted repos and extra mounts, so the agent
+      can hand you copy-pasteable host commands. Set `--no-show-host-paths` (or
+      `access.show_host_paths: false` in `project.yml`, or `show_host_paths: false`
+      in `~/.cco/access.yml`) to omit it. The knowledge files themselves stay at
+      `/workspace/.claude/packs/…`; only the index moved. Requires a rebuilt image
+      (`cco build`).
+
+  - id: 32
+    date: "2026-07-02"
+    type: additive
+    title: "Optional descriptions for repos and extra_mounts in project.yml"
+    description: >
+      `project.yml` now accepts an optional `description:` on each `repos[]` and
+      `extra_mounts[]` entry. When set, the note is surfaced to the agent in the
+      session context alongside the resource (e.g. "repo: backend-api at
+      /workspace/backend-api — REST API service"), giving it a one-line hint about
+      each mounted resource without opening files. Descriptions live only in
+      `project.yml` — the single structured source (INV-3, ADR-0042) — so there is
+      no generated round-trip. Purely additive: existing projects are unaffected,
+      and the fields can be omitted. Requires a rebuilt image (`cco build`) for the
+      session-context injection to render them.
+
+  - id: 33
+    date: "2026-07-02"
+    type: additive
+    title: "Scope-aware read output in container sessions (read-project)"
+    description: >
+      Inside a session the wrapped `cco`'s read verbs now scope their OUTPUT to
+      the session's access level (ADR-0043). At `cco_access=read-project` (the
+      normal default) `cco list`, `cco list <kind>`, the `<kind> show` verbs,
+      `cco project validate|coords`, and `cco path list` show only the current
+      project and the packs/llms it references; personal-global resources
+      (templates, remotes) and other projects are hidden. Anything hidden is
+      announced with a one-line count-only notice on stderr ("N hidden by access
+      scope — start a read-global session or run cco on your host"), so a hidden
+      resource is never mistaken for a missing one, and a `show` of an
+      out-of-scope resource degrades to a clear scope message instead of a raw
+      "not found". On the host every resource is always visible (no behaviour
+      change); at `read-global`/`read-all`/`edit-*` the full set is shown. Widen
+      a session with `--cco-access read-global`. Requires a rebuilt image
+      (`cco build`).
+
+  - id: 34
+    date: "2026-07-02"
+    type: additive
+    title: "Session context is injected, not a file — workspace.yml retired + cleaned up"
+    description: >
+      The agent-facing session context introduced in #31 as the generated file
+      `/workspace/.claude/workspace.yml` is no longer written anywhere (ADR-0042).
+      It is now injected directly into the SessionStart / SubagentStart context
+      via the `CCO_SESSION_CONTEXT` environment variable — a generated file never
+      belongs in a committed tree. `cco update` now runs a migration that removes
+      any committed `claude/workspace.yml`, `claude/packs.md`, and
+      `claude/scheduled_tasks.lock` older versions left in a project's
+      `<repo>/.cco/`, and adds them to `.cco/.gitignore` so they never reappear
+      (the removal is staged for you to commit). New projects are scaffolded
+      clean. Requires a rebuilt image (`cco build`).
+
+  - id: 35
+    date: "2026-07-02"
+    type: additive
+    title: "Environment-aware hardening of the wrapped-cco surface (in-container)"
+    description: >
+      A full audit of every cco verb for container-operator (wrapped-cco)
+      sessions tightened three behaviours that only affect cco run INSIDE a
+      session (host usage is unchanged). `cco config validate` is now host-only
+      in a container — its orphan sweep reads machine-local state (the STATE
+      index of host paths) that is incoherent in a container, where it reported
+      false orphans and printed host paths. `cco remote add --token` now refuses
+      the token inside a container (the token store is host-only; it previously
+      wrote an ephemeral secret and falsely reported it saved) — register the url
+      here, then run `cco remote set-token` on your host. `cco config save` at
+      cco_access=edit-project now explains that the ~/.cco store is read-only and
+      needs an edit-global session, instead of a misleading "nothing to save".
+      Requires a rebuilt image (`cco build`).
+
+  - id: 36
+    date: "2026-07-05"
+    type: additive
+    title: "Symmetric cco_access scopes, in-container self-introspection, sharper refusals"
+    description: >
+      The agent↔cco access model gained read/write symmetry and a batch of
+      in-container UX fixes (host usage unchanged). cco_access now reads at its
+      matching scope on {project, global, all}: edit-project reads at PROJECT
+      scope (its own project, like read-project) rather than the whole store, and
+      read-global differs from read-all only in other-project visibility. Write
+      verbs are gated by their target tree — a global-store write (pack/template/
+      llms/tag/remote/config save) needs edit-global+, refused cleanly otherwise.
+      New `cco whoami` reports your session's own access state (levels + which
+      config trees are writable). In-container `cco help` is now filtered to the
+      verbs you can run, with `cco --help --host` for the full list; unknown verbs
+      say so (instead of "run it on your host"), removed aliases redirect to
+      `cco list <kind>`, and refusal exit codes follow 0/2/1 (ok-or-degrade /
+      policy refusal / error). `cco docs` works in every session (docs are baked
+      into the image), session detection is fixed (cco stop / list status), and at
+      cco_access=none cco is cleanly unavailable. Requires a rebuilt image
+      (`cco build`).
+
+  - id: 37
+    date: "2026-07-10"
+    type: additive
+    title: "Granular (global,current,others) cco access, a real privilege boundary, and in-container running status"
+    description: >
+      The agent↔cco access model is now an explicit three-axis capability
+      (ADR-0046): `access.cco` in `project.yml` (or `--cco-access`) accepts, in
+      addition to the preset scalars, a granular MAP over three independent trees —
+      `global` (the rest of ~/.cco), `current` (this project's .cco), and `others`
+      (other projects' .cco) — each on the lattice none < ro < rw, e.g.
+      `--cco-access global=ro,current=rw,others=none`. Presets are sugar for the
+      symmetric triples; unspecified axes auto-promote to the invariant floor
+      (current is never `none` while cco is enabled; others <= current). Two cases
+      the presets could not express are now reachable granular-only: edit every
+      project's config but not the global store (global=none,current=rw,others=rw),
+      and edit the global store while reading all projects (global=rw,current=rw,
+      others=ro). `edit-global` is
+      REDEFINED from `(rw,ro,none)` to `(rw,rw,none)` — it now also writes the
+      current project's config, not just the global store. A new optional
+      `access.cco.include_member_configs` (bool, default false) widens the
+      `current` write span from the hosting repo's <repo>/.cco to all member repos'
+      copies in a multi-repo project. Existing scalar `access.cco` values and
+      omitted blocks are unaffected (additive). Enforcement no longer relies only
+      on output-scoping: the machine-local internal store (STATE index, DATA, CACHE
+      internals) now sits behind a real privilege boundary (ADR-0047) — a
+      mode-0700 parent owned by a dedicated `cco-svc` uid that the agent cannot
+      traverse, plus a small setuid helper that applies the resolved (G,Pc,Po) from
+      a trusted, read-only session descriptor (never argv/env, fail-closed). A
+      `read-project` agent that tries to `cat` the index gets EACCES; access-scope
+      output filtering is demoted to defense-in-depth. Built-in presets flipped to
+      least-privilege: the tutorial is now `read-all` (read-only teacher, full
+      context, no write risk) and config-editor resolves to the minimum for its
+      target (edit-project in a project, edit-global outside one, edit-all with
+      `--all`). Finally, `cco list` and `cco whoami` now report a session's running
+      status from a host-reconciled registry (ADR-0045): in-container status is
+      shown per scope with a dedicated STATUS column and `--sort status`, and an
+      out-of-scope/absent session reads as `unknown` rather than a false `stopped`.
+      Requires a rebuilt image (`cco build`).
+
+  - id: 38
+    date: "2026-07-11"
+    type: additive
+    title: "config-editor is now minimum-privilege by mode (reads the store in project mode)"
+    description: >
+      `cco start config-editor` no longer defaults every mode to writing the whole
+      personal store. It is now minimum-privilege BY MODE (ADR-0048): started inside
+      a project (or with `--project <name>`) it resolves to `(ro,rw,none)` — the
+      target project's `<repo>/.cco` is read-write while `~/.cco` is mounted
+      READ-ONLY, so you edit the project and merely *reference* the store. To also
+      write the store, add `--cco-access edit-global`. Started bare (outside any
+      project) it resolves to the honest `(rw,none,none)` — edit the store only, no
+      project in scope (the `current` axis is legitimately `none`; the INV-2 project
+      floor is now conditional on a current project being in scope). `--all` /
+      `--cco-access edit-all` is unchanged as the explicit broad every-project
+      widener. Two coherence floors keep the tool usable: config-editor's `global`
+      axis is clamped to at least `ro` (an authoring session must always SEE the
+      store — a narrower `--cco-access` is raised to `read-global` with a notice),
+      and its `.claude` authoring now follows the store's write level (global
+      `.cco/.claude` is writable only when the store is, removing a
+      writable-rules/read-only-packs asymmetry). Store-writing verbs (`cco config
+      save`, pack/template/llms authoring, `cco remote add|remove`) therefore need a
+      store-writable config-editor session and are refused with a "needs edit-global"
+      hint in the default project mode. Requires a rebuilt image (`cco build`).
+
+  - id: 39
+    date: "2026-07-13"
+    type: additive
+    title: "Clearer in-session introspection: whoami redesign, cco list built-ins, project show at /workspace"
+    description: >
+      Session-legibility refinements (they do not change the access model). `cco
+      whoami` now leads with a Session block — identity (the session envelope), the
+      editing target(s) for a config-editor session, and whether code repos are
+      mounted vs config-only — before the access detail, so you see WHO you are and
+      WHAT you edit up front (in config-editor the envelope `config-editor` and its
+      editing targets are no longer conflated). The access rows are deduplicated: a
+      single `level` (the preset name, or `custom (global=…,current=…,others=…)`) plus
+      an explicit `triple` (G/Pc/Po + read/write scope) — no more three identical
+      views of one triple. `cco list` now surfaces the internal built-ins
+      (config-editor, tutorial) as KIND `builtin`: only when running by default, or
+      all with `--include-internal` / `cco list builtin` — so a running config-editor
+      is visible even from another session. And a bare `cco project show` run from the
+      `/workspace` root now resolves the current session project, matching how it
+      already worked from inside a mounted repo directory. Requires a rebuilt image
+      (`cco build`).
+
+  - id: 40
+    date: "2026-07-13"
+    type: additive
+    title: "claude_access becomes a concordant per-tree triple; .claude authoring defaults to read-only"
+    description: >
+      claude_access (Axis B) is now modelled as a per-tree triple (Cr,Cp,Cg,Co) on
+      the ro<rw lattice — the repo-native, project, global, and other-projects .claude
+      authoring trees — mirroring the cco (G,Pc,Po) triple (ADR-0049). The none|repo|all
+      enum lives on as preset sugar, and when unspecified each axis DERIVES from your
+      cco_access (Cg=G, Cp=Pc, Co=Po, Cr always read-only), so the default is never
+      more permissive than your config access. Behaviour change: a normal session no
+      longer authors the project/repo .claude tree by default — it is read-only unless
+      you pass --claude-access repo|all (or a cco edit level). Both knobs now share one
+      grammar in every source (CLI flag, project.yml access.claude, ~/.cco/access.yml):
+      a scalar preset OR a granular map ({repo,current,global,others} for claude;
+      {global,current,others} for cco). ~/.cco/access.yml is scaffolded commented at
+      cco init as the global-default escape and gained granular-map support for both
+      knobs. An explicit claude wider than cco is honored with a one-line note (never
+      refused). settings.local.json stays writable via a functional-write floor even
+      when a .claude tree is read-only. extra_mounts gained config_access_policy
+      (ro|project|write) governing their nested .claude/.cco, which is now detected
+      recursively (monorepos, extra_mounts), read-only by default. Requires a rebuilt
+      image (`cco build`).
+
+  - id: 41
+    date: "2026-07-14"
+    type: additive
+    title: "cco init seeds the current repo into project.yml repos[] (+ --repo-name)"
+    description: >
+      `cco init` now seeds the repo it runs in into the project's repos[] instead of
+      leaving the list empty, so `cco start` mounts it without a manual project.yml
+      edit. The repo's logical name defaults to the directory basename (prompted, or
+      set with the new --repo-name flag) and is an axis independent of the project
+      name (--name). Its coordinate url is derived from `git remote get-url origin`
+      when present, else left empty to fill in later. The machine-local index binds
+      the repo under its logical name (project membership keyed by repo name), the
+      same coordinate model as `cco join`. Existing projects are unaffected; this
+      only changes what a fresh `cco init` scaffolds.
+
+  - id: 42
+    date: "2026-07-14"
+    type: breaking
+    title: "Per-project name scoping: index v2 (identity = path, name = per-project label)"
+    description: >
+      BREAKING (machine-local STATE only — no committed config changes) — repo and
+      extra_mount logical names are now PER-PROJECT scoped. A name is a label within
+      one project, not a global key; "the same resource" is decided by PATH
+      coincidence, never by name (ADR-0051, supersedes ADR-0022 D2). The machine-local
+      index moves to version 2 (nested project_paths: <project> -> <name> -> path,
+      plus an unscoped: escape-hatch bucket for project-less `cco path set` pins). The
+      upgrade is transparent and automatic: a still-v1 index is read as-is, and the
+      first host-side write re-homes each flat binding under every project that lists
+      it as a member (orphans -> unscoped) — no `cco update`, no migration script,
+      since the index is scan-rebuildable STATE (`cco resolve --scan`). Two projects
+      may now bind the same name to different paths (independent resources) and one
+      path may carry different names in different projects. `cco resolve`/`cco start`
+      gained an add-time disambiguation prompt: when a name already exists in another
+      project, cco offers to REUSE that path (the same resource) or specify a different
+      one (a homonym), flagging a git-origin/url divergence as "probably a different
+      resource". Cross-project name matches are no longer refused as collisions; only a
+      same-project same-name-different-path clash is refused. The name-based reverse
+      lookup is replaced by a path-based one (`cco project show` "referenced by",
+      `cco forget` shared-repo guard). No user action required; custom tooling that
+      parsed ~/.local/state/cco/index directly must read the v2 nested layout (or
+      regenerate with `cco resolve --scan`).
+
+  - id: 43
+    date: "2026-07-14"
+    type: additive
+    title: "Resource rename verbs: cco repo/extra-mount/pack/template/remote rename"
+    description: >
+      Five kinds that previously had no rename verb gained one, so renaming a
+      resource no longer means hand-editing internal stores: `cco repo rename
+      [<old>] <new>`, `cco extra-mount rename <old> <new>`, `cco pack rename <old>
+      <new>`, `cco template rename <old> <new>`, and `cco remote rename <old> <new>`
+      (joining the existing `cco project rename` and `cco llms rename`). Each verb is
+      kind-scoped — it re-keys only its own kind's stores, never a same-named
+      resource of another kind. repo/extra-mount rename are PROJECT-SCOPED and
+      path-anchored (a repo name is a per-project label for a host path, ADR-0051):
+      they re-key only the current project's index binding + that project's
+      project.yml entry, leaving other projects' same-named-different-path bindings
+      and same-path labels untouched; repo rename is cwd-first (omit <old> to rename
+      the repo hosting the working directory), and an optional --move-dir also moves
+      the on-disk directory (basename-gated, default No). pack rename fans out the
+      packs[] reference across every referencing project (pack names stay global) and
+      moves the store dir + DATA/STATE sidecars + tags; template/remote rename re-key
+      their stores similarly. In a wrapped-cco (in-container) session, repo/
+      extra-mount rename run at edit-project and pack/template/remote rename at
+      edit-global. Two path-input papercuts are also fixed: `cco path set`/`cco
+      resolve` now strip one pair of surrounding quotes from a pasted path
+      ('/my/repo' or "/my/repo"), and `cco path set` hints `cco repo rename` when the
+      index name no longer matches the directory basename. Additive; no migration.
+
+  - id: 44
+    date: "2026-07-15"
+    type: additive
+    title: "settings.local.json: an inert mountpoint stub now appears in <repo>/.cco/claude/"
+    description: >
+      The functional-write floor (ADR-0049 §5) keeps .claude/settings.local.json
+      writable while the surrounding .claude tree is mounted read-only — the
+      default since the claude_access model landed. It does that by binding a
+      per-project machine-local STATE copy over the file, and Docker can only
+      bind onto a target that already exists: it cannot create one inside a
+      read-only mount. `cco start` therefore seeds an inert stub at
+      <repo>/.cco/claude/settings.local.json (and at <repo>/.claude/settings.local.json
+      for each repo that has a .claude tree, when one is missing). The stub is
+      never read in a session — the rw STATE copy always shadows it — and never
+      committed: migration 015 adds it to .cco/.gitignore, alongside the other
+      generated session artifacts. A tree that ALREADY carried a real
+      settings.local.json keeps it: its content seeds STATE on first start rather
+      than being shadowed by an empty object, so existing "Always allow" grants
+      and local prefs survive. Nothing to do — the seeding is automatic.
+
+  - id: 45
+    date: "2026-07-15"
+    type: additive
+    title: "cco start recovers from a stale Claude Code launcher instead of failing"
+    description: >
+      The native installer (ADR-0039) refuses to overwrite a launcher it did not
+      create: `claude install` exits with "the existing file there was not created
+      by the native installer and is not a working launcher". Because the install
+      lives in the shared CACHE dir (~/.cache/cco/claude-install), a single stale
+      launcher — an npm-era wrapper, a `claude migrate-installer` result, or a
+      symlink dangling at a version that share/claude/versions no longer holds —
+      made the entrypoint FATAL on `cco start` for EVERY project, with no
+      documented way out (the fix was `cco build --no-cache`, which the error did
+      not mention; the reported "Network access is required" was misleading when
+      the network was fine). The entrypoint now clears the launcher path before
+      installing — it only ever gets there when it has already decided to
+      (re)install, and the install itself lives in share/claude/versions — so a
+      poisoned cache self-heals on the next start. A healthy install is still
+      never reinstalled ("one-time per cache"): the marker check is unchanged, and
+      the auto-updater keeps the binary current. If an install genuinely fails,
+      the FATAL now names `cco build --no-cache` as the cache reset. Requires
+      `cco build` (the entrypoint is baked into the image).
+
+  - id: 46
+    date: "2026-07-20"
+    type: additive
+    title: "Container-session config access: honest failures, scoped path list, config-editor repos"
+    description: >
+      The e2e acceptance review of the agent↔cco access model (cycle 1) closed
+      five container-session enforcement gaps. All are in-container behaviour; the
+      host, `read-all`/`edit-all`, and path *resolution* are unchanged. (1)
+      Store-mutating verbs (pack/template/llms/remote rename and remove, and the
+      destructive re-key cascades) now FAIL with exit 1 and the real reason when
+      the internal store is unwritable, instead of printing a false success or a
+      spurious "not found"; a rename is applied wholly or refused wholly, never
+      half-applied. (`pack install` and the other provenance writers are a clean
+      in-container refusal until cycle 2.) (2) `cco path list` now scopes EVERY row
+      by its owning project: bindings stored under no project (the `unscoped:`
+      bucket) were previously always shown — including their host paths —
+      regardless of access level; they now require a `read-all` session, like any
+      other project you do not own, and are counted in the hidden notice — unless
+      the current project actually resolves one of them (a name it declares and
+      does not otherwise bind), in which case it stays visible, because it is one
+      of this session's own mounts. (3) `cco start config-editor` now MOUNTS the
+      target project's member repos (not only its `.cco`), so repo-aware authoring
+      works; a target that is not mounted is announced, not silently skipped. (4)
+      The nested-config readonly clamp no longer over-clamps a config-editor
+      target's or the store's own `.cco` when the session's access triple grants
+      write. (5) `cco repo rename` / `cco extra-mount rename` now run to completion
+      in-container (name-only; `--move-dir` is refused with a host hint). A
+      resource that exists on this machine but is not bound into the current
+      session now says "not mounted in this session" with a host remedy, instead
+      of a misleading "run cco resolve". Requires `cco build`.
+
+  - id: 47
+    date: "2026-07-21"
+    type: additive
+    title: "Container sessions: the internal index crosses as a directory, and every write says what it did"
+    description: >
+      The e2e acceptance run of cycle 1 found that its fixes could not work as
+      shipped, for one reason: the machine-local STATE bucket crossed into a
+      session as individual FILE mounts while every other bucket crossed as a
+      directory. A file mount gives the container no writable parent, and every
+      index write replaces the file atomically through a sibling temp — so
+      in-container index writes failed while the command still printed a ✓.
+      Cycle 1.1 closes that root and the class of silent failures around it.
+      (1) The container-shareable STATE members — the index and the pack/template
+      update sidecars — now live under `<state>/cco/shared/` and that ONE
+      directory is what a session binds. Migration 017 moves them for you on the
+      next `cco update`; it is idempotent and needs no input. What stays outside
+      `shared/` never reaches a container by construction: the 0600 remote-token
+      store, session transcripts, and memory. Three failures disappear with it —
+      `cco repo rename` / `cco extra-mount rename` half-applying while reporting
+      success, `cco pack|template remove|rename` being dead at `edit-all`, and
+      `cco path list` printing zero rows at exit 0 after a host-side rename.
+      (2) Writes that cannot be performed now FAIL, loudly and by name, instead
+      of returning success: the index writers, the `project.yml` fan-out of a
+      rename, the token-store cascades, and the host-only entry verbs (`cco init`,
+      `cco join`, `cco forget`, `cco project import`, `cco resolve --scan`,
+      `cco path set`, migrations) all propagate the real status. `cco init` no
+      longer announces "registered it in the index" when it did not, and `cco join`
+      no longer tells you to commit a `project.yml` naming a member nothing binds.
+      (3) A rename is now refused UP FRONT when either store it must touch cannot
+      be written, so it is applied wholly or not at all. (4) Reading is honest
+      too: an index that is unreadable or truncated is reported as such by
+      `cco path list`, `cco list`, `cco list projects`, and `cco config validate`,
+      instead of being read as "you have nothing configured".
+      (5) BEHAVIOUR CHANGE — `cco remote remove` and `cco remote rename` are now
+      **host-only**, refused in-session with a host hint, joining
+      `remote set-token` / `remove-token`. They cascade into the 0600 token store,
+      which never crosses into a session: with the token file unmounted cco cannot
+      tell "no token" from "token invisible", so both would have succeeded
+      silently while orphaning the token and stripping the remote's auth.
+      `cco remote add` stays available in-session. (6) `cco project show` and
+      `cco project validate` now answer "is this available?" with one voice —
+      `show` used to blame access scope and prescribe a widening that does not
+      exist at `read-all` — and `validate` works from the `/workspace` root like
+      `show` already did. (7) `cco start config-editor` announces every surface it
+      drops, including a project the index knows but cannot mount (with the right
+      remedy: `cco init` when the repo is there but unconfigured, `cco resolve`
+      when it is not on this machine). It deliberately never mounts a target's
+      `extra_mounts` — it authors config, and they are reference material — and it
+      now SAYS so, because `cco path list` shows those bindings and silence read
+      as "reachable". (8) `cco project show` gained an extra_mounts section listing
+      them by logical name — the key `cco path` and `cco extra-mount rename` take —
+      marking `[unresolved]` when one is declared but not bound. (9) `cco whoami`
+      reports `image built from: <branch>@<sha>`, so a session can prove which
+      build it is running before you trust what it tells you. (10) The "hidden by
+      access scope" notice no longer offers `read-global` when everything it hid
+      was a project — `read-global` reveals no project; it offers `read-all`. A
+      mixed set still offers both. (11) Bare `cco repo rename <new>` /
+      `cco extra-mount rename <new>` at the `/workspace` root is now refused for
+      the right reason — it cannot tell WHICH member you mean — and tells you to
+      cd into the one you want. It used to answer as if no project were in scope
+      and suggest passing `<old> <new>`, which fails there too. Requires
+      `cco build`.
+
+  - id: 48
+    date: "2026-07-23"
+    type: additive
+    title: "Index integrity: data preservation on upgrade, version gate, dev sandbox"
+    description: >
+      The machine-local path index (logical name → absolute path) is now hardened
+      against version skew and never loses your registered paths on an upgrade.
+      (1) DATA PRESERVATION — upgrading from an older cco whose index lived at the
+      old location (`<state>/cco/index`) now MERGES it into the current one
+      (`<state>/cco/shared/index`) non-destructively: entries the new file lacks are
+      adopted, agreeing paths are deduped, and a genuine conflict (same name, two
+      paths) keeps BOTH files and warns rather than deleting either. The old
+      "new-wins `rm -f`" that could drop paths when you ran `cco start`/`cco resolve`
+      before `cco update` is gone. It heals automatically on any command (host-side),
+      so the natural start-before-update order is safe. A stray old-format residue
+      written back into a v2 file by an alternating older binary is re-absorbed on
+      the next write, never silently ignored. (2) FAIL-LOUD VERSION GATE — if your
+      on-disk index or global config is NEWER than the running cco understands, cco
+      now refuses to run with a clear message ("use the cco that wrote it, or run its
+      `cco update`") instead of silently misreading it and reporting an empty index.
+      (3) EXTRA-MOUNT RE-HOME — a legacy extra_mount is migrated UNDER the project
+      whose `project.yml` declares it, not into a global bucket; `cco config validate
+      --fix` re-homes any residue already on disk (a dedicated re-home lane, distinct
+      from orphan pruning). (4) SAFER `cco config validate` — malformed/unparseable
+      internal index records are now REPORTED under their own heading and NEVER
+      auto-pruned (you decide format repair); only genuine orphans are pruned, under
+      the existing two-phase confirm. (5) DEVELOPER SANDBOX — `cco --dev-sandbox`
+      (or `CCO_DEV_SANDBOX=1`) redirects cco's internal STATE/DATA/CACHE buckets to
+      an isolated root (`~/.cco-devsandbox`) so running a development build alongside
+      the published one never shares — or corrupts — your real state; `~/.cco` stays
+      shared. Add `--dev-sandbox-seed` (or `CCO_DEV_SANDBOX_SEED=1`) for a one-shot
+      copy of your real STATE+DATA into the sandbox. `cco whoami` reports when a
+      sandbox is active. (6) `q`/Exit at a `cco start` mount-resolve prompt now
+      ABORTS the launch (no session boots) instead of skipping and starting anyway;
+      standalone `cco resolve` exits cleanly. Requires `cco build`.
+
+  - id: 49
+    date: "2026-07-24"
+    type: additive
+    title: "CCO_NONINTERACTIVE — force every prompt to its non-interactive branch"
+    description: >
+      New environment variable `CCO_NONINTERACTIVE=1` makes cco behave as if no
+      controlling terminal were present: every interactive prompt (language,
+      project/repo name, update-sync merge choices, migration confirmations,
+      destructive-action confirmations, path disambiguation, …) takes the same
+      non-interactive branch it already takes under Docker/CI — falling back to
+      defaults or requiring an explicit flag (`-y`/`--auto-approve`) rather than
+      blocking on input. Use it when scripting cco in automation that runs from a
+      terminal (where prompts would otherwise wait for a human), or to make a
+      command's behavior identical whether launched interactively or headless. It
+      is honoured centrally by `_cco_have_tty`, so it covers all prompts uniformly;
+      it is complementary to `CCO_ASSUME_YES=1` (which ANSWERS a yes/no prompt
+      "yes" instead of skipping it). The project's own test runner (`bin/test`) now
+      exports it, which is what makes the suite immune to a captured prompt hanging
+      it when run from a real terminal.
+  - id: 50
+    date: "2026-07-24"
+    type: additive
+    title: "Canonical index paths — consistent identity on macOS (symlinks, trailing /.)"
+    description: >
+      The machine-local path index now stores every repo/extra_mount path in its
+      CANONICAL form: symlinked prefixes are resolved (on macOS `/tmp` and `/var`
+      are symlinks to `/private/tmp` and `/private/var`) and lexical noise
+      (duplicate slashes, `/./`, a trailing `/.`) is collapsed, at the single write
+      boundary. This closes a divergence where the same working tree reached one way
+      via the cwd (physical path) and another via a coordinate or `cco path set`
+      (unresolved symlink) was recorded as two different resources — breaking by-name
+      resolve, cwd-first repo/extra_mount rename, `join` member indexing, the AD5′
+      uniqueness check, and firing spurious index-reconcile warnings. Existing
+      divergent entries self-heal on the next write and can be repaired in bulk with
+      a new `cco config validate` lane: `re-key` reports a stored path whose spelling
+      is non-canonical and `--fix` rewrites it to the canonical form (data-preserving,
+      distinct from the `malformed` lane, which is still reported-only). Identity is
+      the physical path (ADR-0051 D1); see ADR-0053.
+
+  - id: 51
+    date: "2026-07-26"
+    type: additive
+    title: "Packs with skills/rules/agents now start at the default access level"
+    description: >
+      `cco start` could die before the session existed — "create mountpoint …:
+      read-only file system" from runc — for any project that adopted a pack
+      shipping skills, rules, agents or knowledge (and for llms docs) while the
+      `claude` access stayed at its default. Cause: those resources are mounted as
+      CHILD binds inside `/workspace/.claude`, and a child bind needs its mountpoint
+      to already exist — Docker cannot create it through a read-only parent, which
+      is what the committed `.cco/claude/` tree became when ADR-0049 made `Cp=ro`
+      the default. Only projects created before that flip kept working, on
+      mountpoint directories that had been auto-created back when the tree was
+      writable. cco now owns those mountpoints: when a session injects pack/llms
+      overlays it composes the `/workspace/.claude` parent from a mountpoints-only
+      view in CACHE (rebuilt at every start) and binds the committed tree back in
+      entry by entry, at the same access mode as before. Pack visibility no longer
+      depends on the `claude` policy — that policy governs authoring only. Nothing
+      changes for a project without packs or llms, and the committed tree stops
+      accumulating empty mountpoint residue. In a session that both composes and has
+      `claude` write access, a NEWLY created file placed directly in a composed
+      namespace is session-local (edits to existing files still reach the repo);
+      `cco start` says so once. No migration; see ADR-0054.
+
+  - id: 52
+    date: "2026-07-28"
+    type: additive
+    title: "Claude Code's own runtime state is writable and persisted at every access level"
+    description: >
+      Two failures with one cause: cco never classified which parts of
+      `~/.claude` and `/workspace/.claude` belong to Claude Code as RUNTIME
+      STATE rather than to you as authoring config. Subagents and agent-team
+      teammates started from inside a repo (and worktree or background
+      sessions) could not write their transcripts — `~/.claude/projects` was
+      created root-owned by the container runtime, so only the `-workspace`
+      key worked; and saving a project-scope workflow failed, because
+      `/workspace/.claude/workflows/` sits in the tree that is read-only
+      unless you opt into `claude_access: all`. `claude_access` now governs
+      authoring only (CLAUDE.md, rules, agents, skills); Claude Code's
+      runtime state stays writable at every level, as `settings.json`
+      already did. Transcripts persist for EVERY session key, not just the
+      one started at `/workspace`, so `/resume` finds subagent, teammate and
+      worktree sessions after a restart. Workflows saved by a read-project
+      session persist in machine-local state instead of the repo; under
+      `claude_access: all` they land in the repo and are shared via git, as
+      the Claude Code docs describe — the access level is the choice. A repo
+      that already commits `.cco/claude/workflows/` keeps seeing them. No
+      migration: an existing transcripts bucket is repaired in place at the
+      next `cco start`, without losing history. Requires `cco build`; see
+      ADR-0055.
+
+  - id: 53
+    date: "2026-07-29"
+    type: additive
+    title: "In-session cco refuses index-reading verbs it cannot answer, instead of reporting an empty index"
+    description: >
+      A cco session is LAUNCHED from the machine-local path index, so inside a
+      session a missing index can never mean "nothing is registered on this
+      machine yet" — it means the bind was severed, the host-side state was
+      removed, or the internal store is unreachable. Until now the index-reading
+      verbs (`cco list`, `cco list projects`, `cco path list`, `cco project
+      list`, `cco project validate --all`) reported that state as an EMPTY index
+      at exit 0, and `cco project show` rendered a fabricated card — mounts that
+      were bound and readable badged `[unresolved]`, and a repo host path
+      silently downgraded to its container path. Those verbs now refuse at entry
+      with a message naming the real cause and a remedy that works where it is
+      printed (`cco resolve` is host-only in a session and is never prescribed
+      there). `cco project show` renders no card at all rather than a fabricated
+      one, and `[unresolved]` now means exactly one thing: the index holds no
+      binding for that member. On the host nothing changes — a machine with
+      nothing registered yet legitimately has no index file, and still says so.
+      USER-VISIBLE REGRESSION, deliberate: on native Linux the internal store is
+      unreachable from a session by construction (0700 buckets owned by the
+      elevated identity), so these verbs begin refusing there instead of
+      answering confidently and wrongly. Native Linux support is scheduled for
+      cycle-2; until then, run cco on your host. Requires `cco build`; see
+      ADR-0056 (D6, D7).
+
+  - id: 54
+    date: "2026-07-29"
+    type: additive
+    title: "'cco project add' no longer drops the new entry into the next section"
+    description: >
+      Adding a coordinate (`cco project add repo|mount|llms|pack`, and the
+      first repo written by `cco init` / `cco join`) decided where a section
+      of `project.yml` ends by looking for the first top-level line that is
+      not a comment. A comment block therefore did not close the section, so
+      the new entry slid PAST it and landed after the NEXT section's header
+      comment. On a project.yml scaffolded from the shipped template — where
+      `extra_mounts`, `packs`, `llms`, `github` and `browser` all ship
+      commented out — a second `cco project add repo` put its entry under the
+      "Docker options" banner, immediately above `docker:`. A section now
+      ends at the next top-level key, with the trailing run of top-level
+      comment and blank lines treated as that key's header: the new entry is
+      emitted before it. Indented commented examples (`  # - name: my-repo`)
+      are section content, so the entry lands after them, still inside its
+      own section. Nothing to migrate — YAML reads an already-misplaced entry
+      as part of the intended section, so existing files stay correct; move
+      the entry by hand if you want the file to read straight again.
+      Requires `cco build` for the in-session `cco`.
+
+  - id: 55
+    date: "2026-07-29"
+    type: additive
+    title: "No more '✗ cco exited unexpectedly' on runs that did not fail"
+    description: >
+      cco arms an exit trap that reports a crash unless the run marked itself
+      complete, so that a `set -e`/`set -u` violation or a syntax error is
+      never silent. Two ordinary paths forgot the mark. `cco project` and
+      `cco pack` with no subcommand printed their group help, exited 0, and
+      then printed "✗ cco exited unexpectedly (exit 0)" underneath it. And a
+      mistyped `--cco-access` got the crash line appended to its perfectly
+      correct refusal — the refusal is raised inside a subshell, whose mark
+      never reached the parent. Both are fixed: every deliberate exit now
+      goes through one primitive, so the trap speaks only for real crashes —
+      which is the point, since a warning users learn to ignore stops working
+      as a warning. Requires `cco build` for the in-session `cco`.
+
+  - id: 56
+    date: "2026-07-29"
+    type: additive
+    title: "One owner for availability answers — hidden is no longer reported as missing"
+    description: >
+      cco used to render "I cannot see X from here" as "X is not there", and
+      computed the remedy without regard to where the message was printed. Every
+      verb now ASKS the shared availability layer instead of deciding for itself,
+      so one vocabulary covers the three realities: a resource that is here, one
+      that exists but is not bound into this session, and one that is not
+      resolved at all. Concretely: `cco project show` badges a bound-but-unmounted
+      member `[not mounted in this session]` instead of `[missing]`, and the same
+      for a config-editor target's dropped extra_mounts and for packs it cannot
+      see; the retired `[missing]` badge is gone. The widening a message offers is
+      now derived from WHAT WAS HIDDEN — a hidden project offers `read-all`
+      (`read-global` is precisely the level that keeps other projects hidden, so
+      naming it revealed nothing), a hidden pack/template/remote offers
+      `read-global`. A message printed inside a session no longer prescribes
+      `cco resolve`, which is host-only there; it says to run it on your host.
+      `cco project coords <name>` now refuses an out-of-scope or unknown unit like
+      its `project show`/`project validate` siblings, instead of answering "no url
+      coordinates to check" at exit 0. At `read-all` a misspelt project name is
+      reported as not registered rather than "it exists on this machine" — that
+      arm is deliberately NOT enabled at narrower scopes, where it would turn
+      `project show` into an existence oracle across the access boundary.
+      Hidden-resource COUNTS are now correct for packs/templates/remotes even when
+      the personal store is not mounted at all (the common case at
+      `cco_access=read-project`): the count is computed host-side at `cco start`
+      and carried into the session. It is a snapshot taken at session start — a
+      pack installed on the host mid-session is not reflected, which is harmless
+      because the session could not see it either way. Requires `cco build`; see
+      ADR-0056 (D1-D5, D7).
+
+  - id: 57
+    date: "2026-07-29"
+    type: additive
+    title: "An empty path index inside a session is now a refusal, not a cheerful rc=0"
+    description: >
+      A session is launched FROM cco's machine-local index, so inside a session
+      that index can never legitimately be empty — if it looks empty, the view is
+      broken, not the machine. Until now `cco path list` and `cco list project`
+      answered "the path index is empty — nothing is registered on this machine
+      yet. Run cco on your host to populate it." at exit 0, which is false exactly
+      where it was printed: the session came from that index. Both verbs now
+      refuse (exit 1) with a message that names the real cause — the index is
+      readable but holds no entries, so it has been emptied, replaced or rebuilt
+      since the session started — and a remedy you can act on, which is to inspect
+      or rebuild it from your host. ON THE HOST nothing changes: a machine with
+      nothing registered yet legitimately has an empty index, still says so at
+      exit 0, and is still told that `cco resolve` is the way to populate it. This
+      completes ADR-0056 D6, which gave the same treatment to an index that is
+      missing outright. Requires `cco build` for the in-session `cco`.
+
+  - id: 58
+    date: "2026-07-29"
+    type: additive
+    title: "cco update no longer strips comments out of a pack's pack.yml"
+    description: >
+      `cco update` backfills a missing llms `url` into an installed pack's
+      pack.yml when it can recover one (ADR-0032 D3). It used to do that by
+      re-emitting the whole `llms:` block from parsed values, which silently
+      DELETED every line it had no rule for: comments indented inside the block,
+      comments at column 0 — including the one heading the key that FOLLOWS the
+      block — blank lines, and any sub-key it did not recognise. pack.yml is a
+      file you write, so this was destroying your own annotations. It now injects
+      instead of regenerating: every line is passed through untouched, and the
+      only lines cco writes are the `url:` / `variant:` it adds, plus the one
+      short-form list item (`- svelte`) that has to become `- name: svelte` to
+      carry them. Entries that need nothing are left byte-identical, short form
+      included. ⚠ If the old backfill already ran on one of your packs, the
+      comments it removed are gone from disk and cco cannot restore them — it
+      never had a copy. Recover them from your pack's own git history if it is
+      versioned. Nothing needs re-running: the backfill is a no-op once a pack's
+      urls are present.
+
+  - id: 59
+    date: "2026-07-30"
+    type: additive
+    title: "The 'hidden by access scope' notice now really counts what a session cannot see — and only what the command actually lists"
+    description: >
+      Entry 56 promised that a scoped session tells hidden from absent by
+      counting what it could not enumerate — at `read-project` your `~/.cco` is
+      not mounted, so a count taken by walking a directory is silently zero, and
+      the count is therefore computed on the host at `cco start` and handed to
+      the session. It never arrived. Every store-touching read verb runs behind
+      the privilege boundary via the setuid helper, and that helper rebuilds the
+      environment from scratch and copies over only the keys it whitelists — a
+      list the new count was never added to. So it was dropped without a word,
+      and `cco list packs` in a `read-project` session showed the one pack the
+      project references with NO notice at all, exactly as if the other five did
+      not exist. The key is now whitelisted, so the notice reads e.g. `note: 5
+      packs hidden by access scope (cco_access=read-project) — start a
+      read-global session or run cco on your host.` Nothing about what the
+      boundary permits has changed: the count is a read-only number, there is no
+      new privileged operation, and a session still cannot read the store
+      itself. Requires `cco build` — the helper is compiled into the image. A
+      static invariant (INV-DESC) now fails the suite if any future session
+      signal is written without being whitelisted, since the failure mode is
+      silence on both sides.
+      One more thing changed with it, visible the moment the count started
+      working: a notice now speaks only about the kinds the command you ran
+      actually lists. Before, every read verb appended the counts for every
+      resource kind in the store, so `cco list llms` — which shows you both of
+      your project's llms — also announced "6 packs hidden", and `cco list
+      packs` announced "2 llms hidden" about the two it was not hiding. The
+      numbers disagreed with each other too (6 from one verb, 5 from another),
+      because the count is "how many exist minus how many I just listed" and a
+      command listing llms lists no packs at all. Each command now declares what
+      it enumerates and speaks only for that: `cco list packs` counts packs,
+      `cco list llms` says nothing about packs, `cco list` (everything) counts
+      every kind, and `cco path list` / `cco project show` make no claim about
+      the store at all.
+
+  - id: 60
+    date: "2026-07-30"
+    type: additive
+    title: "Renaming a pack in a session: a refusal you can act on"
+    description: >
+      If you ran `cco pack rename` inside a session and one of the projects
+      using that pack has a repo the session does not mount, cco refused with
+      "unresolved member(s) … run 'cco resolve' on your host first". Following
+      that advice got you nowhere: on the host those members are already
+      resolved, so `cco resolve` reported success, changed nothing, and the
+      rename refused again the next time — a loop with no exit.
+      The two situations look identical from inside a container and are not.
+      A member can be genuinely unresolved (cco has no path for it on this
+      machine — a real configuration gap you fix with `cco resolve`), or it can
+      be perfectly resolved and simply not bound into THIS session, which no
+      command run inside that session can change. cco now tells them apart and
+      says which one you have: the second case reports that the repo is not
+      mounted in this session, that it exists on this machine, and that the way
+      forward is to run the rename on your host or start a session that mounts
+      it. It also exits 2 (a refusal about the shape of your session) instead of
+      1 (an error in your configuration), so scripts can tell the two apart too.
+      Nothing about when a rename is allowed has changed — only what cco tells
+      you when it is not. The same session was already rendering those members
+      "[not mounted in this session]" in `cco project show`; the rename guard
+      now agrees with it.
+
+  - id: 61
+    date: "2026-07-31"
+    type: additive
+    title: "`cco remote list` no longer sends you to widen access for a verb that was removed"
+    description: >
+      `cco remote list` was retired a while ago in favour of `cco list remote`,
+      and running it prints a one-line redirect saying so. Inside a session,
+      though, you only got that redirect if your session already had read-global
+      access or wider. Below that, cco answered something else entirely —
+      "'cco remote list' needs read-global scope or higher … widen it on the
+      host with --cco-access read-global" — which invited you to restart your
+      session at a wider access level in order to reach a command that would
+      then tell you it no longer exists. The advice was not wrong about access;
+      it was pointing at nothing.
+      The redirect is now the same at every access level, exactly like the
+      equivalent `cco pack list` / `cco template list` / `cco llms list` /
+      `cco project list`: one line naming the command that replaced it. Nothing
+      changed about what `cco list remote` shows, or about which access level
+      you need to see remotes — only about being told the truth first.

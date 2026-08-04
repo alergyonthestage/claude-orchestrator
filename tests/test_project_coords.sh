@@ -128,7 +128,9 @@ test_project_coords_sync_unknown_from_fails() {
     local rc=0
     _pc_in "$tmpdir" project coords --sync --from ghost -y || rc=$?
     [[ "$rc" -ne 0 ]] || fail "expected unknown --from to fail"
-    assert_output_contains "not found"
+    # The D-M2 vocabulary unification reworded this (was "not found"); the stable,
+    # still-actionable remedy is naming 'cco resolve <name>'.
+    assert_output_contains "cco resolve"
 }
 
 test_project_coords_sync_applies_from_authoritative() {
@@ -228,4 +230,64 @@ test_project_coords_help() {
     assert_equals 0 "$rc"
     assert_output_contains "coordinate consistency"
     assert_output_contains "--from"
+}
+
+# ── ADR-0056 D1 (S4): the coords lane joins the availability vocabulary ──
+# This lane answered a NAMED but unavailable <name> with the reassuring
+# "No url coordinates to check …" at exit 0 — the one verb in the `project` family
+# where an unavailable target is not a refusal. An agent could not tell "this
+# project has no url-bearing resources" from "this project is not visible to you"
+# from "you typed it wrong", and its siblings (`project show`, `project validate`)
+# both refuse at exit 2 for the same input.
+#
+# Driven at the FUNCTION level with the classifier stubbed, deliberately: what
+# INV-AVAIL constrains is the WIRING — does this verb ask the owner and route
+# through _env_unavailable, or does it decide for itself? A wired-verb variant
+# would need a real store behind the ADR-0047 boundary and would be defeated
+# in-container, joining the known host-only set instead of testing the contract.
+
+_pc_coords_with_state() {  # $1 = the state _env_project_state should report
+    local state="$1"; shift
+    (
+        source "$REPO_ROOT/lib/colors.sh";  source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";   source "$REPO_ROOT/lib/access-scope.sh"
+        source "$REPO_ROOT/lib/yaml.sh";    source "$REPO_ROOT/lib/index.sh"
+        source "$REPO_ROOT/lib/cmd-project-coords.sh"
+        _cco_container_operator() { return 0; }
+        _index_assert_readable() { return 0; }      # the read-path guard is S3's lane
+        _env_project_state() { printf '%s' "$state"; }
+        _project_foreach() { return 0; }            # no units → the scan is empty
+        cmd_project_coords "$@"
+    ) 2>&1
+}
+
+test_coords_named_out_of_scope_project_refuses() {
+    local out rc=0
+    out=$(PROJECT_NAME=backend _pc_coords_with_state out-of-scope frontend) || rc=$?
+    [[ "$rc" -eq 2 ]] \
+        || fail "ADR-0056 D1: a hidden named unit must be a policy refusal (exit 2) like its siblings, got rc=$rc: $out"
+    [[ "$out" == *"not available at this access scope"* ]] \
+        || fail "the refusal must speak the shared vocabulary, got: $out"
+    [[ "$out" != *"No url coordinates to check"* ]] \
+        || fail "a hidden unit must never be reported as 'nothing to check' — that is the defect, got: $out"
+}
+
+test_coords_named_unresolved_project_is_an_error_not_silence() {
+    # The other unavailable state: a genuinely unbound unit is a missing dependency
+    # (exit 1, D8), still never "nothing to check".
+    local out rc=0
+    out=$(PROJECT_NAME=backend _pc_coords_with_state unresolved frontend) || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "an unresolved named unit must be an error (exit 1), got rc=$rc: $out"
+    [[ "$out" != *"No url coordinates to check"* ]] \
+        || fail "an unresolved unit must not be reported as 'nothing to check', got: $out"
+}
+
+test_coords_named_available_project_proceeds() {
+    # The counterweight: the gate must not refuse an AVAILABLE unit, or the tests
+    # above would pass against a verb that refuses everything.
+    local out rc=0
+    out=$(PROJECT_NAME=backend _pc_coords_with_state here backend) || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "an available named unit must proceed, got rc=$rc: $out"
+    [[ "$out" == *"No url coordinates to check"* ]] \
+        || fail "with no url-bearing resources the honest empty answer is still correct, got: $out"
 }

@@ -1043,10 +1043,12 @@ extra_mounts:
     ref: v2
     target: /workspace/assets
     readonly: false
+    config_access_policy: write
   - name: local-only
 YAML
-    # readonly is emitted RAW (the consumer applies the true default).
-    assert_equals $'shared-assets\tgit@github.com:org/assets.git\tv2\t/workspace/assets\tfalse\nlocal-only\t\t\t\t' "$(yml_get_mount_coords "$f")"
+    # readonly + config_access_policy (6th field, ADR-0049) are emitted RAW; the
+    # consumer applies the true/ro defaults.
+    assert_equals $'shared-assets\tgit@github.com:org/assets.git\tv2\t/workspace/assets\tfalse\twrite\nlocal-only\t\t\t\t\t' "$(yml_get_mount_coords "$f")"
 }
 
 test_yaml_pack_coords_map_and_authored() {

@@ -1,0 +1,813 @@
+# Cycle-1.1 — fix plan & implementation handoff
+
+> **Input**: [`../results/consolidated-review-v3.md`](../results/consolidated-review-v3.md) — the v3
+> verdict (**NOT ACCEPTED**), its seven roots **R1…R7**, and the ratified decision **D-V3-1**.
+> **Gate**: closing R1–R7 unblocks `develop → main`.
+> **Branch**: `fix/config-access/e2e-v3-cycle1.1` (from `develop` @ `f894245`).
+> **Status**: plan written 2026-07-20. **S1 · S2 · S3 · S4 · S2b-P · S5 · S6 · S2b · S7 landed**
+> (2026-07-20/21), suite **1451/9** — the 9 are the pre-existing host-only artifacts, unchanged
+> set. Next: **S8**.
+> Resume pointer: [`RESUME-HANDOFF-s8.md`](RESUME-HANDOFF-s8.md) — current.
+> [`-s7`](RESUME-HANDOFF-s7.md), [`-s6`](RESUME-HANDOFF-s6.md), [`-s5`](RESUME-HANDOFF-s5.md) and
+> [`-s4`](RESUME-HANDOFF-s4.md) are superseded (kept as history: -s5 §4 carries the reasoning that
+> promoted **S2b-P** ahead of S5).
+
+Cycle 1 fixed the *model*. Cycle 1.1 fixes what only a live container could reveal: **one
+mount-composition defect** (R1) that three sessions hit through three verb families, plus **six
+honesty-of-failure defects** clustered around it. No cycle-1 design decision is reversed. The
+scope is deliberately closed-ended — everything the v3 run classified as cycle-2 stays cycle-2.
+
+---
+
+## 1. Stage map
+
+Stages are ordered by dependency, not by severity. **S1 is the only one that unblocks the 🔴s**;
+S2–S4 must land with it because each would independently survive a perfect mount fix and re-hide the
+next failure of the same class.
+
+```mermaid
+flowchart TD
+  S1["S1 · R1 — STATE shared sub-bucket<br/>mount + migration 017"]
+  S2["S2 · R2 — index write-path error propagation<br/>+ INV"]
+  S2b["S2b · R2 — same propagation for the<br/>host-only index writers (join/init first)"]
+  S3["S3 · R7 — route index writes through store.sh pre-flight"]
+  S4["S4 · R3 — read-path honesty: empty ≠ unreadable"]
+  S5["S5 · D-V3-1 + R5 — remote verbs host-only<br/>+ truthful store refusal"]
+  S6["S6 · R4 — project show → shared resolver"]
+  S7["S7 · R6 — config-editor: announce every drop<br/>+ decide extra_mounts"]
+  S8["S8 — minor + doc debt"]
+  S9["S9 — changelog 47, ADR forward-annotation, living-doc sweep"]
+
+  S1 --> S2 --> S3
+  S2 --> S2b --> S9
+  S1 --> S4
+  S1 --> S5
+  S6 --> S9
+  S7 --> S9
+  S3 --> S9
+  S4 --> S9
+  S5 --> S9
+  S8 --> S9
+
+  S9 --> G["Out-of-session gates:<br/>cco build · V4b · V5b · §7 · D-M6 Linux"]
+```
+
+| Stage | Root | Closes | Blocking? | Status |
+|---|---|---|---|---|
+| **S1** | R1 | V3-01, V5-01, V2-F01 | 🔴 yes | ✅ `517014b` |
+| **S2** | R2 | V3-01 (honesty half) | 🔴 yes | ✅ `4aefc2f` |
+| **S2b-P** | R2 | the two token primitives — **split out and promoted ahead of S5** (2026-07-21, see §6.0) | 🟠 | ✅ `2177858` |
+| **S2b** | R2 | the same class in the host-only writers (not a v3 finding — found while landing S2) | 🟠 | ✅ `be1032c` + `cf9a3e5` + `578e755` |
+| **S3** | R7 | V3-02 | 🟠 | ✅ `582347d` |
+| **S4** | R3 | V2-F02, V2-F03 | 🟠 | ✅ `501567b` |
+| **S5** | D-V3-1, R5 | V5-02, V5-03 | 🟠 | ✅ `9e2496d` + INV-S3b (§6.3 settled); ⚠ 1 host-only edit left (§6.-1) |
+| **S6** | R4 | V2-F04 ≡ V4-F-V4-02 ≡ V5-04, V1-F1 | 🟠 | ✅ `987e38b` + `INV-ENV` |
+| **S7** | R6 | V4-F-V4-01, V5-05 | 🟠 | ✅ `097ef61` (decision (b) ratified; V5-05's prescribed site was dead code — §8) |
+| **S8** | — | V3-03, V4-F-V4-03, V4-F-V4-04, V1-F3, V1-F2, V3-P | 🟡 | ✅ `8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e` (V3-P had shipped in S2) |
+| **S9** | — | release hygiene | — | ✅ `fcfe058` `55dee32` `a06f953` `ad8f68d` — ⚠ 3 host-only `.claude` patches left (§6.-1) |
+
+**What landed, in one line each.** **S1** — STATE crosses via a `state/cco/shared/` directory bind
+instead of file binds; migration `017`; `INV-STATE` pins the allow-list and the shape; also fixed a
+real orphan-scan bug the move surfaced (`cco config validate` scanned the old sidecar paths).
+**S2** — `_index_mktemp` fails loudly, `_index_rename_path` and `cmd-repo.sh` propagate, `INV-IDX`
+lints bare writes, `T-R2` guards the behaviour; V3-P's restart note shipped here. **S3** —
+`_rename_assert_index_writable` probes the second store at its own (elevated) identity, so the
+rename refuses *before* Phase 1. **S4** — `_index_read_state`/`_index_assert_readable`: the read
+side can now tell a failed read from an empty index, and says so at exit 1 in one shared
+vocabulary. **S2b-P** — the two token primitives can now fail: `_remote_token_remove` gains a
+three-valued contract (0 removed / 1 absent / **2 failed**) so a failed revocation is never
+rendered as "No token found", and the three `|| true`s that swallowed the new signal are closed —
+including `cmd-config.sh:303`, which the plan did not list. **S5** — `remote remove|rename` are
+host-only (D-V3-1); the STATE-root probe is gone from `remote-drop/rekey`; the dup-check and the
+store refusal both name conditions that are true and remedies that are reachable. **S6** — `project
+show` asks `_env_project_state` and renders with `_env_unavailable` instead of its own sentence, so
+`not-mounted` stops being reported as a scope problem with a remedy that does not exist at
+read-all; `project validate` gains the shared WORKDIR-root session fallback (V1-F1), so the two
+sibling introspection verbs no longer disagree at `/workspace`; `INV-ENV` pins the class with a
+budgeted five-module exception list. **S2b** — `_yaml_rename_list_ref` gets the three-valued
+contract (closing the project.yml half of `repo rename`, the S1–S3 residual), then every remaining
+index writer propagates: `join`/`init` first (their damage escapes the machine), then the other
+five. `INV-IDX` now covers every module that writes the index from a command body and its
+exemption paragraph is gone. Every guard was adversarially revert-checked against pre-fix code.
+
+> **What S2b's pre-fix runs proved about the class.** S2's primitive already printed *"Cannot write
+> the cco index … Nothing was changed"* — loudly, correctly, at the right moment — and the verb
+> still exited 0 and printed its tick. **The defect was never the message; it was the discarded
+> status.** Worth remembering before "fixing" a future instance by improving its wording.
+
+---
+
+## 2. S1 — the STATE shared sub-bucket (**the blocking stage**)
+
+### 2.1 The constraint that rules out the obvious fix
+
+`lib/cmd-start.sh:1592-1600` states the invariant: *"Secrets stay OFF the container: the 0600 STATE
+remotes-token, transcripts and memory are never mounted (only the STATE index file crosses)."*
+Binding `state/cco` whole — the fix V3 and V5 both proposed — would mount `remotes-token`,
+`projects/<id>/session/memory` and `claude-state` into **every** session at **every** access level.
+Not applicable as stated.
+
+### 2.2 Options considered
+
+| Option | Shape | Verdict |
+|---|---|---|
+| **(i)** in-place rewrite | drop `mktemp`+`mv`; write via `cat > "$f"` so no sibling and no parent is needed | **rejected** — loses write atomicity on the authoritative index; a crash mid-write truncates it. Changes host behaviour too, or forks the code path by environment |
+| **(ii)** bind `state/cco` + mask secrets | reuse `_emit_secret_overlays` (dogfood-verified on `secrets.env`) | **rejected** — flips the boundary from **allow-list** (only the index crosses; fail-safe) to **deny-list** (everything crosses except what someone remembered to mask; fail-open). Any file added under STATE later leaks by default. Unacceptable on a boundary whose ADR is explicitly fail-closed |
+| **(iii)** chown the per-bucket parent | `entrypoint.sh` pre-creates + chowns `state/cco` to `cco-svc` | **insufficient alone** — V3 root cause A′: `mv "$tmpf" "$f"` where `$f` **is** a mountpoint returns **EBUSY** on Linux. Fixes `mktemp`, not the commit |
+| **(iv)** shared sub-bucket | move `index` + the `packs/`/`templates/` sidecars under `state/cco/shared/`; bind that one **directory** | **✅ chosen** |
+
+### 2.3 Chosen design
+
+Introduce `$(_cco_state_dir)/shared/` as the **only** STATE member that crosses the boundary:
+
+```
+state/cco/
+├── shared/              ← NEW. the single STATE bind, rw, directory-shaped
+│   ├── index
+│   ├── packs/<name>/update/{meta,base}
+│   └── templates/<name>/update/{meta,base}
+├── remotes-token        ← never crosses (0600)
+├── projects/<id>/…      ← never crosses (transcripts, memory)
+├── running/             ← unchanged: separate :ro directory bind (ADR-0045)
+└── global/update/…      ← never crosses (no need)
+```
+
+Properties: the **allow-list is preserved** (a new STATE file is unmounted by default — fail-safe);
+all four buckets become structurally uniform (directory binds); the atomic `mktemp`+`mv` pattern in
+`lib/index.sh` needs **no change**; and `mv` no longer targets a mountpoint, so EBUSY is gone.
+
+### 2.4 Work items
+
+1. **`lib/paths.sh`** — add `_cco_state_shared_dir()`; re-point `_cco_index_file` and the pack /
+   template `update/{meta,base}` accessors (`:232-262`) at it. Leave `:53` (`remotes-token`),
+   `:203-209` (session) and `:153-157` (global update) where they are.
+2. **`lib/cmd-start.sh:1643-1656`** — replace the `${state_root}/index` **file** bind with a
+   **directory** bind of `${state_root}/shared` → `/var/lib/cco-internal/state/cco/shared`, rw.
+   Update the block comment at `:1592-1600` to state the new allow-list precisely.
+3. **`config/entrypoint.sh`** — pre-create `/var/lib/cco-internal/state/cco` owned by `cco-svc`, so
+   Docker never materialises a `root:root` intermediate again. This is the general defence the root
+   `CLAUDE.md` / `design-docker.md` §1.2.2 already prescribes and that was never applied per-bucket.
+4. **`migrations/global/017_state_shared_subbucket.sh`** — move `index` and the two sidecar trees
+   into `shared/`. **Must be idempotent** (a machine already migrated is a no-op) and must tolerate a
+   missing source. Bump the global schema version.
+5. **`lib/store.sh:137,140`** — `_store_op_buckets` returns the *shared* dir for `sidecar-purge` /
+   `sidecar-rekey`. The `remote-*` entries are removed entirely by **S5**.
+
+> **Do not** widen the bind to `state/cco`. If a future op needs a new STATE file in-container, the
+> correct move is to place that file under `shared/`, not to widen the mount. Worth an INV in
+> `tests/test_invariants.sh`: *no `_compose_vol` may bind a STATE path other than `shared/` and
+> `running/`.*
+
+### 2.5 Verification (S1 is not self-verifying from a hermetic test)
+
+The hermetic lane **cannot** observe mount-time failures — that blind spot is what let R1 ship green
+(`00-overview.md` §8), and R1 will recur the next time a bucket is bound as a file. Add both:
+
+- **Hermetic**: the INV above (static: which STATE paths may be bound).
+- **Container-lane precondition**: at `cco start`, or as a lane check, assert **the STATE shared
+  bucket parent is writable at the elevated identity** — a real `mktemp`, not `test -w` (whose
+  `access(2)` checks the *real* uid, a false yes under elevation; `rename.sh:174` already documents
+  this trap).
+
+---
+
+## 3. S2 — index write-path error propagation
+
+Three suppressions stack (`consolidated-review-v3.md` §4/R2). All three need closing; fixing only
+one leaves the failure silent.
+
+1. `lib/index.sh:715-731` `_index_rename_path` — propagate status from `_index_pp_set`,
+   `_index_pp_remove` and `_index_set_project_repos`; return non-zero on any failure.
+2. `lib/cmd-repo.sh:157` — `_index_rename_path … || die "…"`, and gate the `ok "Renamed …"` at `:165`
+   on success. Model the wording on `lib/tags.sh:75`, which already does the honest thing.
+3. **The general hazard** — `bin/cco:657-658` puts the whole command body in a `||` context, which
+   **disables `errexit` for the entire call tree**. This is not repairable at the dispatcher without
+   losing the rc capture, so **explicit `||` propagation is the only reliable mechanism** in every
+   verb reached that way. Record it as an invariant with a lint, in the same spirit as the
+   `lib/store.sh` CLASS lint: *inside a `cmd_*` body reached via `|| _cco_rc=$?`, a store/index write
+   must be `||`-checked.*
+
+Audit the other `_index_*` writers (`lib/index.sh:70,104,175,209,315,373,412`) for the same
+unchecked-status shape while here — V3 found the rename path, but nothing suggests it is unique.
+
+---
+
+## 3b. S2b — the same propagation for the host-only index writers
+
+> **✅ LANDED** in three commits, one per work item: `be1032c` (the primitive —
+> `_yaml_rename_list_ref`, closing the project.yml half of `repo rename`), `cf9a3e5`
+> (`join`/`init`), `578e755` (the remaining five modules + `_index_rename_project`, and
+> `INV-IDX` widened to the full set).
+>
+> **Two things the design did not anticipate.** (1) `lib/index.sh` cannot join `INV-IDX`'s
+> `scoped` list: it is the writer layer itself, where a call in TAIL position **is** the
+> propagation (`_index_set_path() { _index_pp_set …; }` is correct precisely because the status
+> becomes the return), and the lint's form cannot distinguish that from a discarded status. Its
+> two chaining cascades carry explicit propagation instead. (2) `cco resolve --scan` is the one
+> verb that must NOT die on the first failure — it is a best-effort sweep over many units, so it
+> counts failures, reports them, and exits non-zero at the end. Item 4's *"consider a sibling lint
+> for the primitive shape itself — a mutation helper whose tail statement cannot return non-zero"*
+> was **not** taken: after (1), tail position is exactly where a correct helper puts its status,
+> so that lint would have to encode the opposite rule to INV-IDX's. Left for FI-24 if the update
+> engine's audit still wants it.
+
+**Not a v3 finding.** It surfaced while landing S2: once `INV-IDX` existed, running it
+unscoped showed ~15 bare index writes across seven host-only modules — `cmd-init.sh:390-391`,
+`cmd-join.sh:169-170`, `cmd-resolve.sh` (5 sites), `cmd-forget.sh:203`,
+`cmd-project-export-import.sh:216-217`, `cmd-project-add.sh:210`, `local-paths.sh:500`,
+`migrate.sh:1045`. Every one is the V3-01 shape: write the index, then announce success
+unconditionally.
+
+**Why it was scoped out of S2, and why that was half right.** The *probability* is genuinely
+lower on the host — the bucket parent is normally writable, so the failure needs an anomaly:
+a STATE tree left root-owned by an earlier `sudo cco …` (the realistic one — it is a common
+instinct after a permission error), `ENOSPC`, a quota, or a home on a mount gone read-only.
+`_cco_ensure_dir` (`paths.sh:429`) does not protect: it creates a missing directory but
+passes straight through an existing unwritable one, and its status is unchecked anyway.
+
+But probability is the wrong sole criterion. The right one is probability × **consequence** ×
+detectability, and on two of these verbs the consequence is *higher* than the container bug
+while detectability is equally nil:
+
+| Verb | What the user is told | What is actually true | What they hit later |
+|---|---|---|---|
+| `cco init` | `✓ Scaffolded …` **+ "registered it in the index (1 repo)"** — a sentence asserting the very write that failed | `project.yml` written, index empty | `cco start <name>` → *"is not resolvable yet — run 'cco resolve --scan'"*, i.e. the tool contradicts itself one command later |
+| `cco join` | `✓ Joined '<p>' as member '<r>'` + the commit/push reminder | `project.yml` re-keyed in **every** synced member repo, index unbound | the user **commits and pushes** a config declaring a member no index binds — the blast radius leaves the machine and reaches teammates on pull |
+
+`join` is the reason this cannot stay a comment: v3's V3-01 damaged one session; this
+damages a versioned, distributed artifact.
+
+**Why it is still its own stage rather than part of S2.** Seven modules, and each site needs
+a real behavioural decision, not a mechanical `|| return 1`: a verb that used to complete now
+dies, and — exactly as in `cmd-repo.sh` — the message has to say *which* store already
+changed, because the first write (`project.yml`, potentially across several repos) has
+already landed. That is a stage with tests, not a footnote.
+
+### ⚠ Re-scoped 2026-07-21 after a codebase-wide audit — read that first
+
+Per the `roadmap-backlog.md` convention (re-derive an item's real boundary before designing it),
+S2b was audited across the whole `lib/` tree before implementation. The boundary is **larger and a
+different shape** than "add `||` to 15 call sites". Full report:
+[`../../../../engineering/analysis/false-success-class-audit.md`](../../../../engineering/analysis/false-success-class-audit.md).
+
+**The finding that changes the fix shape: several primitives cannot report failure at all**, so a
+check at the call site is inert. Three verified by direct reading:
+
+- `_remote_token_set` (`cmd-remote.sh:16-27`) — last statement is `if ! chmod …; then warn; fi`,
+  which yields 0 on both paths, so the function **always returns 0**. This voids the correctly
+  written `store.sh:370` `… || return 1`.
+- `_remote_token_remove` (`cmd-remote.sh:30-37`) — bare `mv`, then an explicit `return 0`. Voids the
+  correctly written `cmd-remote.sh:295` `if ! _remote_token_remove`.
+- `_yaml_rename_list_ref` (`rename.sh:66-72`) — `mv "$tmp" "$file"` then unconditional `return 0`.
+  Voids `rename.sh:230`'s `if _rename_yaml_write_owned …; then` for the `mv` case.
+
+So S2b is **two-layered, and the order matters**: (1) make the primitive capable of failing, (2)
+then add/verify the call-site check. Doing (2) first yields an audit that reads as closed while the
+defect persists — which is the state those three call sites are in today.
+
+**Honest limit on what S1–S3 shipped.** They closed the **index** half of `repo rename`. The
+**project.yml** half retains a narrower form of the same defect through `_yaml_rename_list_ref`.
+S3's pre-flight mitigates the dominant cause (an unwritable tree) but probes only the **cwd unit's**
+`.cco`, so a multi-repo fan-out where a *different* member is unwritable, or an `ENOSPC` mid-write,
+still reports that repo as rewritten. Closing this is part of S2b, not a separate discovery.
+
+**Work items**, priority order:
+
+1. **Primitives first** — `_yaml_rename_list_ref` (inside the rename boundary S1–S3 just touched),
+   then `_remote_token_set` / `_remote_token_remove` (**S5 depends on these**: D-V3-1 makes
+   `remote remove|rename` host-only, but `store.sh:370`'s guard is inert on the **host** too, so
+   the token primitive must be fixed regardless).
+2. **`cmd-join.sh`** and **`cmd-init.sh`** — the two `_index_*` sites whose consequence escapes the
+   machine. Same shape as `cmd-repo.sh`: check, `die` naming the store that changed and the recovery.
+3. The remaining `_index_*` modules (`cmd-resolve.sh` ×5, `cmd-forget.sh`,
+   `cmd-project-export-import.sh`, `cmd-project-add.sh`, `local-paths.sh`, `migrate.sh`).
+4. **Widen `INV-IDX`'s `scoped` list as each module is closed**, so the lint tracks the work instead
+   of documenting a permanent exemption. When it covers all seven, drop the "host-only writers are
+   out of scope" paragraph from the invariant's header. Consider a sibling lint for the primitive
+   shape itself — *a mutation helper whose tail statement cannot return non-zero*.
+5. A behavioural guard per high-value verb, modelled on `T-R2`
+   (`test_repo_rename_operator_unwritable_index_fails_loud`): unwritable target → non-zero, no
+   success tick, message names the store, store provably untouched.
+
+**Out of S2b's scope**, tracked as **FI-24**: the update engine (A1–A6 — no file-mutating call in
+`update*.sh` has its status checked), `pack`/`template publish` (B1–B3, incl. the bare `git commit`
+whose `|| die` on `push` is structurally unreachable), and the local-destructive set. Those are a
+separate workstream; cycle 1.1 must not grow into them.
+
+## 4. S3 — route index writes through the RC-3 pre-flight
+
+`grep -n 'store-op' lib/index.sh` → **no hits**: the index writers bypass `lib/store.sh` entirely, so
+D-M8's **Q-11** is half-landed (the verb trampolines; its index writes do not). Consequence: the
+fail-closed probe `_rename_assert_writable "$unit/.cco"` (`lib/rename.sh:174`, from
+`cmd-repo.sh:143`) guards the **config** tree — which is writable — and never probes the tree that
+fails.
+
+Two acceptable shapes; **prefer (a)**:
+
+- **(a)** extend `_rename_assert_writable` to probe **both** trees — the config tree *and* the STATE
+  shared bucket — at the same identity, before Phase 1. Cheap, local, no re-plumbing.
+- **(b)** complete Q-11: route `_index_rename_path` through a `store-op` plan/apply crossing so it
+  inherits `_store_plan`'s probe (`store.sh:188`) for free. Cleaner, larger, and it changes the
+  index write path — which S1 and S2 are already touching.
+
+> **✅ LANDED as (a)** (`582347d`) — `_rename_assert_index_writable` in `lib/rename.sh`, called
+> alongside its sibling from `cmd-repo.sh`. **(b) / Q-11 remains open** and is deliberately not
+> residue: it buys the same guarantee for a much larger change to a write path S1+S2 had just
+> rewritten, and chaining them would have made the revert-checks impossible to attribute.
+>
+> ⚠ **The identity is INVERTED between the two probes, and this is the part to not "simplify" later.**
+> The project.yml write is de-elevated to ruid=claude (D-M4) → its probe goes through
+> `_rename_deelevated`. The index write is **not** — the verb trampolines wholly and `lib/index.sh`
+> writes at euid=cco-svc → its probe uses a plain `mktemp` at the current identity. De-elevating the
+> index probe would test `claude` against a `cco-svc`-owned bucket and refuse **every** legitimate
+> rename; elevating the config probe would pass on a tree the real write cannot touch.
+>
+> **Layering with S2** (pinned by `T-R2` assertion (e)): S3 makes the failure *not happen* — the
+> refusal lands before Phase 1, so both stores are untouched. S2 makes it *loud and recoverable* if
+> the probe ever passes and the write still fails (a race, or a condition the probe cannot see).
+> Both paths stay; neither is redundant.
+
+Whichever lands, note **V3-02's second half**: on macOS `fakeowner` ignores modes for container uids,
+so the refusal branch is **unfalsifiable there** (`chmod 500 .cco && mktemp .cco/.x.XXXXXX`
+succeeded). Criterion F cannot be signed off from a macOS run — see §10.
+
+---
+
+## 5. S4 — read-path honesty: empty ≠ unreadable
+
+`lib/cmd-resolve.sh:869` gates the "empty" message on `count -eq 0 && hidden -eq 0`, a correct
+discriminator for *empty-vs-all-hidden* but with **no third arm for "the read failed"**. A zero-byte,
+permission-denied or stranded index all render as success.
+
+1. Add the third arm: an unreadable/unparseable index is an **error, exit 1, with the real reason**
+   (`00-overview.md` §5.2). Never rc=0.
+2. **Remove the retired vocabulary.** That line still emits `run 'cco resolve'` — the exact string
+   RC-2 claims to have retired, from a path cycle 1 never audited. Route through
+   `_env_unavailable_sentence` (`access-scope.sh:736`) or an equivalent shared string.
+3. `cco list projects` degrades even more quietly (a bare header, no message). Same treatment.
+4. **V2-F03** — surface the staleness rather than only failing honestly on read. A cheap `stat`-based
+   liveness check at verb entry, or a line in `cco whoami`, converts a silent wrong answer into a
+   loud one. S1 removes the *cause*, but a file-shaped bind may return elsewhere; this is the
+   detector.
+
+> **✅ LANDED** (`501567b`). `_index_read_state` (ok | absent | unreadable | truncated | stale) with
+> `_index_assert_readable` as the fail-closed entry guard and one shared sentence per non-benign
+> state. Three points worth not re-deriving:
+>
+> - **`absent` is benign, `truncated` is not.** A legitimately empty index is never 0 bytes —
+>   `_index_ensure_file` always writes a header, a version line and the four section keys — so 0
+>   bytes is an interrupted write, not "nothing registered". The probe **opens** the file rather than
+>   using `test -r`, whose `access(2)` answers for the *real* uid (the `rename.sh:174` trap).
+> - **The vocabulary rule is contextual, not a ban.** On the host `cco resolve --scan` IS the correct
+>   remedy and stays; only in a session — where the operator gate refuses `resolve` — must it not
+>   appear. Both arms are asserted, so deleting the phrase everywhere would fail the guard.
+> - **Item 4 went to verb entry, not `whoami`.** `cmd-whoami.sh` states it does no filesystem probing
+>   and runs de-elevated, so it cannot reach the index behind the ADR-0047 boundary at all; a liveness
+>   line there would need a `store-op` crossing. The `stale` arm (nlink 0) fails **safe** — no answer
+>   from `stat` is no evidence, never a failure — and its positive case needs a real mount, so the
+>   hermetic test mocks `stat` on PATH and the kernel side rides the **V2 re-run** in §10.
+>
+> Scope note: beyond the two surfaces §5 names, the guard also lands on the compact `cco list` (an
+> unreadable index drops every project row while packs/templates still list — plausible, not empty)
+> and on `cco config validate`, whose silent answer was *"bookkeeping is clean"* to the very question
+> being asked. In `cmd_list` the guard sits in `cmd_list`, **not** in `_list_collect`: that runs in a
+> process substitution where `die` exits only the subshell — the shape this stage exists to close.
+
+---
+
+## 6. S5 — D-V3-1: remote verbs host-only, and a truthful store refusal
+
+### 6.-1 ⚠ WORK ITEMS BLOCKED IN-SESSION — must be applied on the host
+
+> **S9 completed the sweep this section asked for (2026-07-21).** It found **two more**
+> `.claude`-payload edits this cycle owes, listed as patches **2** and **3** below. All three are
+> blocked by the same `:ro` clamp (re-verified this session: `defaults/managed/.claude/rules/`
+> `cco-config-interaction.md` and `internal/config-editor/.claude/CLAUDE.md` are both
+> non-writable while their non-`.claude` siblings are writable). `defaults/global/.claude/` and
+> `templates/project/base/.claude/` were checked and need **nothing** — grepped for the verbs and
+> surfaces this cycle changed; the only `extra_mounts` hits are in
+> `defaults/managed/.claude/skills/init-workspace/SKILL.md`, which is about `project.yml`
+> descriptions, not about what config-editor mounts.
+
+S5's four code items landed, but the **managed rule** `defaults/managed/.claude/rules/`
+`cco-config-interaction.md` §"Host-only verbs (any level)" still lists only
+`cco remote set-token|remove-token` and must gain `remove|rename`. **Every `.claude` tree is
+mounted `:ro` in a session** (ADR-0049 — `claude_access` read-only by default; verified:
+`defaults/managed/` is rw but `defaults/managed/.claude/` is not), so this edit is **host-only**.
+Until it is applied, the rule injected into every future session under-reports the host-only set.
+
+The same constraint applies to anything else this cycle needs in `defaults/managed/.claude/` or
+`defaults/global/.claude/` — fold the check into **S9**'s doc sweep, and run that part on the Mac.
+
+**Why it is blocked is itself a finding**, recorded as **FI-25** in `roadmap-backlog.md`: the clamp
+is the nested-`.claude` sweep (`_find_nested_config_dirs`, `cmd-start.sh:507`), which is correct for
+a normal project's authoring trees but also catches cco's OWN shipped `.claude` payload —
+`defaults/managed/`, `defaults/global/`, `templates/project/base/`, `internal/*/` are tool SOURCE,
+not authoring trees. So this is an unrecorded side-effect of ADR-0049 on the self-development case,
+not a policy decision about this file. **Workaround for a self-dev session that needs it:**
+`--claude-access all` (FI-25 option (d)).
+
+**Patch 1** — `defaults/managed/.claude/rules/cco-config-interaction.md`, §"Host-only verbs (any
+level)". Replace `cco remote set-token|remove-token` in that paragraph with:
+
+```
+`cco remote set-token|remove-token|remove|rename` (D-V3-1: the last two cascade
+into the 0600 token store, which never crosses into a session — unmounted, cco
+cannot tell "no token" from "token invisible", so both would silently orphan the
+token; `cco remote add` stays available, it writes only the url registry).
+```
+
+**Patch 2** — *the same file, a second stale spot S9 found.* Its §"Editing config" bullet
+*"Mutate framework-internal state only via `cco`"* ends by prescribing
+`` `cco tag …`, `cco remote add|remove`, `cco pack|template|llms …` ``. After D-V3-1
+`remote remove` is host-only, so that line now tells every future agent to reach for a verb the
+session will refuse — the **false-remedy** class `INV-ENV` exists to prevent, in the document that
+teaches the model what to reach for. Narrow it to the verb that still runs in-session:
+
+```
+`cco tag …`, `cco remote add`, `cco pack|template|llms …` instead (`cco remote
+remove|rename` are host-only — see below).
+```
+
+⚠ Patches 1 and 2 are **one edit to one file** and should land together: patch 1 alone leaves the
+rule self-contradictory (host-only in one paragraph, prescribed in another), which is worse than
+the under-reporting it fixes.
+
+**Patch 3** — `internal/config-editor/.claude/CLAUDE.md`, the **project mode** bullet. S7's
+decision **(b)** is the built-in's own mount contract and is currently documented only in the
+design doc and (as of S9) `cli.md`; the file that tells the config-editor agent what it has does
+not state it. Append to that bullet:
+
+```
+A target's `extra_mounts:` are **never** mounted here (config-editor authors
+config; they are reference material) — `cco start` announces each one instead.
+Do not treat an announced extra_mount as reachable: `cco path list` prints its
+host path, but nothing is bound at it in this session.
+```
+
+The last sentence is the load-bearing one: the announcement exists *because* `path list` makes
+those bindings look live, so the agent reading this rule is exactly the reader who would otherwise
+be misled.
+
+### 6.0 ⚠ Amended 2026-07-21 — S2b's token primitives must land FIRST
+
+§1 originally ordered S5 ahead of S2b ("S2b blocks nothing"), while the stage table flagged *"S5
+depends on the token primitive"*. Reading the code resolves the tension **against** the original
+order, on three grounds — the third being a correction to §6.2 item 2 itself:
+
+- S5 does **not** need the primitive for its own correctness: all four work items below are
+  independent of whether `_remote_token_set` can report failure.
+- But S5 makes the defect **invisible to the acceptance matrix**: after D-V3-1 the verbs run only on
+  the host, while every v3/v3.1 e2e session runs in-container. The silent token-orphan stops being
+  reachable by the probes that would catch it, and stays fully live for the user.
+- **Item 2 removes a guard that still stands over a live host write path.** Dropping
+  `remote-drop`/`remote-rekey` from the STATE entry of `_store_op_buckets` is justified below as
+  *"they no longer run in-container"* — true, and the conclusion does not follow.
+  `_cco_remotes_token_file` is `$(_cco_state_dir)/remotes-token`, the STATE **root** (S1 deliberately
+  left it outside `shared/` — 0600 auth never crosses), and on the host
+  `_store_do_remote_drop`/`_store_do_remote_rekey` still write it via the token primitives. So the
+  ops keep touching the STATE root; removing it from the probe list while the primitive underneath
+  **cannot report its own failure** strictly widens the silent-failure window on the host.
+
+**Therefore**: land the two token primitives (`_remote_token_set`, `_remote_token_remove` — §3b work
+item 1) as **S2b-P** first. With the cascade able to fail honestly, item 2 becomes safe: it no longer
+leans on a coarse root probe. The reorder is deliberately **surgical** — the rest of S2b
+(`_yaml_rename_list_ref`, `cmd-join.sh`/`cmd-init.sh`, the remaining `_index_*` modules) stays after
+S5/S6.
+
+**Reconcile while here**: `lib/store.sh:136-139` already comments *"Both verbs are host-only
+in-container (D-V3-1, bin/cco)"* while `bin/cco:403` still routes `remove|rename` through
+`_op_write`. The comment is **ahead of the code** — a reader today would believe D-V3-1 shipped.
+Item 1 closes the gap.
+
+### 6.1 The decision (ratified in the consolidated review §3)
+
+`cco remote remove` and `cco remote rename` are **host-only in-container**, refused **exit 2** with
+the existing host hint. `cco remote add` stays functional.
+
+Rationale in brief — full argument in the review: `bin/cco:404` already refuses `remote
+set-token|remove-token` for *"secrets stay off the container"*, and these two verbs mutate the **same
+token store** (`store.sh:347`, `:361-364`); and because the token never mounts, `remote_get_token`
+cannot distinguish *"no token"* from *"token invisible"*, so both ops — written as conditional no-ops
+on exactly that test — would **pass silently**, with `remote-rekey` orphaning the token and stripping
+the renamed remote's auth without a diagnostic.
+
+### 6.2 Work items
+
+1. **`bin/cco:404`** — extend the existing refusal to `remote remove|rename`. Keep the wording family
+   (*"secrets stay off the container"*) and exit **2**, not 1.
+2. **`lib/store.sh:137,140`** — drop `remote-drop` / `remote-rekey` from the STATE bucket list; they
+   no longer run in-container. ⚠ **Only after S2b-P** — see §6.0: their *host* path still writes the
+   STATE root through the token primitives, so this is safe only once those can fail honestly.
+3. **V5-03** — the dup-check in `cmd-remote.sh` currently says *"Remove it first with `cco remote
+   remove <name>`"*, a command that is now explicitly host-only. Make it name the **host** remedy.
+4. **R5 / V5-02** — `lib/store.sh:243-245` must distinguish two conditions that today share one false
+   string (*"the store is not writable in this session"*, which is demonstrably false at `edit-all`):
+   - **scope refusal** — the session's triple does not grant `G=rw` → exit **2**, name the axis.
+   - **not bound in this container** — the bucket is not mounted → D-M2's *"not mounted in this
+     session"* vocabulary + a host remedy. This is the state `project validate` already speaks
+     correctly; reuse that string, do not write a fourth spelling.
+
+### 6.3 ✅ SETTLED 2026-07-21 — INV-S3b: the exit code follows the FAILURE'S NATURE
+
+S5 first shipped item 4 at exit **2** (applying D8, *session-shape → refuse 2*), which the full
+suite refuted: `lib/store.sh`'s **INV-S3** pins exit **1**, with 8 guards in `test_store_writes.sh`.
+The fix was reverted to 1 inside S5 — and that, on review with the maintainer, was **also** only
+half right. Both readings were partial:
+
+- **D8 alone** ("session shape → 2") ignores that a write which *started and failed* is a real error.
+- **INV-S3 alone** ("store failure → 1") ignores that a **pre-flight** refusal is a session-shape
+  fact, knowable before any mutation, whose remedy is "run it on the host".
+
+**The discriminator is `pre-flight` vs `write`, crossed with `session` vs `host`** — not which
+module or which store. Ratified:
+
+| Condition | Code |
+|---|---|
+| in-session **pre-flight** refusal (the bucket is not bound into this container) | **2** |
+| host **pre-flight** refusal (no session shape in play — a genuinely unwritable bucket) | **1** |
+| a write that **started and failed** (`_store_apply`), anywhere | **1** |
+
+This governs `store.sh`'s `_store_unwritable_refuse` **and** `rename.sh`'s two pre-flight probes
+(`_rename_assert_writable`, `_rename_assert_index_writable`), so `repo rename` answers with one
+voice whichever half refuses — resolving S3's *"both halves move together"* note. The answer turned
+out to depend on session-vs-host, not on which store is probed, which is why neither half of the
+old framing could reach it.
+
+Recorded as **INV-S3b** in `lib/store.sh`'s header, with an explicit warning not to re-derive it
+from D8 or INV-S3 alone. Cost paid: 6 in-session write-arm assertions in `test_store_writes.sh`
+moved 1 → 2. The reach-arm (opaque 000) and host-arm cases keep 1 and were not touched.
+
+---
+
+## 7. S6 — one predicate, one spelling
+
+> **✅ LANDED `987e38b`.** All three items shipped as designed. One thing the design did not
+> anticipate, recorded here because it shapes the lint: the vocabulary appears in **five other
+> modules**, and none of them is a violation — each owns a *different* predicate (a store bucket's
+> writability in `store.sh`/`rename.sh`, config-editor's mount-drop in `cmd-start.sh`, the path-list
+> hidden **count** in `cmd-resolve.sh`, an **aggregate** over member repos in
+> `cmd-project-rename.sh`), spelled once, in one owning function. So `INV-ENV` is an allow-list with
+> a **per-module budget** rather than a flat ban: the budget is a ceiling, so deleting a spelling
+> never fails the guard and adding one always does, and raising a budget has to be argued in the
+> lint's header. `cmd-resolve.sh`'s entry is the one to watch — it says `read-all` where the shared
+> notice says `read-global`, which is the *correct* wording for path entries (other projects need
+> Po≥ro) and therefore evidence the **shared** notice is the stale one. That reconciliation is
+> V4-F-V4-03 / Q-C3, still open.
+
+`lib/cmd-project-query.sh:192` hardcodes a scope-widening remedy and bypasses the shared resolver.
+`lib/access-scope.sh:736` (`_env_unavailable_sentence`) is already correct at **every** level,
+including `edit-all` where no widening exists.
+
+- Replace the hardcoded branch with the shared sentence. This closes **V2-F04 ≡ V4-F-V4-02 ≡ V5-04**
+  in one edit — three sessions, three vantages, one call site.
+- **V1-F1** (adjacent, same area): bare `cco project validate` at `/workspace` does not resolve the
+  session's project, while `cco project show` does (it has the R4 WORKDIR-root fallback). `/workspace`
+  is the agent's default cwd, so two sibling introspection verbs disagree about whether the session
+  has a project. Give `validate` the same fallback.
+- Add an invariant/lint: **no verb may spell an availability state locally** — the three states come
+  from `access-scope.sh` or nowhere. This is the class RC-4 was created to eliminate (*"one predicate,
+  four spellings, one of which drifted"*), and it has now recurred twice.
+
+---
+
+## 8. S7 — config-editor announces every drop ✅ `097ef61`
+
+> **Landed 2026-07-21.** Both items closed; decision (b) ratified with the maintainer and
+> recorded in [`../fix-design-v2/03-config-editor-repos.md`](../fix-design-v2/03-config-editor-repos.md)
+> §3.9.1, whose drop-case table now enumerates both new classes. Suite **1451/9** (4 new guards,
+> baseline fail set unchanged name-for-name).
+>
+> **What this design did not anticipate — item 1's fix site is dead code.** The prescription below
+> ("route the `--all` branch's bare `continue` through `_ce_skip_note`") targets a test that can
+> **never be false**: `_project_foreach` yields a project only when `<unit>/.cco/project.yml` is a
+> file, and `_resolve_unit_dir_for_project` asserts the same before it, so `[[ -d "$path/.cco" ]]`
+> is implied by the time the collector runs. Had it been implemented as written, S7 would have
+> shipped a fix that reads correct, passes a hand-built fixture, and **never fires** — the
+> announcement would have stayed missing while the stage was marked closed. It was caught by
+> writing the guard first and watching it fail *with the fix in place*.
+>
+> The real drop is one function upstream, in `_project_foreach`'s own conscious-skips. Those are
+> correct there and must stay silent: the iterator is shared by many verbs and must not learn
+> config-editor's vocabulary. So the announcement is built the way `_ce_collect_target_repos`
+> already builds it for a target's repos — a **declared-vs-effective diff**
+> (`_index_list_projects` minus what `_project_foreach` yielded) computed in the config-editor
+> collector. The `-d` test is kept as an *announcing* backstop rather than deleted, so a future
+> relaxation of `_project_foreach`'s contract surfaces instead of silently shrinking the set.
+>
+> **The generalisation.** S2's lesson was *the defect was never the message, it was the discarded
+> status*. S7's is its sibling one layer out: **a fix at a site that cannot execute is
+> indistinguishable from a fix, until something makes it run.** The plan's line numbers were stale
+> (it says so), but the deeper trap was that the *reasoning* was stale — the `continue` really was
+> the drop when the finding was written. Locating a site by name is not enough; the next stage
+> should assert the site is **reachable** before treating it as the fix.
+>
+> Two smaller things: `_ce_skip_note` needed a `<kind>` noun (neither new drop is a repo, and the
+> hardcoded "repo '<n>'" would have made both messages lie), and the member probe had to go through
+> `_cco_member_probe_path` — `INV-F` caught the direct `-d` on an index host path, correctly, and
+> the sanctioned helper was the fix rather than an allow-list entry.
+
+### 8.0 The design as written (kept for the record)
+
+1. **V5-05** — `lib/cmd-start.sh:776-780`, the `--all` branch: `[[ -d "$path/.cco" ]] || continue` is
+   a bare `continue`. Route it through `_ce_skip_note` (`:585-598`), which the sibling repo path
+   already uses and which speaks the right vocabulary. One index-known project was dropped from 8
+   with no announcement on any in-container surface.
+2. **V4-F-V4-01** — `_start_collect_config_editor_targets` (`:759-800`) never consults the target's
+   `extra_mounts:`. This needs a **decision before code**:
+   - **(a)** mount them, like the target's repos (RC-6's shape), or
+   - **(b)** decide config-editor never mounts a target's extra_mounts, and **announce** them as
+     not-mounted via `_ce_skip_note`.
+
+   **Recommendation: (b).** config-editor exists to author *config*; a target's extra_mounts are
+   reference material for a working session, not authoring surface, and mounting them widens the
+   built-in's blast radius for no authoring gain. What is not acceptable is the current state —
+   neither delivered nor decided, while `cco path list` prints both bindings as live host paths and
+   implies they are reachable. Record the decision in `03-config-editor-repos.md` §3.9 (whose
+   drop-case table does not currently enumerate this class).
+
+---
+
+## 9. S8 — minor findings and doc debt ✅ `8843680` `221d8fb` `16a129b` `535a99b` `a1e4c5e`
+
+> **Landed 2026-07-21.** All five open items closed (V3-P had already shipped in S2). The three
+> judgement calls were put to the maintainer as options and all three were taken: move the V3-03
+> guard, take V1-F2 now, and take V4-F-V4-03 here rather than in cycle-2. Suite **1451→1463/9**
+> (12 new guards, baseline fail set unchanged name-for-name).
+>
+> **What this design did not anticipate — V3-03 is the smaller half of its own finding.** The
+> finding reads as "the designed message is unreachable at the WORKDIR root", and the fix for that
+> is the ambiguity arm now in `_rename_index_keyed`. But the reason it is unreachable generalises
+> past the bare form: `$unit` comes from `_resolve_find_unit_dir`, a walk up from cwd for
+> `<dir>/.cco/project.yml`, and a project's committed config lives in exactly ONE repo. So in a
+> session the verb runs **only from the hosting repo's mount** — and the *fully-specified* 2-arg
+> form, which has no ambiguity at all, dies at the WORKDIR root advising the user to "pass
+> `<old> <new>`", which they just did. That is the sharper half, and it is **not** what Q-6
+> governs.
+>
+> It was deliberately not folded in: the fix is to resolve `$unit` from the SESSION's project
+> rather than from cwd, which means routing `_resolve_unit_dir_for_project` through
+> `_cco_member_probe_path` (its index host paths can never be existence-tested in-container —
+> INV-F), inside a fail-closed pre-flight. That wants its own design pass. Recorded as **FI-26**,
+> with the note that `_resolve_find_unit_dir` has nine other callers and that `project show` /
+> `project validate` already route around it via `_project_session_fallback` (S6/R4) — i.e. the gap
+> is being closed piecemeal and should be enumerated before it is designed.
+>
+> **The consequence for V3-03's own message.** Because the 2-arg form also fails at the root, the
+> ambiguity arm must NOT advise it — that would print a remedy which cannot be followed from where
+> it is printed. This is S7's trap inverted: not a fix at an unreachable site, but a **remedy
+> pointing at an unreachable action**. A guard pins it (`must not advise the 2-arg form`), so the
+> constraint survives FI-26 being fixed later.
+>
+> **Two smaller things.** V4-F-V4-03's first implementation *passed* its own assertion while
+> failing the test, because the explanatory clause it added spelled `read-global` while arguing
+> that read-global is the wrong remedy — the message was tightened rather than the assertion
+> loosened. And V1-F2 could not reuse `_effective_extra_mounts`: it does not emit the logical
+> name (it is compose input) and it conscious-skips unresolved mounts. That skip is right for
+> generating a bind and wrong for introspection, so `project show` reads the declarative source and
+> announces `[unresolved]` — S7's "announce every drop", one verb over.
+>
+> **Carried to S9**: V1-F2 and V1-F3 are both user-visible additive changes, so changelog **47**
+> must cover them (`.claude/rules/update-system.md`); V1-F3's VALUE is unverifiable in-session and
+> rides the §10 gate.
+
+| Item | Action |
+|---|---|
+| **V4-F-V4-04** | `00-overview.md` §9 **D-M9/Q-8** ("the duplicate authoring path is accepted") contradicts the implemented and separately ratified `03-*` §3.7. The implementation is correct and strictly safer; the **record** is stale. Add *"Superseded by `03-config-editor-repos.md` §3.7"*, following the precedent D-M11 already set |
+| **V3-03** | The Q-6 ambiguity refusal is unreachable at the WORKDIR root — `_resolve_find_unit_dir` fails first at `cmd-repo.sh:49`. Safety holds (no single-repo fallback); only the reachability of the *designed* message is wrong. Either move the guard or record that Q-6 is satisfied by an earlier one |
+| **V4-F-V4-03** | `cco list projects` notice leads with `read-global`, which reveals none of what it hid. One-line ordering fix; **cycle-2 (Q-C3)** unless it is free to take here |
+| **V1-F3 ≡ V5-8** | No build provenance in-container, so no session can fill the §4 template's *"Image built from"* field — the field that exists **because** v2's cycle-0 built from the wrong branch. Bake `/opt/cco/BUILD` with branch + short sha, making launch rule 0 self-verifying |
+| **V1-F2** | PROPOSAL — `cco project show` has no extra_mounts section (as-specified per `cli.md:930-941`), which makes `path list` the only in-container surface enumerating them **by logical name** — the key for `cco path` / `extra-mount rename`. Worth adding; not a bug |
+| **V3-P** | PROPOSAL — becomes user-visible **the moment S1/S2 land**: a *successful* repo rename leaves the session's bind at the old path while both stores say the new name, so the member classifies `not-mounted` for the rest of the session. `cmd-repo.sh:168` prints a path-change note for `extra_mount` only; the **repo** case needs it more. Ship this **with S2**, not after |
+
+---
+
+## 10. Out-of-session gates (host, in order)
+
+Cycle-1.1 is not acceptable on a green suite alone — three of these were never executed at all.
+
+1. **`cco remote remove v5probe`** — V5 residue on the maintainer's machine (§8 of the review). Do
+   this first; it is unrelated to the fix but the store is currently grown by one entry.
+2. **`cco build` from the cycle-1.1 tip**, then re-run the affected sessions.
+3. **V4b — the D-M11 escalation test** (`--cco-access global=rw,current=ro,others=none` ⇒ target
+   `.cco` **ro**). ~5 minutes, and it is the **highest-value remaining run**: every other v3 probe
+   fails *safe* if the fix is wrong; this one fails **open**.
+4. **V5b — bare global** `(rw,none,none)`: honest-empty `path list` + notice, and the ADR-0048
+   inert-no-target guard.
+5. **§7 / E6B-04** — the pack-rename fan-out atomicity gate, **still never executed**. Now unblocked
+   by S1. Use the substrate V5 identified: `cave-core` is referenced by two mounted projects, which
+   is exactly §7's fan-out shape — no scratch projects needed.
+6. **D-M6 Linux write-path check-in** — now a **hard gate**, not a follow-up: `fakeowner` makes the
+   fail-closed pre-validation unfalsifiable on macOS (V3-02), so criterion F cannot be signed off
+   from a macOS run.
+7. **From S8/V1-F3 — verify the provenance VALUE, not just the row.** After the `cco build` in
+   gate 2, run `cco whoami` in a session and confirm `image built from:` reads the cycle-1.1 branch
+   and tip sha, **and** that it matches what you actually built. The hermetic suite can only pin the
+   row and its `unknown` fallback; the value is exactly the thing that was wrong in v2's cycle-0, so
+   it is worth the ten seconds. ⚠ Do this BEFORE the V3/V5 re-runs — it is what makes their results
+   attributable, and it is the gate the whole field was added for.
+
+Re-run V3 (rename completion) and V5 (store ops) after the build; V1/V2/V4 need no re-run — their
+results are independent of R1 and were verified clean against the host oracle.
+
+---
+
+## 11. Release hygiene (S9) ✅ `fcfe058` `55dee32` `a06f953` `ad8f68d`
+
+> **Landed 2026-07-21 — cycle-1.1 implementation is CLOSED.** All four parts done in-session; the
+> only residue is the three host-only `.claude`-payload patches in §6.-1, which no session can
+> apply (FI-25). Suite **1463/9**, run twice — as the prereq baseline and again on the final tree
+> after every S9 commit — same count and same names both times. Three things worth carrying forward:
+>
+> **The doc sweep found more than it was given.** §11 listed five living docs. Three needed
+> nothing (`03-*` §3.9 and both `cli.md` remote/`project show` surfaces had already been written
+> by S7/S5/S8 — checked before editing, not assumed), and three needed something the list did not
+> name: `cli.md`'s config-editor paragraph (S7's decision (b) had never reached a user-facing
+> doc), **ADR-0045** (called "unaffected", and behaviourally it is — but its *"the mountpoint
+> auto-creates under the root"* line is true only because `running/` is a **directory** bind,
+> which is the same sentence that was false for the file-bound siblings), and the two extra
+> `.claude`-payload patches in §6.-1. **A doc sweep given a file list should treat it as a lower
+> bound**: the list names where the last cycle's authors expected drift, not where it happened.
+>
+> **The second managed-rule spot is the sharper of the two.** §6.-1 knew the rule under-reported
+> the host-only set. What it did not know is that the *same file's* "editing config" bullet
+> actively prescribes `cco remote remove` — so the rule injected into every session does not
+> merely omit a refusal, it recommends the refused verb. Under-reporting is a gap; prescribing an
+> unreachable remedy is the false-remedy class (S8's lesson, one document out), and it is why
+> patches 1 and 2 must land as one edit.
+>
+> **A changelog describes shipped strings, not design intent** (`ad8f68d`, self-caught). Entry 47's
+> item 11 was first written from this plan's notes and was wrong twice over: it claimed the message
+> *names* the repo directory (the shipped string says *"cd into the `<kind>` you want to rename and
+> run it there"*), and it called what V3-03 replaced an "unrelated error" when it was a **wrong
+> diagnosis that also advised `<old> <new>`, a form which fails at the same root** — which is the
+> entire point of the fix. The design doc says what was intended; only the code says what a user
+> will see. Read the string. The same habit caught the parser risk: entry 47 was verified through
+> `_read_changelog_entries` itself rather than by eye.
+
+- **`changelog.yml`** — next id **47**. Cycle 1 grouped its entry as id 46 (D-M10/Q-C2); follow that
+  shape for 1.1. ✅ Verified through `_read_changelog_entries` itself — the parser is line-based
+  and a continuation line that looks like a key silently truncates the description.
+- **Migration** — `migrations/global/017_state_shared_subbucket.sh` (next sequential id; current max
+  is 016). Idempotent, tolerant of a missing source, bumps the global schema version. Per
+  `.claude/rules/update-system.md` this is a **breaking/structural** change: base template and
+  non-base native templates need review too.
+  ✅ **017 is the only migration owed, and the template review came back empty — checked, not
+  assumed.** No `*_FILE_POLICIES` change (`lib/update.sh` is untouched across the whole branch) and
+  no `templates/` change, which is correct rather than an omission: the STATE layout is
+  **machine-local**, so it never appears in project config, and a migration that moved it needs no
+  template counterpart. `_latest_schema_version` derives from the migrations directory, so there is
+  no constant to bump. The only other non-doc, non-`lib` change on the branch is S8's `Dockerfile`
+  edit (`/opt/cco/BUILD`), which is **image-level** — it needs `cco build`, not a migration.
+  S2/S2b/S2b-P/S3/S4/S5/S6/S7 are code-only: no schema, no layout, no persisted state.
+- **ADR forward-annotation** (append-only, per `documentation-lifecycle.md`): **ADR-0047** gains the
+  STATE allow-list refinement (S1) and **D-V3-1** (S5); **ADR-0045** is unaffected (`running/` keeps
+  its own `:ro` directory bind).
+  ✅ ADR-0047 annotated with all three (the allow-list refinement, D-V3-1, **INV-S3b**), including
+  the point the original left unstated and the e2e run turned into a blocker: **the shape of the
+  crossing is load-bearing**, and the allow-list-vs-deny-list property — not the specific secrets —
+  is why `state/cco` was not bound whole. ⚠ **ADR-0045 was *qualified*, not left alone.**
+  Behaviourally unaffected, as predicted — but its *"the mountpoint auto-creates under the root"*
+  line holds **because** `running/` is a directory bind, i.e. it is the same claim that was false
+  for the file-bound siblings. Annotated so nobody converts it to per-marker file binds; INV-STATE
+  pins the `{shared, running}` allow-list either way.
+- **Living docs** — `design-docker.md` §1.2.2 (the bucket-ownership invariant this defect is the
+  first real instance of), `02-mount-generation.md`, `05-store-write-path.md`,
+  `03-config-editor-repos.md` §3.9 (S7's decision), `cli.md` (remote verbs now host-only).
+  ✅ Done, with the list treated as a lower bound (see the banner above). New:
+  `design-docker.md` **§1.2.2.1** — the XDG-base hazard one layer deeper, inside the ADR-0047 root,
+  where the process that gets `EACCES` is `cco-svc`; its two rules are stated **separately**
+  because bind-as-directory and own-the-parent each leave a live failure mode if applied alone.
+  `02-*` §5 item 6 annotated in place (still true *of RC-1*; that branch is no longer untouched).
+  `05-*` **§3.9** — the three amendments the e2e run forced, plus the fact that §1.2's swallow
+  turned out to be systemic (INV-IDX; residue FI-24). `cli.md` gained S7's decision (b), which
+  until now existed only in a maintainer design doc. Needed nothing: `03-*` §3.9 (S7 wrote it) and
+  `cli.md`'s remote paragraphs (S5) / `project show` flow (S8) — verified before editing.
+- **Git** — atomic commits per stage on `fix/config-access/e2e-v3-cycle1.1`; merge to `develop` only
+  after the §10 gates. `develop → main` stays gated on a v3.1 acceptance pass.
+
+---
+
+## 12. Next-session handoff
+
+**Read first**, in order: [`../results/consolidated-review-v3.md`](../results/consolidated-review-v3.md)
+(the verdict and the R1…R7 root map) → this plan → `00-overview.md` §5 (the cross-cutting
+conventions: three availability states, 0/1/2 exit codes) and §9 (the D-M table) → the design doc
+for the stage you are on.
+
+**Start with S1**, and read §2.1 before touching `cmd-start.sh:1643` — the obvious one-line fix that
+two v3 sessions recommended is the one thing not to do. **S2 must land with S1**: without it the next
+write failure in that path is silent again, and a *successful* rename immediately surfaces V3-P, so
+ship that note in the same stage.
+
+**Do not re-litigate**: RC-4 (confirmed on both halves across three projects), RC-1's D-M5 arms, RC-6
+repos, the ADR-0047 boundary, criterion E, and `lib/store.sh`'s fail-closed contract. V5's note 2 is
+the standing triage rule — *"fix the mount + fix the message, not reconsider RC-3."*
+
+**Out of scope**: everything `handoff-v3.md` §9 defers — the RC-5 vocabulary sweep, RC-7…RC-16,
+Q-10 provenance writers, FI-21/22/23, E4-02/RC-16 mis-ownership. Two v3 findings sit adjacent to
+cycle-2 items and are pulled **in** deliberately, on the D-M2 rule-3 ground that cycle 1 must not
+emit text contradicting the ratified vocabulary: **S6** (`project show`, adjacent to the RC-5 sweep)
+and **S8**'s Q-C3 line if free.
+</content>
+</invoke>

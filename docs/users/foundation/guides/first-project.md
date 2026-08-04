@@ -33,6 +33,11 @@ This scaffolds `<repo>/.cco/` inside the repo and registers the project:
     └── .gitignore               # Ignores secrets.env
 ```
 
+`cco init` seeds the repo it runs in as the project's first member of `repos[]`
+(its `url` derived from the repo's `origin` remote when present), so `cco start`
+mounts it right away — no manual edit needed. The repo's logical name defaults to
+the directory basename; override it with `--repo-name`.
+
 Commit `.cco/` with the repo to share the project setup with teammates. Session
 transcripts and auto memory do **not** live in the repo — they are kept
 machine-local under `~/.local/state/cco/` (see *What persists*, below).
@@ -61,11 +66,12 @@ machine-local index.
 
 ## 2. Configure project.yml
 
-Open `~/projects/my-app/.cco/project.yml` and verify the configuration:
+Open `~/projects/my-app/.cco/project.yml`. The current repo is already listed under
+`repos:`; edit the rest of the configuration (ports, env, extra repos) as needed:
 
 ```yaml
 repos:
-  - name: my-app
+  - name: my-app                 # seeded by cco init (+ url when origin is set)
 
 docker:
   ports:

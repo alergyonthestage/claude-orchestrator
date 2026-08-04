@@ -3,7 +3,7 @@
 > **Created**: 2026-06-29 · **Track**: feature design. Runs on `develop` **after** the v1 merge;
 > ships in v1 or a point release (**additive — does NOT gate the merge or the release**).
 > **Siblings**: Handover A (docs/CLI cutover sweep — ✅ done, merged into `develop`) ·
-> Handover C (`../../engineering/npm-packaging-distribution-handoff.md`, release-gating). On develop,
+> Handover C (npm packaging — released, handoff removed; release-gating). On develop,
 > B and C run in parallel; **C is release-gating, B is additive** — sequence per maintainer priority.
 
 Coordination artifact. Authoritative design will be a new **ADR-0036** + a rewrite-in-place of

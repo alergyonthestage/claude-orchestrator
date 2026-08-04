@@ -24,7 +24,7 @@ test_forget_deregisters_internal_state() {
     assert_output_contains "Forgot project 'doomed'"
 
     # Index entries gone (membership + path).
-    assert_file_not_contains "$CCO_STATE_HOME/index" "doomed:"
+    assert_file_not_contains "$(cco_index_file)" "doomed:"
     # STATE/DATA/CACHE dirs gone.
     assert_dir_not_exists "$CCO_STATE_HOME/projects/doomed"
     assert_dir_not_exists "$CCO_DATA_HOME/projects/doomed"
@@ -64,7 +64,7 @@ YAML
 )"
 
     run_cco forget phoenix -y
-    assert_file_not_contains "$CCO_STATE_HOME/index" "phoenix:"
+    assert_file_not_contains "$(cco_index_file)" "phoenix:"
 
     # The still-valid project.yml re-registers on the next scan (ADR-0021 Dec.3).
     run_cco resolve --scan "$tmpdir/repos"
@@ -75,21 +75,25 @@ YAML
 test_forget_shared_repo_guard() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
-    # proj-a owns "solo" alone and shares "shared" with proj-b.
-    seed_index_path "solo"   "$tmpdir/repos/solo"
-    seed_index_path "shared" "$tmpdir/repos/shared"
-    seed_index_path "proj-b" "$tmpdir/repos/proj-b"
+    # proj-a owns "solo" alone and shares "shared" with proj-b. Under per-project
+    # scoping (ADR-0051) each project carries its OWN binding for a shared repo, so
+    # "shared" is seeded under both projects (same path); forget proj-a drops only
+    # proj-a's block, leaving proj-b's "shared" binding intact.
+    seed_index_path "solo"   "$tmpdir/repos/solo"   "proj-a"
+    seed_index_path "shared" "$tmpdir/repos/shared" "proj-a"
+    seed_index_path "shared" "$tmpdir/repos/shared" "proj-b"
+    seed_index_path "proj-b" "$tmpdir/repos/proj-b" "proj-b"
     index_set_project_repos "proj-a" "solo" "shared"
     index_set_project_repos "proj-b" "proj-b" "shared"
 
     run_cco forget proj-a -y
 
     # solo (only proj-a) is dropped; shared (also proj-b) is kept.
-    assert_file_not_contains "$CCO_STATE_HOME/index" 'solo:'
-    assert_file_contains     "$CCO_STATE_HOME/index" 'shared:'
+    assert_file_not_contains "$(cco_index_file)" 'solo:'
+    assert_file_contains     "$(cco_index_file)" 'shared:'
     # proj-a membership gone; proj-b intact.
-    assert_file_not_contains "$CCO_STATE_HOME/index" 'proj-a:'
-    assert_file_contains     "$CCO_STATE_HOME/index" 'proj-b:'
+    assert_file_not_contains "$(cco_index_file)" 'proj-a:'
+    assert_file_contains     "$(cco_index_file)" 'proj-b:'
 }
 
 test_forget_not_tracked_fails() {
@@ -108,7 +112,7 @@ test_forget_non_tty_requires_confirmation() {
 
     # No -y and non-interactive stdin → must refuse and preserve state.
     run_cco forget proj-x </dev/null || true
-    assert_file_contains "$CCO_STATE_HOME/index" "proj-x:"
+    assert_file_contains "$(cco_index_file)" "proj-x:"
 }
 
 # ── --purge: ownership-guarded .cco/ deletion (ADR-0021 D2 fwd-annot) ────
@@ -127,7 +131,7 @@ test_forget_purge_deletes_owned_cco_with_backup() {
     assert_dir_not_exists "$host"
     local backups; backups=$(find "$CCO_STATE_HOME/backups" -name 'forget-doomed-*.tar.gz' 2>/dev/null | wc -l | tr -d ' ')
     [[ "$backups" -ge 1 ]] || fail "expected a backup tar for the purged .cco/, found none"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "doomed:"
+    assert_file_not_contains "$(cco_index_file)" "doomed:"
 }
 
 test_forget_purge_preserves_foreign_member() {
@@ -159,9 +163,44 @@ test_forget_purge_non_tty_without_flag_skips_deletion() {
     # delete the committed .cco/ (the opt-in purge stage stays unattended-safe).
     run_cco forget keepcfg -y </dev/null
     assert_dir_exists "$host"
-    assert_file_not_contains "$CCO_STATE_HOME/index" "keepcfg:"
+    assert_file_not_contains "$(cco_index_file)" "keepcfg:"
     [[ ! -d "$CCO_STATE_HOME/backups" ]] || {
         local n; n=$(find "$CCO_STATE_HOME/backups" -name 'forget-keepcfg-*' 2>/dev/null | wc -l | tr -d ' ')
         [[ "$n" -eq 0 ]] || fail "no backup should be written when purge is skipped"
     }
+}
+
+# ── S2b item 3: the index removal is checked BEFORE the irreversible delete ──
+# `cco forget` removed the project from the index and then rm -rf'd its
+# STATE/DATA/CACHE. The index calls were bare, so a failed removal left the project
+# HALF-forgotten — still listed in the index, its state already deleted — and the
+# half that survives is the one `cco start` reads. Ordering the check first makes
+# the verb re-runnable instead of leaving a state only a hand-edit can repair.
+# ⚠ FAILS on pre-fix: rc=0 and the STATE dir is gone despite the index write failing.
+test_forget_unwritable_index_deletes_nothing() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmpdir; tmpdir=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmpdir' 2>/dev/null; rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "doomed" "$(minimal_project_yml doomed)"
+    _forget_seed_state "doomed"
+    assert_dir_exists "$CCO_STATE_HOME/projects/doomed" || return 1
+
+    chmod 555 "$(state_shared)"
+    local out rc=0
+    out=$(CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+          CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+          bash "$REPO_ROOT/bin/cco" forget doomed -y 2>&1) || rc=$?
+    chmod 755 "$(state_shared)"
+
+    [[ "$rc" -ne 0 ]] \
+        || { fail "an unwritable index must fail loud; got rc=0: $out"; return 1; }
+    [[ "$out" != *"Forgot project"* ]] \
+        || { fail "no success message over a failed deregistration: $out"; return 1; }
+    # The whole point: the irreversible half must NOT have run.
+    assert_dir_exists "$CCO_STATE_HOME/projects/doomed" \
+        || { fail "the STATE dir was deleted despite the index write failing"; return 1; }
+    [[ "$out" == *"nothing was deleted"* ]] \
+        || { fail "the message must say nothing was deleted, so the user can just re-run: $out"; return 1; }
+    return 0
 }

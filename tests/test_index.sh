@@ -15,12 +15,15 @@ _index_test_env() {
     source "$REPO_ROOT/lib/index.sh"
 }
 
+# The public path API is now PROJECT-SCOPED (ADR-0051): _index_{get,set,remove}_path
+# and _index_path_conflicts take a <project> first argument.
+
 test_index_set_get_roundtrip() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /Users/me/dev/repo1
-    local got; got=$(_index_get_path repo1)
+    _index_set_path p repo1 /Users/me/dev/repo1
+    local got; got=$(_index_get_path p repo1)
     [[ "$got" == "/Users/me/dev/repo1" ]] || fail "Roundtrip failed, got: $got"
 }
 
@@ -30,8 +33,8 @@ test_index_preserves_single_quote_in_path() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repoq "/Users/me/O'Brien/repo"
-    local got; got=$(_index_get_path repoq)
+    _index_set_path p repoq "/Users/me/O'Brien/repo"
+    local got; got=$(_index_get_path p repoq)
     [[ "$got" == "/Users/me/O'Brien/repo" ]] || fail "single quote was stripped, got: $got"
 }
 
@@ -39,9 +42,9 @@ test_index_upsert_overwrites() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/first
-    _index_set_path repo1 /a/second
-    local got; got=$(_index_get_path repo1)
+    _index_set_path p repo1 /a/first
+    _index_set_path p repo1 /a/second
+    local got; got=$(_index_get_path p repo1)
     [[ "$got" == "/a/second" ]] || fail "Upsert should overwrite, got: $got"
     # No duplicate line left behind.
     local n; n=$(_index_list_paths | grep -c '^repo1=')
@@ -52,28 +55,28 @@ test_index_get_missing_empty() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    [[ -z "$(_index_get_path nonexistent)" ]] || fail "Missing key should be empty"
+    [[ -z "$(_index_get_path p nonexistent)" ]] || fail "Missing key should be empty"
 }
 
 test_index_remove_path() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/b
-    _index_remove_path repo1
-    [[ -z "$(_index_get_path repo1)" ]] || fail "Removed key should be empty"
+    _index_set_path p repo1 /a/b
+    _index_remove_path p repo1
+    [[ -z "$(_index_get_path p repo1)" ]] || fail "Removed key should be empty"
 }
 
 test_index_multiple_paths_coexist() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
-    _index_set_path repo2 /a/two
-    _index_set_path shared-assets /a/assets
-    [[ "$(_index_get_path repo1)" == "/a/one" ]]        || fail "repo1 wrong"
-    [[ "$(_index_get_path repo2)" == "/a/two" ]]        || fail "repo2 wrong"
-    [[ "$(_index_get_path shared-assets)" == "/a/assets" ]] || fail "shared-assets wrong"
+    _index_set_path p repo1 /a/one
+    _index_set_path p repo2 /a/two
+    _index_set_path p shared-assets /a/assets
+    [[ "$(_index_get_path p repo1)" == "/a/one" ]]        || fail "repo1 wrong"
+    [[ "$(_index_get_path p repo2)" == "/a/two" ]]        || fail "repo2 wrong"
+    [[ "$(_index_get_path p shared-assets)" == "/a/assets" ]] || fail "shared-assets wrong"
     local n; n=$(_index_list_paths | wc -l | tr -d ' ')
     [[ "$n" -eq 3 ]] || fail "Expected 3 entries, got: $n"
 }
@@ -91,12 +94,12 @@ test_index_paths_and_projects_coexist() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
+    _index_set_path projectA repo1 /a/one
     _index_set_project_repos projectA repo1 repo2
     # Both sections must remain independently readable.
-    [[ "$(_index_get_path repo1)" == "/a/one" ]]              || fail "path lost after project set"
+    [[ "$(_index_get_path projectA repo1)" == "/a/one" ]]        || fail "path lost after project set"
     [[ "$(_index_get_project_repos projectA)" == "repo1 repo2" ]] || fail "project lost"
-    _index_set_path repo2 /a/two
+    _index_set_path projectA repo2 /a/two
     [[ "$(_index_get_project_repos projectA)" == "repo1 repo2" ]] || fail "project clobbered by path set"
 }
 
@@ -104,50 +107,26 @@ test_index_path_conflicts() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/one
-    _index_path_conflicts repo1 /a/DIFFERENT || fail "Different path should conflict (AD5)"
-    if _index_path_conflicts repo1 /a/one; then fail "Same path must not conflict"; fi
-    if _index_path_conflicts brand-new /a/x;  then fail "Unbound name must not conflict"; fi
+    _index_set_path p repo1 /a/one
+    _index_path_conflicts p repo1 /a/DIFFERENT || fail "Different path should conflict (AD5′)"
+    if _index_path_conflicts p repo1 /a/one;  then fail "Same path must not conflict"; fi
+    if _index_path_conflicts p brand-new /a/x; then fail "Unbound name must not conflict"; fi
+    if _index_path_conflicts other repo1 /a/DIFFERENT; then fail "Cross-project same name is not a conflict"; fi
 }
 
 test_index_scaffold_has_version_and_sections() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
 
-    _index_set_path repo1 /a/b
+    _index_set_path p repo1 /a/b
     local f; f=$(_index_file)
-    grep -q '^version: 1$' "$f"  || fail "Missing version header"
-    grep -q '^paths:$' "$f"      || fail "Missing paths: section"
-    grep -q '^projects:$' "$f"   || fail "Missing projects: section"
+    grep -q '^version: 2$'       "$f" || fail "Missing v2 version header"
+    grep -q '^projects:$'        "$f" || fail "Missing projects: section"
+    grep -q '^project_paths:$'   "$f" || fail "Missing project_paths: section"
+    grep -q '^unscoped:$'        "$f" || fail "Missing unscoped: section"
     # Atomic write leaves no mktemp ghosts behind.
     local ghosts; ghosts=$(find "$(dirname "$f")" -name 'index.??????' | wc -l | tr -d ' ')
     [[ "$ghosts" -eq 0 ]] || fail "Atomic write left $ghosts tempfile ghost(s)"
-}
-
-# ── Reverse lookup: repo → referencing projects (ADR-0024 D5) ────────
-
-test_index_repos_get_projects_reverse() {
-    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
-    setup_cco_env "$tmpdir"
-    index_set_project_repos projA shared apionly
-    index_set_project_repos projB shared
-    local out
-    out=$(
-        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
-        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_repos_get_projects shared
-    )
-    printf '%s\n' "$out" | grep -qx projA || fail "projA should reference 'shared'"
-    printf '%s\n' "$out" | grep -qx projB || fail "projB should reference 'shared'"
-    # A repo referenced by only one project is not over-reported.
-    local out2
-    out2=$(
-        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
-        source "$REPO_ROOT/lib/paths.sh"; source "$REPO_ROOT/lib/index.sh"
-        _index_repos_get_projects apionly
-    )
-    printf '%s\n' "$out2" | grep -qx projA || fail "projA should reference 'apionly'"
-    printf '%s\n' "$out2" | grep -qx projB && fail "projB must not reference 'apionly'" || true
 }
 
 # ── Boundary normalization (S1: the index stores absolute paths only) ──
@@ -155,16 +134,16 @@ test_index_repos_get_projects_reverse() {
 test_index_set_path_expands_tilde() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r1 "~/dev/x"
-    local got; got=$(_index_get_path r1)
+    _index_set_path p r1 "~/dev/x"
+    local got; got=$(_index_get_path p r1)
     [[ "$got" == "$HOME/dev/x" ]] || fail "tilde not expanded, got: $got"
 }
 
 test_index_set_path_expands_home_var() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r2 '$HOME/dev/y'
-    local got; got=$(_index_get_path r2)
+    _index_set_path p r2 '$HOME/dev/y'
+    local got; got=$(_index_get_path p r2)
     [[ "$got" == "$HOME/dev/y" ]] || fail "\$HOME not expanded, got: $got"
 }
 
@@ -172,20 +151,20 @@ test_index_set_path_rejects_non_absolute() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
     # @local and relative values must never reach the index (return 1, no entry).
-    if _index_set_path bad1 "@local";        then fail "@local should be rejected"; fi
-    if _index_set_path bad2 "relative/path"; then fail "relative path should be rejected"; fi
-    [[ -z "$(_index_get_path bad1)" ]] || fail "bad1 must not be in the index"
-    [[ -z "$(_index_get_path bad2)" ]] || fail "bad2 must not be in the index"
+    if _index_set_path p bad1 "@local";        then fail "@local should be rejected"; fi
+    if _index_set_path p bad2 "relative/path"; then fail "relative path should be rejected"; fi
+    [[ -z "$(_index_get_path p bad1)" ]] || fail "bad1 must not be in the index"
+    [[ -z "$(_index_get_path p bad2)" ]] || fail "bad2 must not be in the index"
 }
 
 test_index_path_conflicts_ignores_spelling() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _index_test_env "$tmp/state"
-    _index_set_path r3 "$HOME/dev/z"
-    # Same dir, tilde spelling → NOT a conflict (false AD5 regression, finding #2).
-    if _index_path_conflicts r3 "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
+    _index_set_path p r3 "$HOME/dev/z"
+    # Same dir, tilde spelling → NOT a conflict (false AD5′ regression, finding #2).
+    if _index_path_conflicts p r3 "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
     # A genuinely different dir → conflict.
-    _index_path_conflicts r3 "/other/place" || fail "different dir must conflict"
+    _index_path_conflicts p r3 "/other/place" || fail "different dir must conflict"
 }
 
 # ── _project_member_status: the shared sync-state classifier (ADR-0024 D5) ──
@@ -236,11 +215,815 @@ test_iter_members_emits_name_path_status() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _member_status_env "$tmp/state"
     _mk_repo "$tmp/a" "proj"
-    _index_set_path a "$tmp/a"
-    _index_set_path b "$tmp/missing"        # never created → unresolved
+    _index_set_path proj a "$tmp/a"
+    _index_set_path proj b "$tmp/missing"        # never created → unresolved
     _index_set_project_repos proj a b
 
     local out; out=$(_project_iter_members proj)
     printf '%s\n' "$out" | grep -qE "^a	$tmp/a	synced$" || fail "member a must be synced with its path; got: $out"
     printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "member b must be unresolved with empty path; got: $out"
+}
+
+# ── Operator arm (RC-2 / 04-host-path-class.md §3.6, §6.5) ────────────
+# In a session the STATE index holds a HOST path that never exists; the member is
+# reachable only at the flat bind target <workdir>/<name>. _project_iter_members
+# must probe the MOUNT (INV-F), so the rename verbs' project.yml rewrite and the
+# pack-rename pre-scan stop being vacuous in-container.
+_iter_operator_env() {
+    # The operator predicate needs the flag AND three absolute bucket overrides
+    # (_index_test_env unsets DATA/CACHE); STATE is already the seeded index dir.
+    export CCO_CONTAINER_OPERATOR=1 CCO_IN_CONTAINER=1
+    export CCO_DATA_HOME="${CCO_STATE_HOME%/*}/data" CCO_CACHE_HOME="${CCO_STATE_HOME%/*}/cache"
+    # Operator mode skips _cco_ensure_dir (the buckets are mounts in production), so
+    # pre-create them here or the index mktemp fails and every row reads empty.
+    # STATE/shared is what `cco start` actually binds — the index lives there and
+    # its writers need that directory to exist to place their mktemp sibling (v3 R1).
+    mkdir -p "$CCO_STATE_HOME" "$CCO_STATE_HOME/shared" "$CCO_DATA_HOME" "$CCO_CACHE_HOME"
+    export CCO_WORKDIR="$1"; mkdir -p "$CCO_WORKDIR"
+}
+
+test_iter_members_operator_uses_mount() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    # Index bound to an ABSENT host path; the member is mounted at <ws>/backend.
+    _index_set_path shop backend /host/absent/backend
+    _index_set_project_repos shop backend
+    _mk_repo "$CCO_WORKDIR/backend" "shop"
+
+    local out; out=$(_project_iter_members shop)
+    printf '%s\n' "$out" | grep -qE "^backend	$CCO_WORKDIR/backend	synced$" \
+        || fail "operator: member must be probed at its mount, synced; got: $out"
+}
+
+test_iter_members_operator_unbound_member_stays_unresolved() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    # Membership token with NO path binding, yet a tree exists at <ws>/ghost:
+    # INV-F.1 must NOT synthesize a mount from the name alone (absent→present).
+    _index_set_project_repos shop ghost
+    _mk_repo "$CCO_WORKDIR/ghost" "shop"
+
+    local out; out=$(_project_iter_members shop)
+    printf '%s\n' "$out" | grep -qE "^ghost		unresolved$" \
+        || fail "operator: an unbound member stays unresolved with empty path (INV-F.1); got: $out"
+}
+
+test_iter_members_host_unchanged() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _member_status_env "$tmp/state"
+    unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER
+    _mk_repo "$tmp/a" "proj"
+    _index_set_path proj a "$tmp/a"
+    _index_set_path proj b "$tmp/missing"
+    _index_set_project_repos proj a b
+    # Host regression guard: the probe is the identity, so rows are byte-identical.
+    local out; out=$(_project_iter_members proj)
+    printf '%s\n' "$out" | grep -qE "^a	$tmp/a	synced$" || fail "host row a changed: $out"
+    printf '%s\n' "$out" | grep -qE "^b		unresolved$" || fail "host row b changed: $out"
+}
+
+# ── Operator ENUMERATION arm (RC-3 §3.6, closes E6B-04) ───────────────
+# RC-2 probed column 2 at the mount but kept the member NAMES coming from the STATE
+# index — which reads EMPTY behind the ADR-0047 boundary, making every members loop
+# VACUOUS in-container (the pack-rename pre-scan always passed, the rename fan-out
+# reached nobody). The arm enumerates repos[] from the mounted project.yml when the
+# project resolves there, so it stays non-empty even when the index is unreadable.
+# _resolve_project_yml (operator layout) + yaml.sh are needed on TOP of the index env.
+_iter_enum_env() {
+    _member_status_env "$1"
+    source "$REPO_ROOT/lib/access-scope.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+}
+
+# Index sealed (unreadable), project mounted: enumeration comes from project.yml, so
+# the members loop is NON-EMPTY. Skipped as root (chmod 000 is bypassed).
+# ⚠ FAILS pre-fix: names come from the sealed index → zero rows.
+test_iter_members_operator_enumerates_when_index_sealed() {
+    [[ "$(id -u)" -eq 0 ]] && return 0
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _iter_enum_env "$tmp/state"
+    _iter_operator_env "$tmp/ws"
+    export PROJECT_NAME=shop
+    # A mounted member that ALSO hosts shop's committed config, plus a declared but
+    # UNMOUNTED member (in project.yml, no <ws>/api tree).
+    mkdir -p "$CCO_WORKDIR/backend/.cco"
+    printf 'name: shop\nrepos:\n  - name: backend\n  - name: api\n' \
+        > "$CCO_WORKDIR/backend/.cco/project.yml"
+    _index_set_path shop backend /host/absent/backend
+    _index_set_project_repos shop backend api
+    chmod 000 "$CCO_STATE_HOME"                    # the index is now unreadable
+
+    local out; out=$(_project_iter_members shop)
+    chmod 700 "$CCO_STATE_HOME"
+    printf '%s\n' "$out" | grep -qE "^backend	$CCO_WORKDIR/backend	synced$" \
+        || fail "sealed index: mounted member must enumerate from project.yml as synced; got: $out"
+    printf '%s\n' "$out" | grep -qE "^api		unresolved$" \
+        || fail "sealed index: an unmounted declared member must surface as unresolved; got: $out"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+# Per-project name scoping (ADR-0051) — v2 nested project_paths schema
+# ══════════════════════════════════════════════════════════════════════
+# The identity of a repo/extra_mount is its PATH; the name is a per-project
+# label. The index binds (project, name) → path in a nested `project_paths:`
+# section. These A.1 tests exercise the new primitives in isolation — they do
+# NOT touch the legacy flat paths: API (still used by callers until the cutover).
+
+test_pp_set_get_roundtrip() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /abs/backend
+    _index_pp_set app-a web     /abs/web
+    [[ "$(_index_pp_get app-a backend)" == "/abs/backend" ]] || fail "pp backend roundtrip"
+    [[ "$(_index_pp_get app-a web)"     == "/abs/web" ]]     || fail "pp web roundtrip"
+    [[ -z "$(_index_pp_get app-a nope)" ]]                   || fail "missing inner must be empty"
+    [[ -z "$(_index_pp_get nope backend)" ]]                 || fail "missing project must be empty"
+}
+
+# AD5′: same name in different projects may bind DIFFERENT paths (homonyms).
+test_pp_same_name_different_projects() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-b backend /b/backend      # same name, different project + path
+    [[ "$(_index_pp_get app-a backend)" == "/a/backend" ]] || fail "app-a backend"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b backend (homonym must coexist)"
+}
+
+# AD5′: same path may carry different names across projects (aliases).
+test_pp_same_path_different_names() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a shared /abs/shared
+    _index_pp_set app-b common /abs/shared      # same path, different label
+    [[ "$(_index_pp_get app-a shared)" == "/abs/shared" ]] || fail "app-a shared"
+    [[ "$(_index_pp_get app-b common)" == "/abs/shared" ]] || fail "app-b common alias"
+}
+
+test_pp_upsert_overwrites() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/first
+    _index_pp_set app-a backend /a/second
+    [[ "$(_index_pp_get app-a backend)" == "/a/second" ]] || fail "upsert should overwrite"
+    local n; n=$(_index_pp_dump_project app-a | grep -c '^backend=')
+    [[ "$n" -eq 1 ]] || fail "expected exactly one backend entry, got: $n"
+}
+
+test_pp_remove_prunes_empty_block() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_remove app-a backend
+    [[ -z "$(_index_pp_get app-a backend)" ]] || fail "removed inner must be empty"
+    # The now-empty project block must be pruned (no dangling "  app-a:" header).
+    local f; f=$(_index_file)
+    grep -qE '^  app-a:$' "$f" && fail "empty project block must be pruned" || true
+}
+
+test_pp_remove_keeps_sibling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    _index_pp_remove app-a backend
+    [[ -z "$(_index_pp_get app-a backend)" ]]            || fail "app-a backend removed"
+    [[ "$(_index_pp_get app-a web)"     == "/a/web" ]]   || fail "app-a web must survive"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b backend must survive (other project)"
+}
+
+test_pp_remove_project() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    _index_pp_remove_project app-a
+    [[ -z "$(_index_pp_get app-a backend)" ]] || fail "app-a backend gone"
+    [[ -z "$(_index_pp_get app-a web)" ]]     || fail "app-a web gone"
+    [[ "$(_index_pp_get app-b backend)" == "/b/backend" ]] || fail "app-b must be untouched"
+}
+
+test_pp_rejects_non_absolute() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    if _index_pp_set app-a bad "@local";        then fail "@local must be rejected"; fi
+    if _index_pp_set app-a bad2 "relative/path"; then fail "relative must be rejected"; fi
+    [[ -z "$(_index_pp_get app-a bad)" ]]  || fail "bad must not be indexed"
+    [[ -z "$(_index_pp_get app-a bad2)" ]] || fail "bad2 must not be indexed"
+}
+
+test_pp_expands_tilde_and_home() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a r1 "~/dev/x"
+    _index_pp_set app-a r2 '$HOME/dev/y'
+    [[ "$(_index_pp_get app-a r1)" == "$HOME/dev/x" ]] || fail "tilde not expanded"
+    [[ "$(_index_pp_get app-a r2)" == "$HOME/dev/y" ]] || fail "\$HOME not expanded"
+}
+
+test_pp_preserves_single_quote_in_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a repoq "/Users/me/O'Brien/repo"
+    [[ "$(_index_pp_get app-a repoq)" == "/Users/me/O'Brien/repo" ]] || fail "single quote stripped"
+}
+
+# AD5′ chokepoint: conflict iff the SAME project already binds name to a
+# DIFFERENT path. Cross-project same-name is NOT a conflict.
+test_pp_conflicts_ad5prime() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_conflicts app-a backend /a/DIFFERENT || fail "same project, different path must conflict"
+    if _index_pp_conflicts app-a backend /a/backend; then fail "same path must not conflict"; fi
+    if _index_pp_conflicts app-b backend /b/backend; then fail "cross-project same name is NOT a conflict"; fi
+    if _index_pp_conflicts app-a brand-new /a/x;      then fail "unbound name must not conflict"; fi
+}
+
+test_pp_conflicts_ignores_spelling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a r "$HOME/dev/z"
+    if _index_pp_conflicts app-a r "~/dev/z"; then fail "same dir, two spellings must not conflict"; fi
+    _index_pp_conflicts app-a r "/other" || fail "different dir must conflict"
+}
+
+test_pp_dump_all() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-a web     /a/web
+    _index_pp_set app-b backend /b/backend
+    local out; out=$(_index_pp_dump_all)
+    printf '%s\n' "$out" | grep -qxF "app-a	backend	/a/backend" || fail "dump_all missing app-a backend; got: $out"
+    printf '%s\n' "$out" | grep -qxF "app-a	web	/a/web"         || fail "dump_all missing app-a web"
+    printf '%s\n' "$out" | grep -qxF "app-b	backend	/b/backend" || fail "dump_all missing app-b backend"
+    local n; n=$(printf '%s\n' "$out" | grep -c .)
+    [[ "$n" -eq 3 ]] || fail "dump_all expected 3 lines, got: $n"
+}
+
+# Path-based reverse lookup (ADR-0051 D5) — replaces name-based reverse lookup.
+# "which (project, name) bindings resolve to <path>" — sharing is a PATH property.
+test_paths_get_bindings_reverse() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a shared /abs/shared
+    _index_pp_set app-b common /abs/shared      # SAME path, different label
+    _index_pp_set app-c other  /abs/other
+    local out; out=$(_index_paths_get_bindings /abs/shared)
+    printf '%s\n' "$out" | grep -qxF "app-a	shared" || fail "binding app-a/shared missing; got: $out"
+    printf '%s\n' "$out" | grep -qxF "app-b	common" || fail "binding app-b/common missing (same path)"
+    printf '%s\n' "$out" | grep -qF  "app-c" && fail "app-c (different path) must not appear" || true
+}
+
+# Reverse lookup normalizes spellings before comparing (§12 path identity).
+test_paths_get_bindings_ignores_spelling() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_pp_set app-a home "$HOME/dev/z"
+    local out; out=$(_index_paths_get_bindings "~/dev/z")
+    printf '%s\n' "$out" | grep -qxF "app-a	home" || fail "spelling-insensitive reverse lookup; got: $out"
+}
+
+# The unscoped bucket is an escape-hatch resolved as a fallback by the scoped
+# _index_get_path (a `cco path set` pin outside any project); a project's OWN
+# binding wins over it. Usage of _index_set_unscoped mirrors `cco path set`.
+test_pp_unscoped_fallback() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_unscoped shared-docs /global/docs
+    # Any project resolving 'shared-docs' with no own binding falls back to it.
+    [[ "$(_index_get_path app-a shared-docs)" == "/global/docs" ]] || fail "unscoped fallback missing"
+    [[ "$(_index_get_path app-b shared-docs)" == "/global/docs" ]] || fail "unscoped fallback per project"
+    # A project's OWN binding wins over the unscoped pin (no global default).
+    _index_pp_set app-a shared-docs /a/docs
+    [[ "$(_index_get_path app-a shared-docs)" == "/a/docs" ]]      || fail "own binding must win"
+    [[ "$(_index_get_path app-b shared-docs)" == "/global/docs" ]] || fail "app-b still falls back"
+}
+
+# ── _index_rename_path (ADR-0050 B.2 — project-scoped name re-key) ────
+
+test_index_rename_path_rekeys_binding_and_membership() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_project_repos p backend web
+    _index_pp_set p backend /a/backend
+    _index_pp_set p web     /a/web
+
+    _index_rename_path p backend api
+
+    [[ "$(_index_get_path p api)" == "/a/backend" ]] || fail "new name must carry the old path, got '$(_index_get_path p api)'"
+    [[ -z "$(_index_get_path p backend)" ]]          || fail "old name must be gone"
+    [[ "$(_index_get_path p web)" == "/a/web" ]]     || fail "sibling binding must be untouched"
+    [[ "$(_index_get_project_repos p)" == "api web" ]] || fail "membership token must re-key, got '$(_index_get_project_repos p)'"
+}
+
+test_index_rename_path_is_project_scoped() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # Homonym in another project (same name, DIFFERENT path) — a different resource.
+    _index_set_project_repos app-a backend
+    _index_set_project_repos app-b backend
+    _index_pp_set app-a backend /a/backend
+    _index_pp_set app-b backend /b/backend      # must stay put
+
+    _index_rename_path app-a backend api
+
+    [[ "$(_index_get_path app-a api)" == "/a/backend" ]]     || fail "app-a re-keyed"
+    [[ -z "$(_index_get_path app-a backend)" ]]              || fail "app-a old gone"
+    [[ "$(_index_get_path app-b backend)" == "/b/backend" ]] || fail "app-b homonym must be untouched"
+    [[ "$(_index_get_project_repos app-b)" == "backend" ]]   || fail "app-b membership must be untouched"
+}
+
+test_index_rename_path_leaves_same_path_alias_alone() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # Another project labels the SAME path differently — a per-project alias.
+    _index_set_project_repos app-a backend
+    _index_set_project_repos app-b common
+    _index_pp_set app-a backend /shared/tree
+    _index_pp_set app-b common  /shared/tree
+
+    _index_rename_path app-a backend api
+
+    [[ "$(_index_get_path app-a api)" == "/shared/tree" ]]    || fail "app-a re-keyed"
+    [[ "$(_index_get_path app-b common)" == "/shared/tree" ]] || fail "app-b's own label for the same path must be untouched"
+}
+
+# ── Read-path honesty: empty ≠ unreadable (v3 R3 / S4) ────────────────
+#
+# _index_read_state is the read-side sibling of _index_mktemp. S2 made a failed
+# index WRITE loud; these pin the mirror-image defect on the read side: every
+# reader opens the index behind a bare `[[ -f ]] || return 0` and feeds a process
+# substitution, so its status is discarded and "the read failed" was reported as
+# "the index is empty" at rc=0 (v3 V2-F01/F02).
+#
+# The discriminating case is `truncated`: a legitimately empty index is NEVER 0
+# bytes, because _index_ensure_file always writes a header, a version line and
+# the four section keys. A classifier that only tested `-s` as "no content" would
+# pass the ok/absent arms and still mis-report exactly the state that ships.
+
+test_index_read_state_absent_is_benign() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    [[ "$(_index_read_state)" == "absent" ]] \
+        || fail "no index file yet must classify as absent, got: $(_index_read_state)"
+    # Benign: a machine with nothing registered is not an error. If this ever
+    # dies, every first-run `cco list` starts failing.
+    ( _index_assert_readable ) || fail "an absent index must not be an error"
+}
+
+test_index_read_state_ok_on_a_real_index() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_path p repo1 /Users/me/dev/repo1
+    [[ "$(_index_read_state)" == "ok" ]] \
+        || fail "a written index must classify as ok, got: $(_index_read_state)"
+    ( _index_assert_readable ) || fail "a healthy index must not be an error"
+}
+
+test_index_read_state_detects_a_truncated_index() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    # A scaffolded index is non-empty even with zero bindings — that is what makes
+    # 0 bytes diagnostic of an interrupted write rather than of "nothing here".
+    _index_set_path p repo1 /Users/me/dev/repo1
+    [[ -s "$(_index_file)" ]] || fail "precondition: a real index is never 0 bytes"
+
+    : > "$(_index_file)"
+    [[ "$(_index_read_state)" == "truncated" ]] \
+        || fail "a 0-byte index must classify as truncated, got: $(_index_read_state)"
+
+    local rc=0; ( _index_assert_readable ) 2>/dev/null || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a truncated index must be an error (exit 1), got rc=$rc"
+}
+
+test_index_read_state_detects_an_unreadable_index() {
+    [[ "$(id -u)" -eq 0 ]] && return 0   # root ignores the mode bits
+    local tmp; tmp=$(mktemp -d)
+    trap "chmod -R u+rwX '$tmp' 2>/dev/null; rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    _index_set_path p repo1 /Users/me/dev/repo1
+    chmod 000 "$(_index_file)"
+    local st; st=$(_index_read_state)
+    local rc=0; ( _index_assert_readable ) 2>/dev/null || rc=$?
+    chmod 644 "$(_index_file)"
+
+    # Probed by OPENING, not with `test -r`: access(2) answers for the REAL uid,
+    # which is a false answer under elevation (the rename.sh:174 trap).
+    [[ "$st" == "unreadable" ]] \
+        || fail "a mode-000 index must classify as unreadable, got: $st"
+    [[ "$rc" -eq 1 ]] || fail "an unreadable index must be an error (exit 1), got rc=$rc"
+}
+
+# The vocabulary half of R3. `cco resolve` is HOST-ONLY in a session (bin/cco's
+# operator gate refuses it), so an in-container remedy naming it is advice the
+# shim will reject — the exact string RC-2 retired, re-emitted from a path cycle
+# 1 never audited. On the HOST the same string is the correct remedy, so this is
+# a context rule, not a ban: both arms are asserted, or a "fix" that simply
+# deleted the phrase everywhere would pass.
+test_index_empty_sentence_never_says_cco_resolve_in_a_session() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+
+    local host_msg; host_msg=$(_index_empty_sentence)
+    [[ "$host_msg" == *"cco resolve"* ]] \
+        || fail "on the host 'cco resolve --scan' IS the remedy; got: $host_msg"
+
+    # A REAL operator context, not a stubbed predicate: _cco_container_operator
+    # needs the explicit flag AND all three absolute bucket paths (a stub could
+    # not regress-test the predicate — tests/helpers.sh, lane note (a)).
+    local sess_msg
+    sess_msg=$(CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 \
+        CCO_DATA_HOME="$tmp/data" CCO_STATE_HOME="$tmp/state" CCO_CACHE_HOME="$tmp/cache" \
+        _index_empty_sentence)
+    [[ "$sess_msg" != *"cco resolve"* ]] \
+        || fail "in a session the remedy must not name the host-only 'cco resolve': $sess_msg"
+    [[ "$sess_msg" == *"host"* ]] \
+        || fail "the session remedy must point at the host: $sess_msg"
+}
+
+# The `stale` arm — V2-F03's detector. This is the state that produced v3's
+# 🔴 V2-F01: the index was bind-mounted as a FILE, the host replaced it with
+# mktemp+mv, and the container went on reading the old inode — which rename(2)
+# had left with NO directory entry (nlink 0) — reporting 0 rows at rc=0 forever.
+# S1 removed the cause by binding a DIRECTORY; this arm is the detector for the
+# day a file-shaped bind returns somewhere else.
+#
+# nlink 0 cannot be synthesized without a mount, so `stat` is mocked on PATH (the
+# tests/mocks.sh convention). Everything below the syscall is the real code path:
+# _index_link_count really runs, _index_read_state really classifies, and the
+# shared sentence really renders. The kernel side is covered out-of-session by
+# the V2 re-run (plan §10).
+test_index_read_state_detects_a_stale_deleted_inode() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /Users/me/dev/repo1
+
+    # Healthy first — a detector that fires on a LIVE index is worse than none.
+    [[ "$(_index_read_state)" == "ok" ]] \
+        || fail "precondition: a live index must classify ok, got: $(_index_read_state)"
+
+    mkdir -p "$tmp/mockbin"
+    cat > "$tmp/mockbin/stat" <<'MOCK'
+#!/usr/bin/env bash
+# Mock: an inode whose last directory entry was removed by rename(2).
+echo 0
+MOCK
+    chmod +x "$tmp/mockbin/stat"
+
+    local st; st=$(PATH="$tmp/mockbin:$PATH" _index_read_state)
+    [[ "$st" == "stale" ]] || fail "nlink 0 must classify as stale, got: $st"
+
+    local rc=0; ( PATH="$tmp/mockbin:$PATH" _index_assert_readable ) 2>/dev/null || rc=$?
+    [[ "$rc" -eq 1 ]] || fail "a stale index must be an error (exit 1), got rc=$rc"
+
+    # It must say WHAT is wrong — "replaced while this session was running" is the
+    # one phrasing that tells a user their view is dead rather than empty.
+    local msg; msg=$(_index_unreadable_sentence stale "$(_index_file)")
+    [[ "$msg" == *"replaced"* ]] || fail "the stale sentence must name the cause: $msg"
+    # It must not CLAIM emptiness — that is the false-success string itself. (The
+    # sentence does contain the word, in the "this is NOT an empty index"
+    # disclaimer, so the assertion is on the claim, not on the token.)
+    [[ "$msg" != *"index is empty"* ]] \
+        || fail "a stale index must never be reported as an empty one: $msg"
+}
+
+# The liveness arm must FAIL SAFE where stat answers neither dialect: no link
+# count means no evidence, and no evidence must never be read as failure.
+test_index_read_state_stale_arm_fails_safe_without_stat() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /Users/me/dev/repo1
+
+    mkdir -p "$tmp/mockbin"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$tmp/mockbin/stat"
+    chmod +x "$tmp/mockbin/stat"
+
+    local st; st=$(PATH="$tmp/mockbin:$PATH" _index_read_state)
+    [[ "$st" == "ok" ]] \
+        || fail "an unanswerable link count must not invent a failure, got: $st"
+}
+
+# ── WS-3 — in-index residue absorption (ADR-0052 §3) ─────────────────
+#
+# An older binary that misread a v2 file as empty may write v1-format records into
+# a stray `paths:` section. The next host-side write folds that residue into
+# project_paths:/unscoped: (re-homing via membership) and drops `paths:`. A clean
+# v2 file must be left byte-untouched (no spurious rewrite).
+
+# Seed a v2 index with a stray `paths:` residue directly on disk (bypassing the
+# writers). $1=state dir already set via _index_test_env by the caller.
+_seed_v2_with_residue() {
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+# cco machine-local index
+version: 2
+projects:
+  app: "web api"
+project_paths:
+  app:
+    web: "/abs/web"
+llms:
+unscoped:
+paths:
+  api: "/abs/api"
+  loose: "/abs/loose"
+IDX
+}
+
+test_index_residue_absorbed_on_next_write() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _seed_v2_with_residue
+    local f; f=$(_index_file)
+
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    # api was a member of app → re-homed under project_paths[app]; loose → unscoped.
+    [[ "$(_index_pp_get app api)" == "/abs/api" ]] || fail "residue member 'api' not re-homed under app, got: $(_index_pp_get app api)"
+    [[ "$(_index_pp_get app web)" == "/abs/web" ]] || fail "existing binding 'web' clobbered"
+    [[ "$(_index_section_get unscoped loose)" == "/abs/loose" ]] || fail "residue orphan 'loose' not moved to unscoped"
+    # The stray paths: section is gone; version stays 2.
+    grep -q '^paths:' "$f" && fail "the absorbed paths: residue section must be dropped"
+    grep -q '^version: 2$' "$f" || fail "version must remain 2 after absorption"
+    # No mktemp ghosts left behind.
+    local ghosts; ghosts=$(find "$(dirname "$f")" -name 'index.??????' | wc -l | tr -d ' ')
+    [[ "$ghosts" -eq 0 ]] || fail "absorption left $ghosts tempfile ghost(s)"
+}
+
+# A residue value that conflicts with an existing v2 binding: current wins, the
+# divergence is surfaced (not silently applied), and paths: is still dropped.
+test_index_residue_conflict_keeps_current() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+version: 2
+projects:
+  app: "web"
+project_paths:
+  app:
+    web: "/abs/web-current"
+llms:
+unscoped:
+paths:
+  web: "/abs/web-legacy"
+IDX
+    _index_migrate_if_needed 2>/dev/null || fail "migrate_if_needed returned non-zero"
+    [[ "$(_index_pp_get app web)" == "/abs/web-current" ]] || fail "conflicting residue must not overwrite the current binding, got: $(_index_pp_get app web)"
+    grep -q '^paths:' "$f" && fail "paths: must be dropped even when a residue entry conflicted"
+    return 0
+}
+
+# A clean v2 file (no paths: residue) is byte-identical after migrate_if_needed —
+# no spurious rewrite.
+test_index_clean_v2_not_spuriously_rewritten() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    _index_set_path p repo1 /abs/one     # produces a clean v2 file
+    local f before after; f=$(_index_file)
+    before=$(cat "$f")
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+    after=$(cat "$f")
+    [[ "$before" == "$after" ]] || fail "a clean v2 file must not be rewritten by migrate_if_needed"
+}
+
+# A non-absolute residue value is dropped (self-heals via scan — the 016
+# precedent), and its presence does not block dropping the paths: section.
+test_index_residue_non_absolute_dropped() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<'IDX'
+version: 2
+projects:
+llms:
+project_paths:
+unscoped:
+paths:
+  bad: "relative/nope"
+  good: "/abs/good"
+IDX
+    _index_migrate_if_needed 2>/dev/null || fail "migrate_if_needed returned non-zero"
+    [[ "$(_index_section_get unscoped good)" == "/abs/good" ]] || fail "the absolute residue 'good' must be absorbed"
+    [[ -z "$(_index_section_get unscoped bad)" ]] || fail "the non-absolute residue 'bad' must be dropped"
+    grep -q '^paths:' "$f" && fail "paths: must be dropped despite the unrecoverable entry"
+    return 0
+}
+
+# ── WS-4 — v1→v2 extra_mount re-home (ADR-0052 §4, FI-23) ────────────
+#
+# The pure _index_rehome_dump classifier keys off repos-membership, so a v1→v2
+# rewrite correctly drops every extra_mount into unscoped: (a mount is never a
+# membership token). The host-only _index_rehome_extra_mounts enrichment then moves
+# a DECLARED extra_mount under its project (ADR-0051 D2 — no global-default layer),
+# while a genuine project-less pin stays unscoped. It needs the operator-aware
+# resolver + the yaml parser (the bare _index_test_env sources neither) and a
+# project.yml on disk.
+_rehome_env() {
+    _index_test_env "$1"
+    source "$REPO_ROOT/lib/cmd-resolve.sh"
+    source "$REPO_ROOT/lib/yaml.sh"
+}
+
+# A repo with a project.yml declaring one extra_mount. $1=dir $2=project $3=repo $4=mount
+_rehome_mk_repo() {
+    mkdir -p "$1/.cco"
+    cat > "$1/.cco/project.yml" <<YML
+name: $2
+repos:
+  - name: $3
+extra_mounts:
+  - name: $4
+    target: /workspace/$4
+YML
+}
+
+test_index_v1v2_rehomes_declared_extra_mount() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/backend" app backend assets
+    mkdir -p "$tmp/assets-dir"
+    # v1 flat index: repo `backend` (a member) + extra_mount `assets` (NOT a member)
+    # + a genuine project-less pin `loose` (declared by no project.yml).
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  backend: "$tmp/backend"
+  assets: "$tmp/assets-dir"
+  loose: "/abs/loose-pin"
+projects:
+  app: "backend"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    [[ "$(_index_version)" == 2 ]] || fail "index must be v2 after migrate"
+    [[ "$(_index_pp_get app backend)" == "$tmp/backend" ]] || fail "repo 'backend' not re-homed under app"
+    # The declared extra_mount is re-homed under its project and cleared from unscoped.
+    [[ "$(_index_pp_get app assets)" == "$tmp/assets-dir" ]] || fail "declared extra_mount not re-homed under app, got: $(_index_pp_get app assets)"
+    [[ -z "$(_index_section_get unscoped assets)" ]] || fail "re-homed extra_mount must be cleared from unscoped"
+    # A genuine project-less pin stays unscoped (FI-23 must not over-reach).
+    [[ "$(_index_section_get unscoped loose)" == "/abs/loose-pin" ]] || fail "a genuine project-less pin must stay unscoped, got: $(_index_section_get unscoped loose)"
+}
+
+# An extra_mount name declared by MORE THAN ONE project re-homes under EACH (v1
+# names are globally unique → one path, fanned across every declaring project,
+# mirroring how a shared repo re-homes), then is cleared from unscoped once.
+test_index_v1v2_rehomes_shared_extra_mount_under_each() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/a" app-a repoA shared
+    _rehome_mk_repo "$tmp/b" app-b repoB shared
+    mkdir -p "$tmp/shared-dir"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  repoA: "$tmp/a"
+  repoB: "$tmp/b"
+  shared: "$tmp/shared-dir"
+projects:
+  app-a: "repoA"
+  app-b: "repoB"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+
+    [[ "$(_index_pp_get app-a shared)" == "$tmp/shared-dir" ]] || fail "'shared' not re-homed under app-a, got: $(_index_pp_get app-a shared)"
+    [[ "$(_index_pp_get app-b shared)" == "$tmp/shared-dir" ]] || fail "'shared' not re-homed under app-b, got: $(_index_pp_get app-b shared)"
+    [[ -z "$(_index_section_get unscoped shared)" ]] || fail "'shared' must be cleared from unscoped after both re-homes"
+}
+
+# The enrichment is host-only: in operator mode (a session) it is a no-op — a
+# session never mounts the legacy/global index, and the re-home is a host repair
+# (ADR-0047). The extra_mount stays unscoped (still resolves via the fallback).
+test_index_v1v2_rehome_skipped_in_operator_mode() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rehome_env "$tmp/state"
+    _rehome_mk_repo "$tmp/backend" app backend assets
+    mkdir -p "$tmp/assets-dir"
+    # Force operator mode (the predicate needs the flag + three absolute buckets).
+    export CCO_CONTAINER_OPERATOR=1 CCO_IN_CONTAINER=1
+    export CCO_DATA_HOME="$tmp/data" CCO_CACHE_HOME="$tmp/cache"
+    mkdir -p "$CCO_DATA_HOME" "$CCO_CACHE_HOME" "$tmp/state/shared"
+    local f; f=$(_index_file); mkdir -p "$(dirname "$f")"
+    cat > "$f" <<IDX
+version: 1
+paths:
+  backend: "$tmp/backend"
+  assets: "$tmp/assets-dir"
+projects:
+  app: "backend"
+IDX
+    _index_migrate_if_needed || fail "migrate_if_needed returned non-zero"
+    unset CCO_CONTAINER_OPERATOR CCO_IN_CONTAINER
+
+    # v1→v2 still happened (that is not operator-gated), but the extra_mount was NOT
+    # re-homed — it stays in unscoped, its resolution fallback intact.
+    [[ "$(_index_version)" == 2 ]] || fail "index must be v2 after migrate"
+    [[ -z "$(_index_pp_get app assets)" ]] || fail "operator mode must NOT re-home the extra_mount, got: $(_index_pp_get app assets)"
+    [[ "$(_index_section_get unscoped assets)" == "$tmp/assets-dir" ]] || fail "the extra_mount must remain unscoped in operator mode, got: $(_index_section_get unscoped assets)"
+}
+
+# ── FI-27 / ADR-0053: path canonicalization at the write boundary ─────────
+
+# Tier-1 lexical canonicalization is pure string: collapse //, /./, trailing /.
+# and trailing /, but NEVER collapse .. (unsafe across a symlink — D6). Works on
+# a not-yet-existing path.
+test_index_normalize_path_lexical_canon() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    local -a cases=(
+        "/a/b/.=/a/b" "/a//b=/a/b" "/a/./b=/a/b" "/a/b/=/a/b"
+        "/a/.//b/./=/a/b" "/a///b////=/a/b" "/=/" "/.=/" "//=/"
+        "/a/../b=/a/../b"
+    )
+    local c inp want got
+    for c in "${cases[@]}"; do
+        inp="${c%%=*}"; want="${c#*=}"
+        got=$(_index_normalize_path "$inp")
+        [[ "$got" == "$want" ]] || fail "normalize '$inp' -> '$got' (want '$want')"
+    done
+    # Still rejects the non-absolute (unchanged contract).
+    _index_normalize_path "relative/x" >/dev/null 2>&1 && fail "must reject relative"
+    _index_normalize_path "" >/dev/null 2>&1 && fail "must reject empty"
+    return 0
+}
+
+# Tier-2 physical: resolve symlinks when the dir exists; lexical-fallback when it
+# does not; reject the non-absolute. Idempotent.
+test_index_canonicalize_resolves_symlink_and_falls_back() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    [[ "$(_index_canonicalize_path "$tmp/link")" == "$phys" ]] \
+        || fail "symlink not resolved: got $(_index_canonicalize_path "$tmp/link")"
+    [[ "$(_index_canonicalize_path "$tmp/real/.")" == "$phys" ]] \
+        || fail "trailing /. not collapsed on existing dir"
+    # Missing path → best-effort lexical only, no crash.
+    [[ "$(_index_canonicalize_path "$tmp/missing/.")" == "$tmp/missing" ]] \
+        || fail "missing path should lexical-fallback"
+    # Idempotent.
+    [[ "$(_index_canonicalize_path "$phys")" == "$phys" ]] || fail "not idempotent"
+    _index_canonicalize_path "relative" >/dev/null 2>&1 && fail "must reject non-absolute"
+    return 0
+}
+
+# The project-scoped writer stores the CANONICAL form (symlink resolved, /. gone).
+test_index_set_path_stores_canonical() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    _index_set_path proj repo "$tmp/link"
+    [[ "$(_index_get_path proj repo)" == "$phys" ]] \
+        || fail "writer must store the physical path, got: $(_index_get_path proj repo)"
+    _index_set_path proj repo2 "$tmp/real/."
+    [[ "$(_index_get_path proj repo2)" == "$phys" ]] \
+        || fail "writer must collapse trailing /., got: $(_index_get_path proj repo2)"
+}
+
+# The unscoped writer canonicalizes too.
+test_index_set_unscoped_stores_canonical() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/u"
+    _index_set_unscoped uname "$tmp/u/."
+    [[ "$(_index_get_path anyproj uname)" == "$tmp/u" ]] \
+        || fail "unscoped writer must canonicalize, got: $(_index_get_path anyproj uname)"
+}
+
+# The core bug: two spellings of one working tree (a symlink alias vs the physical
+# dir) must NOT be a false AD5' conflict. The writer stores canonical; a physical
+# (pwd -P-derived) probe then compares equal.
+test_index_no_false_conflict_across_symlink_alias() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _index_test_env "$tmp/state"
+    mkdir -p "$tmp/real"
+    ln -sfn "$tmp/real" "$tmp/link"
+    local phys; phys=$(cd "$tmp/real" && pwd -P)
+    _index_set_path proj repo "$tmp/link"
+    if _index_path_conflicts proj repo "$phys"; then
+        fail "false AD5' conflict: physical probe vs canonical stored value"
+    fi
+    # Re-binding the same resource under its physical name is a clean no-op upsert.
+    _index_set_path proj repo "$phys"
+    [[ "$(_index_get_path proj repo)" == "$phys" ]] || fail "re-bind changed the value"
 }

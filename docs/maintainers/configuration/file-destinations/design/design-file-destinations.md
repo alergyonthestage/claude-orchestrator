@@ -202,13 +202,13 @@ never hand-edited, safe to delete (cco regenerates it).
 | `llms/<name>/` | llms.txt **content** download + its cache-state sidecar (`etag`, `resolved_url`, `downloaded`). Re-fetched from the coordinate. |
 | `installed/` | Sharing-repo clones used for install/update. |
 | `remote_cache` | Remote HEAD + timestamp (avoids re-hitting the network on update checks). |
-| `projects/<id>/.claude/` | Generated overlays `packs.md` and `workspace.yml`, mounted `:ro` over `/workspace/.claude`. |
+| `projects/<id>/.claude/` | Generated overlay `workspace.yml`, mounted `:ro` over `/workspace/.claude`. |
 | `projects/<id>/managed/` | Generated `browser.json`, `github.json`, `policy.json`, mounted `:ro` into `/workspace/.managed`. |
 | `*.bak`, `dry-run/` | Update artifacts cleaned by `cco clean`. |
 
 **Why here.** Everything in CACHE can be reproduced from a source of truth: llms
-content from its coordinate, clones from the remote, overlays (`packs.md`,
-`workspace.yml`, `docker-compose.yml`, `managed/*.json`) from `project.yml` at
+content from its coordinate, clones from the remote, overlays (`workspace.yml`,
+`docker-compose.yml`, `managed/*.json`) from `project.yml` at
 the next `cco start`. Generated overlays are kept out of the committed
 `<repo>/.cco/` tree precisely so they don't pollute the truthful `git diff` or
 the `cco sync`; they are layered back into the session via nested `:ro` mounts.

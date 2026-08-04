@@ -82,6 +82,41 @@ test_list_reverse_inverts() {
     assert_output_contains "KIND"
 }
 
+# B3: the compact index carries a dedicated STATUS column for the project kind
+# (tri-state; other kinds show '-'). Seeded in both contexts: registry marker
+# (in-container) + smart docker mock (host).
+test_list_compact_status_column() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_project_session "$mock_bin" "svc"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "svc" "$(minimal_project_yml svc)"
+    _seed_running "svc"
+    run_cco list
+    assert_output_contains "STATUS"
+    assert_output_contains "running"
+}
+
+# B3: --sort status orders running before stopped (then by name).
+test_list_sort_status_orders() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local mock_bin="$tmpdir/bin"
+    _mock_docker_with_project_session "$mock_bin" "bb-run"
+    setup_mocks "$mock_bin"
+    setup_cco_env "$tmpdir"
+    create_project "$tmpdir" "aa-stop" "$(minimal_project_yml aa-stop)"
+    create_project "$tmpdir" "bb-run"  "$(minimal_project_yml bb-run)"
+    _seed_running_dir          # both present-but-stopped by default in-container
+    _seed_running "bb-run"     # bb-run marked running
+    run_cco list --sort status
+    local pr ps
+    pr=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'bb-run'  | head -1 | cut -d: -f1)
+    ps=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -n 'aa-stop' | head -1 | cut -d: -f1)
+    [[ -n "$pr" && -n "$ps" && "$pr" -lt "$ps" ]] \
+        || fail "--sort status should order running (bb-run@$pr) before stopped (aa-stop@$ps)"
+}
+
 test_list_long_name_truncated() {
     # A name wider than the NAME column is ellipsized, never wrapped/shifted.
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
@@ -133,4 +168,65 @@ test_list_unknown_kind_errors() {
     setup_cco_env "$tmpdir"
     run_cco list bogus
     assert_output_contains "Unknown resource kind"
+}
+
+# ── R3: internal built-ins (config-editor / tutorial) ────────────────────────
+# Reserved framework sessions are not index rows, so plain `cco list` never showed
+# them. They now appear as KIND 'builtin': RUNNING-only by default (clean list),
+# all-with-status under --include-internal or `cco list builtin`.
+
+test_list_builtins_hidden_when_not_running() {
+    # Host-side, no session is running → the default index omits the built-ins.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _mk_pack "my-api"
+    run_cco list
+    assert_output_contains "my-api"
+    assert_output_not_contains "config-editor"
+    assert_output_not_contains "tutorial"
+}
+
+test_list_include_internal_shows_stopped_builtins() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco list --include-internal
+    assert_output_contains "builtin"
+    assert_output_contains "config-editor"
+    assert_output_contains "tutorial"
+}
+
+test_list_builtin_kind_shows_all_with_status() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    run_cco list builtin
+    assert_output_contains "config-editor"
+    assert_output_contains "tutorial"
+    # A bare `cco list builtin` still renders the compact table header (no rich view).
+    assert_output_contains "STATUS"
+}
+
+test_list_running_builtin_shown_in_default() {
+    # In-container: a RUNNING built-in (registry marker present) appears in the plain
+    # default index without any flag. Simulate the operator context + a marker.
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    mkdir -p "$tmpdir/state/running" "$tmpdir/state/shared" "$tmpdir/home"
+    : > "$tmpdir/state/running/config-editor"
+    # A session is LAUNCHED from the index, so an operator fixture without one is
+    # a state that cannot occur — and since ADR-0056 D6 it is refused at entry
+    # rather than rendered as an empty listing. Seed the scaffold every real
+    # session has (_index_ensure_file's shape); the built-in rows under test do
+    # not come from it, and the projects section stays empty.
+    printf 'version: 2\nprojects:\nproject_paths:\nllms:\nunscoped:\n' > "$tmpdir/state/shared/index"
+    CCO_OUTPUT=$(
+        env CCO_IN_CONTAINER=1 CCO_CONTAINER_OPERATOR=1 CCO_STORE_ELEVATED=1 \
+            CCO_CCO_ACCESS=read-all \
+            CCO_STATE_HOME="$tmpdir/state" CCO_DATA_HOME="$tmpdir/data" \
+            CCO_CACHE_HOME="$tmpdir/cache" HOME="$tmpdir/home" \
+            bash "$REPO_ROOT/bin/cco" list 2>&1
+    )
+    assert_output_contains "builtin"
+    assert_output_contains "config-editor"
+    assert_output_contains "running"
+    # tutorial is NOT running → still hidden in the default view.
+    assert_output_not_contains "tutorial"
 }

@@ -3,7 +3,7 @@
 **Status**: Accepted (2026-06-29) — pre-merge **Round 3 dogfooding** (Scope 3); decisions land pre-merge
 **Deciders**: maintainer + dogfooding session
 **Context docs**: the handoff
-[`../s3-join-forget-handoff.md`](../s3-join-forget-handoff.md) (code map, test plan); `../../roadmap.md`
+`../s3-join-forget-handoff.md` (consumed) (code map, test plan); `../../roadmap.md`
 §"Round 3 … Scope 3"
 **Related ADRs**: **0024 D1/D2 (project identity = `project.yml` `name:`; the `cco sync` clobber-guard
 keys on it)**, **0031 (`cco project rename` — the multi-repo same-id edit pattern)**, **0021 (resource

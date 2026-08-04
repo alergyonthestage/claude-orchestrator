@@ -84,6 +84,51 @@ if [ -S /var/run/docker.sock ] && [ -f /etc/cco/policy.json ]; then
     fi
 fi
 
+# ── cco internal-store privilege boundary (ADR-0047) ─────────────────
+# Lock down the privileged root that confines the internal store BEFORE claude ever
+# gets control (mirrors the docker-socket chmod-first pattern above — lock first, so
+# the boundary holds even if a later step fails). The store buckets (STATE index, DATA
+# registries, CACHE internals) are bind-mounted UNDER this root at leaf paths; because
+# the root is mode 0700 and owned by the login-less cco-svc uid on the REAL container
+# FS, the claude user (agent shell + wrapped cco) cannot traverse it → EACCES, closing
+# the S1/S1b cat-the-index leak. The sole crossing is the setuid cco-svc-helper, which
+# elevates to cco-svc and runs the scope-aware `cco __store`. On macOS Docker Desktop
+# chown/chmod on bind-mount CONTENT is not DAC-enforced (fakeowner), but the kernel
+# checks path traversal on the real PARENT inode — this 0700 real-FS parent (ADR-0047
+# §8 Test B). Idempotent + self-healing even against an image built before Phase II.
+CCO_INTERNAL_ROOT=/var/lib/cco-internal
+if getent passwd cco-svc >/dev/null 2>&1; then
+    install -d -o cco-svc -g cco-svc -m 0700 "$CCO_INTERNAL_ROOT"
+    # Re-assert ownership + mode unconditionally (defence in depth): the root must be
+    # 0700 cco-svc regardless of how the image or a prior run left it.
+    chown cco-svc:cco-svc "$CCO_INTERNAL_ROOT"
+    chmod 0700 "$CCO_INTERNAL_ROOT"
+    # Per-bucket PARENTS, owned by cco-svc. Docker materialises any missing mountpoint
+    # ancestor itself, as root:root 0755 — and cco-svc can then traverse and read it but
+    # NOT create in it, so any sibling write under such a parent fails EACCES. That is
+    # the design-docker.md §1.2.2 hazard, and v3 R1 was its first real instance (the
+    # index bind's parent). Re-asserting them here is idempotent and applies whether or
+    # not the corresponding bind exists in this session. Non-recursive on purpose: the
+    # children are bind mounts and their ownership belongs to the host.
+    for _b in state/cco share/cco cache/cco; do
+        install -d -o cco-svc -g cco-svc -m 0700 "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+        chown cco-svc:cco-svc "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+        chmod 0700 "$CCO_INTERNAL_ROOT/$_b" 2>/dev/null || true
+    done
+    unset _b
+    # XDG façade: $HOME/.local/{state,share,cache}/cco → the confined root. Both native
+    # paths and a direct `cat ~/.local/state/cco/index` resolve INTO the 0700 parent and
+    # hit EACCES (Test B layout). The elevated cco reaches the real leaves via CCO_*_HOME
+    # (injected by the helper); these symlinks are the claude-visible dead end. cco no
+    # longer mounts under the shared ~/.local/state | ~/.cache bases, which also removes
+    # the design-docker.md §1.2.2 native-installer sibling-EACCES collision.
+    gosu claude mkdir -p /home/claude/.local/state /home/claude/.local/share /home/claude/.cache 2>/dev/null || true
+    ln -sfn "$CCO_INTERNAL_ROOT/state/cco" /home/claude/.local/state/cco
+    ln -sfn "$CCO_INTERNAL_ROOT/share/cco" /home/claude/.local/share/cco
+    ln -sfn "$CCO_INTERNAL_ROOT/cache/cco" /home/claude/.cache/cco
+    _log "Internal-store boundary: $CCO_INTERNAL_ROOT locked (0700 cco-svc); XDG symlinks in place"
+fi
+
 # ── Ensure ~/.claude.json exists and is writable ─────────────────────
 # Mounted from global/claude-state/claude.json (shared across all projects).
 # Initialized on host by cmd_start before container starts.
@@ -222,11 +267,23 @@ CLAUDE_REQ="${CLAUDE_CODE_VERSION:-latest}"
 
 # The bind-mounted dirs may be owned by the host uid — ensure claude owns them
 # before installing/writing (macOS Docker Desktop: chown is a no-op, hence || true).
-mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude
+# .local/state and .cache are included even though nothing is installed there
+# directly by this block: when cco_access != none, cco nests bind mounts under
+# them (.local/state/cco/index, .cache/cco/llms — ADR-0036 D4), which makes the
+# container runtime auto-create the parent as a root-owned mount point before
+# this script runs — blocking the installer's own mkdir of the sibling
+# .local/state/claude / .cache/claude dirs unless we reclaim ownership here.
+# The Dockerfile now pre-creates these XDG bases claude-owned too (belt and
+# suspenders — see its "User setup" comment for the same rationale); this stays
+# so runtime start-up self-heals even against an image built before that.
+mkdir -p /home/claude/.local/bin /home/claude/.local/share/claude \
+    /home/claude/.local/state /home/claude/.cache
 chown claude:claude \
     /home/claude/.local \
     /home/claude/.local/bin \
-    /home/claude/.local/share/claude 2>/dev/null || true
+    /home/claude/.local/share/claude \
+    /home/claude/.local/state \
+    /home/claude/.cache 2>/dev/null || true
 
 _installed_req=""
 if [ -f "$CLAUDE_MARKER" ]; then
@@ -235,6 +292,20 @@ fi
 
 if [ ! -x "$CLAUDE_BIN" ] || [ "$_installed_req" != "$CLAUDE_REQ" ]; then
     echo "[entrypoint] Installing Claude Code ('$CLAUDE_REQ') via native installer (one-time per cache)..." >&2
+    # Clear the launcher path first. `claude install` refuses to overwrite a
+    # launcher it does not own ("was not created by the native installer") and
+    # exits non-zero, which used to make this a FATAL with no way out: the stale
+    # file lives in the shared CACHE mount, so ANY session that once left a
+    # foreign launcher there (an npm-era wrapper, a `claude migrate-installer`
+    # result, a dangling symlink into a wiped share/claude/versions) poisoned the
+    # install for every project until `cco build --no-cache`. We only reach this
+    # branch when we have already decided to (re)install, so whatever sits at the
+    # launcher path is destined to be replaced — removing it is not a data loss,
+    # and the real install lives in share/claude/versions either way.
+    if [ -e "$CLAUDE_BIN" ] || [ -L "$CLAUDE_BIN" ]; then
+        _log "Clearing existing launcher at $CLAUDE_BIN before install"
+        rm -rf "$CLAUDE_BIN"
+    fi
     if gosu claude env CLAUDE_REQ="$CLAUDE_REQ" bash -c \
         'curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_REQ"'; then
         echo "$CLAUDE_REQ" | gosu claude tee "$CLAUDE_MARKER" >/dev/null
@@ -242,6 +313,8 @@ if [ ! -x "$CLAUDE_BIN" ] || [ "$_installed_req" != "$CLAUDE_REQ" ]; then
     else
         echo "[entrypoint] FATAL: Claude Code install failed (channel/version='$CLAUDE_REQ')." >&2
         echo "[entrypoint] Network access is required at first start (installer fetch)." >&2
+        echo "[entrypoint] If the install cache is corrupt, reset it from the host:" >&2
+        echo "[entrypoint]   cco build --no-cache" >&2
         exit 1
     fi
 else

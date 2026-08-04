@@ -9,7 +9,8 @@
 # to recover real paths from a legacy vault backup.
 #
 # Provides: _local_paths_get(), _prompt_for_path(), _effective_repo_mounts(),
-#   _effective_extra_mounts(), _resolve_entry_index(), _project_effective_paths()
+#   _effective_extra_mounts(), _mount_source_for(), _resolve_entry_index(),
+#   _project_effective_paths()
 #
 # Session-start path resolution is NOT here: `cco start` and `cco resolve` share
 # the SINGLE resolution surface _resolve_unit (lib/cmd-resolve.sh) — ADR-0033 / S1
@@ -179,6 +180,7 @@ _prompt_for_path() {
 # member still unresolved after the F49 prompt has no index path → excluded.
 _effective_repo_mounts() {
     local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     # Peel the name field by tab (IFS=$'\t' read collapses empty middle fields).
     local _ln name _p
     while IFS= read -r _ln; do
@@ -188,7 +190,23 @@ _effective_repo_mounts() {
         # Conscious-skip (design §4.4 / P14): a member still unresolved after
         # the F49 prompt has no index path — exclude it (never emit a silent
         # empty mount, #B17); _start_resolve_paths already warned + ⚠-badged it.
-        _p=$(_index_get_path "$name")
+        # Resolves through the SHARED bridge (INV-M1): the session override wins,
+        # so a built-in's synthetic manifest (whose own name-scope holds no index
+        # bindings by construction — RC-6 §1.2) still resolves its declared repos.
+        _p=$(_mount_source_for "$proj" "$name")
+        # In-container (operator mode) the STATE index is NOT the truth about what
+        # is MOUNTED: a synthetic manifest has no binding under its own scope
+        # (INV-M2) and _CCO_MOUNT_OVERRIDE is host-process-local, so both miss here
+        # even though /workspace/<name> exists on disk. The container's truth is the
+        # mount itself — the same predicate cmd-whoami.sh:24-33 uses (INV-M4), so the
+        # in-container introspection verbs (project show/list) report mounted repos
+        # rather than an empty set. Fallback ONLY (never an override): a normal
+        # session's index hit is byte-identical, so show_host_paths rendering is
+        # untouched. Emits a CONTAINER path — it can never leak a host one.
+        if [[ "$_p" != /* ]] && _cco_container_operator \
+           && [[ -d "${CCO_WORKDIR:-/workspace}/$name" ]]; then
+            _p="${CCO_WORKDIR:-/workspace}/$name"
+        fi
         # Skip empty AND any NON-ABSOLUTE index value. A bogus marker like the
         # legacy `@local` must never reach the compose as a mount source — its
         # leading `@` is a reserved YAML char that breaks `docker compose`
@@ -198,48 +216,239 @@ _effective_repo_mounts() {
     done < <(yml_get_repo_coords "$project_yml" 2>/dev/null)
 }
 
-# Companion bridge for extra mounts. Emit "<abs_source>\t<target>\t<ro>" per
-# mount (ro = "true"|"false"). LEGACY: source/target/ro from project.yml
-# (source already resolved + expanded). NEW: source from the index by name,
-# target defaults to /workspace/<name>, readonly defaults to true.
-# Session-local mount override (set by the internal config-editor only): maps a few
+# Session-local mount override (set by the internal built-ins only): maps a few
 # fixed internal mount names to host paths WITHOUT writing the persistent STATE index
 # (review H4 — the index is user-facing config, not an ephemeral routing table; raw
 # _index_set_path there clobbered user bindings like a repo named `cco-docs`).
-# Newline-delimited "name<TAB>path" lines in the in-process global $_CCO_MOUNT_OVERRIDE.
+# Newline-delimited "name<TAB>path<TAB>role" lines in the in-process global
+# $_CCO_MOUNT_OVERRIDE. `role` is the authoritative marker of "this mount is
+# framework-generated, not user-declared" (RC-1 §3.3) — same producer, same
+# lifetime, same mechanism as the path, so no new registry and no name heuristic:
+#   store           ~/.cco                → the personal store
+#   project-config  <repo>/.cco           → a config-editor edit target
+#   (empty)         anything else         → treated exactly like a user mount
+# The role column is OPTIONAL and may be empty; both readers below peel by hand
+# (_peel_tab) because tab is IFS whitespace to `read`, which would fold an empty
+# role into the path (lib/utils.sh:96-110).
 _mount_override_get() {
-    local name="$1" oname opath
+    local name="$1" _oln oname opath orole
     [[ -n "${_CCO_MOUNT_OVERRIDE:-}" ]] || return 1
-    while IFS=$'\t' read -r oname opath; do
+    while IFS= read -r _oln; do
+        _peel_tab "$_oln" oname opath orole
         [[ "$oname" == "$name" ]] && { printf '%s' "$opath"; return 0; }
     done <<< "$_CCO_MOUNT_OVERRIDE"
     return 1
 }
 
+# Sibling of _mount_override_get: the mount's ROLE, empty when unset or unknown.
+# Returns 1 (with no output) for a name the override does not carry, so a caller
+# can distinguish "user mount" from "framework mount with no role".
+_mount_override_role() {
+    local name="$1" _oln oname opath orole
+    [[ -n "${_CCO_MOUNT_OVERRIDE:-}" ]] || return 1
+    while IFS= read -r _oln; do
+        _peel_tab "$_oln" oname opath orole
+        [[ "$oname" == "$name" ]] && { printf '%s' "$orole"; return 0; }
+    done <<< "$_CCO_MOUNT_OVERRIDE"
+    return 1
+}
+
+# THE single logical-name → host-path resolution for every mount bridge (INV-M1,
+# RC-6 §3.3). One function, one order: the in-process session override (ephemeral,
+# published by a built-in's generated manifest — review H4) THEN the per-project
+# STATE index binding under the caller's own `name:` scope. There is NO
+# cross-project fallback: another project's same-name binding is a DIFFERENT
+# resource (ADR-0051 D1/D2), never a default — resurrecting the global default is
+# the rejected alternative B (would silently mount an unrelated working tree).
+# The three bridges had this two-line lookup copy-pasted and let it drift (repos
+# consulted the index only, so config-editor's synthetic manifest never resolved
+# its repos); naming it is the class-level closure.
+# Usage: _mount_source_for <project-scope> <name>
+_mount_source_for() {
+    _mount_override_get "$2" || _index_get_path "$1" "$2"
+}
+
+# Companion bridge for extra mounts. Emits ONE record per mount:
+#
+#     <abs_source>\t<target>\t<ro>\t<config_access_policy>\t<role>
+#
+# ro = "true"|"false"; policy is TOTAL (ro|project|write); role is the
+# _CCO_MOUNT_OVERRIDE role above and is EMPTY for every user-declared mount.
+# LEGACY: source/target/ro from project.yml (source already resolved + expanded).
+# NEW: source from the index by name, target defaults to /workspace/<name>,
+# readonly defaults to true.
+#
+# CONTRACT NOTE for consumers: peel this record with _peel_tab, never
+# `IFS=$'\t' read`. The trailing role field is routinely empty, and tab is IFS
+# whitespace to `read` — which collapses runs of it, so a `read -r a b c d e`
+# consumer silently shifts every field left on any mount without a role.
 _effective_extra_mounts() {
     local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
     # Peel fields by tab (IFS=$'\t' read collapses empty middle fields, so
     # a name-only mount "name\t\t\ttarget\tro" would mis-assign target/ro).
-    local _ln name target ro_raw ro rest
+    local _ln name target ro_raw ro rest policy role
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
-        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"   # rest = url\tref\ttarget\tro\tpolicy
         rest="${rest#*$'\t'}"                          # drop url
         rest="${rest#*$'\t'}"                          # drop ref
-        target="${rest%%$'\t'*}"
-        ro_raw="${rest#*$'\t'}"
+        target="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"  # target, rest = ro\tpolicy
+        ro_raw="${rest%%$'\t'*}"
+        policy="${rest#*$'\t'}"; [[ "$policy" == "$ro_raw" ]] && policy=""  # no policy field
         [[ -z "$name" ]] && continue
         # Conscious-skip: exclude an unresolved mount (no index path) rather
-        # than emit a silent empty mount (#B17; design §4.4 / P14). A session-local
-        # internal override (config-editor, H4) wins over the persistent index.
-        local _ms; _ms=$(_mount_override_get "$name" || _index_get_path "$name")
+        # than emit a silent empty mount (#B17; design §4.4 / P14). Resolved via
+        # the SHARED bridge (INV-M1) — the session-local internal override wins
+        # over the persistent index. The role is a SEPARATE query: it is empty
+        # (and _mount_override_role returns 1) for every user-declared mount, so
+        # a user mount is never framework-roled.
+        local _ms; _ms=$(_mount_source_for "$proj" "$name")
+        role=$(_mount_override_role "$name" 2>/dev/null || true)
         # Skip empty AND any NON-ABSOLUTE value (e.g. a stale `@local` marker —
         # leading `@` is a reserved YAML char that would break the compose).
         [[ "$_ms" != /* ]] && continue
         [[ -z "$target" ]] && target="/workspace/$name"
         ro=$(_parse_bool "$ro_raw" "true")
-        printf '%s\t%s\t%s\n' "$_ms" "$target" "$ro"
+        # config_access_policy (ADR-0049 §7): governs NESTED .claude/.cco inside the
+        # mount — ro (default, strict) | project (follow session knobs) | write.
+        # Invalid/empty → ro (strict default). It is the user-facing per-mount
+        # OVERRIDE; `role` is the orthogonal framework-provenance signal.
+        case "$policy" in project|write) : ;; *) policy="ro" ;; esac
+        printf '%s\t%s\t%s\t%s\t%s\n' "$_ms" "$target" "$ro" "$policy" "$role"
     done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+}
+
+# _mount_declared_target <project_yml> <name> — echo the DECLARED container
+# `target:` of extra_mount <name> in <project_yml>, or empty when the mount is
+# absent or has no explicit target (its default is <workdir>/<name>, INV-F.2). A
+# thin reader over yml_get_mount_coords (target is its 4th field), used by the
+# repo/extra_mount rename probe so an explicit-target mount is probed at the path it
+# is actually bound to rather than the <workdir>/<name> default.
+_mount_declared_target() {
+    local project_yml="$1" want="$2" _ln name rest target
+    [[ -f "$project_yml" ]] || return 0
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
+        rest="${rest#*$'\t'}"   # drop url
+        rest="${rest#*$'\t'}"   # drop ref
+        target="${rest%%$'\t'*}"
+        [[ "$name" == "$want" ]] && { printf '%s' "$target"; return 0; }
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+    return 0
+}
+
+# R7 — the DECLARED extra_mounts that do NOT resolve on this host (the set
+# _effective_extra_mounts silently conscious-skips). One "<name>\t<target>" line
+# each, so Level-A can surface them ("declared but not mounted this session")
+# instead of leaving the agent to reason about a mount that is not there — the
+# omission is terminal at `none` (no CLI to discover it). Marker-only: the
+# auto-skip vs user-skip provenance degrades per the fix design's caveat (the skip
+# choice is not recorded where this can read it).
+_declared_unresolved_extra_mounts() {
+    local project_yml="$1"
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
+    local _ln name rest target _ms
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        name="${_ln%%$'\t'*}"; rest="${_ln#*$'\t'}"
+        rest="${rest#*$'\t'}"   # drop url
+        rest="${rest#*$'\t'}"   # drop ref
+        target="${rest%%$'\t'*}"
+        [[ -z "$name" ]] && continue
+        _ms=$(_mount_source_for "$proj" "$name")   # shared bridge (INV-M1)
+        [[ "$_ms" == /* ]] && continue   # resolved → not in the unresolved set
+        [[ -z "$target" ]] && target="/workspace/$name"
+        printf '%s\t%s\n' "$name" "$target"
+    done < <(yml_get_mount_coords "$project_yml" 2>/dev/null)
+}
+
+# Echo the git origin url of the repo at <path> (empty when not a git repo or no
+# `origin` remote). Derived on demand for the A.4 url-divergence signal; no url is
+# ever stored in the index (ADR-0051 D4). Usage: _resolve_git_origin <path>
+_resolve_git_origin() {
+    git -C "$1" remote get-url origin 2>/dev/null || true
+}
+
+# Echo the DISTINCT existing paths that <name> is already bound to in projects
+# OTHER than <self> (dedup by path; only on-disk paths). The reuse candidates for
+# add-time disambiguation (ADR-0051 D4). Usage: _resolve_name_reuse_candidates <name> <self>
+_resolve_name_reuse_candidates() {
+    local want="$1" self="$2" proj path s dup
+    local -a seen=()
+    while IFS=$'\t' read -r proj path; do
+        [[ "$proj" == "$self" ]] && continue
+        [[ -z "$path" ]] && continue
+        _path_exists "$path" || continue
+        dup=false
+        for s in ${seen[@]+"${seen[@]}"}; do [[ "$s" == "$path" ]] && { dup=true; break; }; done
+        $dup && continue
+        seen+=("$path")
+        printf '%s\n' "$path"
+    done < <(_index_bindings_for_name "$want")
+}
+
+# Render the reuse menu for <name> to STDOUT: one "[i] <path>" line per distinct
+# other-project candidate, each repos line flagged with a ⚠ when its on-disk git
+# origin diverges from the incoming <url> ("probably a different resource").
+# Pure (no read/no prompt) so the A.4 signal — the candidate set + the divergence
+# warning — is unit-testable. Exit: 0=at least one candidate (menu emitted),
+# 1=none. Usage: _resolve_reuse_menu <name> <section> <url> <self>
+_resolve_reuse_menu() {
+    local name="$1" section="$2" url="$3" self="$4"
+    local -a cands=()
+    local c
+    while IFS= read -r c; do [[ -n "$c" ]] && cands+=("$c"); done \
+        < <(_resolve_name_reuse_candidates "$name" "$self")
+    [[ ${#cands[@]} -eq 0 ]] && return 1
+    echo "  '${name}' is already bound in other projects on this machine:"
+    local i=1 origin line
+    for c in "${cands[@]}"; do
+        line="    [$i] $c"
+        if [[ "$section" == "repos" && -n "$url" ]]; then
+            origin=$(_resolve_git_origin "$c")
+            [[ -n "$origin" && "$origin" != "$url" ]] \
+                && line="$line  ⚠ git origin '$origin' ≠ this project's '$url' — probably a different resource"
+        fi
+        echo "$line"
+        i=$((i + 1))
+    done
+    return 0
+}
+
+# Add-time disambiguation prompt (ADR-0051 D4). When <name> is already bound in
+# OTHER projects, surface those existing paths (via _resolve_reuse_menu) and let
+# the user REUSE one (the same resource — the explicit (V) convenience) or fall
+# through to a fresh path (a homonym). TTY-only (the caller gates); never auto-
+# reuses (that would resurrect the rejected global-default layer). Output: reused
+# abs path (stdout). Exit: 0=reuse (path emitted), 1=no candidates OR the user
+# wants a different path, 2=quit.
+_resolve_disambiguate() {
+    local name="$1" section="$2" url="$3" self="$4"
+    local menu; menu=$(_resolve_reuse_menu "$name" "$section" "$url" "$self") || return 1
+    local -a cands=()
+    local c
+    while IFS= read -r c; do [[ -n "$c" ]] && cands+=("$c"); done \
+        < <(_resolve_name_reuse_candidates "$name" "$self")
+
+    echo "" >&2
+    printf '%s\n' "$menu" >&2
+    echo "  Reuse one of these paths (the same resource), or specify a different path (a homonym)." >&2
+    echo "    [1-${#cands[@]}] reuse that path    [d] specify a different path    [q] quit" >&2
+    printf "  Choice: " >&2
+    local reply
+    read -r reply < /dev/tty
+    case "$reply" in
+        [Dd]) return 1 ;;
+        [Qq]) return 2 ;;
+        *[!0-9]*|'') warn "Invalid choice '$reply' — specify a different path"; return 1 ;;
+        *)
+            if [[ "$reply" -ge 1 && "$reply" -le ${#cands[@]} ]]; then
+                printf '%s\n' "${cands[$((reply - 1))]}"; return 0
+            fi
+            warn "Choice '$reply' out of range — specify a different path"; return 1 ;;
+    esac
 }
 
 # Single-entry resolution: look up <name> in the STATE index; if unresolved or
@@ -248,12 +457,28 @@ _effective_extra_mounts() {
 # Output: resolved abs path (stdout). Exit: 0=resolved, 1=skipped, 2=abort.
 _resolve_entry_index() {
     local project_dir="$1" section="$2" name="$3" url="${4:-}"
+    local proj; proj=$(yml_get "$project_dir/.cco/project.yml" name 2>/dev/null)   # per-project scope (ADR-0051)
 
     local existing
-    existing=$(_index_get_path "$name")
+    existing=$(_index_get_path "$proj" "$name")
     if [[ -n "$existing" ]] && _path_exists "$existing"; then
         echo "$existing"
         return 0
+    fi
+
+    # A.4 add-time disambiguation (ADR-0051 D4): if <name> already lives in OTHER
+    # projects, offer to reuse one of those paths before prompting for a new one.
+    # Under scoping a cross-project name match is NOT a collision — it is a reuse-
+    # or-homonym choice, made explicit here. TTY-gated; a headless run falls
+    # straight through to _prompt_for_path (which returns 2 with no terminal).
+    if _cco_have_tty; then
+        local _reuse _drc=0
+        _reuse=$(_resolve_disambiguate "$name" "$section" "$url" "$proj") || _drc=$?
+        case $_drc in
+            0) _index_set_path "$proj" "$name" "$_reuse"; echo "$_reuse"; return 0 ;;
+            2) return 2 ;;
+            # 1 → no candidates, or the user chose a different path → normal prompt
+        esac
     fi
 
     local label="Repository"
@@ -272,7 +497,13 @@ _resolve_entry_index() {
     resolved=$(_prompt_for_path "$name" "$url" "$suggested" "$label") || rc=$?
 
     if [[ $rc -eq 0 && -n "$resolved" ]]; then
-        _index_set_path "$name" "$resolved"
+        # S2b: the caller treats 0 as "bound, here is the path". A silently failed
+        # write returned that same 0, so the interactive prompt's answer was
+        # accepted and then lost — and the user is never asked again.
+        _index_set_path "$proj" "$name" "$resolved" || {
+            warn "Could not bind '$name' -> $resolved in the machine-local index."
+            return 1
+        }
         echo "$resolved"
         return 0
     elif [[ $rc -eq 2 ]]; then
@@ -303,6 +534,7 @@ _project_effective_paths() {
     local project_yml="$project_dir/project.yml"
 
     [[ ! -f "$project_yml" ]] && return 0
+    local proj; proj=$(yml_get "$project_yml" name 2>/dev/null)   # per-project name scope (ADR-0051)
 
     # Repos — logical names; abs path from the STATE index (unresolved = no entry).
     local _ln name effective status
@@ -310,7 +542,7 @@ _project_effective_paths() {
         [[ -z "$_ln" ]] && continue
         name="${_ln%%$'\t'*}"
         [[ -z "$name" ]] && continue
-        effective=$(_index_get_path "$name")
+        effective=$(_index_get_path "$proj" "$name")
         if [[ -z "$effective" ]]; then
             printf 'repos\t%s\t\tunresolved\n' "$name"
             continue
@@ -329,7 +561,7 @@ _project_effective_paths() {
         [[ -z "$_ml" ]] && continue
         mname="${_ml%%$'\t'*}"
         [[ -z "$mname" ]] && continue
-        meffective=$(_index_get_path "$mname")
+        meffective=$(_index_get_path "$proj" "$mname")
         if [[ -z "$meffective" ]]; then
             printf 'mounts\t%s\t\tunresolved\n' "$mname"
             continue

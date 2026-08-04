@@ -19,14 +19,17 @@ Repos mounted at /workspace/:${repos}
 Working dir: /workspace
 Teammate mode: ${TMODE}"
 
-# Add packs reference if present (file list only, not full descriptions)
-if [ -f /workspace/.claude/packs.md ]; then
-    pack_files=$(grep -v '^<!--' /workspace/.claude/packs.md \
-        | grep '^-' \
-        | sed 's/ — .*//')
-    [ -n "$pack_files" ] && ctx="${ctx}
-Knowledge packs (read before implementation tasks):
-${pack_files}"
+# Append the host-computed condensed subagent context (ADR-0042): knowledge +
+# llms PATHS only, no descriptions. cco start injects it (base64) as
+# CCO_SUBAGENT_CONTEXT — no workspace.yml file anymore. Decode and append.
+if [ -n "$CCO_SUBAGENT_CONTEXT" ]; then
+    injected=$(printf '%s' "$CCO_SUBAGENT_CONTEXT" | base64 -d 2>/dev/null)
+    if [ -n "$injected" ]; then
+        ctx="${ctx}
+${injected}"
+    else
+        echo "cco: warning: CCO_SUBAGENT_CONTEXT set but failed to base64-decode — subagent context omitted." >&2
+    fi
 fi
 
 ctx="${ctx}

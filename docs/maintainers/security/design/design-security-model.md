@@ -31,6 +31,14 @@ assumed to be as safe as the machine itself — the same baseline as `.env` file
 
 ## Findings
 
+> **Related access-control decisions.** The agent ↔ cco access & confidentiality model lives in
+> its own ADR chain: [ADR-0042](../../configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)
+> (three-level A/B/C) · [ADR-0043](../../cli/decisions/0043-unified-cli-environment-access-scope.md)
+> (output-scoping; INV-D revised) · [ADR-0046](../../configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)
+> (`(G,Pc,Po)` model) · [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)
+> (the privilege boundary — see **HIGH-6**). This doc's threat model (single-developer) is
+> **extended** by that chain to the in-container **agent** as a semi-trusted actor.
+
 ### [HIGH-1] Token embedded in git clone URL visible in process list and git config
 
 **File:** `lib/remote.sh:41`
@@ -417,7 +425,60 @@ security". No validation layer exists between parsing and docker-compose generat
 - Validation pass in `cmd_start()` before compose generation
 - Invalid values produce warnings and fall back to restrictive defaults
 
-**Status:** Fix in progress (ADR-13 implementation)
+**Status:** **Closed — implemented** (commit `17407a2`): `_parse_bool()` lives in `lib/yaml.sh:97`
+(trim + case-fold + `yes/no/on/off/1/0` + warn-and-fall-back-to-safe-default) and is the single
+boolean reader for `docker.mount_socket`, `browser.enabled`, `github.enabled` and the
+`docker.containers/mounts/security` knobs; `extra_mounts[].readonly` defaults to `true`
+(`_effective_extra_mounts`, `lib/local-paths.sh`); `cmd_start()` validates project name,
+`browser.cdp_port` and `auth.method`; `browser.mcp_args` is JSON-escaped. Covered by
+`tests/test_yaml_parser.sh`.
+
+---
+
+### [HIGH-6] In-container agent reads the whole internal store — cross-project info leak (S1/S1b) — **FIXED**
+
+**File:** the internal store (STATE index, DATA tags / de-tokenized remotes / per-resource `source`
+provenance, CACHE internals); mounted by `lib/cmd-start.sh` under `/var/lib/cco-internal/…`.
+
+**Issue (as found).** In a wrapped-`cco` session the agent and the wrapped `cco` run as the **same
+UID `claude`** with `--dangerously-skip-permissions` and no filesystem confinement. The whole STATE
+index and DATA bucket mounted into the container (`:ro` at read levels) **outside** the
+`read-project` narrowing branch (which scopes only CONFIG). `lib/access-scope.sh` filters command
+**output**, not the raw files. So even at the default `read-project`, the agent could run
+`cat ~/.local/state/cco/index` and enumerate **every other project's name, host path,
+membership, tags, and remote URLs** — and host paths leaked even at `show_host_paths=off` (S1b).
+*Verified live at the time.*
+
+**Impact.** Confidentiality / project-isolation breach across all projects registered on the
+machine. Integrity is unaffected (write-gating is enforced physically by `:ro`/`:rw` mount flags,
+a VFS property `fakeowner` does not weaken).
+
+**Root cause.** No privilege boundary between the agent's shell and the internal store — any file
+`cco` can read, the agent can `cat`. Claude Code's own controls cannot fix this (permission
+`deny`/sandbox `denyRead` act uniformly on the shell and would block `cco` too; bypass mode is on
+by design). `chown`/`chmod` on the mounted registries do not confine either — macOS Docker Desktop
+`fakeowner` ignores DAC on bind-mount content.
+
+**Mitigation (SHIPPED — [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md), D2).**
+Confine **only** the internal store behind a **privilege boundary**: a dedicated **`cco-svc`**-owned
+**mode-0700** parent on the **real** container FS (`/var/lib/cco-internal`) the `claude` user
+cannot traverse (real-FS parent traversal confines even a `fakeowner` child); `$HOME` XDG cco
+paths symlink into it; a **setuid `cco-svc` helper** crosses it and enforces the `(G,Pc,Po)` gate
+(ADR-0046 §7) from a trusted session descriptor bind-mounted **`:ro`** — the read-only flag, not
+the file's ownership, is what makes it unforgeable from inside (never `argv`/env). Config-content
+trees stay mounted (native reads). Mirrors the `cco-docker-proxy` privilege precedent. Output-
+scoping (`access-scope.sh`) remains as **defense-in-depth**, not the confidentiality control.
+
+**Status:** **Closed — implemented and live** (requires an image built after the boundary landed).
+`cco-svc` (uid 900) + the mode-0700 `/var/lib/cco-internal` root + the XDG symlink façade are baked
+by `Dockerfile` and re-asserted every start by `config/entrypoint.sh`; the sole crossing is the
+setuid-`cco-svc` `config/cco-svc-helper.c`, which fails closed unless the `:ro` session descriptor
+(`/etc/cco/session-access`) is readable, honours only its whitelisted keys, and execs the baked
+`cco __store` with a from-scratch environment (no `argv`/env trust). Store writes cross through
+`lib/store.sh` (`store-op` plan/apply, INV-S1..S6, CLASS-linted in `tests/test_invariants.sh`).
+Verified live in a `read-project` session: `cat ~/.local/state/cco/index` → `Permission denied`
+(`~/.local/state/cco` is a symlink into the 0700 root), and `cco whoami` reports the enforcement.
+Output-scoping (`access-scope.sh`) remains defense-in-depth, not the confidentiality control.
 
 ---
 
@@ -442,11 +503,11 @@ Ordered by a combination of effort required and risk addressed.
 | 6 | **[HIGH-2]** Docker socket docs | Added Security section to README with disable instructions | DONE |
 | 7 | **[MEDIUM-4]** tmux `$*` quoting | Used `printf '%q'` to build shell-safe argument string | DONE |
 
-### Short-term — config parsing hardening (IN PROGRESS)
+### Short-term — config parsing hardening (DONE)
 
-| # | Finding | What to do | Status |
+| # | Finding | What was done | Status |
 |---|---|---|---|
-| 8 | **[HIGH-5]** Config parsing permissive | Implement ADR-13: `_parse_bool()`, validation pass, secure defaults | IN PROGRESS |
+| 8 | **[HIGH-5]** Config parsing permissive | ADR-13 implemented (`17407a2`): `_parse_bool()`, `cmd_start()` validation pass, `extra_mounts[].readonly` default `true`, JSON-escaped `mcp_args` | DONE |
 
 ### Medium-term — higher effort, lower incremental value
 
@@ -455,12 +516,18 @@ Ordered by a combination of effort required and risk addressed.
 | 9 | **[LOW-1]** Secrets in process args | Use `--env-file` with a tmpfile instead of `-e` flags | Medium |
 | 10 | **[HIGH-1]** Token in clone URL | Replace with `GIT_ASKPASS` credential helper | High |
 
+### Access-model enforcement (DONE)
+
+| # | Finding | What was done | Status |
+|---|---|---|---|
+| 11 | **[HIGH-6]** Agent reads whole internal store (S1/S1b) | [ADR-0047](../../configuration/agent-cco-access/decisions/0047-config-access-enforcement.md) privilege boundary shipped: setuid `cco-svc` helper (`config/cco-svc-helper.c`) + `/var/lib/cco-internal` mode-0700 root + `:ro` session descriptor enforcing `(G,Pc,Po)`; store writes via `lib/store.sh` | DONE |
+
 ### Accepted risks — no fix needed
 
 | Finding | Rationale |
 |---|---|
 | **[LOW-2]** npm packages | User-controlled config; same as any npm install |
-| **[LOW-3]** skip-permissions | By design; Docker is the sandbox |
+| **[LOW-3]** skip-permissions | By design; Docker is the sandbox (host protection). Note: *intra-container* agent access to the internal store is a separate concern — **not** covered by "Docker is the sandbox" — and is closed by the ADR-0047 privilege boundary (see **HIGH-6**) |
 | **[LOW-4]** Vault push auth gap | Functional gap, not security; user configures git creds separately |
 | **[MEDIUM-5]** eval in secrets.sh | Correctly escaped; `_target` is internal-only |
 

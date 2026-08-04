@@ -133,16 +133,16 @@ for quality, security, and correctness WITHOUT making any modifications.
 
 ## Output Format
 
-### 🔴 Critical (must fix)
+### Critical (must fix)
 Issues that would cause bugs, security vulnerabilities, or data loss.
 
-### 🟡 Warnings (should fix)
+### Warnings (should fix)
 Issues that affect maintainability, performance, or code quality.
 
-### 🟢 Suggestions (consider)
+### Suggestions (consider)
 Improvements that would make the code better but aren't blocking.
 
-### ✅ Good Practices
+### Good Practices
 Call out things done well — reinforces good patterns.
 
 ## Memory
@@ -186,10 +186,16 @@ This becomes the agent's instructions.
 | `description` | ✅ | When Claude should use this agent. Be descriptive. |
 | `tools` | ❌ | Allowed tools (default: inherit all). See tool list below. |
 | `disallowedTools` | ❌ | Tools to deny (removed from inherited/allowed list) |
-| `model` | ❌ | Model: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (strongest), `inherit` (default) |
+| `model` | ❌ | Model alias (`haiku`, `sonnet`, `opus`, `fable`), a full model ID, or `inherit` (the default) |
 | `memory` | ❌ | Persistent memory scope: `user` (all projects), `project` (this project), `local` (local only) |
-| `permissionMode` | ❌ | Permission handling. Default: inherits from session |
+| `permissionMode` | ❌ | `default`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, or `plan`. Default: inherits from the session |
 | `maxTurns` | ❌ | Max agentic turns before stopping |
+
+Claude Code supports further fields — `skills`, `mcpServers`, `hooks`, `background`,
+`effort`, `isolation`, `color`, `initialPrompt`. They work here exactly as upstream; see
+the [official subagent reference](https://code.claude.com/docs/en/sub-agents) (or the
+`code-claude` llms.txt mounted at `/workspace/.claude/llms/` when your project references
+it) rather than a second copy of the list.
 
 ### 3.3 Available Tools
 
@@ -203,7 +209,12 @@ This becomes the agent's instructions.
 | `Glob` | Find files by pattern |
 | `WebFetch` | Fetch URL content |
 | `WebSearch` | Web search |
-| `Task` | Spawn sub-tasks (subagents can't spawn other subagents) |
+| `Agent` | Spawn a nested subagent (legacy name: `Task`). Nesting is allowed to five levels below the main conversation; omit `Agent` from `tools`, or list it in `disallowedTools`, to prevent it |
+
+A few tools depend on the main conversation's UI or session state and are **never**
+available to a subagent even when listed in `tools`: `AskUserQuestion`, `EnterPlanMode`,
+`ScheduleWakeup`, `WaitForMcpServers`, and `ExitPlanMode` unless the subagent's
+`permissionMode` is `plan`.
 
 ### 3.4 Scope Placement
 
@@ -225,6 +236,13 @@ When `memory` is set, the agent gets a persistent directory:
 | `local` | `.claude/agent-memory-local/<agent-name>/` |
 
 The agent's MEMORY.md (first 200 lines) is loaded at startup. Add instructions in the system prompt to guide what the agent remembers.
+
+> **In a cco session these are container-local.** `~/.claude/agent-memory/` is inside the
+> container's home (writable, but not one of the STATE-backed paths cco persists), and the
+> `project`/`local` scopes resolve relative to the session's working directory. Only
+> Claude Code's **auto memory** (`~/.claude/projects/-workspace/memory/`) and the session
+> transcripts are bound to machine-local STATE and survive the container — see
+> [Auto memory](../../foundation/reference/context-hierarchy.md#5-auto-memory).
 
 ---
 

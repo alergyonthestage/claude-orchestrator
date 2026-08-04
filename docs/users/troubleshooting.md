@@ -199,9 +199,9 @@ If you already use tmux on the host, the container creates a nested session. The
 
 **Solutions**:
 1. Verify that the pack is listed in `packs:` in `project.yml`
-2. Check the output of `cco start` for the message "Generated .claude/packs.md"
+2. Confirm the pack resolved at `cco start` — its knowledge mounts at `/workspace/.claude/packs/<name>/`
 3. Verify that `pack.yml` has the `knowledge.files:` section populated
-4. Check the contents of the generated `.claude/packs.md` (a CACHE overlay) — it must list the files
+4. Check that the session's `CCO_SESSION_CONTEXT` (injected by the SessionStart hook — there is no `workspace.yml` file) lists the files in its `knowledge` section
 
 ### Pack conflicts
 

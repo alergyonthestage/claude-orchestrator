@@ -53,7 +53,7 @@ Scope (for --sync and --diff):
 
 Options:
   --force             Non-interactive sync: overwrite all files with framework version
-  --keep              Non-interactive sync: keep all user files, update .cco/base/ only
+  --keep              Non-interactive sync: keep all user files, update the merge base only
   --local             Apply framework defaults directly on installed projects
                       (bypasses publisher update chain; use with --sync)
   --offline           Skip remote source checks (framework-only discovery)
@@ -146,7 +146,7 @@ cmd_update() {
 
     # Non-TTY warning for --sync mode
     if [[ "$cmd_mode" == "sync" && -z "$auto_action" ]]; then
-        if ! (exec < /dev/tty) 2>/dev/null; then
+        if ! _cco_have_tty; then
             warn "Non-interactive mode: skipping all file changes. Use a terminal for interactive merge."
             auto_action="skip"
         fi

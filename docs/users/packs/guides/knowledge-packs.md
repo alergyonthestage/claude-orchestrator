@@ -67,7 +67,15 @@ agents:
 # ── Rules (file names under rules/) ─────────────────────────────────
 rules:
   - api-conventions.md
+
+# ── Framework docs (optional; same schema as project.yml `llms:`) ────
+llms:
+  - name: svelte
+    url: https://svelte.dev/llms.txt   # required — the re-fetch coordinate
 ```
+
+A pack's `llms:` entries are merged with the project's at `cco start`; where both
+name the same entry, the **project's** `description`/`variant` overrides win.
 
 ---
 
@@ -152,7 +160,7 @@ rules:
 To activate a pack, add its name to the `packs:` list in the project's `project.yml` file:
 
 ```yaml
-# projects/my-saas/project.yml
+# <repo>/.cco/project.yml  (in the project's host repo)
 name: my-saas
 
 repos:
@@ -163,11 +171,20 @@ packs:
   - team-conventions
 ```
 
+Entries also take a coordinate map (`- name:` plus `url`/`ref`) when the pack comes
+from a sharing repo — see
+[project-yaml.md § Field Reference](../../configuration/reference/project-yaml.md#field-reference)
+for the full `packs[]` schema.
+
 Packs are processed at each `cco start`: all resources (knowledge files, skills, agents, rules) are mounted automatically via read-only Docker volumes.
 
 ### Precedence in case of conflicts
 
 If two packs define the same agent, rule, or skill, the last pack in the `packs:` list wins. A warning is printed to the terminal to signal the conflict.
+
+A pack resource also **shadows a project file of the same name** — see
+[Configuring Rules § Configuration Scope](../../configuration/guides/configuring-rules.md#configuration-scope)
+for why, and what to do instead.
 
 ---
 
@@ -181,10 +198,15 @@ cco list packs
 
 Output:
 ```
-NAME              KNOWLEDGE  SKILLS  AGENTS  RULES
-my-client             3         1       1       1
+NAME              KNOWLEDGE  SKILLS  AGENTS  RULES  TAGS
+my-client             3         1       1       1   work
 team-conventions      2         0       0       2
 ```
+
+> Inside a session the listing is **scoped to your access level**: at the default
+> `read-project` you see only the packs the current project references, with a
+> count-only notice on stderr for the rest. Hidden is not absent — widen with
+> `--cco-access read-global` on the host to see the whole store.
 
 ### View pack details
 
@@ -229,19 +251,16 @@ The process happens in two phases:
 **1. At `cco start` time:**
 - Knowledge directories are mounted read-only at `/workspace/.claude/packs/<name>/`
 - Pack skills, agents, and rules are mounted read-only into `/workspace/.claude/` (per-file for rules/agents, per-directory for skills)
-- The `.claude/packs.md` file is generated with the list of files and their descriptions
+- The `knowledge` section of the session context is built with the list of files and their descriptions, and base64-encoded into the `CCO_SESSION_CONTEXT` env var (no `workspace.yml` file — ADR-0042)
 
 **2. When the Claude session starts:**
-- The `session-context.sh` hook (SessionStart) injects the contents of `packs.md` into `additionalContext`
+- The `session-context.sh` hook (SessionStart) decodes `CCO_SESSION_CONTEXT`, renders an instructional preamble, and injects the `knowledge` section into `additionalContext`
 - Claude automatically receives the list of available knowledge files with descriptions
 - Files are read on-demand by Claude when relevant to the current task
 
-Example of generated `packs.md`:
+Example rendered `knowledge` section:
 
 ```
-The following knowledge files provide project-specific conventions and context.
-Read the relevant files BEFORE starting any implementation, review, or design task.
-
 - /workspace/.claude/packs/my-client/backend-coding-conventions.md — Read when writing backend code
 - /workspace/.claude/packs/my-client/business-overview.md — Read for business context
 - /workspace/.claude/packs/my-client/testing-guidelines.md
@@ -293,7 +312,20 @@ cco pack install <git-url>
 
 # Update an installed pack from its remote source
 cco pack update <name>
+
+# Move a pack between machines without git
+cco pack export <name>            # -> <name>.tar.gz
+cco pack import ./<name>.tar.gz
+
+# Rename a pack (re-keys its stores and every project's packs[] reference)
+cco pack rename <old> <new>
 ```
+
+**Where these run.** `cco pack publish` and `cco pack export` are **host-only** — a
+session refuses them (exit 2) and tells you to run them on your host. The rest
+(`create`, `install`, `import`, `update`, `rename`, `remove`, `internalize`) write your
+personal store, so in-session they need an `edit-global`/`edit-all` session; `show` and
+`validate` are readable at any level.
 
 A pack referenced by `url` coordinate is a **cache** of its upstream (re-fetchable,
 updated via `cco pack update`); a pack with no `url` is authored project-local in

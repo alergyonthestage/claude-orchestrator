@@ -93,7 +93,8 @@ chore: update dependencies
 ### Testing
 
 - Run the full test suite: `bin/test`
-- Run specific tests: `bin/test tests/test_<name>.sh`
+- Run one file: `bin/test --file test_<name>` (repeatable; `bin/test --list` shows every test name)
+- Run matching tests: `bin/test --filter <substring>`
 - Tests are dry-run (no Docker required) — they validate config generation and CLI behavior
 - Add tests for new features; update tests for changed behavior
 
@@ -111,7 +112,7 @@ chore: update dependencies
 | `tests/` | Bash test suite |
 | `docs/` | Documentation (user guides, reference, maintainer) |
 
-For detailed architecture, see [docs/maintainer/architecture/architecture.md](docs/maintainers/foundation/design/architecture.md).
+For detailed architecture, see [docs/maintainers/foundation/design/architecture.md](docs/maintainers/foundation/design/architecture.md).
 
 ## Releasing (maintainers)
 

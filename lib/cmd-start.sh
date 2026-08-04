@@ -2,7 +2,7 @@
 # lib/cmd-start.sh — Start project session command
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
-# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, workspace.sh, packs.sh, paths.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, session-context.sh, packs.sh, paths.sh
 # Globals: IMAGE_NAME, REPO_ROOT (projects via the STATE index, P5). The internal
 # tutorial/config-editor runtime lives in machine-local STATE via
 # _cco_internal_runtime_dir() — NOT under the framework tree, which may be
@@ -43,6 +43,14 @@ _setup_internal_tutorial() {
         "$source_dir/project.yml" > "$runtime_dir/project.yml" \
         || die "Failed to generate tutorial project.yml"
 
+    # The tutorial's cco-docs/cco-config mounts are name-based (like config-editor):
+    # publish the host paths via the in-process session override so they resolve at
+    # start without polluting the persistent user-facing index (review H4), and no
+    # host path is committed (AD3/G8). Read-only mounts (the tutorial never edits),
+    # so the `store` role is inert here — but correct, and correctness at the
+    # producer is what keeps the role a signal rather than a heuristic (RC-1 §3.3).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\tstore\ncco-docs\t%s\t' "$(_cco_config_dir)" "$REPO_ROOT/docs")
+
     # Copy setup.sh if present
     if [[ -f "$source_dir/setup.sh" ]]; then
         cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
@@ -56,9 +64,13 @@ _setup_internal_tutorial() {
 # store ~/.cco rw (global mode) and, in project mode, the target project's
 # <repo>/.cco rw. Host paths are injected here — a runtime artifact, never
 # committed, so AD3/G8 hold by construction.
-# Args: <target_cco_path> <target_name>  (both empty in global mode)
+# Args: <targets> <repos>
+#   targets = newline-joined "name<TAB><repo>/.cco" pairs (config mounts; may be empty)
+#   repos   = newline-joined repo logical names to mount as full repos (may be empty;
+#             ADR-0042 §8 — only under --project/--repo, resolved via the STATE index)
 _setup_internal_config_editor() {
-    local target_cco="$1" target_name="$2"
+    local targets="$1"   # newline-joined "name<TAB><repo>/.cco" pairs (may be empty)
+    local repos="${2:-}" # newline-joined repo logical names (may be empty)
     local source_dir="$REPO_ROOT/internal/config-editor"
     local runtime_dir="$(_cco_internal_runtime_dir)/config-editor"
 
@@ -77,9 +89,9 @@ _setup_internal_config_editor() {
     chmod -R u+w "$runtime_dir/.claude"
     [[ -f "$source_dir/setup.sh" ]] && cp "$source_dir/setup.sh" "$runtime_dir/setup.sh"
 
-    # Generate project.yml: ~/.cco rw + docs ro (+ the target's .cco rw in
-    # project mode). The personal store is mounted read-write — editing it is
-    # the whole purpose of this session.
+    # Generate project.yml: ~/.cco rw + docs ro (+ each target's .cco rw, from the
+    # resolved --all/--project/cwd scope). The personal store is mounted read-write
+    # — editing it is the whole purpose of this session.
     local cfg; cfg="$(_cco_config_dir)"
     # The mount bridge resolves names via the STATE index (name → host path), but
     # these are EPHEMERAL internal names — writing them into the persistent,
@@ -94,27 +106,79 @@ _setup_internal_config_editor() {
     # `files` allowlist), so an installed user sees only user docs; a dev clone
     # additionally exposes maintainer docs (read-only, harmless — agents are
     # instructed to read cco-docs/users/...).
-    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\ncco-docs\t%s' "$cfg" "$REPO_ROOT/docs")
-    [[ -n "$target_cco" ]] && _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s' "$target_name" "$target_cco")
+    # The third column is the mount ROLE (RC-1 §3.3): the authoritative "framework
+    # generated this, and it exposes THIS config tree" signal that lets the nested
+    # clamp resolve each synthetic mount against the axis naming the tree it
+    # represents. cco-docs is role-less (and readonly: true anyway).
+    _CCO_MOUNT_OVERRIDE=$(printf 'cco-config\t%s\tstore\ncco-docs\t%s\t' "$cfg" "$REPO_ROOT/docs")
+    local _tn _tp
+    while IFS=$'\t' read -r _tn _tp; do
+        [[ -z "$_tn" ]] && continue
+        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s-config\t%s\tproject-config' "$_tn" "$_tp")
+    done <<< "$targets"
+    # Repos (ADR-0042 §8 / RC-6 §3.8): a generated manifest's own name-scope
+    # ("config-editor") holds NO index bindings by construction (ADR-0051), so the
+    # repo names cannot resolve via the persistent index the way the old comment
+    # here claimed. Each repo's host path — already resolved by the collector in its
+    # OWNING project's scope, existence-asserted, and reserved-name filtered — is
+    # published through the SAME session override the config mounts use (INV-M2),
+    # role-less (a repo is code, not a config tree). The manifest is emitted FROM
+    # this set below, so declaring-without-publishing is not expressible.
+    local _rn _rp
+    while IFS=$'\t' read -r _rn _rp; do
+        [[ -z "$_rn" ]] && continue
+        _CCO_MOUNT_OVERRIDE+=$(printf '\n%s\t%s\t' "$_rn" "$_rp")
+    done <<< "$repos"
     {
         cat <<YAML
 name: config-editor
 description: "Configuration editor for claude-orchestrator"
+YAML
+        # Repos (ADR-0042 §8): only under --project/--repo. Only the NAME reaches
+        # the manifest — the host path lives solely in the session override above,
+        # so no host path is committed (AD3/G8). Emitted only when non-empty so the
+        # `--all` broad mode stays repo-free (P18).
+        if [[ -n "$repos" ]]; then
+            echo "repos:"
+            local _rln
+            while IFS= read -r _rln; do
+                [[ -z "$_rln" ]] && continue
+                echo "  - name: ${_rln%%$'\t'*}"
+            done <<< "$repos"
+        fi
+        # cco-config (~/.cco) readonly FOLLOWS the resolved G (WS-A 2026-07-11): rw only
+        # when the session may WRITE the store (G=rw — global mode, edit-global, edit-all),
+        # ro in project mode (G=ro) so the store is referenceable but not writable without
+        # an explicit --cco-access edit-global. Shares the resolver via
+        # _config_editor_mount_ro, so this mount and the operator-bucket /home/claude/.cco
+        # (_op_rw) agree. This project.yml is generated BEFORE _start_resolve_access, but G
+        # is fully determined by mode + CLI for a built-in, so the flag is knowable now.
+        local _cc_ro; _cc_ro=$(_config_editor_mount_ro g)
+        # Each target's <repo>/.cco readonly FOLLOWS Pc, from the same resolver (RC-1 §3.5).
+        # It used to be hardcoded `false`, which was harmless only because
+        # _find_nested_config_dirs matched the mount root and re-overlaid it :ro — the
+        # accident that also clobbered Pc=rw (RC-1 defect a). With the root no longer swept
+        # this flag is the target's only enforcement, so a granular current=ro must be
+        # honoured here or removing the accident would ESCALATE privilege. Shipped modes
+        # (project / --all / edit-global) all carry Pc=rw → unchanged `false`.
+        local _tg_ro; _tg_ro=$(_config_editor_mount_ro pc)
+        cat <<YAML
 extra_mounts:
   - name: cco-config
     target: /workspace/cco-config
-    readonly: false
+    readonly: ${_cc_ro}
   - name: cco-docs
     target: /workspace/cco-docs
     readonly: true
 YAML
-        if [[ -n "$target_cco" ]]; then
+        while IFS=$'\t' read -r _tn _tp; do
+            [[ -z "$_tn" ]] && continue
             cat <<YAML
-  - name: ${target_name}-config
-    target: /workspace/${target_name}-config
-    readonly: false
+  - name: ${_tn}-config
+    target: /workspace/${_tn}-config
+    readonly: ${_tg_ro}
 YAML
-        fi
+        done <<< "$targets"
         cat <<YAML
 docker:
   mount_socket: false
@@ -126,10 +190,976 @@ YAML
     } > "$runtime_dir/project.yml" || die "Failed to generate config-editor project.yml"
 }
 
+# ── Access capability model (ADR-0036 D2/D3) ─────────────────────────
+# The three orthogonal session knobs, resolved per session by precedence
+# (most specific wins): CLI flag > project.yml `access:` block > global
+# ~/.cco/access.yml > built-in preset default. Step 2 (this) only RESOLVES +
+# validates; later steps consume the resolved values to drive Axis-B/Axis-A
+# mount modes (step 3) and the wrapped-cco shim (step 4). The pure helpers below
+# are side-effect-free so they can be unit-tested in isolation.
+
+# claude_access PRESET names (ADR-0049 §3): sugar over fixed (Cr,Cp,Cg,Co)
+# triples. A source value may also be the granular map/CSV form; the Axis-B
+# resolver (_claude_resolve_access, access-scope.sh) validates + resolves both,
+# so this set is documentation of the preset vocabulary, not the validator.
+_ACCESS_CLAUDE_VALUES="none repo all"
+# Symmetric read/edit scoping (ADR-0042): read mirrors edit —
+# none · read-project · read-global · read-all · edit-project · edit-global · edit-all.
+# The bare `read` of ADR-0036 is kept as a back-compat ALIAS (normalized to
+# read-all in _start_resolve_access, since it meant "read everything") but is not
+# a first-class enum value.
+_ACCESS_CCO_VALUES="none read-project read-global read-all edit-project edit-global edit-all"
+
+# True (0) when $2 is a member of the space-separated set $1.
+_access_is_member() {
+    local set="$1" v="$2" x
+    for x in $set; do [[ "$x" == "$v" ]] && return 0; done
+    return 1
+}
+
+# Normalize a boolean-ish token to `true`/`false`. Empty stays empty (so the
+# precedence chain keeps falling through); an invalid token returns 1.
+_access_norm_bool() {
+    case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+        "")             printf '' ;;
+        true|on|1|yes)  printf 'true' ;;
+        false|off|0|no) printf 'false' ;;
+        *)              return 1 ;;
+    esac
+}
+
+# Pick the first non-empty of cli/project/global/default (the precedence chain).
+# Args: <cli> <project_val> <global_val> <default>.
+_access_pick() {
+    if   [[ -n "$1" ]]; then printf '%s' "$1"
+    elif [[ -n "$2" ]]; then printf '%s' "$2"
+    elif [[ -n "$3" ]]; then printf '%s' "$3"
+    else                     printf '%s' "$4"
+    fi
+}
+
+# Resolve the three knobs into cmd_start's locals (claude_access, cco_access,
+# show_host_paths) by precedence, validating enums. Reads project.yml `access.*`
+# and the global ~/.cco/access.yml; CLI overrides arrive via cli_claude_access /
+# cli_cco_access / cli_show_host_paths (empty = unset). Step-2 preset defaults are
+# the normal-session values (repo / none / on); step 5 layers the built-in
+# tutorial/config-editor presets on top.
+_start_resolve_access() {
+    # Preset defaults (D6, revised by ADR-0042/0044): normal = repo/read-project/on
+    # (was cco=none — the read-project default is what makes the on-demand
+    # three-level model work: the agent can query its own environment via wrapped
+    # cco, so Level A stays minimal). Built-ins define their own MOTIVATED presets
+    # (ADR-0044 §1, read-only-vs-write): the tutorial is a read-only teacher →
+    # read-all; config-editor WRITES config → minimum privilege by cwd/flag. These
+    # become the level-4 default of the precedence chain (CLI still overrides).
+    local _preset="${session_preset:-normal}"
+    # claude_access (Axis B) no longer has a fixed preset default — it DERIVES from
+    # the resolved cco triple (ADR-0049 §2), so only d_cco/d_shp are seeded here.
+    local d_cco="read-project" d_shp="true"
+    # Whether THIS session has a current project in scope (INV-2 conditional floor,
+    # ADR-0046 §2 refinement). Fail-closed default `true`: a normal `cco start
+    # <project>` always has one. Only a project-less built-in flips it (config-editor
+    # global mode; future cco new) so its Pc may honestly floor to `none`.
+    local _has_current_project="true"
+    case "$_preset" in
+        config-editor)
+            # ADR-0044 §3, reconciled with the ADR-0046 ladder and the WS-A refinement
+            # (2026-07-11): minimum-privilege by mode. The mode resolved from cwd + flags
+            # (_resolve_config_editor_mode, run in _start_resolve_project before this)
+            # sets both the TARGET set and the default triple:
+            #   cwd-in-project / --project <name>  → (ro,rw,none): edit the target
+            #     project(s) — all "current" for config-editor via _env_is_current_project
+            #     — while READING the whole global store to reference it (G=ro). Writing
+            #     ~/.cco is a distinct intent → --cco-access edit-global (rw,rw,none).
+            #   outside any project (bare)         → (rw,none,none): edit the personal
+            #     store ONLY; Pc has no referent (project-less → Pc honestly none).
+            #   --all / --cco-access edit-all      → edit-all (every project, Po=rw).
+            # G is clamped >= ro below (config-editor is an authoring tool — it must
+            # always SEE the store, ADR-0044 §2 analogy). claude_access is NOT set
+            # here: the general cco-derived Axis-B default (ADR-0049 §2/§8) subsumes the
+            # former bespoke "claude follows G" (WS-A A-V3) — project mode (ro,rw,none)
+            # derives (Cr=ro,Cp=rw,Cg=ro,Co=ro); edit-global (rw,rw,none) lifts Cg=rw;
+            # edit-all lifts Co=rw. d_shp stays on. The by-mode default + project-less
+            # flag come from the SINGLE source _config_editor_default_cco (shared with
+            # the cco-config mount readonly, so the mount and the resolved triple never
+            # diverge).
+            d_shp="true"
+            local _cedef; _cedef=$(_config_editor_default_cco)
+            d_cco="${_cedef%%$'\t'*}"; _has_current_project="${_cedef##*$'\t'}" ;;
+        tutorial)
+            # ADR-0044 §2: read-only teacher → read-all reveals the user's whole
+            # cco world (projects/packs/templates/llms) with no write risk (no
+            # write verb is reachable). --cco-access can narrow, but is discouraged.
+            d_cco="read-all"; d_shp="true" ;;   # claude derives → (ro,ro,ro,ro)=none
+    esac
+
+    # For a built-in the precedence collapses to CLI > preset: its generated
+    # project.yml has no access: block, and the global ~/.cco/access.yml governs the
+    # USER's own projects, not a framework built-in (so it must not, e.g., neuter
+    # config-editor to none). A user can still narrow with an explicit --cco-access.
+    # A normal session uses the full CLI > project.yml access: > global > preset.
+    local p_claude="" p_cco="" p_shp="" g_claude="" g_cco="" g_shp=""
+    # Granular MAP axes per source (ADR-0049 §9 / ADR-0046). project.yml: access.cco
+    # and access.claude sub-keys (depth-3). ~/.cco/access.yml: cco.* and claude.*
+    # sub-keys (depth-2 — the top-level key is at depth 1 there). A scalar and a map
+    # are mutually exclusive on a key: when it is a map the scalar read is empty and
+    # the map axes catch it, and vice-versa — so precedence just tries map before
+    # scalar within each source's tier.
+    local _mg="" _mc="" _mo=""                  # project.yml access.cco map
+    local _clr="" _clc="" _clg="" _clo=""       # project.yml access.claude map (Cr,Cp,Cg,Co)
+    local _gmg="" _gmc="" _gmo=""               # access.yml cco map
+    local _gclr="" _gclc="" _gclg="" _gclo=""   # access.yml claude map
+    if [[ "$_preset" == "normal" ]]; then
+        # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
+        # (NOT yml_get_deep, which forces depth 3 and would miss it).
+        p_claude=$(yml_get "$project_yml" "access.claude" 2>/dev/null)
+        p_cco=$(yml_get "$project_yml" "access.cco" 2>/dev/null)
+        p_shp=$(yml_get "$project_yml" "access.show_host_paths" 2>/dev/null)
+        _mg=$(yml_get_deep "$project_yml" "access.cco.global"  2>/dev/null)
+        _mc=$(yml_get_deep "$project_yml" "access.cco.current" 2>/dev/null)
+        _mo=$(yml_get_deep "$project_yml" "access.cco.others"  2>/dev/null)
+        _clr=$(yml_get_deep "$project_yml" "access.claude.repo"    2>/dev/null)
+        _clc=$(yml_get_deep "$project_yml" "access.claude.current" 2>/dev/null)
+        _clg=$(yml_get_deep "$project_yml" "access.claude.global"  2>/dev/null)
+        _clo=$(yml_get_deep "$project_yml" "access.claude.others"  2>/dev/null)
+        local gfile; gfile=$(_cco_access_file)
+        if [[ -f "$gfile" ]]; then
+            g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
+            g_cco=$(yml_get "$gfile" "cco" 2>/dev/null)
+            g_shp=$(yml_get "$gfile" "show_host_paths" 2>/dev/null)
+            _gmg=$(yml_get "$gfile" "cco.global"  2>/dev/null)
+            _gmc=$(yml_get "$gfile" "cco.current" 2>/dev/null)
+            _gmo=$(yml_get "$gfile" "cco.others"  2>/dev/null)
+            _gclr=$(yml_get "$gfile" "claude.repo"    2>/dev/null)
+            _gclc=$(yml_get "$gfile" "claude.current" 2>/dev/null)
+            _gclg=$(yml_get "$gfile" "claude.global"  2>/dev/null)
+            _gclo=$(yml_get "$gfile" "claude.others"  2>/dev/null)
+        fi
+    fi
+
+    # ── cco access → the (G,Pc,Po) triple (ADR-0046) ─────────────────
+    # A source's cco value is EITHER a scalar (a preset name OR the granular
+    # "global=…,current=…,others=…" form) OR — project.yml only — the access.cco
+    # MAP form (global/current/others sub-keys). Precedence unchanged (ADR-0036
+    # D3): CLI > project.yml (scalar|map) > global scalar > preset default. The
+    # winning source resolves to the triple (scalar → _cco_resolve_access; map →
+    # _cco_promote_triple), which auto-promotes unspecified axes to the invariant
+    # floor and REJECTS an explicit invariant-violating triple (§2, die → exit 1;
+    # its message already reaches stderr, so we just propagate the exit). The bare
+    # `read` alias is normalized inside the resolver (→ read-all). cco_access is
+    # then the DISPLAY LABEL of the triple; cco_g/cco_pc/cco_po are the machine
+    # source consumers derive from (INV-E). include_member_configs (§6) is an
+    # additive project.yml bool (default false). Precedence within each tier tries the
+    # granular MAP before the scalar; ~/.cco/access.yml gains its own map tier
+    # (ADR-0049 §9), below the project scalar and above the global scalar. The map
+    # axes were read above.
+    # _has_current_project is threaded so the conditional INV-2 floor (§2) lets a
+    # project-less session (config-editor global mode) floor Pc to `none`; every normal
+    # session passes `true` and keeps the strict floor.
+    local _cco_triple
+    if   [[ -n "$cli_cco_access" ]]; then _cco_triple=$(_cco_resolve_access "$cli_cco_access" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$_mg$_mc$_mo" ]];    then _cco_triple=$(_cco_promote_triple "$_mg" "$_mc" "$_mo" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$p_cco" ]];          then _cco_triple=$(_cco_resolve_access "$p_cco" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$_gmg$_gmc$_gmo" ]]; then _cco_triple=$(_cco_promote_triple "$_gmg" "$_gmc" "$_gmo" "$_has_current_project") || _cco_exit $?
+    elif [[ -n "$g_cco" ]];          then _cco_triple=$(_cco_resolve_access "$g_cco" "$_has_current_project") || _cco_exit $?
+    else                                  _cco_triple=$(_cco_resolve_access "$d_cco" "$_has_current_project") || _cco_exit $?
+    fi
+    read -r cco_g cco_pc cco_po <<< "$_cco_triple"
+
+    # config-editor G-floor (WS-A / ADR-0044 §2 analogy): an authoring session must
+    # always SEE the global store to reference/author against it, so G is never `none`
+    # for config-editor. An explicit narrower override (e.g. --cco-access edit-project
+    # → G=none) is clamped up to `ro`, with a one-line notice. This subsumes the old
+    # F4 inert-edit-project case: (none,rw,none) becomes (ro,rw,none) — the project-mode
+    # default — so ~/.cco stays readable (never writable unless G=rw).
+    if [[ "$_preset" == "config-editor" && "$(_cco_axis_rank "$cco_g")" -lt 1 ]]; then
+        echo "note: config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)." >&2
+        cco_g="ro"
+    fi
+    cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
+
+    # ── claude access → the (Cr,Cp,Cg,Co) authoring triple (ADR-0049) ─
+    # Axis B mirrors Axis A (§4bis). A source's claude value is a SCALAR (a preset
+    # name OR the granular "repo=…,current=…,global=…,others=…" form) OR the
+    # access.claude MAP form (sub-keys repo/current/global/others). Unspecified axes
+    # DERIVE from the resolved cco triple (Cr always `ro`, §2), so the default is
+    # never MORE permissive than the cco intent (P1). Precedence (§9): CLI >
+    # project.yml access.claude (scalar|map) > ~/.cco/access.yml claude (scalar|map)
+    # > cco-derived default. config-editor's former bespoke "claude follows G" is
+    # GONE — the general derivation subsumes it (§8): project mode (ro,rw,none) →
+    # (ro,rw,ro,ro); edit-global lifts Cg=rw; edit-all lifts Co=rw. The resolver dies
+    # (exit 1) on a bad preset/token; propagate the exit. claude_access is then the
+    # DISPLAY LABEL; claude_cr/cp/cg/co are the machine source consumers derive mount
+    # modes from (INV-E). A map's omitted axes derive from cco just like a scalar's.
+    local _claude_triple
+    if   [[ -n "$cli_claude_access" ]];      then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_clr$_clc$_clg$_clo" ]];    then _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$p_claude" ]];               then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_gclr$_gclc$_gclg$_gclo" ]]; then _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$g_claude" ]];               then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    else                                          _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
+    fi
+    read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
+    claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co")
+
+    # P2 discordance warning (ADR-0049 §4): the resolved Axis B grants MORE .claude
+    # write than the cco-concordant default on a tree that lives inside .cco (Cp/Cg/Co
+    # vs Pc/G/Po). Awareness, never a refusal — the knobs stay orthogonal explicit
+    # choices. A derived triple is concordant by construction (never fires); only an
+    # explicit preset/override wider than cco does. Cr never warns (no cco counterpart).
+    if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po"; then
+        echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
+    fi
+
+    # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
+    # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
+    # member repos' divergent .cco copies. project.yml only (a per-project mount
+    # decision); a code-level default handles its absence (no migration).
+    if [[ "$_preset" == "normal" ]]; then
+        local _imc; _imc=$(_access_norm_bool "$(yml_get_deep "$project_yml" "access.cco.include_member_configs" 2>/dev/null)" 2>/dev/null) || _imc=""
+        [[ -n "$_imc" ]] && cco_include_member_configs="$_imc"
+    fi
+
+    local shp_raw shp_norm
+    shp_raw=$(_access_pick "$cli_show_host_paths" "$p_shp" "$g_shp" "$d_shp")
+    shp_norm=$(_access_norm_bool "$shp_raw") \
+        || die "Invalid show_host_paths '$shp_raw' (expected: true|false / on|off)."
+    show_host_paths="$shp_norm"
+
+    [[ "${CCO_DEBUG:-}" == "1" ]] && \
+        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po) (Cr=$claude_cr Cp=$claude_cp Cg=$claude_cg Co=$claude_co)" >&2
+    return 0
+}
+
+# ── Secret-file masking (ADR-0036 D4) ────────────────────────────────
+# Real secret files must never reach the container on ANY .cco mount — the
+# capability matrix marks them "filtered" in every column, including a normal
+# session (the values already flow in as env at launch, never by reading the
+# file in-container). For each secret file under a mounted config tree we overlay
+# an EMPTY read-only source at its container path; Docker applies the child mount
+# after its parent, so the agent sees an empty file (real values gone) while the
+# committed *.example skeletons stay visible + editable and real edits still reach
+# the repo. Patterns: `secrets.env` and `*.env` / `*.key` / `*.pem`, excluding
+# `*.example`. Args: <host_dir> <container_target_prefix> <empty_mask_source>.
+# Emits _compose_vol lines to stdout (sorted, for deterministic compose output).
+_emit_secret_overlays() {
+    local hdir="$1" ctgt="$2" mask="$3" f rel
+    [[ -d "$hdir" ]] || return 0
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        rel="${f#"$hdir"/}"
+        _compose_vol "$mask" "$ctgt/$rel" "ro"
+    done < <(find "$hdir" -type f \
+                \( -name 'secrets.env' -o -name '*.env' -o -name '*.key' -o -name '*.pem' \) \
+                ! -name '*.example' 2>/dev/null | sort)
+}
+
+# ── Functional-write floor: settings.local.json overlay (ADR-0049 §5) ──
+# Claude Code writes "Always allow" / local runtime state (autoMode, model) to a
+# .claude/settings.local.json; when the parent .claude tree is mounted :ro (Cp/Cr
+# read-only), that write would hit a read-only filesystem. Keep JUST that file
+# writable via a rw CHILD overlay bound from a machine-local STATE source (Docker
+# applies the deeper child mount after the :ro parent, so the child's rw wins).
+#
+# The child mount needs BOTH ends to exist as files:
+#   - the STATE source, and
+#   - the MOUNTPOINT itself, inside the :ro parent. Docker/runc cannot create it
+#     there (`mknod ... read-only file system` — the container then fails to
+#     start), so cco must seed it host-side, in the mount's backing directory,
+#     BEFORE the bind. Ordering alone is not enough: the target must pre-exist.
+# The stub is inert — the rw STATE bind always shadows it, so its content never
+# reaches the session; it is gitignored, so nothing leaks into the repo.
+#
+# STATE is seeded FROM the mountpoint, so a pre-existing settings.local.json (a
+# repo that already carried real local prefs before this overlay existed) keeps
+# its content on first start instead of being shadowed by an empty `{}`. From
+# then on STATE is the live copy and the stub stays frozen.
+# All seeding is skipped on dry-run — the dumped compose is never executed.
+# Args: <state_source> <host_mountpoint> <container_target> <dry_run:true|false>
+#       [<seed_from>] — where STATE takes its first content from, when the
+#       mountpoint is NOT the committed file itself. Under ADR-0054 the stub moves
+#       into the framework-owned view (CACHE), so the committed settings.local.json
+#       must still be the seed; defaults to the mountpoint (pre-0054 behaviour).
+_emit_local_settings_overlay() {
+    local src="$1" mp="$2" tgt="$3" dry="$4" seed_from="${5:-$2}"
+    if [[ "$dry" != "true" ]]; then
+        # Mountpoint stub inside the :ro-to-be parent (its dir is the mount source,
+        # so it exists; a missing one means a caller bug, and the bind fails loudly).
+        mkdir -p "$(dirname "$mp")" 2>/dev/null || true
+        [[ -f "$mp" ]] || printf '{}\n' > "$mp" 2>/dev/null || true
+        # STATE source, seeded from the committed file (see above).
+        mkdir -p "$(dirname "$src")" 2>/dev/null || true
+        [[ -f "$src" ]] || cp "$seed_from" "$src" 2>/dev/null || printf '{}\n' > "$src" 2>/dev/null || true
+    fi
+    _compose_vol "$src" "$tgt"
+}
+
+# ── Functional-write floor: project-scope workflows (ADR-0055 D2/D3) ─────────
+# PROVENANCE — this floor is DERIVED from Claude Code's official application-data
+# contract, not from whichever path a bug report named (that derivation is what
+# ADR-0049 §5 got wrong). Sources, per the managed `use-official-docs` rule:
+#
+#   • the `claude-directory` doc's "Application data" table — the home-scope set,
+#     which ADR-0055 D2/D4 satisfy structurally (~/.claude and every ancestor cco
+#     nests under are claude-owned, so nothing there is ever refused);
+#   • the workflows doc: project saves target "the closest existing
+#     .claude/workflows/ directory that already exists between your working
+#     directory and the repository root".
+#
+# From the WORKDIR /workspace that resolves to /workspace/.claude/workflows/ —
+# inside the tree ADR-0049 §2 makes :ro by default, so the save failed. That is
+# the whole project-scope set today: {settings.local.json, workflows/}.
+# `.claude/worktrees/` is deliberately absent — the docs place it at the
+# REPOSITORY root, which is inside the repo's own rw mount and needs nothing.
+# Re-derive against the official docs when Claude Code adds a project-scope
+# runtime path.
+#
+# Shape: the settings.local.json overlay one level up — a rw child from
+# per-project STATE, so a read-project session saves workflows that survive the
+# container without writing the committed tree. Under Cp=rw no overlay exists and
+# saves land in the repo, shared via git exactly as upstream intends; which of
+# the two happens is the user's choice of access level, not the framework's.
+#
+# A repo that COMMITS project workflows keeps them visible: every entry is bound
+# back INSIDE the rw overlay, its mountpoint created host-side in STATE — INV-MP
+# again, one level down, where the parent is the STATE dir rather than the view.
+# Args: <state_dir> <committed_dir> <mode> <dry_run:true|false>
+# Prints the compose lines, PARENT FIRST (the caller feeds that first line to the
+# view so the mountpoint gets created, and emits the whole block in order).
+# Status is PROPAGATED, not swallowed: bin/cco dispatches every command body in a
+# `|| _cco_rc=$?` context, which disables errexit for the whole call tree (INV-IDX's
+# reasoning), and this runs inside `$( )` where a `die` could not exit the caller
+# anyway. A mountpoint that silently failed to be created fails later, in runc,
+# with a message pointing at Docker instead of at us.
+_emit_workflows_overlay() {
+    local state_dir="$1" committed="$2" mode="$3" dry="$4"
+    local f base
+    [[ "$dry" == "true" ]] || mkdir -p "$state_dir" || return 1
+    _compose_vol "$state_dir" "/workspace/.claude/workflows"
+    [[ -d "$committed" ]] || return 0
+    for f in "$committed"/* "$committed"/.[!.]*; do
+        [[ -e "$f" ]] || continue
+        base="${f##*/}"
+        if [[ "$dry" != "true" ]]; then
+            if [[ -d "$f" ]]; then
+                mkdir -p "$state_dir/$base" || return 1
+            else
+                [[ -e "$state_dir/$base" ]] || : > "$state_dir/$base" || return 1
+            fi
+        fi
+        _compose_vol "$f" "/workspace/.claude/workflows/$base" "$mode"
+    done
+}
+
+# The Cp=rw half of the same contract (ADR-0055 D3). With B2 writable there is no
+# floor and saves belong in the repo — which is what happens when the committed
+# tree IS the parent. But a composing session (ADR-0054 D2) puts the CACHE view
+# there instead, and `cco start` rebuilds that view with `rm -rf` at every start:
+# a workflows/ directory Claude Code creates on save would be *destroyed at the
+# next start*, which is worse than the session-local delta D4 warns about, and it
+# is the everyday shape for any project that adopts a pack.
+#
+# So materialise the directory in the committed tree and bind it back rw. The
+# empty directory is the accepted cost: under Cp=rw authoring is precisely what
+# the session asked for, and `<repo>/.cco/claude/workflows/` is where a shared
+# project workflow belongs — the outcome the upstream docs describe.
+# Args: <claude_src> <dry_run:true|false>. Prints the compose line.
+_emit_workflows_committed() {
+    local claude_src="$1" dry="$2"
+    [[ "$dry" == "true" ]] || mkdir -p "${claude_src}/workflows" || return 1
+    _compose_vol "${claude_src}/workflows" "/workspace/.claude/workflows"
+}
+
+# ── Session-transcripts bucket layout (ADR-0055 D5/D6) ───────────────────────
+# The bucket is bound as the whole ~/.claude/projects TREE, not as the single
+# -workspace key, so transcripts persist for EVERY cwd key Claude Code derives
+# (a subagent or teammate started from /workspace/<repo>, a worktree session, a
+# background session) and not only for the session started at the WORKDIR.
+#
+# Buckets created before ADR-0055 hold their transcripts one level too shallow —
+# they ARE the -workspace key's content. Repaired lazily here, at the write
+# boundary, per ADR-0052 alt-B: there is no migrations/ lane for STATE shape and
+# FI-27 declined to add one. Idempotent, and never destructive — entries are
+# moved, an existing target is never overwritten, nothing is removed.
+#
+# The discriminator is exact: a Claude Code project key is derived from an
+# ABSOLUTE cwd, so it always starts with '-'. Anything else in the bucket root
+# predates this change — the `<uuid>.jsonl` transcripts, their `<uuid>/` sidecar
+# dirs, and the old `memory` mountpoint, which lands on its new mountpoint.
+_start_prepare_transcripts_bucket() {
+    local bucket="$1"
+    local ws="$bucket/-workspace" e base
+    mkdir -p "$ws" || return 1
+    for e in "$bucket"/* "$bucket"/.[!.]*; do
+        [[ -e "$e" ]] || continue
+        base="${e##*/}"
+        [[ "$base" == -* ]] && continue
+        [[ -e "$ws/$base" ]] && continue
+        mv "$e" "$ws/$base" || return 1
+    done
+    # INV-MP: the auto-memory child binds at -workspace/memory, a mountpoint
+    # INSIDE this bucket — so cco owns it rather than the container runtime. It
+    # lives here, with the layout it belongs to, so one unit test covers both.
+    # A legacy `memory` moved in by the loop above makes this a no-op.
+    mkdir -p "$ws/memory" || return 1
+    return 0
+}
+
+# ── Framework-owned mountpoints for /workspace/.claude (ADR-0054, INV-MP) ─────
+# Same mechanism as the stub above, generalized: a child bind whose target does
+# not exist inside a :ro parent cannot be created (runc mkdirat's it THROUGH the
+# read-only bind → EROFS → the container never starts). ADR-0005 F3 ("parent stays
+# rw") was the precondition that hid this for the pack/llms lanes; ADR-0049 §2 made
+# Cp=ro the default and dropped it. INV-MP restores it from the other side: cco
+# creates every framework mountpoint host-side, in a tree IT owns, so visibility
+# of packs/llms no longer depends on the authoring policy.
+#
+# The view is mountpoints ONLY (empty dirs/files) and becomes the /workspace/.claude
+# parent at the policy's mode (D3 — never rw-by-fiat: that would fake successful
+# writes into CACHE); the committed tree is bound back in entry by entry. Built
+# ONLY when the session injects children (D2) — a project with no packs/llms keeps
+# today's single whole-tree bind, byte-identical.
+
+# Split a compose volume line — '      - "SRC:TGT[:MODE]"' — into _CV_SRC/_CV_TGT.
+# A container target never contains ':', so peeling an optional trailing :ro|:rw
+# and then the last ':' is exact for every line _compose_vol emits.
+_claude_view_split() {
+    local raw="$1"
+    raw="${raw#*\"}"; raw="${raw%\"*}"
+    case "$raw" in *:ro|*:rw) raw="${raw%:*}" ;; esac
+    _CV_TGT="${raw##*:}"; _CV_SRC="${raw%:*}"
+}
+
+# Create one mountpoint <rel> inside <view>, shaped after its source (dir → dir,
+# anything else → empty file). Never overwrites an existing entry.
+_claude_view_stub() {
+    local view="$1" rel="$2" src="$3"
+    # SEPARATE statement, deliberately: `local a=$1 b="$a/x"` expands b's RHS
+    # BEFORE the assignments happen, so `$a` would resolve to the CALLER's `a`
+    # (dynamic scope) — silently right in one call path and silently wrong in
+    # another, which is exactly how this shipped once (see tests).
+    local mp="$view/$rel"
+    if [[ -d "$src" ]]; then
+        mkdir -p "$mp" || return 1
+    else
+        mkdir -p "$(dirname "$mp")" || return 1
+        [[ -e "$mp" ]] || : > "$mp" || return 1
+    fi
+    return 0
+}
+
+# Emit the B2 parent + the committed tree's per-entry binds for a composing
+# session, creating every mountpoint in the view as it goes.
+# Args: <view> <claude_src> <b2_mode> <injected_lines> <dry_run:true|false>
+_emit_claude_view() {
+    local view="$1" claude_src="$2" mode="$3" injected="$4" dry="$5"
+    local line rel ns e f base fb
+    # Sets, newline-delimited (bash 3.2 — no associative arrays).
+    local inj_targets=$'\n' inj_ns=$'\n'
+
+    # 1. One mountpoint per injected child. The set is DERIVED from the emitted
+    #    mount lines, never re-enumerated, so a future injector (commands/, FI-29)
+    #    is covered the day it emits a line — there is no second list to drift.
+    while IFS= read -r line; do
+        [[ "$line" == *':/workspace/.claude/'* ]] || continue
+        _claude_view_split "$line"
+        rel="${_CV_TGT#/workspace/.claude/}"
+        [[ -n "$rel" ]] || continue
+        if [[ "$dry" != "true" ]]; then
+            _claude_view_stub "$view" "$rel" "$_CV_SRC" \
+                || die "Cannot create the .claude mountpoint view at $view (entry '$rel')."
+        fi
+        inj_targets+="$_CV_TGT"$'\n'
+        case "$rel" in
+            */*) ns="${rel%%/*}"
+                 [[ "$inj_ns" == *$'\n'"$ns"$'\n'* ]] || inj_ns+="$ns"$'\n' ;;
+        esac
+    done <<< "$injected"
+
+    # 2. The view IS the parent — at the policy's mode (D3).
+    _compose_vol "$view" "/workspace/.claude" "$mode"
+
+    # 3. Bind the committed tree back in. A directory that received an injection
+    #    must stay owned by the view (it holds files from two sources), so its
+    #    entries are bound one by one; everything else is bound whole.
+    for e in "$claude_src"/* "$claude_src"/.[!.]*; do
+        [[ -e "$e" ]] || continue
+        base="${e##*/}"
+        # The rw STATE overlay owns settings.local.json when B2 is :ro.
+        [[ "$base" == "settings.local.json" && "$mode" == "ro" ]] && continue
+        if [[ -d "$e" && "$inj_ns" == *$'\n'"$base"$'\n'* ]]; then
+            for f in "$e"/* "$e"/.[!.]*; do
+                [[ -e "$f" ]] || continue
+                fb="${f##*/}"
+                # A pack overlay wins over a committed file of the same path
+                # (ADR-0005 F2) — emitting both would be a duplicate compose target.
+                [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base/$fb"$'\n'* ]] && continue
+                if [[ "$dry" != "true" ]]; then
+                    _claude_view_stub "$view" "$base/$fb" "$f" \
+                        || die "Cannot create the .claude mountpoint view at $view (entry '$base/$fb')."
+                fi
+                _compose_vol "$f" "/workspace/.claude/$base/$fb" "$mode"
+            done
+        else
+            [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base"$'\n'* ]] && continue
+            if [[ "$dry" != "true" ]]; then
+                _claude_view_stub "$view" "$base" "$e" \
+                    || die "Cannot create the .claude mountpoint view at $view (entry '$base')."
+            fi
+            _compose_vol "$e" "/workspace/.claude/$base" "$mode"
+        fi
+    done
+}
+
+# ── Recursive nested-config detection (ADR-0049 §7) ──────────────────
+# Claude Code discovers nested .claude natively, so a monorepo's packages/x/.claude
+# (and a member's .cco with a project.yml) escape a root-only overlay. Emit the
+# path of each directory named <base> under <root>, RELATIVE to <root>, one per
+# line — bounded (maxdepth) and pruned (heavy/irrelevant dirs) so the per-start
+# scan stays cheap. When <require_file> is given only dirs containing that file
+# qualify (e.g. .cco carrying a project.yml). Args: <root> <base> [<require_file>].
+#
+# INVARIANT: this NEVER returns the search root itself (rel would be empty). Its
+# domain is dirs strictly BELOW <root>. The root's own mode is governed by the
+# mount that produced it — ADR-0049 §7, "the mount's own readonly: flag governs
+# everything else" — never by the nested clamp. Consequence: EVERY producer of a
+# config mount owns its own `readonly:` (see _config_editor_mount_ro), because
+# nothing re-clamps the root behind its back. `-mindepth 1` enforces this at the
+# find level; the bash guard restates it so the contract survives a find edit.
+_find_nested_config_dirs() {
+    local root="$1" base="$2" require_file="${3:-}" d rel
+    [[ -d "$root" ]] || return 0
+    while IFS= read -r d; do
+        [[ -z "$d" ]] && continue
+        [[ -n "$require_file" && ! -f "$d/$require_file" ]] && continue
+        rel="${d#"$root"}"; rel="${rel#/}"
+        [[ -z "$rel" ]] && continue          # the search root itself — not nested
+        printf '%s\n' "$rel"
+    done < <(find "$root" -mindepth 1 -maxdepth 6 \
+                \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+                   -o -name vendor -o -name target -o -name dist -o -name build \) -prune -o \
+                -type d -name "$base" -print 2>/dev/null | sort)
+}
+
+# _nc_emit <claude_axis> <cco_axis> — an axis of "rw" yields "rw"; "ro" AND
+# "none" both yield "ro". Fail-closed: an axis that grants no access must never
+# produce a writable overlay.
+_nc_emit() {
+    local c="ro" o="ro"
+    [[ "$1" == "rw" ]] && c="rw"
+    [[ "$2" == "rw" ]] && o="rw"
+    printf '%s\t%s' "$c" "$o"
+}
+
+# The SINGLE source for "what mode do nested config trees inside an extra_mount
+# take?" — the predicate that three call sites had inlined and let drift apart.
+# Pure: every input is an argument, so it is unit-testable in isolation.
+#
+# Echoes "<claude_mode>\t<cco_mode>". Each field is the LITERAL "ro" (emit a :ro
+# overlay) or "rw" (leave writable) — TOTAL, never empty, so the record is safe
+# under any reader and self-describing at the call site. Consumers still peel with
+# _peel_tab (the repo rule for TAB records, and the guard that survives a future
+# contributor reintroducing an empty field), and compare == "ro", not -n.
+#
+# Args: <mount_ro> <policy> [<role>] [<ktriple>] [<ctriple>]
+#   role ∈ ''(user mount) | store | project-config     — see _mount_override_role
+#   ktriple = "Cr,Cp,Cg,Co"    ctriple = "G,Pc,Po"
+#
+# Why the axis is keyed by ROLE (ADR-0049 §7 / D-M5): a framework-synthetic config
+# mount is governed by the session triple for the tree it REPRESENTS. Routing it
+# through the existing `project` policy instead would map .claude to Cr — which
+# ADR-0049 pins at `ro` for every session — so ~/.cco/.claude would stay clamped
+# forever and Cg=rw would remain unenforced (E6A-12, E6B-02). A user extra_mount
+# is not a config tree and keeps the strict `ro` default (D-M1).
+_nested_config_modes() {
+    local mro="$1" policy="$2" role="${3:-}" ktriple="${4:-}" ctriple="${5:-}"
+    local cr cp cg co g pc po
+    # Comma is NOT IFS whitespace, so empty axes are preserved here (unlike tab).
+    IFS=, read -r cr cp cg co <<< "$ktriple"
+    IFS=, read -r g  pc po    <<< "$ctriple"
+    # A :ro mount already locks everything; `write` opts out wholesale.
+    [[ "$mro" == "true" || "$policy" == "write" ]] && { printf 'rw\trw'; return 0; }
+    case "$policy" in
+        project) _nc_emit "$cr" "$pc"; return 0 ;;   # unchanged: repo-native axes
+    esac
+    # policy = ro (the default).
+    case "$role" in
+        store)          _nc_emit "$cg" "$g"  ;;     # ~/.cco      → Cg / G
+        project-config) _nc_emit "$cp" "$pc" ;;     # <repo>/.cco → Cp / Pc
+        *)              printf 'ro\tro'     ;;      # user extra_mount — UNCHANGED
+    esac
+    return 0
+}
+
 # ── cmd_start() helper functions ─────────────────────────────────────
 # These functions are called from within cmd_start() and share its local
 # variable scope. They must NOT redeclare variables — they read/write
 # cmd_start()'s locals directly.
+
+# Host-side totals for the store-resident resource kinds, as the CSV
+# "pack=N,template=N,llms=N,remote=N" the in-container access-scope layer reads
+# (ADR-0056 D5 — see _env_apply_store_supplement for why the count cannot be taken
+# in the session). Counts what EXISTS in the personal store, before any scoping:
+# scoping is a presentation filter over this host-owned truth (INV-D), and the
+# layer derives the hidden count as total-minus-enumerated.
+#
+# ⚠ Unlike its siblings this is NOT project-scoped — it is a property of the store,
+# so it is computed once per session regardless of which project is starting.
+# Emits nothing when the store is absent (a machine before `cco init`): an absent
+# signal degrades to the pre-ADR-0056 behaviour, which is the honest fallback —
+# never a fabricated zero, which would read as "the store is empty".
+# Stdout only; does not touch cmd_start's locals (its own function scope).
+_start_store_totals() {
+    local out="" kind dir n d rf
+    for kind in pack template llms; do
+        case "$kind" in
+            pack)     dir="$PACKS_DIR" ;;
+            template) dir="$TEMPLATES_DIR" ;;
+            llms)     dir="$LLMS_DIR" ;;
+        esac
+        [[ -n "$dir" && -d "$dir" ]] || continue
+        n=0
+        # `templates` nests one level deeper (project/ and pack/ kinds); the others
+        # are a flat directory of named entries. `.cco` is metadata, never an entry.
+        if [[ "$kind" == template ]]; then
+            for d in "$dir"/project/*/ "$dir"/pack/*/; do
+                [[ -d "$d" ]] || continue
+                n=$(( n + 1 ))
+            done
+        else
+            for d in "$dir"/*/; do
+                [[ -d "$d" ]] || continue
+                [[ "$(basename "$d")" == ".cco" ]] && continue
+                n=$(( n + 1 ))
+            done
+        fi
+        out="${out}${out:+,}${kind}=${n}"
+    done
+    rf=$(_remotes_file 2>/dev/null) || rf=""
+    if [[ -n "$rf" && -f "$rf" ]]; then
+        n=$(grep -cE '^[^#[:space:]][^=]*=' "$rf" 2>/dev/null || true)
+        out="${out}${out:+,}remote=${n:-0}"
+    fi
+    printf '%s' "$out"
+}
+
+# Announce a config-editor repo that was collected but will NOT be mounted this
+# session (RC-6 §3.9 / INV-B: nothing is ever silently dropped). One message
+# shape, worded to the D-M2 "not mounted in this session" vocabulary
+# (00-overview.md §5.1) so the cycle-2 RC-5 sweep — and RC-2's sibling
+# _env_note_unmounted — need not rewrite it (kept identical by open-issue note).
+# <reason> ∈ unresolved | stale | homonym | reserved | noconfig | reference;
+# <target> is the owning --project name (for the host-side remedy), empty for the
+# reasons that HAVE no remedy (the collisions, and `reference` — a decision, not a
+# failure). <kind> is the dropped thing's noun, default "repo": S7 announces two
+# drops that are not repos — a whole PROJECT (the --all branch) and a target's
+# EXTRA MOUNTS. Only the `warn` here may spell the D-M2 vocabulary (INV-ENV budget
+# 2, with `unresolved`'s detail); a new arm must not add a third spelling.
+# Shares cmd_start scope; writes stderr only.
+_ce_skip_note() {
+    local rn="$1" reason="$2" target="${3:-}" kind="${4:-repo}"
+    local detail remedy=""
+    case "$reason" in
+        unresolved) detail="it is not resolved on this machine"
+                    remedy=" Run 'cco resolve${target:+ $target}' on your host, then restart the session." ;;
+        stale)      detail="its recorded path no longer exists"
+                    remedy=" Run 'cco resolve${target:+ $target}' on your host, then restart the session." ;;
+        homonym)    detail="another target already binds the name '$rn' to a different path" ;;
+        reserved)   detail="the name collides with a built-in config mount (cco-config, cco-docs, <name>-config)" ;;
+        noconfig)   detail="it has no <repo>/.cco to edit"
+                    remedy=" Run 'cco init' in that repo on your host, then restart the session." ;;
+        reference)  detail="it is reference material, not an authoring surface" ;;
+        *)          detail="$reason" ;;
+    esac
+    warn "config-editor: ${kind} '$rn' is not mounted in this session — ${detail}.${remedy}"
+}
+
+# Add a resolved repo to the shared _ce_repos set as "name<TAB>abs_path"
+# (newline-joined). Dedup by NAME — one /workspace/<name> container target exists.
+# INV-M3 (existence): built-ins skip the _resolve_unit heal (:1063), so a stale
+# index entry pointing at a gone path reaches here as a would-be bind source Docker
+# would CREATE root-owned — this is the only place to catch it, and it is announced,
+# not dropped. A second binding of the same name to a DIFFERENT path is an ADR-0051
+# homonym across two --project targets (D-M9/Q-7): it cannot share the container
+# target, so the first wins and the second is announced. Shares cmd_start scope.
+# Usage: _ce_add_repo <name> <abs_path> [<owning-target>]
+_ce_add_repo() {
+    local rn="$1" rp="$2" target="${3:-}"
+    [[ -z "$rn" ]] && return 0
+    [[ "$rp" != /* || ! -d "$rp" ]] && { _ce_skip_note "$rn" stale "$target"; return 0; }
+    case $'\n'"$_ce_repos" in
+        *$'\n'"${rn}"$'\t'"${rp}"$'\n'*) return 0 ;;                        # same name+path → dedup
+        *$'\n'"${rn}"$'\t'*) _ce_skip_note "$rn" homonym; return 0 ;;       # same name, other path
+    esac
+    _ce_repos+="${rn}"$'\t'"${rp}"$'\n'
+    return 0
+}
+
+# Collect one target's repos into _ce_repos (repo-aware authoring, ADR-0042 §8),
+# announcing every DECLARED member that does not resolve. _effective_repo_mounts
+# consciously skips unresolved members silently, so the declared-vs-effective diff
+# is computed here (yml_get_repo_coords minus the effective set) and each missing
+# one is announced (INV-B). Shares cmd_start scope.
+# Usage: _ce_collect_target_repos <target-name> <target-yml>
+_ce_collect_target_repos() {
+    local _tname="$1" _tyml="$2" rn rp
+    local _resolved=$'\n'
+    while IFS=$'\t' read -r rn rp; do
+        [[ -z "$rn" ]] && continue
+        _resolved+="${rn}"$'\n'
+        _ce_add_repo "$rn" "$rp" "$_tname"
+    done < <(_effective_repo_mounts "$_tyml")
+    local _dn _du _dr
+    while IFS=$'\t' read -r _dn _du _dr; do
+        [[ -z "$_dn" ]] && continue
+        [[ "$_resolved" == *$'\n'"${_dn}"$'\n'* ]] && continue
+        _ce_skip_note "$_dn" unresolved "$_tname"
+    done < <(yml_get_repo_coords "$_tyml" 2>/dev/null)
+    return 0
+}
+
+# Return 0 iff any repo the index records for <project> is an existing directory.
+# The discriminator behind V5-05's two remedies: `cco init` only makes sense when
+# there IS a repo dir to init, otherwise the honest answer is `cco resolve`.
+# INV-F: an index entry is a HOST path, which is the wrong thing to existence-test
+# anywhere but the host — so the probe goes through _cco_member_probe_path, the
+# single source for "what is testable HERE" (identity on the host, the container
+# mount under the operator shim). Usage: <project>
+_ce_project_has_member_dir() {
+    local proj="$1" r p
+    for r in $(_index_get_project_repos "$proj" 2>/dev/null); do
+        p=$(_cco_member_probe_path "$r" "$(_index_get_path "$proj" "$r" 2>/dev/null)")
+        [[ -n "$p" && -d "$p" ]] && return 0
+    done
+    return 1
+}
+
+# S7 / V4-F-V4-01 — config-editor NEVER mounts a target's extra_mounts, and says so.
+# Decision (b), ratified 2026-07-21 (03-config-editor-repos.md §3.9): the built-in
+# exists to author CONFIG; a target's extra_mounts are reference material for a
+# working session, not authoring surface, so mounting them would widen the built-in's
+# blast radius for no authoring gain. The decision is only honest if it is ANNOUNCED —
+# `cco path list` prints those bindings as live host paths, so silence reads as
+# "reachable" (that is exactly what V4-F-V4-01 reported). Announce every DECLARED
+# mount, resolved or not: resolution is irrelevant here, none of them is mounted.
+# Deliberately NOT called in --all mode, which mounts no member surfaces at all by
+# design (same reason its repos are not announced one by one). Shares cmd_start scope.
+# Usage: _ce_announce_target_extra_mounts <target-name> <target-yml>
+_ce_announce_target_extra_mounts() {
+    local _tyml="$2" _mn
+    while IFS=$'\t' read -r _mn _; do
+        [[ -z "$_mn" ]] && continue
+        _ce_skip_note "$_mn" reference "" "extra mount"
+    done < <(yml_get_mount_coords "$_tyml" 2>/dev/null)
+    return 0
+}
+
+# Post-collection pass (RC-6 §3.6 / Change 4): drop and announce every collected
+# repo whose name collides with a container target the built-in itself claims —
+# cco-config, cco-docs, and <t>-config for EVERY collected target. Order-dependent:
+# the reserved set is a function of the FULL --project target list, only final
+# after the whole collector has run (a repo declared by target `a` and named
+# `b-config` must lose to `b`'s config mount even when `b` is appended after `a`),
+# so this runs ONCE at the end, never inside the producer. Rebuilds _ce_repos into
+# a local first (bash 3.2 — no namerefs) and keeps the trailing "\n" the case tests
+# assume. Shares cmd_start scope.
+_ce_filter_reserved() {
+    [[ -z "$_ce_repos" ]] && return 0
+    local reserved=$'\n'"cco-config"$'\n'"cco-docs"$'\n'
+    local _tn _tp
+    while IFS=$'\t' read -r _tn _tp; do
+        [[ -z "$_tn" ]] && continue
+        reserved+="${_tn}-config"$'\n'
+    done <<< "$_ce_targets"
+    local kept="" _line _rn _rp
+    while IFS= read -r _line; do
+        [[ -z "$_line" ]] && continue
+        _rn="${_line%%$'\t'*}"; _rp="${_line#*$'\t'}"
+        if [[ "$reserved" == *$'\n'"${_rn}"$'\n'* ]]; then
+            _ce_skip_note "$_rn" reserved
+            continue
+        fi
+        kept+="${_rn}"$'\t'"${_rp}"$'\n'
+    done <<< "$_ce_repos"
+    _ce_repos="$kept"
+    return 0
+}
+
+# Resolve the config-editor session's minimum-privilege MODE (ADR-0044 §3) from
+# the CLI flags + cwd, ONCE, so both the preset cco_access default
+# (_start_resolve_access) and the mounted target set
+# (_start_collect_config_editor_targets) derive from the same decision. Sets
+# config_editor_mode ∈ all|project|global and, for the cwd-project case,
+# config_editor_cwd_dir (the hosting repo dir). Precedence:
+#   all      → --all OR --cco-access edit-all (the explicit broad wideners)
+#   project  → named --project targets, ELSE a cwd inside a project
+#   global   → outside any project (bare) — ~/.cco only, no project trees
+# Shares cmd_start scope.
+_resolve_config_editor_mode() {
+    config_editor_mode="global"
+    config_editor_cwd_dir=""
+    if [[ "$config_editor_all" == true || "$cli_cco_access" == "edit-all" ]]; then
+        config_editor_mode="all"
+    elif [[ ${#config_editor_targets[@]} -gt 0 ]]; then
+        config_editor_mode="project"
+    elif config_editor_cwd_dir=$(_resolve_find_unit_dir 2>/dev/null); then
+        config_editor_mode="project"
+    else
+        config_editor_cwd_dir=""
+        config_editor_mode="global"
+    fi
+}
+
+# The config-editor by-mode DEFAULT cco intent (SINGLE source, WS-A 2026-07-11). Emits
+# "<intent>\t<has_current_project>" for the resolved config_editor_mode. Both
+# _start_resolve_access (the session triple) and _config_editor_mount_ro (the generated
+# mounts' readonly) read it, so the mount mode and the resolved triple never diverge:
+#   project  → (ro,rw,none): edit the target project(s), READ the whole store to reference.
+#   all      → edit-all (rw,rw,rw): every project + store.
+#   global   → (rw,none,none): edit ONLY the store; project-less (Pc has no referent).
+# Reads cmd_start local config_editor_mode.
+_config_editor_default_cco() {
+    case "${config_editor_mode:-global}" in
+        all)     printf 'edit-all\ttrue' ;;
+        project) printf 'global=ro,current=rw,others=none\ttrue' ;;
+        *)       printf 'global=rw,current=none,others=none\tfalse' ;;
+    esac
+}
+
+# _config_editor_mount_ro <axis> → "true"/"false": is a GENERATED config-editor mount
+# READ-ONLY for this session? The mount is writable iff the triple axis that names the
+# tree it exposes is rw:
+#   g   → cco-config    (~/.cco, the personal store)      — the whole point of the session
+#   pc  → <name>-config (a target project's <repo>/.cco)  — classified `current` (ADR-0048)
+# Both mounts are ROOTS, and since _find_nested_config_dirs stopped sweeping roots this
+# flag is their ONLY physical enforcement — a hardcoded value here is a declared-vs-
+# enforced defect (RC-1 §3.5). Keying the root to the same axis as the nested clamp
+# (_nested_config_modes' store / project-config roles) means root and nested trees of one
+# mount cannot contradict each other.
+# For a built-in the only cco_access sources are the CLI override and the by-mode default
+# (project.yml/access.yml bypassed for built-ins), so the triple is fully determined here —
+# the SAME inputs _start_resolve_access resolves, hence the mount and the triple agree,
+# even though this runs BEFORE it. Fails safe to read-only. Reads cmd_start locals
+# config_editor_mode, cli_cco_access.
+_config_editor_mount_ro() {
+    local axis="${1:-g}"
+    local intent plflag g pc po _def
+    _def=$(_config_editor_default_cco)
+    intent="${_def%%$'\t'*}"; plflag="${_def##*$'\t'}"
+    [[ -n "$cli_cco_access" ]] && intent="$cli_cco_access"   # CLI > by-mode default
+    local triple; triple=$(_cco_resolve_access "$intent" "$plflag" 2>/dev/null) || { printf 'true'; return; }
+    read -r g pc po <<< "$triple"
+    local val; case "$axis" in pc) val="$pc" ;; *) val="$g" ;; esac
+    [[ "$val" == "rw" ]] && printf 'false' || printf 'true'
+}
+
+# Collect the config-editor's edit targets + repo mounts (ADR-0042 §8 / ADR-0044
+# §3). Sets the shared _ce_targets (newline-joined "name<TAB><repo>/.cco") and
+# _ce_repos (newline-joined repo logical names), keyed off the mode resolved by
+# _resolve_config_editor_mode:
+#   NARROW (`--project <name>`, repeatable) → those projects' <repo>/.cco PLUS
+#     each project's resolvable repos (repo-aware authoring). Each --project MUST
+#     resolve — dies otherwise.
+#   ALL (`--all` / `--cco-access edit-all`) → every resolvable project's
+#     <repo>/.cco, NO repos. Broad config editing — the explicit widener.
+#   PROJECT via cwd (bare inside a project) → the cwd project's <repo>/.cco PLUS
+#     its resolvable repos (like a single --project).
+#   GLOBAL (bare outside any project) → NO project targets (~/.cco only).
+#   `--repo <name>` (repeatable, any mode) adds one resolvable repo to the set.
+#
+# Repos are an EXPLICIT opt-in (P18 refined, not broken — design §8): --all mounts
+# no code, only <repo>/.cco config. Shares cmd_start scope; reads config_editor_*.
+_start_collect_config_editor_targets() {
+    _ce_targets=""
+    _ce_repos=""
+    local name path t rn rp
+    if [[ ${#config_editor_targets[@]} -gt 0 ]]; then
+        # NARROW: named projects' .cco + their repos (repo-aware authoring).
+        for t in "${config_editor_targets[@]}"; do
+            path=$(_resolve_unit_dir_for_project "$t") \
+                || die "config-editor --project '$t' is not resolvable on this machine. Run 'cco resolve' first."
+            [[ -d "$path/.cco" ]] || die "config-editor --project '$t' has no <repo>/.cco to edit."
+            [[ "$_ce_targets" == *"${t}"$'\t'"${path}/.cco"$'\n'* ]] \
+                || _ce_targets+="${t}"$'\t'"${path}/.cco"$'\n'
+            # That project's repos (repo-aware authoring) — resolved + announced.
+            _ce_collect_target_repos "$t" "$path/.cco/project.yml"
+            _ce_announce_target_extra_mounts "$t" "$path/.cco/project.yml"
+        done
+    elif [[ "$config_editor_mode" == "all" ]]; then
+        # ALL (--all / --cco-access edit-all): every resolvable project's .cco, no repos.
+        local _ce_seen=$'\n'
+        while IFS=$'\t' read -r name path _; do
+            [[ -z "$name" ]] && continue
+            _ce_seen+="${name}"$'\n'
+            # Upstream-implied backstop: _project_foreach only yields a project whose
+            # <unit>/.cco/project.yml is a FILE, so this -d can no longer be false.
+            # Kept (announcing, never a bare `continue`) so a future relaxation of that
+            # contract surfaces here instead of silently shrinking the target set.
+            [[ -d "$path/.cco" ]] || { _ce_skip_note "$name" noconfig "$name" project; continue; }
+            _ce_targets+="${name}"$'\t'"${path}/.cco"$'\n'
+        done < <(_project_foreach)
+        # V5-05 — the REAL drop site. `--all` promises "every project"; _project_foreach
+        # delivers only the RESOLVABLE ones, conscious-skipping the rest silently (an
+        # unresolvable unit dir, or one carrying no project.yml). V5 watched a set of 8
+        # become 7 with no announcement on any surface. _project_foreach is shared by
+        # many verbs and must NOT learn config-editor's vocabulary, so — exactly as
+        # _ce_collect_target_repos does for a target's repos — the declared-vs-effective
+        # diff is computed HERE and every missing project is announced (INV-B).
+        while IFS='=' read -r name _; do
+            [[ -z "$name" || "$name" == "_template" ]] && continue
+            [[ "$_ce_seen" == *$'\n'"${name}"$'\n'* ]] && continue
+            # Same reality, two remedies: some member dir is on disk but none carries a
+            # .cco (→ cco init there), or nothing is on disk at all (→ cco resolve).
+            if _ce_project_has_member_dir "$name"; then
+                _ce_skip_note "$name" noconfig "$name" project
+            else
+                _ce_skip_note "$name" unresolved "$name" project
+            fi
+        done < <(_index_list_projects)
+    elif [[ "$config_editor_mode" == "project" && -n "$config_editor_cwd_dir" ]]; then
+        # PROJECT (bare inside a project): the cwd project's .cco + its repos.
+        name=$(yml_get "$config_editor_cwd_dir/.cco/project.yml" name 2>/dev/null)
+        [[ -n "$name" && -d "$config_editor_cwd_dir/.cco" ]] \
+            && _ce_targets+="${name}"$'\t'"${config_editor_cwd_dir}/.cco"$'\n'
+        _ce_collect_target_repos "$name" "$config_editor_cwd_dir/.cco/project.yml"
+        _ce_announce_target_extra_mounts "$name" "$config_editor_cwd_dir/.cco/project.yml"
+    fi
+    # else: mode=global (bare outside any project) → no project targets, ~/.cco only.
+    # --repo <name>: add a single resolvable repo (fine-grained reference mount).
+    for t in ${config_editor_repos[@]+"${config_editor_repos[@]}"}; do
+        # config-editor --repo is a cross-project reference (no single current
+        # project) — resolve the bare name across all projects (ADR-0051).
+        path=$(_index_get_path_any "$t")
+        [[ "$path" == /* && -d "$path" ]] \
+            || die "config-editor --repo '$t' is not resolvable on this machine. Run 'cco resolve' first."
+        _ce_add_repo "$t" "$path"
+    done
+    # Change 4 (RC-6 §3.6): now that ALL --project targets and --repo names are
+    # collected, drop+announce any repo whose name would collide with a reserved
+    # container target the built-in claims. Order-dependent → runs once, here.
+    _ce_filter_reserved
+}
+
+# Fail loud, don't launch inert (F4). A config-editor session that intends a PROJECT
+# write (Pc=rw) but for which the mode/collector resolved ZERO project targets, and
+# whose G is not rw either, can write NOTHING: no <repo>/.cco is mounted (no target)
+# and G!=rw rules out the personal store. Post-clamp (WS-A) the reachable inert triple
+# is (ro,rw,none) — an explicit `--cco-access edit-project` (or current=rw) issued
+# outside any project; the G>=ro clamp turns the old (none,rw,none) into (ro,rw,none),
+# so the guard keys off Pc/Po/targets, NOT G=none. edit-global (G=rw) can always write
+# ~/.cco → never inert, never guarded; the project-mode default (ro,rw,none) always has
+# a resolved target → never guarded.
+# Reads cmd_start locals (session_preset, cco_g/pc/po, _ce_targets); no side effects.
+_start_guard_config_editor_scope() {
+    [[ "${session_preset:-}" == "config-editor" ]] || return 0
+    [[ "$cco_pc" == rw && "$cco_g" != rw && "$cco_po" == none ]] || return 0
+    [[ -z "${_ce_targets:-}" ]] || return 0
+    die "config-editor --cco-access edit-project needs a project to edit, but none was resolved.
+  You are outside a project and passed no --project. Fix one of:
+    • cd into a project's repo (its <repo>/.cco becomes the target), or
+    • pass --project <name> (repeatable), or
+    • use --cco-access edit-global to edit the personal store (~/.cco) only."
+}
 
 # Resolves the project to its decentralized config source (design §4.4, ADR-0024
 # D3): cco start reads <repo>/.cco/ — cwd-first when no name is given (the project
@@ -157,11 +1187,14 @@ _start_resolve_project() {
             die "Resolve the conflict and try again."
         fi
         is_internal=true
+        session_preset="tutorial"          # preset: claude_access=none, cco_access=read (D6)
         _setup_internal_tutorial
         project_dir="$(_cco_internal_runtime_dir)/tutorial"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
+        # Secret-mask the personal store mounted for reading (~/.cco → cco-config).
+        _op_config_masks+=("$(_cco_config_dir)"$'\t'"/workspace/cco-config")
     elif [[ "$project" == "config-editor" ]]; then
         # "config-editor" is a reserved name — launches the built-in config
         # editor (ADR-0027 D1). Block a real project claiming the name.
@@ -175,27 +1208,39 @@ _start_resolve_project() {
             die "Resolve the conflict and try again."
         fi
         is_internal=true
-        # Project mode: --project <name> wins; else a cwd that hosts a configured
-        # repo. Resolve the target's <repo>/.cco for an additional rw mount.
-        local _ce_path="" _ce_name="" _ce_cco=""
-        if [[ -n "$config_editor_target" ]]; then
-            _ce_path=$(_resolve_unit_dir_for_project "$config_editor_target") \
-                || die "config-editor --project '$config_editor_target' is not resolvable on this machine. Run 'cco resolve' first."
-            _ce_name="$config_editor_target"
-        elif _ce_path=$(_resolve_find_unit_dir 2>/dev/null); then
-            _ce_name=$(yml_get "$_ce_path/.cco/project.yml" name 2>/dev/null)
-        fi
-        [[ -n "$_ce_path" && -d "$_ce_path/.cco" ]] && _ce_cco="$_ce_path/.cco"
-        _setup_internal_config_editor "$_ce_cco" "$_ce_name"
+        session_preset="config-editor"     # preset: min-privilege by mode (ADR-0044 §3)
+        # Scope (ADR-0044 §3): minimum privilege by cwd/flag. Resolve the mode ONCE
+        # (all|project|global) so the preset cco_access default (_start_resolve_access)
+        # and the mounted targets below agree. cwd-in-project → edit-project (its
+        # .cco + repos); outside → edit-global (~/.cco only); --all / --cco-access
+        # edit-all → edit-all (every project's .cco); --project → targeted.
+        # The collector sets _ce_targets (newline name<TAB>cco_path) + _ce_repos
+        # (newline repo names) directly via shared scope so its die() propagates
+        # (bash 3.2 has no namerefs, and a $() subshell would swallow the die).
+        # _ce_targets/_ce_repos are declared at cmd_start scope (NOT here) so their
+        # value survives into _start_generate_compose (CCO_CONFIG_TARGETS + the R2
+        # descriptor read them); reset before collecting.
+        _resolve_config_editor_mode
+        _ce_targets="" _ce_repos=""
+        _start_collect_config_editor_targets
+        _setup_internal_config_editor "$_ce_targets" "$_ce_repos"
         project_dir="$(_cco_internal_runtime_dir)/config-editor"
         project_yml="$project_dir/project.yml"
         claude_src="$project_dir/.claude"
         source_repo="$project_dir"
+        # Secret-mask the personal store (~/.cco → cco-config) + each target .cco.
+        _op_config_masks+=("$(_cco_config_dir)"$'\t'"/workspace/cco-config")
+        local _ct _ctn _ctp
+        while IFS=$'\t' read -r _ctn _ctp; do
+            [[ -z "$_ctn" ]] && continue
+            _op_config_masks+=("$_ctp"$'\t'"/workspace/${_ctn}-config")
+        done <<< "$_ce_targets"
     else
         local unit_dir=""
         if [[ -n "$from_repo" ]]; then
             # --from <repo>: explicit Case-C source (mirrors `cco sync --from`).
-            unit_dir=$(_index_get_path "$from_repo") \
+            # Cross-project by-name lookup (no project context in hand yet).
+            unit_dir=$(_index_get_path_any "$from_repo") \
                 || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
             [[ -n "$unit_dir" ]] || die "source repo '$from_repo' is unresolved on this machine — run 'cco resolve' first."
             [[ -f "$unit_dir/.cco/project.yml" ]] \
@@ -247,9 +1292,10 @@ _start_load_config() {
         die "Project name '${project_name}' is too long (${#project_name} chars, max 63)"
     fi
 
-    # Check for existing running session
-    if ! $dry_run && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cc-${project_name}$"; then
-        die "Project '${project_name}' already has a running session (container cc-${project_name}). Run 'cco stop ${project}' first."
+    # Check for existing running session — by the `cco.project` label (R1); the
+    # `run --rm` launch discards `container_name`, so name matching never fired.
+    if ! $dry_run && _cco_session_running "$project_name"; then
+        die "Project '${project_name}' already has a running session. Run 'cco stop ${project}' first."
     fi
 
     auth_method=$(yml_get "$project_yml" "auth.method")
@@ -308,7 +1354,7 @@ _start_load_config() {
     [[ "$opt_github" == "on"  ]] && github_enabled="true"
     [[ "$opt_github" == "off" ]] && github_enabled="false"
 
-    # Parse packs early (needed both for compose and packs.md generation)
+    # Parse packs early (needed both for compose and session-context generation)
     pack_names=$(yml_get_packs "$project_yml")
 
     # Warn if no repos defined (some projects like tutorial work without repos).
@@ -402,8 +1448,8 @@ _start_prepare_state() {
         claude_gen_dir="$output_dir/.claude"
     else
         # Real start: generated overlays are regenerable → CACHE (keyed by id).
-        # packs.md/workspace.yml are produced here and mounted :ro on top of the
-        # rw project .claude (ADR-0005 F1), never written into the committed tree.
+        # claude_gen_dir holds only the legacy-cleanup target now (ADR-0042: the
+        # session-info surface is injected via env, no workspace.yml file).
         managed_gen_dir="$session_cache_dir/managed"
         claude_gen_dir="$session_cache_dir/.claude"
     fi
@@ -416,10 +1462,18 @@ _start_prepare_state() {
         # Session transcripts + auto-memory are machine-local STATE, keyed by
         # project identity (ADR-0009): never committed, never in ~/.cco. The
         # /session partition is the future state-sync opt-in boundary (§2.2).
-        mkdir -p "$(_cco_project_session_transcripts "$project_name")" \
+        local session_transcripts; session_transcripts=$(_cco_project_session_transcripts "$project_name")
+        mkdir -p "$session_transcripts" \
                  "$(_cco_project_session_memory "$project_name")" \
                  "$managed_gen_dir" \
                  "$claude_gen_dir"
+
+        # ADR-0055 D5/D6: the bucket is the projects/ PARENT now — bring a
+        # pre-0055 bucket to the new depth and own the -workspace/memory
+        # mountpoint (INV-MP: a mountpoint ancestor is never left to the
+        # container runtime, on either side of the boundary).
+        _start_prepare_transcripts_bucket "$session_transcripts" \
+            || die "Cannot prepare the session transcripts bucket at $session_transcripts."
 
         # Claude Code native-install cache dirs (ADR-0039): pre-create so the
         # bind-mounts attach to directories (not auto-created files) and the
@@ -542,7 +1596,12 @@ _start_resolve_paths() {
     # SAME resolve surface as `cco resolve` — interactive heal of every referenced
     # repo/mount/llms/pack, never blocking (P14) — instead of a parallel inlined
     # loop. _resolve_unit takes the repo dir (parent of the .cco config dir).
-    _resolve_unit "$(dirname "$project_dir")"
+    # N3 (ADR-0052 §6): a user Exit ([q]) at a heal prompt propagates rc=2 — signal
+    # it up (return 2) so cmd_start aborts the launch BEFORE the container boots,
+    # rather than the old "skip-and-boot" that ignored the return.
+    local _ru_rc=0
+    _resolve_unit "$(dirname "$project_dir")" || _ru_rc=$?
+    [[ $_ru_rc -eq 2 ]] && return 2
     # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_unit offered
     # [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already warned each
     # member it could not resolve (skip / non-TTY). Here we only COUNT the residue
@@ -596,6 +1655,22 @@ _start_generate_compose() {
         compose_file="$session_state_dir/docker-compose.yml"
     fi
 
+    # Empty read-only source used to mask real secret files out of every .cco
+    # mount (ADR-0036 D4 — see _emit_secret_overlays). One host-side empty file,
+    # bind-mounted :ro over each secret path so the agent never sees real values.
+    local secret_mask
+    if $dry_run; then secret_mask="$output_dir/.cco/.secret-mask"
+    else secret_mask="$session_cache_dir/.secret-mask"; fi
+    mkdir -p "$(dirname "$secret_mask")"; : > "$secret_mask"
+
+    # Trusted session descriptor host path (ADR-0047 R2). Kept OUT of the managed
+    # overlay dir (which is bulk-mounted :ro at /workspace/.managed) so it surfaces
+    # ONLY at /etc/cco/session-access. Written in the operator env block below (it
+    # needs the resolved scope + membership) and mounted :ro there.
+    local session_descriptor
+    if $dry_run; then session_descriptor="$output_dir/.cco/session-access"
+    else session_descriptor="$session_cache_dir/session-access"; fi
+
     {
         cat <<YAML
 # AUTO-GENERATED by cco CLI from project.yml
@@ -615,6 +1690,13 @@ services:
       - TEAMMATE_MODE=${teammate_mode}
       - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 YAML
+
+        # Level-A session context (ADR-0042): the SessionStart / SubagentStart
+        # hooks decode these and emit them as additionalContext. base64 keeps the
+        # multi-line block a single safe compose value (INV-1: session-fixed info,
+        # INV-2: no file). Emitted only when non-empty (subagent block is optional).
+        [[ -n "$session_context_b64" ]]  && echo "      - CCO_SESSION_CONTEXT=${session_context_b64}"
+        [[ -n "$subagent_context_b64" ]] && echo "      - CCO_SUBAGENT_CONTEXT=${subagent_context_b64}"
 
         # Claude Code channel/version (native install — ADR-0039). Forward the
         # `~/.cco/claude-version` config-knob preference WHEN SET. When the knob is
@@ -645,6 +1727,118 @@ YAML
             echo "      - CCO_DEBUG=1"
         fi
 
+        # Mount modes derived ONCE from the resolved (G,Pc,Po) triple (ADR-0046 §7;
+        # access-scope.sh is the single source, INV-E). Each axis drives one mount
+        # decision — no {project,global,all} ordinal in between:
+        #   Pc=rw  → the current project's <repo>/.cco (A1) is editable.
+        #   G=rw   → the personal store ~/.cco + DATA/CACHE (A2) are editable.
+        #   G=none → the CONFIG mount is NARROWED to referenced packs (the rest of
+        #            the store stays physically hidden); G≥ro mounts the whole store.
+        # This is where edit-global's redefined (rw,rw,none) takes effect — Pc=rw
+        # now unlocks A1, which the old (rw,ro,none) kept :ro.
+        local _pc_rw="false" _g_rw="false" _g_none="false"
+        [[ "$cco_pc" == "rw"   ]] && _pc_rw="true"
+        [[ "$cco_g"  == "rw"   ]] && _g_rw="true"
+        [[ "$cco_g"  == "none" ]] && _g_none="true"
+
+        # Container-operator mode (ADR-0036 D4): under cco_access >= read, the
+        # in-container cco runs behind the whitelist shim, operating on the real
+        # buckets bind-mounted below (never the container's own $HOME). The flag +
+        # the three CCO_*_HOME overrides together are what _cco_container_operator
+        # keys on; CCO_CCO_ACCESS tells the shim which write verbs to allow. CONFIG
+        # (~/.cco) needs no override — it is mounted at the natural $HOME/.cco.
+        if [[ "$cco_access" != "none" ]]; then
+            echo "      - CCO_CONTAINER_OPERATOR=1"
+            # CCO_ACCESS_TRIPLE is the (G,Pc,Po) the in-container layer derives every
+            # scope decision from (INV-E); CCO_CCO_ACCESS is its display label. NOTE
+            # (ADR-0047): the outer, claude-side cco reads these from the env, but the
+            # env is agent-mutable and is only an EARLY UX gate. The AUTHORITATIVE copy
+            # for every elevated store operation is the cco-svc-owned :ro session
+            # descriptor written below (the setuid helper injects it), so an agent
+            # cannot forge a wider scope across the boundary.
+            echo "      - CCO_ACCESS_TRIPLE=${cco_g},${cco_pc},${cco_po}"
+            echo "      - CCO_CCO_ACCESS=${cco_access}"
+            # Internal-store bucket homes now point UNDER the cco-svc privileged root
+            # (ADR-0047): the claude user cannot traverse it, so the outer cco only
+            # builds path strings — actual store IO is elevated via the helper. The
+            # resolvers skip _cco_ensure_dir under these in operator mode (the buckets
+            # are bind-mounted below). CONFIG (~/.cco) is unaffected (natural $HOME).
+            echo "      - CCO_DATA_HOME=/var/lib/cco-internal/share/cco"
+            echo "      - CCO_STATE_HOME=/var/lib/cco-internal/state/cco"
+            echo "      - CCO_CACHE_HOME=/var/lib/cco-internal/cache/cco"
+            # Session-state introspection (F4): the other two resolved knobs, so the
+            # in-container introspection verb can report the full session state
+            # (ADR-0043 deferred these "until a verb needs them" — it now does).
+            echo "      - CCO_CLAUDE_ACCESS=${claude_access}"
+            # CCO_CLAUDE_TRIPLE is the resolved (Cr,Cp,Cg,Co) Axis-B triple (ADR-0049);
+            # CCO_CLAUDE_ACCESS is its display label. whoami renders both.
+            echo "      - CCO_CLAUDE_TRIPLE=${claude_cr},${claude_cp},${claude_cg},${claude_co}"
+            echo "      - CCO_SHOW_HOST_PATHS=${show_host_paths}"
+            # config-editor editing targets (D9): PROJECT_NAME stays the started
+            # project (config-editor); CCO_CONFIG_TARGETS carries the names whose
+            # .cco this session may edit, so the resolver (layout 2) and the managed
+            # rule can introspect the TARGET, never overloading PROJECT_NAME.
+            local _cfg_targets_csv=""
+            if [[ -n "${_ce_targets:-}" ]]; then
+                _cfg_targets_csv=$(printf '%s' "$_ce_targets" | awk -F'\t' 'NF{printf "%s%s",(n++?",":""),$1}')
+            fi
+            [[ -n "$_cfg_targets_csv" ]] && echo "      - CCO_CONFIG_TARGETS=${_cfg_targets_csv}"
+            # Project-scope membership signals (ADR-0043): the packs and llms this
+            # project references, comma-joined, so the in-container access-scope
+            # layer (lib/access-scope.sh) can scope read-verb OUTPUT to the current
+            # project at read-project. Computed ONCE here host-side (INV-E single
+            # source): pack list from project.yml; llms = project.yml ∪ each
+            # referenced pack's llms. Harmless at read-global+ (the layer ignores
+            # them there). Names are slugs (no commas), so a CSV value is safe.
+            local _op_packs_csv _op_llms_csv _op_ln _op_pk _op_pkdir
+            _op_packs_csv=$(printf '%s\n' "$pack_names" | awk 'NF{printf "%s%s",(n++?",":""),$0}')
+            _op_llms_csv=$({
+                yml_get_llms_names "$project_yml" 2>/dev/null
+                if [[ -n "$pack_names" ]]; then
+                    while IFS= read -r _op_pk; do
+                        [[ -z "$_op_pk" ]] && continue
+                        _op_pkdir=$(_pack_resolve_dir "$_op_pk" "$project_dir" 2>/dev/null) || continue
+                        [[ -f "$_op_pkdir/pack.yml" ]] && yml_get_llms_names "$_op_pkdir/pack.yml" 2>/dev/null
+                    done <<< "$pack_names"
+                fi
+            } | awk 'NF && !seen[$0]++{printf "%s%s",(n++?",":""),$0}')
+            [[ -n "$_op_packs_csv" ]] && echo "      - CCO_PROJECT_PACKS=${_op_packs_csv}"
+            [[ -n "$_op_llms_csv" ]]  && echo "      - CCO_PROJECT_LLMS=${_op_llms_csv}"
+            # Store totals (ADR-0056 D5) — the SECOND host-computed session signal,
+            # same pattern and same reason as the two above. INV-B wants a count-only
+            # notice so an agent can tell hidden from absent, but a session counts a
+            # store kind by ENUMERATING it: at G=none `~/.cco` is not mounted, the
+            # loop never iterates, and the notice stays silent about resources that
+            # certainly exist. Enumeration is possible HERE, so the count is taken
+            # here. (An elevated `store-op count` was rejected — A1 — as a widening of
+            # ADR-0047's privileged surface for a cosmetic datum.)
+            # ⚠ A SNAPSHOT: a pack installed from the host mid-session is not
+            # reflected. Accepted — the session could not see it anyway.
+            local _op_totals
+            _op_totals=$(_start_store_totals)
+            [[ -n "$_op_totals" ]] && echo "      - CCO_STORE_TOTALS=${_op_totals}"
+
+            # ── Trusted session descriptor (ADR-0047 R2) ─────────────────
+            # The setuid helper reads THIS file — never argv/env — to derive the
+            # (G,Pc,Po) scope + membership for every elevated store operation, so an
+            # agent cannot forge a wider scope. Written host-side and bind-mounted :ro
+            # at /etc/cco/session-access below. Keys mirror the helper's whitelist; the
+            # value set is exactly the trusted scoping inputs (an inner redirect, so
+            # this does NOT leak into the compose stream). Empty CSVs are fine — an
+            # empty injected var reads the same as absent to the scope layer.
+            mkdir -p "$(dirname "$session_descriptor")"
+            {
+                printf 'CCO_ACCESS_TRIPLE=%s,%s,%s\n' "$cco_g" "$cco_pc" "$cco_po"
+                printf 'CCO_CCO_ACCESS=%s\n' "$cco_access"
+                printf 'PROJECT_NAME=%s\n' "$project_name"
+                printf 'CCO_SHOW_HOST_PATHS=%s\n' "$show_host_paths"
+                printf 'CCO_PROJECT_PACKS=%s\n' "$_op_packs_csv"
+                printf 'CCO_PROJECT_LLMS=%s\n' "$_op_llms_csv"
+                printf 'CCO_STORE_TOTALS=%s\n' "$_op_totals"
+                printf 'CCO_CONFIG_TARGETS=%s\n' "$_cfg_targets_csv"
+            } > "$session_descriptor"
+        fi
+
         # Docker socket proxy: advertise proxy socket to all processes in container
         if [[ "$mount_socket" == "true" ]]; then
             echo "      - DOCKER_HOST=unix:///var/run/docker-proxy.sock"
@@ -662,16 +1856,46 @@ YAML
 
         echo "    volumes:"
 
-        # Agentic config edit-protection (ADR-0027 D3, narrow scope). A normal
-        # session overlays the committed structural framework config
-        # (<repo>/.cco: project.yml, secrets.env, internal metadata) READ-ONLY
-        # so the in-container agent cannot involuntarily mutate it while working
-        # on code. The project's Claude config tree (/workspace/.claude) stays rw
-        # (P17, /init authoring). The host IDE is unaffected (container-only).
-        # Built-in sessions (tutorial, config-editor) and the explicit
-        # --enable-config-edit escape hatch keep <repo>/.cco read-write.
+        # ── Axis-B (.claude authoring) + Axis-A (.cco wiring) mount modes ──
+        # Driven by the resolved capability knobs. claude_access is now the per-tree
+        # triple (Cr,Cp,Cg,Co) (ADR-0049) — each axis drives ONE mount decision, no
+        # coarse enum in between (the label is display-only). cco_access governs the
+        # <repo>/.cco structural overlay (A1). The host IDE is unaffected.
+        #
+        #   Cp → B2 project /workspace/.claude      : ro ⇒ mounted :ro
+        #   Cg → B3 global  ~/.cco/.claude authoring : ro ⇒ CLAUDE.md/rules/… :ro
+        #   Cr → B1 repo-native <repo>/.claude       : ro ⇒ :ro overlay on the repo
+        # settings.json is ALWAYS rw (Claude Code writes runtime prefs like /effort —
+        # a functional need, not authoring). The functional-write floor also keeps
+        # settings.local.json writable via a rw child overlay when B2/B1 is :ro
+        # (ADR-0049 §5) — emitted next to each tree below.
+        local _b2_mode="" _b3_auth_mode="" _b1_ro=""
+        [[ "$claude_cp" == "ro" ]] && _b2_mode="ro"
+        [[ "$claude_cg" == "ro" ]] && _b3_auth_mode="ro"
+        [[ "$claude_cr" == "ro" ]] && _b1_ro=":ro"
+        # Axis A (write_scope): the committed <repo>/.cco structural config
+        # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
+        # session's write_scope grants the project tree (edit-project / edit-all).
+        # edit-global keeps A1 ro — only the personal store (A2) is writable there.
+        # Keyed off write_scope now (ADR-0043) so the overlay and the operator-bucket
+        # RW below share one source. config-editor's EDIT targets mount via generated
+        # extra_mounts (<name>-config), not this loop — but its target REPOS now DO
+        # use this loop (RC-6), and their committed .cco follows the Change 5 rule
+        # below (always :ro), never Pc, so a foreign member's config stays read-only.
         local _committed_ro=":ro"
-        if $is_internal || $enable_config_edit; then _committed_ro=""; fi
+        if [[ "$_pc_rw" == "true" ]]; then
+            _committed_ro=""
+        fi
+        # RC-6 §3.7 (Change 5): the config-editor built-in mounts its target's repos
+        # to READ code, not to author config — every writable config path it needs is
+        # a DEDICATED mount (~/.cco → cco-config, each target's <repo>/.cco →
+        # <name>-config). Force the repo-path .cco overlay :ro regardless of Pc, so a
+        # Po=none session never gains rw to a FOREIGN member repo's committed config
+        # through the code repo (honours Po), and the hosting repo keeps ONE authoring
+        # path (<name>-config) as the managed cco-config-interaction.md rule instructs.
+        # Scoped to the built-in: the generator creates the authoring mount, so unlike
+        # a normal session (ADR-0046 §6, still deferred at :1566) the rw span is exact.
+        [[ "${session_preset:-}" == "config-editor" ]] && _committed_ro=":ro"
 
         # ~/.claude.json — preferences, MCP servers, session metadata (machine-local STATE)
         _compose_vol "${state_root}/claude.json" "/home/claude/.claude.json"
@@ -687,38 +1911,210 @@ YAML
         _compose_vol "${claude_install}/bin" "/home/claude/.local/bin"
         _compose_vol "${claude_install}/share" "/home/claude/.local/share/claude"
 
-        # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)
-        echo "      # Global config (settings.json is rw — Claude Code writes runtime preferences like /effort)"
+        # Global config B3 (~/.cco/.claude). settings.json is always rw (runtime
+        # prefs); the authoring tree (CLAUDE.md/rules/agents/skills) is rw only when
+        # Cg=rw, ro otherwise (_b3_auth_mode, ADR-0049 §2).
+        echo "      # Global config B3 (settings.json always rw; authoring tree mode from claude Cg)"
         _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
-        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "ro"
-        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "ro"
-        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "ro"
-        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "ro"
-        # Project config. The Claude config tree (CLAUDE.md/rules/agents/skills)
-        # stays rw so /init + normal project-config authoring work (P17); the
-        # structural framework config (project.yml/secrets/.cco metadata) is
-        # protected separately by the <repo>/.cco :ro overlay below (ADR-0027 D3).
-        echo "      # Project config (.cco/claude is rw for /init authoring; .cco metadata is :ro below, ADR-0027 D3)"
-        _compose_vol "${claude_src}" "/workspace/.claude"
+        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "${_b3_auth_mode}"
+        # Project config B2 (/workspace/.claude). Mode from claude Cp (_b2_mode: rw
+        # when Cp=rw, ro otherwise — ADR-0049 reverses P17, so a normal read-project
+        # session is ro). The structural framework config (project.yml/secrets/.cco
+        # metadata) is protected separately by the <repo>/.cco overlay below (Axis A).
+        echo "      # Project config B2 (/workspace/.claude — mode from claude Cp; .cco metadata overlay below per cco_access)"
+        # The framework-injected children (packs + llms) are GENERATED here, ahead of
+        # the parent decision that needs to see them (ADR-0054 D2); their lines are
+        # emitted at their usual place further down, unchanged.
+        local _pack_mounts _llms_mounts
+        _pack_mounts=$(_generate_pack_mounts "$pack_names" "$project_dir")
+        _llms_mounts=$(_generate_llms_mounts "$project_yml" "$pack_names" "$project_dir")
+        # The functional-write floor is a framework-owned child like any other
+        # (ADR-0055 D3), so feeding its parent line into $_injected buys the view's
+        # mountpoint machinery for free — and, since the floor exists whenever B2 is
+        # :ro, that is also what makes every Cp=ro session compose (D7). The
+        # per-entry lines stay OUT of $_injected: their parent at runtime is the
+        # STATE overlay, not the view, so their mountpoints belong in STATE.
+        local _wf_lines="" _wf_parent=""
+        local _framework_children="${_pack_mounts}"$'\n'"${_llms_mounts}"
+        if [[ "$_b2_mode" == "ro" ]]; then
+            # Beside local-settings/, not under session/: both are functional-write
+            # floor overlays for /workspace/.claude, while session/ is specifically
+            # the transcripts+memory partition with its own future sync semantics.
+            _wf_lines=$(_emit_workflows_overlay "${session_state_dir}/workflows" \
+                "${claude_src}/workflows" "$_b2_mode" "$dry_run") \
+                || die "Cannot prepare the workflows overlay at ${session_state_dir}/workflows."
+            _wf_parent="${_wf_lines%%$'\n'*}"
+        elif [[ "$_framework_children" == *':/workspace/.claude/'* ]]; then
+            # Cp=rw AND composing — see _emit_workflows_committed for why the
+            # committed directory has to exist before the view takes the parent slot.
+            _wf_lines=$(_emit_workflows_committed "$claude_src" "$dry_run") \
+                || die "Cannot create ${claude_src}/workflows."
+            _wf_parent="$_wf_lines"
+        fi
+        local _injected="${_framework_children}"$'\n'"${_wf_parent}"
+        local _claude_view="" _b2_local_mp=""
+        if [[ "$_injected" == *':/workspace/.claude/'* ]]; then
+            # INV-MP (ADR-0054): a child bind needs its mountpoint to pre-exist, and
+            # the committed tree is :ro under the ADR-0049 default — so cco owns the
+            # parent, in CACHE, and binds the committed tree back in entry by entry.
+            _claude_view=$(_cco_project_claude_view "$project_name")
+            if [[ "$dry_run" != "true" ]]; then
+                # Rebuilt from scratch: a removed pack must leave no stale mountpoint.
+                rm -rf "$_claude_view"
+                mkdir -p "$_claude_view" \
+                    || die "Cannot create the .claude mountpoint view at $_claude_view."
+            fi
+            _emit_claude_view "$_claude_view" "$claude_src" "$_b2_mode" "$_injected" "$dry_run"
+            _b2_local_mp="${_claude_view}/settings.local.json"
+            # ADR-0054 D4: the one behavioural delta, surfaced instead of silent. A
+            # composed namespace holds files from two sources, so it belongs to the
+            # view: edits to existing files still reach the repo through their own
+            # bind, but a NEW file created directly there is session-local. Only
+            # worth saying when the session could author at all (Cp=rw).
+            if [[ -z "$_b2_mode" ]]; then
+                info "/workspace/.claude is composed for this session (pack/llms overlays). Edits to existing files reach the repo; NEW files created directly under it are session-local — author them in ${claude_src#"$source_repo/"}/."
+            fi
+        else
+            _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
+        fi
+        # Functional-write floor (ADR-0049 §5, re-derived by ADR-0055 D2): when B2 is
+        # :ro, Claude Code's project-scope runtime state stays writable through rw
+        # child overlays from per-project STATE. Their mountpoints live in the view
+        # (ADR-0054 D6) so the committed tree stays clean; settings.local.json is
+        # still seeded from the committed file when the repo carries one.
+        if [[ "$_b2_mode" == "ro" ]]; then
+            # D7 makes a view exist whenever B2 is :ro — the floor is itself a
+            # framework-owned child. Fail loudly rather than silently fall back to a
+            # mountpoint inside the :ro committed tree, which cannot be created.
+            [[ -n "$_b2_local_mp" ]] \
+                || die "Internal: /workspace/.claude is :ro but no framework view was composed (ADR-0055 D7)."
+            _emit_local_settings_overlay "${session_state_dir}/local-settings/workspace.json" \
+                "$_b2_local_mp" \
+                "/workspace/.claude/settings.local.json" "$dry_run" \
+                "${claude_src}/settings.local.json"
+        fi
+        # Emitted for BOTH arms — the :ro floor overlay and the Cp=rw committed
+        # bind — so the save target is explicit in the compose either way.
+        if [[ -n "$_wf_lines" ]]; then
+            echo "      # Project-scope workflows: the save target (ADR-0055 D3)"
+            printf '%s\n' "$_wf_lines"
+        fi
         _compose_vol "${project_dir}/project.yml" "/workspace/project.yml" "ro"
-        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds)
-        echo "      # Claude state: session transcripts (machine-local STATE; /resume across rebuilds)"
-        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects/-workspace"
+        # Claude state: session transcripts (machine-local STATE; enables /resume across rebuilds).
+        # The whole projects/ tree, not just the -workspace key (ADR-0055 D5): Claude Code keys
+        # per-project state by cwd, so a subagent/teammate started inside a repo, a worktree
+        # session or a background session writes under a DIFFERENT key. Binding only -workspace
+        # left those keys on the container's ephemeral layer — and, before D4, unwritable.
+        echo "      # Claude state: session transcripts, every cwd key (machine-local STATE; /resume across rebuilds)"
+        _compose_vol "$(_cco_project_session_transcripts "$project_name")" "/home/claude/.claude/projects"
         # Memory: auto memory files (machine-local STATE, separate from transcripts)
         echo "      # Memory: auto memory files (machine-local STATE, separate from transcripts)"
         _compose_vol "$(_cco_project_session_memory "$project_name")" "/home/claude/.claude/projects/-workspace/memory"
 
-        # Generated .claude overlays (packs.md, workspace.yml) → CACHE, layered
-        # :ro on top of the rw project .claude mount above (ADR-0005 F1/F3).
-        # Docker applies child mounts after their parent regardless of order, so
-        # the parent stays rw while these stay read-only; the committed project
-        # .claude/ is never written by cco start.
-        if [[ -f "$claude_gen_dir/packs.md" ]]; then
-            _compose_vol "${session_cache_dir}/.claude/packs.md" "/workspace/.claude/packs.md" "ro"
+        # ── Container-operator buckets (wrapped-cco — ADR-0036 D4 / ADR-0047) ──
+        # Under cco_access >= read the in-container cco (behind the whitelist shim)
+        # operates on the real buckets, never the container's own $HOME. Two distinct
+        # trees with OPPOSITE confinement models (ADR-0047 §1):
+        #
+        #  • CONFIG CONTENT — A2 `~/.cco` (packs/templates/global .claude). Read
+        #    NATIVELY by Claude Code as files, so it MUST stay mounted at the natural
+        #    $HOME/.cco. Confined the same way as before: the read-project narrowing
+        #    (referenced packs only), secret-masking, and the :ro/:rw write flag. NOT
+        #    the leak surface — unchanged here.
+        #
+        #  • INTERNAL STORE — the STATE/shared bucket, DATA registries, CACHE llms. Read ONLY
+        #    by cco, and the carrier of the cross-project + host-path confidential data
+        #    (the S1/S1b leak). These now mount UNDER the cco-svc privileged root
+        #    /var/lib/cco-internal (units 1-2), which the claude user cannot traverse.
+        #    Because the parent boundary confines reads and the setuid helper's
+        #    (G,Pc,Po) gate is the write authority (ADR-0047 §4), they may mount WHOLE
+        #    + rw — the former read-project ro-narrowing of the internal registries is
+        #    dropped. STATE is the exception and crosses on an explicit ALLOW-LIST: only
+        #    the `shared/` sub-bucket (the index + the pack/template update sidecars) is
+        #    bound, as a DIRECTORY. Everything else under STATE stays off the container
+        #    by construction — the 0600 remotes-token, transcripts and memory — so a
+        #    file added there later is unmounted by default (fail-safe). Built-in presets
+        #    (config-editor/tutorial) layer on this; a normal session opts in via
+        #    --cco-access read|edit-*.
+        if [[ "$cco_access" != "none" ]]; then
+            local _op_rw="ro"
+            [[ "$_g_rw" == "true" ]] && _op_rw=""
+            echo "      # Container-operator buckets (wrapped-cco — ADR-0036 D4)"
+            if [[ "$_g_none" == "true" ]]; then
+                # Narrowed CONFIG: only referenced personal-store packs (ro).
+                local _rp_pack _rp_dir
+                if [[ -n "$pack_names" ]]; then
+                    while IFS= read -r _rp_pack; do
+                        [[ -z "$_rp_pack" ]] && continue
+                        # Personal store only ($PACKS_DIR/<name>); project-local packs
+                        # come via the repo mount, not the operator bucket.
+                        _rp_dir=$(_pack_resolve_dir "$_rp_pack")
+                        [[ -z "$_rp_dir" ]] && continue
+                        # Skip packs the framework treats as invalid (mirrors
+                        # _session_collect_knowledge) — a malformed pack.yml never
+                        # reaches any session mount.
+                        [[ -f "$_rp_dir/pack.yml" ]] || continue
+                        grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$_rp_dir/pack.yml" || continue
+                        _compose_vol "$_rp_dir" "/home/claude/.cco/packs/${_rp_pack}" "ro"
+                        _emit_secret_overlays "$_rp_dir" "/home/claude/.cco/packs/${_rp_pack}" "$secret_mask"
+                    done <<< "$pack_names"
+                fi
+            else
+                # CONFIG A2 (~/.cco: packs/templates/global config + git for config save)
+                _compose_vol "$config_dir" "/home/claude/.cco" "$_op_rw"
+                _emit_secret_overlays "$config_dir" "/home/claude/.cco" "$secret_mask"
+                # B3 (~/.cco/.claude global authoring) is governed by claude_access, NOT
+                # the A2 edit level. When A2 is rw but global authoring is not
+                # (claude_access != all → _b3_auth_mode=ro), re-overlay .claude :ro under
+                # the A2 path so edit-global/edit-all cannot edit global .claude through
+                # it — the two axes stay separate (ADR-0036 D2). Child mount wins.
+                if [[ -z "$_op_rw" && "$_b3_auth_mode" == "ro" && -d "$config_dir/.claude" ]]; then
+                    _compose_vol "$config_dir/.claude" "/home/claude/.cco/.claude" "ro"
+                fi
+            fi
+            # Internal-store registries → UNDER the cco-svc privileged root (ADR-0047
+            # §4): whole + rw, no :ro flag and no read-project narrowing (the parent
+            # boundary confines reads; the helper's (G,Pc,Po) gate is the write
+            # authority). Secrets excluded — the 0600 remotes-token (STATE) and
+            # transcripts/memory never mount; only the STATE index FILE crosses.
+            echo "      # Internal store (STATE/shared + DATA + CACHE) — cco-svc boundary (ADR-0047)"
+            local _op_data; _op_data=$(_cco_data_dir)
+            [[ -d "$_op_data" ]] && _compose_vol "$_op_data" "/var/lib/cco-internal/share/cco"
+            # STATE crosses ONLY through the shareable sub-bucket (index + the
+            # pack/template update sidecars) — a DIRECTORY bind, like DATA and CACHE.
+            # It must not be the index FILE: every index writer replaces it atomically
+            # via a sibling temp (mktemp + mv), which needs a writable parent, and a
+            # host-side rename() strands a file bind on a //deleted inode (v3 R1).
+            # Never widen this to ${state_root} — remotes-token (0600), transcripts and
+            # memory live there and must not reach a container. To expose something new,
+            # move it under shared/ (INV: tests/test_invariants.sh).
+            local _op_shared; _op_shared=$(_cco_state_shared_dir)
+            [[ -d "$_op_shared" ]] && \
+                _compose_vol "$_op_shared" "/var/lib/cco-internal/state/cco/shared"
+            local _op_llms; _op_llms=$(_cco_llms_dir)
+            [[ -d "$_op_llms" ]] && _compose_vol "$_op_llms" "/var/lib/cco-internal/cache/cco/llms"
+            # Session running registry (ADR-0045, refined by ADR-0047): host-written
+            # markers, mounted :ro UNDER the boundary. Filenames are project names
+            # (S1-confidential) → NOT a claude-readable mount; read only inside the
+            # elevated `cco __store list/show`, gated by _env_in_scope. Create the host
+            # dir so the :ro source exists on a first-ever start.
+            local _op_running; _op_running=$(_cco_running_dir)
+            mkdir -p "$_op_running" 2>/dev/null || true
+            [[ -d "$_op_running" ]] && \
+                _compose_vol "$_op_running" "/var/lib/cco-internal/state/cco/running" "ro"
+            # Trusted session descriptor (ADR-0047 R2): :ro so the agent cannot forge a
+            # wider scope (the :ro flag is VFS-level, fakeowner-independent). The setuid
+            # helper reads it to gate every elevated store op. Written above.
+            [[ -f "$session_descriptor" ]] && \
+                _compose_vol "$session_descriptor" "/etc/cco/session-access" "ro"
         fi
-        if [[ -f "$claude_gen_dir/workspace.yml" ]]; then
-            _compose_vol "${session_cache_dir}/.claude/workspace.yml" "/workspace/.claude/workspace.yml" "ro"
-        fi
+
+        # (ADR-0042) No generated session-info overlay is mounted anymore. The
+        # former workspace.yml :ro overlay is retired — Level A context is injected
+        # via the CCO_SESSION_CONTEXT env var (see the environment block above).
 
         # Global MCP config (merged into ~/.claude.json by entrypoint)
         if [[ -f "$global_claude/mcp.json" ]]; then
@@ -759,40 +2155,145 @@ YAML
         # Repository mounts. Unresolved references were already dropped upstream
         # by the P14 conscious-skip in _effective_repo_mounts (warn + exclude,
         # never a silent empty bind-mount, #B17), so every path here is a real,
-        # existing filesystem path.
+        # existing filesystem path. For a NORMAL project _resolve_unit delivers that
+        # guarantee; a built-in skips that heal (:1063), so for config-editor's
+        # target repos the existence assertion is the producer's -d test in
+        # _ce_add_repo (RC-6 INV-M3), which announces a stale binding rather than
+        # letting Docker create a root-owned bind source.
         echo "      # Repositories"
         while IFS=$'\t' read -r repo_name repo_path; do
             [[ -z "$repo_name" ]] && continue
             _compose_vol "${repo_path}" "/workspace/${repo_name}"
         done < <(_effective_repo_mounts "$project_yml")
 
-        # Edit-protection (ADR-0027 D3): overlay each repo's committed .cco as
-        # :ro on top of the rw repo mount (Docker applies child mounts after the
-        # parent), so the agent cannot mutate the structural framework config
-        # (project.yml, secrets.env, internal metadata) via the code repo. The
-        # project's Claude config (.cco/claude) is still authored normally
-        # through the rw /workspace/.claude overlay (P17). Skipped under
-        # --enable-config-edit and for built-ins.
-        if [[ -n "$_committed_ro" ]]; then
+        # Axis-B1 lockdown (Cr=ro — now the DEFAULT, ADR-0049 §2): overlay each repo's
+        # native <repo>/.claude :ro on top of the rw repo mount, so the repo's own
+        # authoring config is read-only. No overlay when Cr=rw (explicit repo/all),
+        # where B1 stays rw as part of the repo mount. The functional-write floor
+        # (ADR-0049 §5) keeps settings.local.json writable via a rw child overlay from
+        # per-project STATE, so a session that authors inside a repo can still persist
+        # local runtime state under the :ro tree.
+        if [[ -n "$_b1_ro" ]]; then
+            local _cl_rel
             while IFS=$'\t' read -r repo_name repo_path; do
                 [[ -z "$repo_name" ]] && continue
-                [[ -d "$repo_path/.cco" ]] && \
-                    _compose_vol "${repo_path}/.cco" "/workspace/${repo_name}/.cco" "ro"
+                # Recursive (ADR-0049 §7): root <repo>/.claude AND any nested
+                # packages/*/.claude a monorepo carries. rel ".claude" is the root.
+                while IFS= read -r _cl_rel; do
+                    [[ -z "$_cl_rel" ]] && continue
+                    _compose_vol "${repo_path}/${_cl_rel}" "/workspace/${repo_name}/${_cl_rel}" "ro"
+                    # Functional-write floor only at the repo-root tree (where a
+                    # session started in the repo would write settings.local.json).
+                    [[ "$_cl_rel" == ".claude" ]] && \
+                        _emit_local_settings_overlay "${session_state_dir}/local-settings/repo-${repo_name}.json" \
+                            "${repo_path}/.claude/settings.local.json" \
+                            "/workspace/${repo_name}/.claude/settings.local.json" "$dry_run"
+                done < <(_find_nested_config_dirs "$repo_path" ".claude")
             done < <(_effective_repo_mounts "$project_yml")
         fi
 
-        # Extra mounts (same invariant as repos — resolved + existence
-        # asserted upstream). The bridge emits abs_source<TAB>target<TAB>ro.
+        # Axis-A1 edit-protection (ADR-0036 D2, generalizing ADR-0027 D3): overlay
+        # each repo's committed .cco :ro on top of the rw repo mount (Docker applies
+        # child mounts after the parent), so the agent cannot mutate the structural
+        # framework config (project.yml, secrets.env, internal metadata) via the code
+        # repo. The project's Claude config (.cco/claude) is still authored through
+        # the B2 overlay above. Skipped when cco_access grants project edit
+        # (edit-project/edit-all) or for built-ins (_committed_ro="").
+        if [[ -n "$_committed_ro" ]]; then
+            local _cc_rel
+            while IFS=$'\t' read -r repo_name repo_path; do
+                [[ -z "$repo_name" ]] && continue
+                # Recursive (ADR-0049 §7): the root <repo>/.cco (always — the project's
+                # committed config) plus any NESTED .cco that carries a project.yml (a
+                # monorepo member's config). A nested .cco WITHOUT a project.yml is left
+                # untouched (not a cco project tree).
+                while IFS= read -r _cc_rel; do
+                    [[ -z "$_cc_rel" ]] && continue
+                    [[ "$_cc_rel" != ".cco" && ! -f "${repo_path}/${_cc_rel}/project.yml" ]] && continue
+                    _compose_vol "${repo_path}/${_cc_rel}" "/workspace/${repo_name}/${_cc_rel}" "ro"
+                done < <(_find_nested_config_dirs "$repo_path" ".cco")
+            done < <(_effective_repo_mounts "$project_yml")
+        fi
+        # NOTE (ADR-0046 §6 multi-repo Pc — DEFERRED for NORMAL sessions): the
+        # resolved cco_include_member_configs flag is plumbed but not yet enforced
+        # here. Today every mounted repo's <repo>/.cco follows Pc uniformly (== the
+        # flag's `true` span). The §6 DEFAULT (Pc's rw span limited to the HOSTING
+        # repo, other members' divergent .cco re-overlaid :ro) needs the multi-repo
+        # mount model to distinguish host vs member reliably (the current test
+        # fixtures mount a non-host member as the project's editable .cco). Tracked as
+        # a follow-up so this schema lands purely additive and non-regressive. The
+        # config-editor BUILT-IN case is NOT deferred: RC-6 Change 5 forces every one
+        # of its target repos' committed .cco :ro above (_committed_ro), because the
+        # generator creates the dedicated <name>-config authoring mount, so the rw
+        # span is exact and a foreign member's Po=none config is never writable.
+
+        # Secret-file masking (ADR-0036 D4): hide real secret files in EVERY repo's
+        # committed .cco — whether it is exposed via the rw repo mount (edit modes /
+        # built-ins) or the :ro overlay above (normal). The empty :ro overlay is a
+        # deeper child mount, so it wins regardless of the .cco mount's own mode; the
+        # committed *.example skeletons stay visible. Applies to all sessions (the
+        # capability matrix filters secrets in every column).
+        while IFS=$'\t' read -r repo_name repo_path; do
+            [[ -z "$repo_name" ]] && continue
+            _emit_secret_overlays "$repo_path/.cco" "/workspace/${repo_name}/.cco" "$secret_mask"
+        done < <(_effective_repo_mounts "$project_yml")
+
+        # Built-in config-mount secret masking (ADR-0036 D4): the config-editor /
+        # tutorial presets surface config trees (~/.cco → cco-config, each target
+        # <repo>/.cco → <name>-config) via generated extra_mounts, which the repo
+        # loop above does NOT cover. Mask real secret files there too, so neither
+        # the personal store nor any --all/--project target ever exposes real
+        # values — only *.example. Pairs collected by the built-in branches (5b).
+        local _cm _cm_host _cm_tgt
+        for _cm in ${_op_config_masks[@]+"${_op_config_masks[@]}"}; do
+            _cm_host="${_cm%%$'\t'*}"; _cm_tgt="${_cm#*$'\t'}"
+            _emit_secret_overlays "$_cm_host" "$_cm_tgt" "$secret_mask"
+        done
+
+        # Extra mounts (same invariant as repos — resolved + existence asserted
+        # upstream). The bridge emits src<TAB>target<TAB>ro<TAB>policy<TAB>role.
         local extra_mounts
         extra_mounts=$(_effective_extra_mounts "$project_yml")
         if [[ -n "$extra_mounts" ]]; then
             echo "      # Extra mounts"
-            local _ms _mt _mro _suffix
-            while IFS=$'\t' read -r _ms _mt _mro; do
+            # 5-field record (src⇥tgt⇥ro⇥policy⇥role). Peeled by hand: the role
+            # field is empty for every user mount, and tab is IFS whitespace to
+            # `read`, which would shift the fields left (lib/utils.sh:96-110).
+            local _mline _ms _mt _mro _mpolicy _mrole _suffix _nc_rel _claude_ro _cco_ro
+            while IFS= read -r _mline; do
+                _peel_tab "$_mline" _ms _mt _mro _mpolicy _mrole
                 [[ -z "$_ms" ]] && continue
                 _suffix=""
                 [[ "$_mro" == "true" ]] && _suffix="ro"
                 _compose_vol "$_ms" "$_mt" "$_suffix"
+                # Nested-config governance (ADR-0049 §7), resolved by ONE pure
+                # predicate (RC-1 §3.2) instead of the 3-way if/else that had
+                # drifted apart from its two sibling call sites — the repo branch
+                # below (_committed_ro) and the operator bucket (_b3_auth_mode).
+                # config_access_policy: ro (default) → strict for a USER mount,
+                # session-triple-governed for a framework mount that exposes a
+                # config tree · project → follow Cr / Pc · write → no overlay.
+                # Compare == "ro": the encoding is total, never empty.
+                _peel_tab "$(_nested_config_modes "$_mro" "$_mpolicy" "$_mrole" \
+                                "$claude_cr,$claude_cp,$claude_cg,$claude_co" \
+                                "$cco_g,$cco_pc,$cco_po")" _claude_ro _cco_ro
+                if [[ "$_claude_ro" == "ro" ]]; then
+                    while IFS= read -r _nc_rel; do
+                        [[ -z "$_nc_rel" ]] && continue
+                        _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                    done < <(_find_nested_config_dirs "$_ms" ".claude")
+                fi
+                if [[ "$_cco_ro" == "ro" ]]; then
+                    while IFS= read -r _nc_rel; do
+                        [[ -z "$_nc_rel" ]] && continue
+                        # extra_mounts aren't projects → a nested .cco tree
+                        # qualifies only when it carries a project.yml. The mount
+                        # ROOT is never a candidate (_find_nested_config_dirs);
+                        # its mode comes from the mount's own readonly:.
+                        [[ -f "${_ms}/${_nc_rel}/project.yml" ]] || continue
+                        _compose_vol "${_ms}/${_nc_rel}" "${_mt}/${_nc_rel}" "ro"
+                    done < <(_find_nested_config_dirs "$_ms" ".cco")
+                fi
             done <<< "$extra_mounts"
         fi
 
@@ -809,11 +2310,13 @@ YAML
             done
         fi
 
-        # Pack resources: read-only mounts from central pack registry (ADR-14)
-        _generate_pack_mounts "$pack_names" "$project_dir"
+        # Pack resources: read-only mounts from central pack registry (ADR-14).
+        # Generated with the B2 block above (ADR-0054 D2) — replayed here so the
+        # compose layout is unchanged and each generator still runs exactly once.
+        [[ -n "$_pack_mounts" ]] && printf '%s\n' "$_pack_mounts"
 
         # LLMs.txt documentation: read-only mounts from central llms registry
-        _generate_llms_mounts "$project_yml" "$pack_names" "$project_dir"
+        [[ -n "$_llms_mounts" ]] && printf '%s\n' "$_llms_mounts"
 
         # Git identity (commit author — read-only, no SSH keys)
         echo "      # Git identity"
@@ -866,80 +2369,31 @@ YAML
     } > "$compose_file"
 }
 
-# Generates pack metadata (packs.md, workspace.yml) and cleans legacy files.
-# The two files are regenerable framework overlays (ADR-0005 F1): produced into
-# claude_gen_dir (CACHE on a real start, the dump dir under --dry-run --dump) and
-# mounted :ro by _start_generate_compose, never written into the committed tree.
+# Computes the Level-A session context (ADR-0042) and stashes it, base64-encoded,
+# into session_context_b64 / subagent_context_b64 for _start_generate_compose to
+# inject as CCO_SESSION_CONTEXT / CCO_SUBAGENT_CONTEXT env vars. NO file is
+# written anywhere (INV-2): the retired workspace.yml generator is gone; the
+# context is delivered as injected text the user never sees, edits, or commits.
+# See lib/session-context.sh.
 _start_generate_metadata() {
-    # Generate packs.md — instructional list of knowledge + llms files
-    packs_md="$claude_gen_dir/packs.md"
-    local has_knowledge=false has_llms=false
+    # The project's committed CLAUDE.md drives the init-workspace nudge (design
+    # §7): its absence/emptiness degrades only the rich narrative, never Level A.
+    local _claude_md_present="true"
+    if [[ ! -s "$claude_src/CLAUDE.md" ]]; then _claude_md_present="false"; fi
 
-    # Check if there's any content to generate
-    if [[ -n "$pack_names" ]]; then
-        while IFS= read -r _pn; do
-            [[ -z "$_pn" ]] && continue
-            local _proot; _proot=$(_pack_resolve_dir "$_pn" "$project_dir")
-            [[ -z "$_proot" ]] && continue
-            local _pyml="$_proot/pack.yml"
-            [[ -f "$_pyml" ]] && [[ -n "$(yml_get_pack_knowledge_files "$_pyml")" ]] && has_knowledge=true
-        done <<< "$pack_names"
-    fi
-    local _llms_entries
-    _llms_entries=$(_collect_llms_names "$project_yml" "$pack_names" "$project_dir")
-    if [[ -n "$_llms_entries" ]]; then has_llms=true; fi
+    local _ctx _subctx
+    _ctx=$(_build_session_context "$project_name" "$project_yml" "$pack_names" \
+        "$project_dir" "$show_host_paths" "$cco_access" "$_claude_md_present")
+    _subctx=$(_build_subagent_context "$project_yml" "$pack_names" "$project_dir")
+    # base64 (single line) sidesteps all compose-YAML newline/quoting concerns;
+    # the hooks decode it back to text. tr -d '\n' guards against wrapping.
+    session_context_b64=$(printf '%s' "$_ctx"    | base64 | tr -d '\n')
+    subagent_context_b64=$(printf '%s' "$_subctx" | base64 | tr -d '\n')
 
-    if [[ "$has_knowledge" == "true" || "$has_llms" == "true" ]]; then
-        echo "<!-- Auto-generated by cco start — do not edit manually -->" > "$packs_md"
-
-        # Knowledge section
-        if [[ "$has_knowledge" == "true" ]]; then
-            echo "The following knowledge files provide project-specific conventions and context." >> "$packs_md"
-            echo "Read the relevant files BEFORE starting any implementation, review, or design task." >> "$packs_md"
-            echo "Do not ask the user for context that is covered by these files." >> "$packs_md"
-            echo "" >> "$packs_md"
-            while IFS= read -r pack_name; do
-                [[ -z "$pack_name" ]] && continue
-                local _pmroot; _pmroot=$(_pack_resolve_dir "$pack_name" "$project_dir")
-                [[ -z "$_pmroot" ]] && continue
-                local pack_yml="$_pmroot/pack.yml"
-                [[ ! -f "$pack_yml" ]] && continue
-                if ! grep -qE '^(name|knowledge|llms|skills|agents|rules):' "$pack_yml"; then
-                    warn "Pack '$pack_name': pack.yml has no valid top-level keys — check for extra indentation."
-                    continue
-                fi
-                local pack_files
-                pack_files=$(yml_get_pack_knowledge_files "$pack_yml")
-                if [[ -z "$pack_files" ]]; then continue; fi
-                while IFS=$'\t' read -r fname fdesc; do
-                    [[ -z "$fname" ]] && continue
-                    if [[ -n "$fdesc" ]]; then
-                        echo "- /workspace/.claude/packs/${pack_name}/${fname} — ${fdesc}" >> "$packs_md"
-                    else
-                        echo "- /workspace/.claude/packs/${pack_name}/${fname}" >> "$packs_md"
-                    fi
-                done <<< "$pack_files"
-            done <<< "$pack_names"
-        fi
-
-        # LLMs section — use subshell capture to avoid bash 3.2 return-in-redirect bug
-        if [[ "$has_llms" == "true" ]]; then
-            local _llms_md
-            _llms_md=$(_generate_llms_packs_md "$project_yml" "$pack_names" "$project_dir")
-            if [[ -n "$_llms_md" ]]; then
-                echo "$_llms_md" >> "$packs_md"
-            fi
-        fi
-
-        local packs_md_lines
-        packs_md_lines=$(grep -c '^- ' "$packs_md" 2>/dev/null || echo 0)
-        ok "Generated .claude/packs.md (${packs_md_lines} file(s))"
-    elif [[ -f "$packs_md" ]]; then
-        rm -f "$packs_md"
-    fi
-
-    # Generate workspace.yml — structured project context for /init
-    _generate_workspace_yml "$claude_gen_dir" "$project_name" "$project_yml" "$pack_names"
+    # Net cut: no generated session-info file is emitted anymore. Remove any stale
+    # workspace.yml / packs.md a pre-ADR-0042 session may have left in the overlay
+    # dir (idempotent; the committed-tree cleanup is handled by migration 014).
+    rm -f "$claude_gen_dir/workspace.yml" "$claude_gen_dir/packs.md"
 
     # One-shot cleanup of legacy copied pack files (pre-ADR-14) — skip in dry-run
     if ! $dry_run; then
@@ -955,6 +2409,7 @@ _start_show_summary() {
     echo ""
     info "  Image:          ${docker_image}"
     info "  Auth:           ${auth_method}"
+    info "  Access:         claude=${claude_access} cco=${cco_access} host-paths=${show_host_paths}"
     info "  Teammate mode:  ${teammate_mode}"
     info "  Network:        ${network}"
     info "  Docker socket:  ${mount_socket}"
@@ -1018,8 +2473,6 @@ _start_show_summary() {
         [[ -f "$output_dir/.cco/managed/policy.json" ]]  && info "  .cco/managed/policy.json"
         [[ -f "$output_dir/.cco/managed/browser.json" ]]  && info "  .cco/managed/browser.json"
         [[ -f "$output_dir/.cco/managed/github.json" ]]   && info "  .cco/managed/github.json"
-        [[ -f "$packs_md" ]]                          && info "  .claude/packs.md"
-        [[ -f "$claude_gen_dir/workspace.yml" ]]      && info "  .claude/workspace.yml"
         echo ""
         info "Inspect with: cat ${output_dir}/.cco/docker-compose.yml"
     else
@@ -1049,9 +2502,22 @@ _start_launch() {
     load_secrets_file run_env "$project_dir/secrets.env"
 
     info "Starting session for project '${project_name}'..."
-    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude
+
+    # Session running registry (ADR-0045). `docker compose run` blocks for the whole
+    # session, so this host process OWNS the marker lifecycle: reconcile stale markers
+    # (backstop for prior unclean exits), write our marker, run, then remove it. The
+    # post-run unmark is the PRIMARY reaper for the common no-`cco stop` exit (Ctrl-C
+    # and a normal Claude Code exit both return control here); `|| _run_rc=$?` keeps
+    # `set -e` from aborting before the unmark on a non-zero session exit. A hard kill
+    # of this process skips the unmark → the next host read reconciles it away.
+    _cco_running_reconcile
+    _cco_running_mark "$project_name"
+    local _run_rc=0
+    docker compose -f "$compose_file" --project-directory "$session_state_dir" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude || _run_rc=$?
+    _cco_running_unmark "$project_name"
 
     ok "Session ended. Changes are in your repos."
+    return "$_run_rc"
 }
 
 cmd_start() {
@@ -1070,14 +2536,34 @@ cmd_start() {
     local extra_envs=()
     local user_mounts=()        # --mount specs (ADR-0027 D2), :ro by default
     local enable_config_edit=false  # --enable-config-edit escape hatch (ADR-0027 D3)
-    local config_editor_target=""   # --project <name> for the config-editor built-in (ADR-0027 D1)
+    local config_editor_targets=()  # --project <name> (repeatable): narrow + mount its repos (ADR-0042 §8)
+    local config_editor_repos=()    # --repo <name> (repeatable): add one resolvable repo (ADR-0042 §8)
+    local config_editor_all=false   # --all: explicit widener → every project's .cco (ADR-0044 §3)
+    local config_editor_mode=""     # resolved all|project|global (ADR-0044 §3; _resolve_config_editor_mode)
+    local config_editor_cwd_dir=""  # the cwd project's host repo dir, when mode=project via cwd
+    # Config-editor collected targets/repos (ADR-0044 §3 / D9). Declared at cmd_start
+    # scope — NOT local to _start_resolve_project — so the collector's output survives
+    # into _start_generate_compose (a sibling call), which derives CCO_CONFIG_TARGETS +
+    # the trusted session descriptor (ADR-0047 R2) from _ce_targets. A function-local
+    # here would be invisible to compose-gen, silently emptying CCO_CONFIG_TARGETS and
+    # neutering the config-editor ownership predicate (_env_is_current_project, B5).
+    local _ce_targets="" _ce_repos=""
+    local cli_claude_access=""      # --claude-access override (ADR-0036 D2/D3); "" = unset
+    local cli_cco_access=""         # --cco-access override; supersedes --enable-config-edit
+    local cli_show_host_paths=""    # "" | "true" | "false" (--show-host-paths / --no-…)
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
-            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_target="$2"; shift 2 ;;
+            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all, or granular repo=…,current=…,global=…,others=…)."; cli_claude_access="$2"; shift 2 ;;
+            --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read-project|read-global|read-all|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
+            --show-host-paths) cli_show_host_paths="true"; shift ;;
+            --no-show-host-paths) cli_show_host_paths="false"; shift ;;
+            --project) [[ $# -lt 2 ]] && die "--project requires a <name> (config-editor project mode)."; config_editor_targets+=("$2"); shift 2 ;;
+            --repo) [[ $# -lt 2 ]] && die "--repo requires a <name> (config-editor repo mount)."; config_editor_repos+=("$2"); shift 2 ;;
+            --all) config_editor_all=true; shift ;;
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
@@ -1097,13 +2583,20 @@ Reads the decentralized <repo>/.cco/ config. With no project name, starts the
 project the current repo HOSTS (cwd-first); name a project to resolve it via the
 machine-local index.
 
-Built-in sessions: 'cco start config-editor' opens the config-editor (edit your
-~/.cco store); add --project <name> (or run from a configured repo) to also
-mount that project's .cco/ for editing. 'cco start tutorial' opens the tutorial.
+Built-in sessions: 'cco start config-editor' opens the config-editor. It is
+minimum-privilege BY MODE (ADR-0044/0048): inside a project (cwd, or --project
+<name>, repeatable) it mounts that project's .cco/ AND its repos read-write while
+your ~/.cco store stays READ-ONLY; bare outside any project it mounts ~/.cco
+read-write only. Widen to every resolvable project's .cco/ with --all (no code
+repos). --repo <name> adds one repo. 'cco start tutorial' opens the read-only
+tutorial.
 
 Options:
   --from <repo>        Use <repo>/.cco as the config source (Case-C divergence)
-  --project <name>     config-editor only: also mount <name>'s .cco/ (rw)
+  --project <name>     config-editor only: target <name>'s .cco/ + its repos (rw; repeatable)
+  --repo <name>        config-editor only: also mount repo <name> (rw; repeatable)
+  --all                config-editor only: explicit widener — every project's .cco/
+                       (no repos, edit-all); cannot be combined with --project/--repo
   --teammate-mode <m>  Override display mode: tmux | auto
   --api-key            Use ANTHROPIC_API_KEY instead of OAuth
   --chrome             Enable browser automation for this session only
@@ -1114,9 +2607,19 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
-  --enable-config-edit Allow the agent to edit this repo's committed .cco/ config
-                       in this session (off by default — see 'cco start
-                       config-editor' for the sanctioned config-editing session)
+  --claude-access <l>  .claude authoring access: none | repo | all, or granular
+                       repo=,current=,global=,others= (each ro|rw). UNSET it
+                       DERIVES from --cco-access (ADR-0049), so a normal session's
+                       .claude is read-only by default
+  --cco-access <l>     .cco/framework access: none | read-project (default) |
+                       read-global | read-all | edit-project | edit-global |
+                       edit-all, or granular global=,current=,others= (each
+                       none|ro|rw) (ADR-0036/0042/0046; `read` = alias for read-all)
+  --show-host-paths    Show the host<->container path map to the session (default)
+  --no-show-host-paths Hide host paths from the session
+  --enable-config-edit Deprecated alias for --cco-access edit-project (see 'cco
+                       start config-editor' for the sanctioned config-editing
+                       session)
   --dry-run            Show the generated docker-compose without running
   --dump               With --dry-run: persist artifacts to .tmp/ for inspection
   --port <p>           Add extra port mapping (repeatable)
@@ -1138,6 +2641,14 @@ EOF
         esac
     done
 
+    # --enable-config-edit (ADR-0027) is now sugar for --cco-access edit-project
+    # (ADR-0036 D3), deprecated for one release. An explicit --cco-access wins; the
+    # legacy bool still drives the current mount path until step 3 switches the
+    # mount logic over to the resolved cco_access knob.
+    if $enable_config_edit && [[ -z "$cli_cco_access" ]]; then
+        cli_cco_access="edit-project"
+    fi
+
     # No project name is valid: cwd-first resolution (the repo this dir hosts).
     # _start_resolve_project dies with guidance when cwd is not a configured repo.
 
@@ -1155,14 +2666,50 @@ EOF
     local project_name auth_method docker_image mount_socket network
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
-    local output_dir compose_file packs_md
+    local output_dir compose_file
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
+    local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
+    local claude_cr claude_cp claude_cg claude_co    # resolved (Cr,Cp,Cg,Co) claude triple (ADR-0049); claude_access = its label
+    local cco_g cco_pc cco_po                        # resolved (G,Pc,Po) triple (ADR-0046); cco_access = its label
+    local cco_include_member_configs="false"         # access.cco.include_member_configs (ADR-0046 §6)
+    local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)
+    local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
+    local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
 
+    # config-editor-only selectors (ADR-0042 §8). They are consumed solely in the
+    # config-editor branch of _start_resolve_project; passed to any other session
+    # they would be silently ignored (no mount, no error), so reject them here
+    # with guidance rather than fail closed and confuse the user.
+    if [[ "$session_preset" != "config-editor" ]]; then
+        if [[ ${#config_editor_targets[@]} -gt 0 || ${#config_editor_repos[@]} -gt 0 || "$config_editor_all" == "true" ]]; then
+            die "--all / --project / --repo apply only to 'cco start config-editor' (ADR-0042 §8). This is a '${session_preset}' session."
+        fi
+    else
+        # --all is the explicit widener (every project, no targets); combining it
+        # with a narrowing selector is contradictory — reject rather than silently
+        # drop --all. ⚠ This guard tests config_editor_all ONLY, so the OTHER
+        # spelling of the same mode (--cco-access edit-all, which
+        # _resolve_config_editor_mode also resolves to mode=all) is NOT rejected
+        # with --repo: that combination launches, and it is the one route that
+        # reaches FI-42's fan-out. Do not "fix" the asymmetry here — which of the
+        # two spellings is right belongs to the cycle-2 topology decision.
+        if [[ "$config_editor_all" == "true" && ( ${#config_editor_targets[@]} -gt 0 || ${#config_editor_repos[@]} -gt 0 ) ]]; then
+            die "--all (broad: every project's <repo>/.cco) cannot be combined with --project/--repo (which narrow the scope)."
+        fi
+    fi
+
     _start_load_config
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] load_config done" >&2
+
+    # Resolve the capability-model knobs (ADR-0036 D2/D3). project_yml is set by
+    # _start_resolve_project; the resolved values feed mount generation (step 3+).
+    _start_resolve_access
+    [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_access done" >&2
+
+    _start_guard_config_editor_scope
 
     _start_check_health
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] check_health done" >&2
@@ -1173,7 +2720,19 @@ EOF
     _start_generate_integrations
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_integrations done" >&2
 
-    _start_resolve_paths
+    # N3 (ADR-0052 §6): _start_resolve_paths returns 2 when the user chose Exit ([q])
+    # at a mount/resolve prompt. Honour it — abort the launch cleanly (exit 0, no
+    # container) instead of booting anyway. Bindings written before the quit stay
+    # valid; re-run `cco start` (or `cco resolve`) to finish. `|| _sr_rc=$?` keeps
+    # set -e from aborting on the non-zero return.
+    local _sr_rc=0
+    _start_resolve_paths || _sr_rc=$?
+    if [[ $_sr_rc -eq 2 ]]; then
+        info "start aborted — you chose Exit at a resolve prompt; no session was launched."
+        return 0
+    elif [[ $_sr_rc -ne 0 ]]; then
+        return $_sr_rc
+    fi
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
 
     # Source transparency + passive ⚠ badge (design §4.4 / ADR-0019 D2 layer-e /
@@ -1191,9 +2750,9 @@ EOF
     _start_emit_reminders
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] emit_reminders done" >&2
 
-    # Generate the .claude overlays (packs.md, workspace.yml) BEFORE compose so
-    # compose can mount them :ro by existence — the same generate-then-mount
-    # ordering used for the managed/ overlays (ADR-0005 F1).
+    # Compute the Level-A session context (ADR-0042) BEFORE compose so the
+    # generated compose can inject it as the CCO_SESSION_CONTEXT env var. No file
+    # is written (the workspace.yml overlay is retired).
     _start_generate_metadata
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_metadata done" >&2
 
@@ -1398,7 +2957,9 @@ _proxy_collect_pathmap() {
     local _extra_mounts
     _extra_mounts=$(_effective_extra_mounts "$project_yml" 2>/dev/null || true)
     if [[ -n "$_extra_mounts" ]]; then
-        while IFS=$'\t' read -r _src _tgt _ro; do
+        local _emline _pol _role
+        while IFS= read -r _emline; do
+            _peel_tab "$_emline" _src _tgt _ro _pol _role
             [[ -z "$_src" ]] && continue
             _pathmap_lines="${_pathmap_lines}${_tgt}"$'\t'"${_src}"$'\n'
         done <<< "$_extra_mounts"

@@ -45,6 +45,7 @@ Commands:
   update <name> [--all]      Update a template from its remote source
   validate [name] [--all]    Validate a template's structure
   remove <name>              Remove a user template
+  rename <old> <new>         Rename a user template
   publish <name> [remote]    Publish a template to a sharing repo
   install <url>              Install a template from a sharing repo
   export <name>              Export a template as a .tar.gz archive
@@ -68,6 +69,7 @@ EOF
         update)      cmd_template_update "$@" ;;
         validate)    cmd_template_validate "$@" ;;
         remove)      cmd_template_remove "$@" ;;
+        rename)      cmd_template_rename "$@" ;;
         publish)     cmd_template_publish "$@" ;;
         install)     cmd_template_install "$@" ;;
         export)      cmd_template_export "$@" ;;
@@ -77,6 +79,10 @@ EOF
     esac
 }
 
+# Output scoping (ADR-0043): templates are personal-global. The operator shim
+# already gates `template list` behind read-global+, so whenever this runs every
+# template is in scope — no per-row filtering is needed here (unlike the compact
+# `cco list`, which surfaces templates at any read level and scopes them there).
 cmd_template_list() {
     local filter=""
 
@@ -192,6 +198,10 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco template show <name>"
+    # Output scoping (ADR-0043): templates are a personal-global resource
+    # (read-global+). The operator shim already gates this verb; require_visible
+    # keeps the layer authoritative if the classification ever changes.
+    _env_require_visible template "$name"
 
     # Try to find in both project and pack
     local template_dir="" kind=""
@@ -282,14 +292,20 @@ EOF
         # A configured project (resolved via the STATE index): its committed
         # config lives in <repo>/.cco/ — the claude/ tree + project.yml + root
         # files. The central $PROJECTS_DIR layout is gone (P5).
-        if _ud=$(_resolve_unit_dir_for_project "$from" 2>/dev/null); then
-            source_dir="$_ud/.cco"
+        # INV-F.3: resolve the project's .cco through the operator-aware pair. --from
+        # stays polymorphic — pack-dir and literal-dir branches still run on failure.
+        if _ud=$(_resolve_project_cco_dir "$from" 2>/dev/null); then
+            source_dir="$_ud"
             from_project=true
         elif [[ -d "$PACKS_DIR/$from" ]]; then
             source_dir="$PACKS_DIR/$from"
         elif [[ -d "$from" ]]; then
             source_dir="$from"
         else
+            # A real project that is merely out of scope / not mounted must not be
+            # reported as a nonexistent resource — classify before the generic die.
+            local _st; _st=$(_env_project_state "$from")
+            case "$_st" in out-of-scope|not-mounted) _env_unavailable "$_st" project "$from" ;; esac
             die "Resource '$from' not found."
         fi
 
@@ -375,26 +391,88 @@ EOF
     [[ -z "$found_dir" ]] && die "User template '$name' not found. Only user templates can be removed."
 
     # ── Preview the cascade (ADR-0029 D2) ──────────────────────────────────
+    # Do not probe the confined DATA/STATE buckets here (INV-S6): behind the ADR-0047
+    # boundary the -d predicate reads FALSE for a path that exists, so the preview
+    # would silently omit sidecars that ARE about to be removed. Announce them plainly.
     info "cco template remove '$name' will delete:"
     info "  • $found_dir (the template)"
-    [[ -d "$(_cco_data_dir)/templates/$name"  ]] && info "  • DATA:  install-provenance"
-    [[ -d "$(_cco_state_dir)/templates/$name" ]] && info "  • STATE: merge base"
-    local _ttags; _ttags=$(_tags_get templates "$name")
-    [[ -n "$_ttags" ]] && info "  • tags:  [$_ttags]"
+    info "  • its machine-local DATA/STATE sidecars + per-user tag binding"
 
     _confirm_destructive "$yes" "Remove template '$name'?" || { info "Aborted"; return 0; }
 
-    rm -rf "$found_dir"
-
-    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state an
-    # installed template created — DATA install-provenance (`source`), STATE merge
-    # base (`<state>/cco/templates/<name>/update/`), and the tags.yml binding.
-    # No-ops for create-from templates that never recorded provenance.
-    rm -rf "$(_cco_data_dir)/templates/$name"
-    rm -rf "$(_cco_state_dir)/templates/$name"
-    _tags_forget templates "$name"
+    # Delete-cascade (ADR-0021 Dec.4): clean the id-keyed internal state an installed
+    # template created — DATA install-provenance, STATE merge base, and the tags.yml
+    # binding (no-ops for create-from templates that never recorded provenance). These
+    # live behind the ADR-0047 boundary, so they go through lib/store.sh: a fail-closed
+    # pre-flight (crossing #1) refuses before the claude-owned CONFIG dir is touched if
+    # the store is unwritable, then the cascade applies (crossing #2) — never a false ✓.
+    _store_check sidecar-purge templates "$name"
+    rm -rf "$found_dir" || die "Failed to remove the template directory."
+    _store_apply sidecar-purge templates "$name"
 
     ok "Template '$name' removed."
+}
+
+# ── cco template rename ───────────────────────────────────────────────────
+# Re-key a USER template (ADR-0050): mv its store dir (kind-scoped —
+# templates/<kind>/<old> → <new>), move the id-keyed DATA install-provenance +
+# STATE merge base/meta, and carry the per-user tag binding. Templates have no
+# committed project.yml reference to fan out (discovery-only). Native templates
+# cannot be renamed (no writable store, no recorded source).
+cmd_template_rename() {
+    local old="" new="" yes=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -y|--yes) yes=true; shift ;;
+            --help|-h)
+                cat <<'EOF'
+Usage: cco template rename <old> <new>
+
+Rename a user template, re-keying its store directory, its machine-local
+DATA/STATE sidecars, and the per-user tags. Native templates cannot be renamed.
+
+Options:
+  -y, --yes   Skip the confirmation prompt
+EOF
+                return 0
+                ;;
+            -*)  die "Unknown option: $1. Run 'cco template rename --help'." ;;
+            *)
+                if [[ -z "$old" ]]; then old="$1"
+                elif [[ -z "$new" ]]; then new="$1"
+                else die "Unexpected argument: $1"; fi
+                shift ;;
+        esac
+    done
+
+    [[ -z "$old" || -z "$new" ]] && die "Usage: cco template rename <old> <new>"
+    [[ "$old" == "$new" ]] && die "Old and new names are the same ('$old') — nothing to rename."
+
+    # Find in USER templates only (kind-scoped), mirroring cmd_template_remove.
+    local kind="" found_dir="" k
+    for k in project pack; do
+        if [[ -d "$TEMPLATES_DIR/$k/$old" ]]; then kind="$k"; found_dir="$TEMPLATES_DIR/$k/$old"; break; fi
+    done
+    [[ -z "$found_dir" ]] && die "User template '$old' not found. Only user templates can be renamed."
+
+    _rename_validate template "$new"
+    [[ -e "$TEMPLATES_DIR/$kind/$new" ]] && die "Template '$new' already exists in the $kind kind. Choose a different name."
+
+    local -a bullets=(
+        "$found_dir → $TEMPLATES_DIR/$kind/$new"
+        "DATA install-provenance + STATE merge base/meta + per-user tags"
+    )
+    _rename_preview_confirm "$yes" "Rename template '$old' → '$new' ($kind)" "${bullets[@]}" \
+        || { info "Aborted — nothing changed."; return 0; }
+
+    # Crossing #1: refuse before the claude-owned CONFIG dir moves if the DATA/STATE
+    # sidecar re-key cannot be written (never a half-applied rename). Then move CONFIG,
+    # then the sidecar+tags cascade through lib/store.sh (crossing #2, all-or-nothing).
+    _store_check sidecar-rekey templates "$old" "$new"
+    mv "$found_dir" "$TEMPLATES_DIR/$kind/$new" || die "Failed to move the template directory."
+    _store_apply sidecar-rekey templates "$old" "$new"
+
+    ok "Renamed template '$old' → '$new' ($kind)."
 }
 
 # ── cco template internalize ──────────────────────────────────────────────
@@ -429,6 +507,7 @@ EOF
     done
 
     [[ -z "$name" ]] && die "Usage: cco template internalize <name> [--as <new-name>]"
+    _store_provenance_guard "template internalize"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     # Locate the user template (project or pack kind). Native templates have no
@@ -565,6 +644,7 @@ EOF
         esac
     done
 
+    _store_provenance_guard "template update"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
     check_global
 
     if $update_all; then
@@ -656,6 +736,10 @@ _update_single_template() {
 # The pack-`validate` analogue (ADR-0029 D3): structural validation of a
 # template tree. Validates one named template, or every user template.
 
+# Output scoping (ADR-0043): templates are GLOBAL-class, and the operator shim
+# gates every `template` verb (incl. validate) to read-global+ — a scope where
+# nothing is hidden — so no per-row `_env_in_scope` filter is wired here (same
+# rationale as `template`/`remote list`).
 cmd_template_validate() {
     check_global
     local name="" validate_all=false
@@ -785,6 +869,7 @@ EOF
 
     [[ -z "$archive" ]] && die "Usage: cco template import <archive>"
     [[ -f "$archive" ]] || die "Archive not found: $archive"
+    _store_provenance_guard "template import"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     local tmpdir; tmpdir=$(mktemp -d)
     tar xzf "$archive" -C "$tmpdir" 2>/dev/null \
@@ -847,6 +932,7 @@ EOF
     done
 
     [[ -z "$url" ]] && die "Usage: cco template install <url> [--pick <name>]"
+    _store_provenance_guard "template install"   # D-M8/Q-10: DATA/STATE provenance, cycle-2 conversion
 
     # Split a trailing @ref (only when it is in the last path segment, so
     # scp-style git@host:org/repo is left intact).
@@ -1084,7 +1170,7 @@ _resolve_template_vars() {
 
         if [[ -n "$preset_match" ]]; then
             value="${preset_match#*=}"
-        elif [[ -t 0 ]]; then
+        elif _cco_have_tty; then
             # Interactive prompt
             local default=""
             case "$name" in

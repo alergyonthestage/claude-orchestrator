@@ -118,7 +118,7 @@ _resolve_with_merge() {
         echo ""
 
         local choice
-        if (exec < /dev/tty) 2>/dev/null; then
+        if _cco_have_tty; then
             if $has_editor; then
                 read -rp "  Choice [M/e/r/k/s]: " choice < /dev/tty
             else
@@ -215,7 +215,7 @@ _resolve_conflict_interactive() {
     echo ""
 
     local choice
-    if (exec < /dev/tty) 2>/dev/null; then
+    if _cco_have_tty; then
         read -rp "  Choice [K/r/s]: " choice < /dev/tty
     else
         choice=""

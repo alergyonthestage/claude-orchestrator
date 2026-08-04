@@ -87,7 +87,7 @@ test_update_check_skips_local_snapshot() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # A pack whose DATA source is a local snapshot (internalized/imported).
-    mkdir -p "$CCO_PACKS_DIR/snap" "$CCO_DATA_HOME/packs/snap" "$CCO_STATE_HOME/packs/snap/update/base"
+    mkdir -p "$CCO_PACKS_DIR/snap" "$CCO_DATA_HOME/packs/snap" "$(state_shared)/packs/snap/update/base"
     printf 'name: snap\n' > "$CCO_PACKS_DIR/snap/pack.yml"
     printf 'url: local\n' > "$CCO_DATA_HOME/packs/snap/source"
     local rc=0

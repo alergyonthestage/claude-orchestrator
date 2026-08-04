@@ -6,17 +6,14 @@
 PROJECT="${PROJECT_NAME:-unknown}"
 TMODE="${TEAMMATE_MODE:-tmux}"
 
-# Discover repos (directories with .git under /workspace)
-repos=""
-repo_count=0
-for dir in /workspace/*/; do
-    [ -d "${dir}.git" ] && {
-        name=$(basename "$dir")
-        repos="${repos}
-- /workspace/${name}/"
-        repo_count=$((repo_count + 1))
-    }
-done
+# R8 — the repo/mount list is NOT discovered here. The host-computed Level-A
+# context (CCO_SESSION_CONTEXT, appended below) is the SOLE authority on session
+# resources: it lists repos AND read-only mounts distinctly, with descriptions,
+# from project.yml. The old `/workspace/*/.git` scan mislabeled a git-backed
+# read-only extra_mount (e.g. the personal store, or a `<name>-config` mount) as a
+# "Repository" though project.yml declared `repos: []` (S8-5). This hook now only
+# augments Level-A with genuinely filesystem-side, non-resource metadata (MCP,
+# skills, agents) that Level-A does not carry.
 
 # Count MCP servers from merged ~/.claude.json
 mcp_count=0
@@ -46,11 +43,12 @@ for f in /workspace/.claude/agents/*.md; do
     [ -f "$f" ] && agents="${agents} $(basename "$f" .md)"
 done
 
-# Build context string
+# Build context string. Session resources (repos/mounts/packs/llms) come from the
+# appended Level-A block, NOT from a filesystem scan here (R8) — this section is
+# local, non-resource metadata only.
 ctx="<SessionContext>
 Project: ${PROJECT}
 Teammate mode: ${TMODE}
-Repositories (${repo_count}):${repos}
 Workspace persistence: Repository directories are persisted on the host. Files at /workspace/ root are temporary (container-only, lost on exit). Persistent work should go in repos and be versioned with git."
 
 if [ "$mcp_count" -gt 0 ]; then
@@ -71,12 +69,21 @@ fi
 ctx="${ctx}
 </SessionContext>"
 
-# Inject knowledge packs (immutable, automatic — independent of CLAUDE.md)
-if [ -f /workspace/.claude/packs.md ]; then
-    packs_section=$(grep -v '^<!--' /workspace/.claude/packs.md)
-    [ -n "$packs_section" ] && ctx="${ctx}
+# Append the host-computed Level-A session context (ADR-0042): resources +
+# descriptions, packs, knowledge/llms indexes, gated path_map, and the wrapped-cco
+# access declaration. cco start injects it (base64) as CCO_SESSION_CONTEXT — no
+# workspace.yml file anymore (INV-2). Decode and append verbatim.
+if [ -n "$CCO_SESSION_CONTEXT" ]; then
+    injected=$(printf '%s' "$CCO_SESSION_CONTEXT" | base64 -d 2>/dev/null)
+    if [ -n "$injected" ]; then
+        ctx="${ctx}
 
-${packs_section}"
+${injected}"
+    else
+        # Set but undecodable → the whole Level-A block is lost. Leave a stderr
+        # breadcrumb so the silent degradation is debuggable (context still ships).
+        echo "cco: warning: CCO_SESSION_CONTEXT set but failed to base64-decode — Level-A context omitted." >&2
+    fi
 fi
 
 # Persist key session variables for all subsequent Bash tool calls

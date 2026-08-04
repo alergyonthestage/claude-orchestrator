@@ -52,6 +52,7 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/lib/paths.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
+    source "$REPO_ROOT/lib/local-paths.sh"   # _mount_override_get/_role
 
     _setup_internal_tutorial
 
@@ -59,11 +60,28 @@ test_setup_internal_tutorial_substitutes_placeholders() {
     assert_file_exists "$runtime_yml"
     assert_no_placeholder "$runtime_yml" "{{CCO_REPO_ROOT}}"
     assert_no_placeholder "$runtime_yml" "{{CCO_CONFIG_DIR}}"
-    assert_file_contains "$runtime_yml" "$REPO_ROOT/docs"
-    # A.4 cutover: the tutorial now mounts the personal store ~/.cco (read-only)
-    # at /workspace/cco-config, not the legacy central user-config.
-    assert_file_contains "$runtime_yml" "$(_cco_config_dir)"
+    # The tutorial's mounts are now NAME-based (like config-editor): the yml carries
+    # logical names + container targets, never host paths (AD3/G8), and the host
+    # paths are published via the in-process override (ADR-0036 step 5, 5f).
+    assert_file_contains "$runtime_yml" "name: cco-config"
+    assert_file_contains "$runtime_yml" "name: cco-docs"
     assert_file_contains "$runtime_yml" "/workspace/cco-config"
+    # Host paths live in _CCO_MOUNT_OVERRIDE, not the committed yml.
+    assert_file_not_contains "$runtime_yml" "$(_cco_config_dir)"
+    # The override line is "name<TAB>path<TAB>role" (RC-1 §3.3). The tutorial's
+    # mounts are readonly: true, so the role never drives a decision here — but it
+    # must still be emitted correctly, because a role is a producer-side signal and
+    # a producer that lies is exactly what the name-heuristic alternative was
+    # rejected for. Asserted through _mount_override_get/_role, not by substring:
+    # a substring match on "name<TAB>path" cannot see a mangled third column.
+    assert_equals "$(_cco_config_dir)" "$(_mount_override_get cco-config)" \
+        "tutorial override should publish cco-config → $(_cco_config_dir)"
+    assert_equals "$REPO_ROOT/docs" "$(_mount_override_get cco-docs)" \
+        "tutorial override should publish cco-docs → $REPO_ROOT/docs"
+    assert_equals "store" "$(_mount_override_role cco-config)" \
+        "cco-config exposes the personal store"
+    assert_equals "" "$(_mount_override_role cco-docs)" \
+        "cco-docs is not a config tree — no role"
 }
 
 test_setup_internal_tutorial_has_skills() {
@@ -128,6 +146,36 @@ test_setup_internal_tutorial_refreshes_on_rerun() {
     assert_dir_not_exists "$runtime_dir/memory"
 }
 
+# ── Preset + wrapped-cco (ADR-0036 step 5) ────────────────────────────
+
+# Tutorial resolves to the read-project/none preset (ADR-0042) → read-only wrapped
+# cco (operator env at cco_access=read-project), .claude authoring locked (none).
+# ADR-0044 §2: the tutorial is a read-only teacher → read-all (was read-project),
+# so it reveals the user's whole cco world with no write risk.
+test_start_tutorial_preset_read_all() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    run_cco start tutorial --dry-run
+    assert_output_contains "claude=none cco=read-all"
+    run_cco start tutorial --dry-run --dump
+    assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=read-all"
+}
+
+# The personal store is mounted read-only in the tutorial and its real secrets
+# are masked (the tutorial never sees secret values — ADR-0036 D4).
+test_start_tutorial_masks_secrets_readonly_store() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    printf 'G=1\n' > "$HOME/.cco/secrets.env"
+    run_cco start tutorial --dry-run --dump
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    assert_file_contains "$compose" "secret-mask:/workspace/cco-config/secrets.env:ro" || return 1
+    # cco-config stays read-only in the tutorial.
+    assert_file_contains "$compose" "$HOME/.cco:/workspace/cco-config:ro" || return 1
+}
+
 # ── cco start tutorial: reserved name conflict ────────────────────────
 
 test_start_tutorial_blocks_on_name_conflict() {
@@ -172,9 +220,16 @@ test_migration_010_legacy_tutorial_non_interactive() {
     touch "$proj_dir/.claude/skills/tutorial/SKILL.md"
     touch "$proj_dir/.claude/rules/tutorial-behavior.md"
 
-    # Run migration non-interactively (stdin from /dev/null)
+    # Run the migration the way `cco update` does — with the framework libs
+    # sourced, so its messaging (warn/info) and interactivity gate (_cco_have_tty)
+    # are the REAL ones, not silently-undefined no-ops. Non-interactivity comes
+    # from CCO_NONINTERACTIVE=1 (exported by bin/test), NOT a `< /dev/null` on fd 0:
+    # the removal prompt reads /dev/tty directly, so only the gate can suppress it
+    # (a `< /dev/null` never did, which is why this test hung under a real terminal).
+    source "$REPO_ROOT/lib/colors.sh"
+    source "$REPO_ROOT/lib/utils.sh"
     source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh"
-    migrate "$proj_dir" < /dev/null
+    migrate "$proj_dir"
 
     # Project should be kept (non-interactive doesn't remove)
     assert_dir_exists "$proj_dir"
@@ -192,7 +247,7 @@ test_migration_010_legacy_tutorial_heuristic() {
 
     # Run migration — should detect as legacy via heuristic
     local output
-    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
+    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/lib/utils.sh" && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" 2>&1)
 
     # Should mention "built-in" (legacy path, not user-project path)
     echo "$output" | grep -qF "built-in" || \
@@ -208,9 +263,16 @@ test_migration_010_user_project_named_tutorial() {
     echo "local" > "$proj_dir/.cco/source"
     echo "name: tutorial" > "$proj_dir/project.yml"
 
-    # Run migration
+    # Run migration with the framework libs sourced (as `cco update` does), so
+    # its warn/info messages are the real ones — this Case-2 path prints the
+    # "reserved name" warning the assertion below looks for. (Sourcing only the
+    # migration left warn undefined, so the text never printed and this test failed
+    # unconditionally — a pre-existing defect surfaced while auditing the tutorial
+    # tests for the interactivity-hang class.)
     local output
-    output=$(source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" && migrate "$proj_dir" < /dev/null 2>&1)
+    output=$(source "$REPO_ROOT/lib/colors.sh" && source "$REPO_ROOT/lib/utils.sh" \
+             && source "$REPO_ROOT/migrations/project/010_tutorial_to_internal.sh" \
+             && migrate "$proj_dir" 2>&1)
 
     # Should warn about reserved name, not offer removal
     echo "$output" | grep -qF "reserved name" || \

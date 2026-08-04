@@ -16,6 +16,19 @@ expand_path() {
     echo "$path"
 }
 
+# Strip ONE pair of matched surrounding quotes ('…' or "…") from a value — what
+# the shell would have removed from a pasted quoted token (ADR-0050 D8). Not full
+# shell dequoting: inner or unbalanced quotes are left literal, so path characters
+# survive intact. A no-op on unquoted input. Usage: _strip_surrounding_quotes <s>
+_strip_surrounding_quotes() {
+    local s="$1"
+    [[ ${#s} -ge 2 ]] || { printf '%s' "$s"; return 0; }
+    case "$s" in
+        \"*\"|\'*\') s="${s:1:${#s}-2}" ;;
+    esac
+    printf '%s' "$s"
+}
+
 # Check if a path exists as either a file or a directory.
 # Canonical check for project.yml sources — repos are directories,
 # but extra_mounts can legitimately be single files (e.g. a .docx).
@@ -35,7 +48,20 @@ _path_exists() {
 # terminal (this silently broke `cco resolve`, which then never prompted). The
 # prompts themselves read from /dev/tty, so /dev/tty reachability is the correct
 # interactivity test. The subshell keeps the probe from consuming the parent fd 0.
+#
+# CCO_NONINTERACTIVE=1 forces this to FALSE: "behave as if no terminal existed",
+# i.e. take the same non-interactive default branch CI and Docker already take.
+# It is the single opt-out every prompt in the codebase honours, and it is what
+# `bin/test` exports so the suite cannot block on a prompt. Complementary to (not
+# the same as) CCO_ASSUME_YES, which ANSWERS a prompt "yes" rather than skipping it.
+#
+# Why it is needed: a prompt writes to stdout/stderr, and a caller that CAPTURES
+# those (`out=$(cmd 2>&1)` — the test runner, any `$()` wrapper) makes the prompt
+# text INVISIBLE while the read still blocks on /dev/tty. The result is a silent,
+# unattributable hang. That is exactly how `cco init`'s repo-name prompt froze the
+# whole suite whenever it was run from a real terminal instead of CI.
 _cco_have_tty() {
+    [[ -n "${CCO_NONINTERACTIVE:-}" ]] && return 1
     (exec < /dev/tty) 2>/dev/null
 }
 
@@ -55,9 +81,11 @@ _compose_vol() {
     fi
 }
 
-# Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line
-# (the same TSV shape _effective_extra_mounts emits, so the compose-gen
-# consumes both uniformly). Spec: "src[:target][:ro|:rw]".
+# Parse a CLI --mount spec into an "<abs_source>\t<target>\t<ro>" line — the
+# leading three fields of the record _effective_extra_mounts emits, which
+# additionally carries <config_access_policy> and <role> (a reference mount is
+# never a config tree, so neither applies here). Compose-gen consumes the two in
+# separate loops. Spec: "src[:target][:ro|:rw]".
 #   - Read-only is the DEFAULT (ADR-0027 D2 — the common reference-mount case);
 #     a trailing ":rw" opts into writable.
 #   - target defaults to /workspace/<basename src>.
@@ -129,6 +157,133 @@ check_docker() {
     fi
 }
 
+# ── Session-identity detection (R1) ──────────────────────────────────
+# `cco start` launches with `docker compose run --rm`, which IGNORES the compose
+# `container_name: cc-<project>` and assigns an opaque `<project>-claude-run-<hash>`
+# name — so grepping `docker ps` names for `^cc-<name>$` NEVER matches a live
+# session. The compose declares `labels: cco.project: "<project>"` (cmd-start.sh)
+# which IS honored under `run`; the label is the session-identity contract, the
+# container name is cosmetic. All session detection goes through these helpers.
+
+# _cco_session_running <project-name> → 0 if a running session for the project.
+# Thin boolean wrapper over the tri-state _cco_session_status (single source): host
+# → docker-authoritative; in-container → registry (a `unknown` is not `running`). Used
+# by the host-side `cco start` guard, where the host branch is always definitive.
+_cco_session_running() {
+    [[ "$(_cco_session_status "$1")" == running ]]
+}
+
+# _cco_session_container_ids <project-name> → running container IDs (newline list).
+_cco_session_container_ids() {
+    docker ps --filter "label=cco.project=$1" --format '{{.ID}}' 2>/dev/null
+}
+
+# _cco_any_session_containers → "ID<TAB>project" for every running cco session
+# (any project), via the label-key existence filter. Empty when none run.
+_cco_any_session_containers() {
+    docker ps --filter "label=cco.project" \
+        --format '{{.ID}}	{{.Label "cco.project"}}' 2>/dev/null
+}
+
+# ── Session running registry (ADR-0045, refined by ADR-0047) ─────────
+# A host-maintained set of markers — one file per running session, keyed by the
+# cco.project label (R1) — under STATE (<state>/cco/running/). Its reason to exist:
+# in-container, `docker ps` is scoped by the cco-docker-proxy to the session's OWN
+# container (or absent when mount_socket:false), so every OTHER project reads as a
+# false `stopped`. The registry supplies that truth where docker cannot.
+#
+# Confidentiality (ADR-0047 reconciliation): marker filenames ARE project names, the
+# S1-class confidential data. So the dir is NOT a claude-readable :ro mount (that
+# would let `ls` enumerate every project, re-opening the leak ADR-0047 closed);
+# instead it mounts :ro UNDER the cco-svc privileged root
+# (/var/lib/cco-internal/state/cco/running). In-container it is read ONLY inside the
+# already-elevated `cco __store list/show` (cco-svc can traverse the boundary), with
+# cross-project visibility gated by the existing _env_in_scope row-scoping. The claude
+# user cannot traverse the 0700 root, so no raw enumeration.
+#
+# Writers are HOST-SIDE ONLY (cco start/stop). docker stays the host source of truth;
+# the registry is a reconciled cache. _cco_session_status is the consumer.
+_cco_running_dir() {
+    printf '%s\n' "$(_cco_state_dir)/running"
+}
+
+# The reserved internal built-in session names (ADR-0027): framework-provided
+# sessions launched by name (`cco start config-editor|tutorial`), NOT indexed
+# projects — so `cco list` (which enumerates the index) never showed them. R3
+# surfaces them as KIND 'builtin' via their fixed, non-secret names (no registry
+# enumeration needed — status is probed per name, honoring the ADR-0047 boundary).
+# Newline-separated, in display order.
+_cco_internal_builtins() { printf 'config-editor\ntutorial\n'; }
+
+# Host-only. Create/refresh the marker for a running session (label = cco.project).
+# Body is informational only — reconciliation keys off the FILENAME vs docker ps, so
+# a container id (unknown before the blocking `run`) is never needed.
+_cco_running_mark() {
+    local label="$1" dir
+    [[ -z "$label" ]] && return 0
+    dir=$(_cco_running_dir)
+    mkdir -p "$dir" 2>/dev/null || return 0
+    printf 'started_at=%s\nversion=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "${CCO_VERSION:-}" \
+        > "$dir/$label" 2>/dev/null || true
+}
+
+# Host-only. Remove a session marker (idempotent).
+_cco_running_unmark() {
+    local label="$1"
+    [[ -z "$label" ]] && return 0
+    rm -f "$(_cco_running_dir)/$label" 2>/dev/null || true
+}
+
+# Host-only liveness reconciliation (ADR-0045): prune markers with no live container.
+# The PRIMARY reaper for the common no-`cco stop` exit is cco start's own post-run
+# unmark; this sweep is the backstop for unclean exits (Ctrl-C mid-abort, docker kill,
+# host reboot). No-op in-container (no full docker) and when docker is unavailable.
+_cco_running_reconcile() {
+    _cco_in_container && return 0
+    command -v docker >/dev/null 2>&1 || return 0
+    local dir; dir=$(_cco_running_dir)
+    [[ -d "$dir" ]] || return 0
+    local f label
+    for f in "$dir"/*; do
+        [[ -e "$f" ]] || continue           # empty dir → literal glob, skip
+        label=$(basename "$f")
+        [[ -z "$(docker ps --filter "label=cco.project=$label" --format '{{.ID}}' 2>/dev/null)" ]] \
+            && rm -f "$f" 2>/dev/null || true
+    done
+}
+
+# Tri-state session status (B4). host → docker (authoritative, never unknown);
+# in-container → the registry marker (unknown when the registry is absent/unreadable,
+# NEVER a false `stopped` — the proxy-scoped in-container docker channel is not
+# consulted). Prints one of: running | stopped | unknown.
+_cco_session_status() {
+    local label="$1"
+    if _cco_in_container; then
+        local dir; dir=$(_cco_running_dir)
+        # Registry absent/unreadable (e.g. cco_access=none → no internal mount) → unknown.
+        [[ -d "$dir" ]] || { printf 'unknown\n'; return 0; }
+        if [[ -e "$dir/$label" ]]; then printf 'running\n'; else printf 'stopped\n'; fi
+        return 0
+    fi
+    if [[ -n "$(docker ps --filter "label=cco.project=$label" --format '{{.ID}}' 2>/dev/null)" ]]; then
+        printf 'running\n'
+    else
+        printf 'stopped\n'
+    fi
+}
+
+# Colored display token for a session status (B4). One place so `cco list`,
+# `cco list project`, and `cco project show` render the tri-state identically —
+# unknown (YELLOW) is surfaced honestly rather than collapsed to `stopped`.
+_cco_session_status_display() {
+    case "$(_cco_session_status "$1")" in
+        running) printf '%b' "${GREEN}running${NC}" ;;
+        unknown) printf '%b' "${YELLOW}unknown${NC}" ;;
+        *)       printf 'stopped' ;;
+    esac
+}
+
 # Check image exists
 check_image() {
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
@@ -141,6 +296,13 @@ check_image() {
 # pointed at 'cco update' — the eager global migration — not 'cco init', which would
 # seed defaults and force an unexpected overwrite-confirm on the next update (H5).
 check_global() {
+    # In container-operator mode the store is bind-mounted by `cco start` (possibly
+    # narrowed to referenced packs at read-project/edit-project). A missing
+    # ~/.cco/.claude is then a host-setup concern, never actionable in-container —
+    # degrade instead of the host-only "run cco init" hint (R3). Read verbs
+    # (list/show) go on to show what IS in scope + the hidden-by-scope notice;
+    # write verbs are already gated by the operator shim before reaching here.
+    _cco_container_operator && return 0
     if [[ ! -d "$(_cco_global_claude_dir)" ]]; then
         if _cco_have_backup "$(_cco_state_dir)/backups" 2>/dev/null; then
             die "Global config not found, but a legacy vault backup exists. Run 'cco update' to migrate your global config from the vault."
@@ -193,11 +355,11 @@ _check_reserved_project_name() {
 _confirm_destructive() {
     local skip="$1" prompt="$2" reply
     [[ "$skip" == true ]] && return 0
-    if [[ ! -t 0 ]]; then
+    if ! _cco_have_tty; then
         die "Refusing to proceed without confirmation ($prompt) — re-run with -y."
     fi
     printf '%s [y/N] ' "$prompt" >&2
-    read -r reply
+    read -r reply < /dev/tty
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 
