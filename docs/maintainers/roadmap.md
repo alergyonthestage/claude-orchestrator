@@ -28,10 +28,27 @@ changelog #21), S2 (migration completeness, ADR-0009 fwd-annot), and S3 (`join` 
 **`cco sync` UX refinement** (ADR-0035: cwd-anchored `--from` target + `--all`; summary-first diff with
 `--dry-run --dump → .cco/.tmp/`) landed next, suite **1010/0**. **v1 is merged to `develop`/`main`
 and released on npm** as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco)
-(`0.5.0` → `0.5.1` → **`0.5.2`**, 2026-06-30; CI OIDC trusted publishing). Work is now in the
-**post-merge additive phase** — remaining workstreams {B, D, F} (all non-gating). The latest cut,
-**`0.5.2`**, ships the user-facing **npm-install docs cutover** (npm is now the primary install path;
-clone demoted to "from source") and the top-level **`cco --version`/`--help`** flags (FI-11).
+(`0.5.0` → `0.5.1` → `0.5.2`, 2026-06-30 → **`0.6.0`**, 2026-08-04; CI OIDC trusted publishing).
+
+▶ **`0.6.0` is RELEASED — cycle-1.2 is closed.** The minor bump, not a patch, because the release
+carries three migrations (`global/017`, `project/014`, `project/015`), removed and renamed verbs, and
+an **image-level** change: the ADR-0047 privilege boundary lives in the Docker image, so
+`npm update` alone does not deliver it. **The upgrade is three commands** —
+`npm update -g @claude-orchestrator/cco && cco update && cco build` — because `cco update` has never
+rebuilt the image and nothing else does either; a session started without the rebuild silently runs
+the previous release. What shipped: ADR-0055 (Claude Code runtime state + mountpoint ancestry),
+ADR-0056 (availability model + index session axis), INV-YAML, the EXIT-trap sentinel, INV-B32, the
+FI-41/45/46 fixes, and the living-docs coherence sweep. Release notes carry the FI-42 known-issue
+verbatim (G6 step 5) and the three upgrade commands (step 4b).
+
+**Release evidence** (G5, all four items): macOS host suite **1626 passed / 0 failed / 1626 total**
+with the `Results:` line present — the cycle's first complete host run, and the first positive proof
+that the seven in-container failures are host-only (1619/7 of the same 1626 in-container, mask on) ·
+unmasked in-container 1616/9 of 1625 · npm-pack hygiene clean · build + provenance + dogfood green.
+
+The earlier cut, **`0.5.2`**, shipped the user-facing **npm-install docs cutover** (npm is now the
+primary install path; clone demoted to "from source") and the top-level **`cco --version`/`--help`**
+flags (FI-11).
 Intentional post-v1 deferrals (not blockers): the
 `cco config protect` helper (docs-only today), pack/template migration-scope iteration in `cco update`
 (forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
@@ -434,7 +451,9 @@ merge introduced no content nobody wrote. All three branches are pushed and leve
 - ✅ **`cco build` from `develop` + provenance + smoke dogfood** — `cco whoami` reports
   `image built from: develop@b3e3496` with `diff -rq /opt/cco/lib lib` empty; `cco list`,
   `cco path list`, `cco project show` all answer with correct scope notices.
-- 🔴 **macOS host suite (bash 3.2) — ABORTED, not passed.** 427 tests ran, then bash died with
+- ✅ **macOS host suite (bash 3.2) — COMPLETED 2026-08-03**: `Results: 1626 passed, 0 failed, 1626
+  total`, summary line present. *The history below is kept because it is the lesson, not the status.*
+  🔴 The **first** attempt ABORTED, not passed: 427 tests ran, then bash died with
   `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
   `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
   tests that could fail. Root cause and fix: **[FI-46](roadmap-backlog.md)**.
@@ -451,6 +470,22 @@ lint is itself parseable and effective on bash 3.2.
 📝 **The seven in-container failures are now confirmed host-only by positive evidence**, not only by
 mechanism: 1626/1626 on the host against 1619/7 of the same 1626 in-container. First complete host
 run of the cycle.
+
+✅ **G6 — DONE 2026-08-04. `v0.6.0` is tagged, pushed and published.** `develop → main` merged with the
+tree-identity check holding (`tree(main) == tree(develop)`), `scripts/release.sh 0.6.0` bumped
+`package.json` **and** the README, and CI published to npm via OIDC on the tag.
+
+⚠ **Two operational traps this gate hit, worth carrying into the next release:**
+1. **The `develop → main` merge was host-only for a reason G4's was not.** Its `.cco/` diff is *not*
+   empty — it deletes three generated artefacts committed by mistake
+   (`.cco/claude/{workspace.yml,packs.md,scheduled_tasks.lock}`) and gitignores them. A merge writes
+   the **working tree**, and `.cco` is `:ro` at the default access level, so it fails partway. The fix
+   was not a workaround but the designed knob: a session at **`--cco-access edit-project`** mounts the
+   current project's `.cco` rw (`lib/cmd-start.sh:1885-1887`), and the merge then runs in-session.
+2. **`git push` without `--follow-tags` pushes the branch and leaves the tag behind.** That is exactly
+   what happened after an SSH-passphrase failure interrupted the scripted push: `pages.yml` fired (it
+   triggers on `push: branches: [main]`) while `release.yml` did not (it triggers on `push: tags:
+   ['v*']`). **The release workflow not firing is the signal that the tag never left.**
 
 🔑 **A premise recorded across FI-46, the handoff and the runbook is now measured FALSE: the
 container is NOT structurally blind to bash 3.2.** The session's Docker socket reaches the public
