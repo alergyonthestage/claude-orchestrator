@@ -1788,9 +1788,14 @@ test_invariant_descriptor_keys_neutralized_in_suite() {
 # punctuation a later edit can change without touching the construct.**
 #
 # SCOPE — two arms, because the tree is not uniform:
-#   * `bin/` `lib/` `migrations/` — host-executed shipped code (`cco update` runs the
-#     migrations under the same /bin/bash 3.2). Measured CLEAN of the entire class, so
-#     they carry the UNCONDITIONAL rule: no heredoc inside a substitution, at all.
+#   * `bin/` `lib/` `migrations/` `scripts/` — host-executed shipped or maintainer code
+#     (`cco update` runs the migrations, and the maintainer runs `scripts/release.sh`,
+#     under the same /bin/bash 3.2). Measured CLEAN of the entire class, so they carry
+#     the UNCONDITIONAL rule: no heredoc inside a substitution, at all.
+#     ⚠ `scripts/` was MISSING from this list when the guard was first written, and was
+#     noticed only when `scripts/release.sh` was edited — the very file the maintainer
+#     runs on macOS at every release. A named directory list is a lower bound; ask what
+#     executes in the hostile environment, not which directories came to mind.
 #   * `tests/` — the FI-46 shape only: the substitution as the RHS of an ASSIGNMENT.
 #     180 argument-position fixtures (`create_project … "$(cat <<YAML`) predate this
 #     guard and parse on 3.2 today; banning them outright is a 180-site refactor and a
@@ -1837,7 +1842,7 @@ AWK
 _b32_lint_violations() {
     local root="$1" f prog rel kind
     prog=$(_b32_lint_prog)
-    for f in "$root"/bin/* "$root"/lib/*.sh "$root"/migrations/*/*.sh "$root"/tests/*.sh; do
+    for f in "$root"/bin/* "$root"/lib/*.sh "$root"/migrations/*/*.sh "$root"/scripts/*.sh "$root"/tests/*.sh; do
         [[ -f "$f" ]] || continue
         rel="${f#"$root"/}"
         while IFS='|' read -r _ line kind; do
