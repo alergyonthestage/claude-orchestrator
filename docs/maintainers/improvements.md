@@ -1280,6 +1280,11 @@ decide the *reporting* question it exposes: cross-scope duplication is legitimat
 resolution order rather than imply an error. Relevant to **FI-28** (a globally adopted pack multiplies
 exactly this class). **Effort**: Low.
 
+> 🔗 **Updated 2026-08-04 — this is the *detection* half of [FI-51](#fi-51-two-homonymous-config-files-at-different-scopes-are-both-in-context-and-indistinguishable)**, which is the resolution.
+> FI-32 ships earlier (roadmap Block A) precisely because it is cheap and independent: warning about a
+> collision needs no decision about how to resolve it. Keep the two consistent — whatever wording FI-32
+> ships for naming scopes and resolution order is the wording FI-51's directions 2 and 3 build on.
+
 ---
 
 ## FI-33: two cco surfaces render the same binding's host path differently
@@ -1453,6 +1458,21 @@ loss of content Claude writes, no user-visible error · (b) none — a simplific
 **Effort**: (a) Low · (b) Medium. **Scheduling — maintainer decision 2026-07-28**: **one ADR
 covering both**, opened **after cycle-1.2**; the priority until then is finishing the cycle's fixes
 and the release. Do not split this into two ADRs.
+
+> 🔗 **Field measurement added 2026-08-04** —
+> [`packs/analysis/input-subagent-role-memory.md`](packs/analysis/input-subagent-role-memory.md),
+> from an external adopter line, independently confirms (a) by `findmnt` and real write attempts: of
+> the four declared scopes **only the lead's works**, and six pack agents produced **zero bytes** over
+> weeks of adoption. It adds two things this entry did not have. **Priority is declared low and
+> nothing is blocked** — the pack already removed the 37×6 lines that leaned on the inert store, and
+> kept the `memory: user` field deliberately (inert, not false). And **the constraint that must be
+> settled before designing**: the fix **cannot be "make `.claude` writable"**, because that `:ro`
+> mount is what guarantees a session cannot tamper with its own hooks, agents, skills and settings —
+> see the same property in [FI-48](#fi-48-a-pack-cannot-carry-permissions-and-hooks--the-only-real-enforcement-it-could-ship).
+> Directions that respect it: a separate writable mount outside `.claude` with the STATE treatment the
+> lead's memory already has · making only `agent-memory*/` writable inside an otherwise `:ro` tree ·
+> or doing nothing and **declaring it**, which still closes the worst defect — today a declared scope
+> fails **silently**. ⚠ §4: weigh this together with cross-PC/team state sync, never before it.
 
 Same axis as [ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md):
 `claude_access` governs *authoring*, while Claude Code's **runtime state** must persist. ADR-0055
@@ -2047,3 +2067,253 @@ the fourth site now does). Options: (a) leave the two-arm lint as shipped and ac
 whole class by construction, including shapes no lint models. Note (c) also answers the *first* open
 question above (should the host suite be a gate?) in a cheaper way than a full host run, though **not
 the same way**: a parse sweep proves the suite can be *read* on 3.2, never that it *passes* there.
+
+---
+
+## FI-47: packs cannot ship `*.template.md` instantiated at install, with declared parameters
+
+**Status**: 📝 Note — to design (raised 2026-08-04 by an external adopter line running the
+`core-dev-framework` pack on real projects). Input persisted verbatim at
+[`packs/analysis/input-pack-templates-and-scope-resolution.md`](packs/analysis/input-pack-templates-and-scope-resolution.md)
+§2–§3 and §5. **Block C, stage C1** on the [roadmap](roadmap.md) — and a declared **prerequisite of
+FI-48**, not a preference.
+
+**Context.** A pack ships `knowledge` / `skills` / `agents` / `rules`. Anything needing a per-adopter
+value is shipped as *"after installing, copy this template and fill it in"* — and that instruction
+belongs to the rule class that fails.
+
+**The measured argument, which is the reason this is a design item and not a convenience.** On real
+adoption of the pack, two classes of rule behaved differently: a rule prescribing the **form of an
+artefact the agent is already producing** was followed reliably (7 of 7 measured cases); a rule
+requiring the agent to **stop and take an extra step before proceeding** is the class that fails, and
+fails badly (one case at 83 % violation, another with three violations in a single session).
+Instantiation at install moves the object from the second class to the first: it becomes something the
+system **produces**, not something a human must remember.
+
+**The objects that already need it are four, and one does not come from the pack** — which is the
+decisive clue that the missing layer is cco's, not the pack's:
+
+| Object | Parameterizes | Typical scope | Origin |
+|---|---|---|---|
+| `project-profile` | which decisions require a human (autonomy) · branch strategy · remote policy · PRs required | pack's, with more specific overrides | pack line |
+| `maintenance-policy` | the project's maintenance policy | project | **already in the pack**, today copy-by-hand |
+| `settings.json` | `permissions` + `PreToolUse` hook for read-only roles | project | pack line (opt-in) — see FI-48 |
+| **`language`** | language of **code**, **documentation**, **communication** | global, project override | **pre-existing in cco**, today handled through template interpolation |
+
+A fifth candidate is already named: **PR required**, for adopters on rulesets with mandatory pull
+requests.
+
+⚠ `language` also has a standing roadmap note proposing it move into the Level-A/C injection model and
+retire its template path. **Decide the two together** — they are the same question seen from two sides.
+
+**Constraints the design must not rediscover** (input §2): the instance does **not** live in the pack
+(mounted `:ro`, and a reinstall would overwrite the user's answers) · the instantiation scope is the
+scope the pack is active in · override on a more specific scope through a dedicated post-install
+command · repo-native (`<repo>/.claude/`) is a valid home but loads **on demand**, so a decision taken
+before the first read was never governed by it, and a multi-repo project can hold two peer policies
+with no criterion between them · **an instantiated template is a user file** and a pack update must
+never overwrite it silently.
+
+**Parameters and prompts** (input §3): each template declares its parameters and how to ask for each ·
+**every default equals current behaviour**, so pressing enter throughout changes nothing · prompts
+skippable non-interactively · re-runnable on an existing instance · a template can mark a cell as
+**structurally not a parameter** and state the reason beside it · a template can declare its preferred
+instantiation scope.
+
+**Effort**: Med–High.
+
+---
+
+## FI-48: a pack cannot carry `permissions` and `hooks` — the only real enforcement it could ship
+
+**Status**: 📝 Note — to design (raised 2026-08-04, same line as FI-47). Input persisted verbatim at
+[`packs/analysis/input-pack-enforcement-transport.md`](packs/analysis/input-pack-enforcement-transport.md).
+**Block C, stage C2**; depends on **FI-47**.
+
+**The ask.** Not a new channel — the project-scope channel **already exists and is empty**
+(`<repo>/.cco/claude/settings.json`). The ask is that a pack may declare `permissions` and `hooks`,
+that cco composes them into the settings of the scope the pack is active in, and that the pack may
+ship the hook scripts alongside the rules that invoke them.
+
+**Verified at the source** — these constrain the *shape* of what cco transports; a transport that
+ignores them ships an inert rule:
+
+- Rules evaluate **deny → ask → allow**, first match, and *"specificity does not change the order"*;
+  a **deny rule cannot carry allowlist exceptions**. So *"write only inside your own directory"* is
+  **not expressible with deny rules alone**. The documented form for "broad permissions, targeted
+  blocks" is **broad allow + a `PreToolUse` hook that denies**.
+- `PreToolUse` **runs inside subagents** and its input carries `agent_type` / `agent_id` — present
+  only inside a subagent. A rule **per role and per path** is exactly what a pack defining roles needs.
+- Two syntax traps already paid: a **path rule on `Write`** is accepted and **never consulted** (write
+  `Edit(...)`, which covers every modifying tool); and `/path` is **not absolute** — it anchors to the
+  settings source, so the absolute forms are `//path` or `~/path`.
+
+**Measured on the field 2026-08-04** (claude 2.1.221, fresh headless sessions, repeated for
+determinism) — this was a stated precondition, because everything above came from documentation:
+
+| Question | Measured |
+|---|---|
+| Hook denies in normal mode | yes |
+| ⭐ **Hook denies under `bypassPermissions`** | **yes — blocked 2/2**, with a `mode=bypassPermissions` log line |
+| Hook sees `agent_type` and blocks **inside** a subagent | yes |
+| Covers `Bash`? | `echo >`, `sed -i`, `printf >` denied; `dd of=`, `truncate` and **any interpreter** pass |
+| An `ask` rule prompts under bypass | yes; `Bash(git push *)` also covers a bare `git push` |
+
+⭐ is the decisive row **for cco specifically**: cco launches every session with permissions skipped.
+Had the hook not held there, only the `ask`/`deny` half would have been worth transporting.
+
+**The hard question the design owes — composition.** Markdown rules concatenate; `settings.json` is a
+structured object and two packs carrying one must be **composed**. The existing *last pack in the list
+wins, with a warning* rule would be **worse than the problem**: a pack overwriting another's `deny`
+rules removes them. Starting point: `deny` **union always** · `ask` union · `allow` union **with a
+warning** · `hooks.<event>[]` concatenated by matcher group; conflicts made **visible**, never silently
+resolved.
+
+**The mechanical detail not to underestimate — where the hook script lives** (input §3.1). A
+`type: command` hook points at an executable. Ship the rule without the script and the rule is broken;
+ship the script and it lives in the pack's **read-only mount**. Open: can `command` point at the pack's
+mounted path, and is that path stable across sessions? What does `$CLAUDE_PROJECT_DIR` resolve to under
+cco? Is the exec bit preserved through the mount? Is a declarative alternative (`type: prompt`, or a
+predicate declared in `pack.yml`) needed so simple cases need not ship code?
+
+⚠ **A hook with state or a log needs a declared writable destination** — `.claude` is `:ro`. The shape
+already exists: the STATE treatment the lead's auto-memory has.
+
+⚠ **The trap that nearly invalidated the field test, and belongs in any hook template cco ships**: the
+test hook `printf`-ed to its log **before** evaluating the decision, under `set -euo pipefail`. With
+the log unwritable (full disk, permissions, `:ro` mount) it aborted with exit 1 — **fail-OPEN**, with
+no trace. Run that way, every test would have reported "passed" from a hook that never reached its
+decision line. **An enforcement hook evaluates its deny before it logs, and logging is never fatal.**
+
+⚠ **Present whatever ships as surface reduction, not a guarantee.** The arbitrary subprocess — a script
+that writes files, launched from `Bash` — is not covered; only an OS-level sandbox closes it, and the
+measurement bypassed the hook in two moves by writing a script inside the permitted directory and
+running it from there. The originating pack had to withdraw four claims that promised more than the
+mechanism held, and they had been written to the **model**, in its system prompt — the most effective
+way to build false confidence.
+
+📝 **A separable doc item, worth taking even if nothing else is**: cco already provides a guarantee it
+states nowhere. `<repo>/.claude` and `<repo>/.cco` are mounted `:ro`, so **a session cannot tamper with
+its own hooks, agents, skills and settings**. That is enforcement at the **OS** level, therefore
+independent of permission mode — it holds under `bypassPermissions` — and **not bypassable by a
+subprocess**, i.e. precisely the route no hook can close. It is also the strongest argument for pack
+transport: a `settings.json` mounted by cco is *harder* to neutralize than one copied into the repo by
+hand.
+
+**Not being asked for**: the sandbox (OS-level, outside the pack format — name it as the boundary
+beyond which hooks do not reach) · that cco impose an enforcement default · that a pack write into the
+global or managed scope (the pack's own scope is sufficient, and is the sensible security boundary).
+
+**Effort**: High.
+
+---
+
+## FI-49: a per-project custom Docker image can be declared but has no lifecycle
+
+**Status**: 📝 Note — to design (raised 2026-08-04 from real use on an adopting project that needs extra
+system packages). **Block A, item A2** on the [roadmap](roadmap.md).
+
+**What exists** (code-grounded): `project.yml` accepts an `image:` key
+(`templates/project/base/project.yml:113`, commented in the base template) and `cco start` honours it
+(`lib/cmd-start.sh:1682`, `image: ${docker_image}`). **What does not exist** is everything around it —
+`lib/cmd-build.sh` has no project awareness at all.
+
+**Three sub-problems, in the order they hurt.**
+
+1. **Maintenance is manual and silent.** The docs state that after every base `cco build` the derived
+   image must be rebuilt too; forget, and the session runs an old entrypoint with **no signal**. Today
+   that means hand-running `docker build -t <project-image> -f <repo>/.cco/Dockerfile <repo>`.
+   Directions to weigh: `cco build` also rebuilding the derived images it knows about · an explicit
+   `cco build --project <name>` · a lazy prompt at `cco start` when the custom image is older than the
+   base.
+2. **A missing image produces no actionable error.** A project declaring an image nobody built should
+   say so and name the fix (*"requires a custom image not found — build it and restart"*), not fail
+   deep inside compose.
+3. **The `setup.sh` documentation contradicts itself** on which user runs it: the generated script
+   header says *as root*, the guide says *runs as user `claude` — cannot install system packages*, and
+   the decision matrix then recommends that same file for *"an apt package for one project (light)"*.
+   ⚠ Settle this **by running it**, not by reading further — and do it first, because the answer
+   changes what the guide should recommend for 1 and 2.
+
+**Effort**: Low–Med (3 is Low and gated on a measurement; 1 is the design question).
+
+---
+
+## FI-50: resources can only be published from the store or an archive, never from a directory
+
+**Status**: 📝 Note — to design (raised 2026-08-04). **Block C, stage C4**; adjacent to workstream F.
+
+**Context** (code-grounded): `cmd_pack_publish` (`lib/cmd-pack.sh:1262`) takes a pack **`<name>`**,
+resolved against the personal store; the same shape holds for templates. So the publishable source is
+a store resource or an archive — **publishing an arbitrary working directory straight to a remote is
+not supported**, which is exactly the shape a team wants when it keeps shared config in a repo and
+wants to push it to the sharing remote.
+
+**The adjacent decision, which should be taken with it**: what the **target** of a published resource
+is — a sharing **repo** (today's model) or a **package** (the npm channel cco itself already uses).
+This bears directly on workstream F: the opinionated defaults leaving the core need a distribution
+channel, and choosing it per-resource-kind after the fact would fragment the model.
+
+**Effort**: Med. ⚠ Re-derive the boundary first: `pack publish`, `template publish` and any future
+`config publish` share `_pack_sync_merge` and the sync-before-publish contract — treat them as one
+surface, not three.
+
+---
+
+## FI-51: two homonymous config files at different scopes are both in context, and indistinguishable
+
+**Status**: 📝 Note — to analyze (raised 2026-08-04; **measured**, not inferred). Input persisted at
+[`packs/analysis/input-pack-templates-and-scope-resolution.md`](packs/analysis/input-pack-templates-and-scope-resolution.md)
+§1.1 and §4. **Block C, stage C3**. **FI-32 is the detection half of this item** and ships earlier, in
+Block A.
+
+**The measurement**, from a real session (August 2026, a project with one pack installed):
+
+| File | `~/.claude/rules/` (global) | `/workspace/.claude/rules/` (project, from the pack) |
+|---|---|---|
+| `documentation.md` | ✅ user's | ✅ pack's |
+| `git-practices.md` | ✅ user's | ✅ pack's |
+| `workflow.md` | ✅ user's | ✅ pack's |
+| `language.md` | ✅ | — |
+| `testing.md` | — | ✅ |
+
+**Three name collisions out of four files**, both versions loaded into context. Markdown rules have
+**no merge semantics** — there is no `settings.json` fusing them, it is concatenated text. The
+precedence exists **only as a sentence** in the managed `CLAUDE.md` (*"Project-level rules take
+precedence over global rules"*) — a rule addressed to the model, not a mechanism.
+
+⚠ **It has already falsified an analysis**: in that same session an observed behaviour was being
+attributed to the pack's rules when the governing rule may have been the user's global one — two
+homonymous files, both in context, no way to say which had governed.
+
+**Three directions, not mutually exclusive** (input §4.1):
+
+| # | Direction | Force | Cost / risk |
+|---|---|---|---|
+| **1** | **Resolve at mount.** cco already materializes the rule set — a pack's rules appear in `/workspace/.claude/rules/` without being in the user's project source — so it already owns the control point: on a **name collision** it could mount only the most specific version | **High** — real enforcement; the agent never sees two conflicting rules | Rules are not key-value: two homonymous files *might* both be wanted. Restrict to **name** collision, which is the detectable case — and the real one (3 of 4) |
+| **2** | **Mount everything, generate a precedence header** into the session preamble, as cco already does for the knowledge list | Medium | Still prose, but **framework-generated**, so it cannot diverge from the real state the way a hand-written managed rule can |
+| **3** | **`scope:` frontmatter** on every config file (`global` \| `project` \| `repo` \| `managed`) | Low | A **declarative** mitigation: makes the ambiguity *readable*, does not remove it |
+
+**Direction 3 is needed even if 1 is taken**: when two files legitimately coexist, the reader still has
+to tell where each came from.
+
+⚠ **Direction 1 needs a proof on a real configuration as a precondition, not a follow-up.** In the
+originating line, three claims about enforcement mechanisms turned out false because they were deduced
+from documentation and never executed.
+
+**The repo-native case, and the clause that makes it safe** (input §4.2). A repo's native `.claude/`
+loads when the agent reads a file in that directory — which *looks* perfectly aligned with intent, but
+the mechanism is weaker than the intent in two ways: the trigger is *"reads a file there"*, not *"the
+session concerns that repo"*, so a decision taken at session start, during planning, or when opening a
+gate falls **before** the policy arrives; and a cco project can mount several repos, so two repos with
+their own override give two peer policies and no criterion between them. The mitigation found on the
+pack side, which **cco can absorb and do better**: the project-scope file **lists which repos carry an
+override** — the content stays in the repo, what becomes always-in-context is its **existence**. cco
+knows which repos are mounted and which carry a `.claude/`, so it can *generate* that list — which
+moves the clause from the rule class that fails to the one that works.
+
+⚠ **Fix the vocabulary before designing**: "scope" is used for two different things — the recursive
+**scope level** (task · feature · module · app) and the **configuration scope** (global · project ·
+repo-native · managed). In one sentence they read as the same word.
+
+**Effort**: Med.
