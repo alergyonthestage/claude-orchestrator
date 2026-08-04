@@ -11,6 +11,7 @@
 
 ## Contents
 
+- [Cycle 1 — agent↔cco access, the acceptance rounds, and `v0.6.0`](#cycle-1--agentcco-access-the-acceptance-rounds-and-v060)
 - [Decentralized-config refactor — status snapshot](#decentralized-config-refactor--status-snapshot)
 - [Decentralized-config refactor — phase-by-phase log](#decentralized-config-refactor--phase-by-phase-log)
 - [Sprint Roadmap — prioritization snapshots](#sprint-roadmap)
@@ -19,6 +20,106 @@
 - [Completed](#completed)
 - [Long-term / Exploratory](#long-term--exploratory)
 - [Declined / Won't Do](#declined--wont-do)
+
+---
+
+## Cycle 1 — agent↔cco access, the acceptance rounds, and `v0.6.0`
+
+> **Closed 2026-08-04 with the `v0.6.0` release.** Condensed here on that date, when the live roadmap
+> was restructured around the next four blocks. **This is the navigable summary, not the record**: the
+> per-stage records it points at are complete, untouched, and remain the source of truth. Git holds
+> the previous roadmap verbatim.
+
+### What the cycle was
+
+Workstream **B** (session config capability model) and its follow-on **B2** (agent↔cco access &
+context) turned "how much of its own configuration may a session see and change" into a designed
+model, then spent three acceptance rounds proving the *enforcement* matched it.
+
+**The model** — three orthogonal knobs (`claude_access`, `cco_access`, `show_host_paths`), the
+`(G,Pc,Po)` triple with named levels as preset sugar, symmetric read/write scoping, a real privilege
+boundary around the internal store, and the wrapped in-container `cco`. ADRs
+**0036 · 0041 · 0042 · 0043 · 0044 · 0045 · 0046 · 0047 · 0048 · 0049**, plus the naming pair
+**0050/0051**, the index cluster **0052/0053**, framework-owned mountpoints **0054**, Claude Code
+runtime state **0055**, and the availability model **0056**.
+
+### The three acceptance rounds
+
+| Round | Verdict | What it exposed | Fix cycle |
+|---|---|---|---|
+| **e2e v2** (2026-07-16, 7 sessions) | **NOT ACCEPTED** | Enforcement fidelity, not model: subsystems declaring `rw` mounted `ro`, one write path faked success, one read verb applied no scoping. 17 roots | **cycle 1** — RC-17 · RC-1 · RC-6 · RC-2 · RC-3 · RC-4 |
+| **e2e v3** (2026-07-20, 5 sessions) | **NOT ACCEPTED** | One root, three 🔴: the STATE bucket was bind-mounted as individual **files**, so its container-local parent was `root:root` and no sibling temp could be created. A mount-composition defect the hermetic suite cannot see by construction | **cycle 1.1** — S1…S9 |
+| **e2e v3.1** (2026-07-28, 4 sessions) | **NOT ACCEPTED** | Everything cycle-1.1 set out to fix **held live**. What failed was how the system *narrates itself*, plus three composition roots found off-matrix. 24 findings → 8 defects with one meta-root | **cycle 1.2** — lanes L1…L5 |
+
+**The meta-root of v3.1, and the reason cycle 1.2 was the last one**: *a predicate every call site is
+free to compute for itself will diverge, and the divergence ships.* The three layers that failed
+(availability vocabulary · mountpoint ancestry · YAML section boundary) were exactly the three with
+**no invariant + lint** — while every layer that had one (INV-S1…S6, INV-IDX, the tty gate) held under
+direct attack. Cycle 1.2 therefore fixed **at the root, not by report**: three invariants with lints
+plus two contracts, and the eight findings closed as a consequence.
+
+### The invariants the cycle left behind
+
+They are the durable output, more than any single fix: **INV-STATE** · **INV-IDX** · **INV-S1…S6**
+(store write cascade) · **INV-S3b** (exit code follows the failure's nature, not the module) ·
+**INV-ENV** · **INV-AVAIL** (+ D5 per-invocation notices) · **INV-DESC** (the three registries of one
+signal family stay in correspondence) · **INV-MP** (framework-owned mountpoints) · **INV-FLOOR** ·
+**INV-YAML** · **INV-B32** (no heredoc inside a command substitution) · the EXIT-trap sentinel.
+
+### Release gates G0…G6
+
+All six closed. The runbook
+[`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md)
+generalises and is kept as the template for the next release. Evidence at G5: macOS host suite
+**1626/0/1626** with the `Results:` line present — the cycle's first complete host run, and the first
+positive proof that the seven in-container failures are host-only (1619/7 of the same tree); unmasked
+in-container 1616/9 of 1625; npm-pack hygiene clean; build + provenance + dogfood green.
+
+`v0.6.0` was a **minor**, not a patch: three migrations (`global/017`, `project/014`, `project/015`),
+removed and renamed verbs, and an **image-level** change — the ADR-0047 privilege boundary lives in
+the Docker image, so `npm update` alone does not deliver it.
+
+### The lessons that generalise beyond this cycle
+
+Carried forward into the roadmap's *Standing operational notes*; recorded here with their origin.
+
+- **A green check that measured nothing** is the cycle's signature failure, and it recurred twice: a
+  host log reading `0 failed` **with no `Results:` line** was an abort, and a subcommand-coverage check
+  reported "no gaps" because its extraction returned nothing. *Prove a check's input is non-empty
+  before believing its PASS.*
+- **A named list is a lower bound** — three instances. The sharpest: INV-B32 itself did not scan
+  `scripts/`, where `scripts/release.sh` runs on the maintainer's macOS bash 3.2.
+- **A fix at an unreachable site is indistinguishable from a fix** until something makes it run (S7's
+  prescribed site was dead code, filtered one function upstream). The guard, written first and watched
+  failing *with the fix in place*, is what caught it.
+- **A remedy naming an action that cannot succeed from where the message prints** is a fix that reads
+  correct and strands the reader (S8). Its worst form: the managed rule injected into every session
+  *prescribed* a verb D-V3-1 had just made host-only.
+- **The defect was never the message; it was the discarded status** (S2b) — the primitive printed
+  *"Nothing was changed"* loudly and correctly, and the verb still exited 0 with a tick.
+- **A mount-composition defect is invisible to the hermetic suite by construction** — four recurrences
+  (RC-17, the R1 mount shape, FI-31, R-D). Only a real container start after `cco build` proves it.
+- **The container is NOT structurally blind to bash 3.2** — a premise recorded across three documents
+  and measured false at the end: the Docker socket reaches the public `bash:3.2` image.
+- **Look for the deferrals, not only the errors.** The finding with the most consequences in the whole
+  pack line sat inside a sentence that said *"designing it is not the object of this analysis"*.
+  A deferral is an error that has not been committed yet.
+
+### Where the detailed records live
+
+Nothing below was condensed; each is complete where it sits.
+
+- Consolidated review verdicts: `configuration/agent-cco-access/e2e-review/results/`
+  (`consolidated-review.md`, `-v3.md`, `-v3.1.md`)
+- Staged fix plans, per-stage: `e2e-review/fix-design-v2/`, `fix-design-v3/`, `fix-design-v3.1/`
+  (`00-plan.md` in each; the v3.1 plan's §7 is the **acceptance log** for G3)
+- The root-cause analyses: [`engineering/analysis/invariant-gap-audit.md`](engineering/analysis/invariant-gap-audit.md)
+  (the meta-root) and [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md)
+  (the class whose remainder is tracked as FI-24)
+- The decisions themselves: the ADRs listed above, each in its domain's `decisions/`
+- The CLI-surface audits: `cli/reviews/2026-07-02-…` and `cli/reviews/2026-07-31-cli-surface-audit.md`
+- Deferred out of the cycle into [improvements.md](improvements.md): **FI-19 · FI-24 · FI-25 · FI-26 ·
+  FI-33…FI-43** (FI-40/42/43 carried into Block D)
 
 ---
 

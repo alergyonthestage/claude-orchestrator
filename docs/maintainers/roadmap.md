@@ -1,1494 +1,538 @@
 # Roadmap
 
-> The live, forward-looking plan for claude-orchestrator. Detailed chronology,
-> completed sprints, and the known-bug log live in
-> [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
-> lives in [improvements.md](improvements.md).
+> **The living single source of truth** for status and priorities. Cross-cutting by nature — it spans
+> every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
+> `/review-docs`, and at `/handoff`.
 >
-> Last updated: 2026-07-28.
+> **Last updated: 2026-08-04** — the block order below was ratified by the maintainer on this date
+> and replaces every prior sequencing note.
 
-## Current status
+## The planning documents — and why there are three
 
-The **decentralized in-repo config** refactor is **build-complete**: design closed
-(ADRs 0005–0028, principles P1–P18), and Phases 0–5 are all shipped on
-`feat/vault/decentralized-config` (suite **943/0**; commits local, pushed from the
-maintainer's Mac). Project config now lives in `<repo>/.cco/`; the central vault and
-the profile/`@local` machinery are gone; personal config lives in `~/.cco` (global Claude
-config flattened to `~/.cco/.claude/`, ADR-0028); machine-local state/cache/data live in
-hidden XDG buckets. The work is now in the **pre-merge review cycle**: the implementation
-review, the documentation review (reorg + coherence sweep), the pre-merge **flatten**
-(`~/.cco/global/.claude` → `~/.cco/.claude`, ADR-0028), the **refactoring/optimization
-review** (step 3), the **UX-UI review** (step 4, ADR-0029), and the **comprehensive pre-e2e
-review** (step 5, suite 943/0 → **945/0**) are all done. **Dogfooding e2e on the Mac (step 6) is
-complete and validated by the maintainer** — host runs of real projects surfaced fix rounds (round 2 =
-ADR-0032 pack/llms coordinate coherence; **round 3** = first `cco start` of claude-orchestrator itself).
-**Round 3 is complete** — S1 (resolution surface + index normalization, ADR-0033 + migration `016` +
-changelog #21), S2 (migration completeness, ADR-0009 fwd-annot), and S3 (`join` Journey E +
-`forget --purge`, ADR-0034 + changelog #22/#23) all shipped, suite **1005/0**. A follow-on pre-merge
-**`cco sync` UX refinement** (ADR-0035: cwd-anchored `--from` target + `--all`; summary-first diff with
-`--dry-run --dump → .cco/.tmp/`) landed next, suite **1010/0**. **v1 is merged to `develop`/`main`
-and released on npm** as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco)
-(`0.5.0` → `0.5.1` → `0.5.2`, 2026-06-30 → **`0.6.0`**, 2026-08-04; CI OIDC trusted publishing).
+The pack convention is **exactly one `roadmap.md`**. The other two are not competing plans; each is a
+different document class, and the roadmap links out to both.
 
-▶ **`0.6.0` is RELEASED — cycle-1.2 is closed.** The minor bump, not a patch, because the release
-carries three migrations (`global/017`, `project/014`, `project/015`), removed and renamed verbs, and
-an **image-level** change: the ADR-0047 privilege boundary lives in the Docker image, so
-`npm update` alone does not deliver it. **The upgrade is three commands** —
-`npm update -g @claude-orchestrator/cco && cco update && cco build` — because `cco update` has never
-rebuilt the image and nothing else does either; a session started without the rebuild silently runs
-the previous release. What shipped: ADR-0055 (Claude Code runtime state + mountpoint ancestry),
-ADR-0056 (availability model + index session axis), INV-YAML, the EXIT-trap sentinel, INV-B32, the
-FI-41/45/46 fixes, and the living-docs coherence sweep. Release notes carry the FI-42 known-issue
-verbatim (G6 step 5) and the three upgrade commands (step 4b).
-
-**Release evidence** (G5, all four items): macOS host suite **1626 passed / 0 failed / 1626 total**
-with the `Results:` line present — the cycle's first complete host run, and the first positive proof
-that the seven in-container failures are host-only (1619/7 of the same 1626 in-container, mask on) ·
-unmasked in-container 1616/9 of 1625 · npm-pack hygiene clean · build + provenance + dogfood green.
-
-The earlier cut, **`0.5.2`**, shipped the user-facing **npm-install docs cutover** (npm is now the
-primary install path; clone demoted to "from source") and the top-level **`cco --version`/`--help`**
-flags (FI-11).
-Intentional post-v1 deferrals (not blockers): the
-`cco config protect` helper (docs-only today), pack/template migration-scope iteration in `cco update`
-(forward-compatible stub — the `migrations/{pack,template}/` dirs are empty), interactive
-internalize-as-cache prompts, `cco project internalize` (Case-C), and cross-PC memory/state sync.
-
-**Workstream B (session config capability model) is now implementation-complete** (all 7 steps,
-2026-07-01) on `feat/config-access/capability-model` — three access knobs + wrapped-`cco`
-container-operator mode + built-in presets + R1 unified `workspace.yml` (ADR-0036/0041; changelog
-#28–31; suite **1095/1**, the 1 fail pre-existing env-only). Additive, non-gating; only release
-housekeeping remains (merge into `develop` + push, both from the Mac). See the B row below.
-
-### Path to release — sequenced workstreams
-
-**A gated the merge (✅ done); E/B/C/D run on `develop` after it; the release is
-`develop → main` + npm publish.** **C (npm packaging) is ✅ RELEASED** —
-`@claude-orchestrator/cco` is live on npm via CI **OIDC trusted publishing**
-(no stored token; `0.5.1` 2026-06-30, then **`0.5.2`** with the user-docs npm cutover +
-`cco --version`/`--help`; the OIDC publish debug handoff was removed after release).
-**E** is ✅ done + host-e2e validated. **Remaining workstreams — all additive,
-non-gating: {B, D, F}** (F sequenced after C). Release housekeeping: `main`/`develop`
-reconciled (✅, both at `0.5.2`); still open — validate `npm i -g @claude-orchestrator/cco`
-on a Mac (then `git push --follow-tags` to publish `0.5.2`).
-
-| # | Workstream | When | Gating? | Handoff |
-|---|---|---|---|---|
-| **A** | **Docs/CLI-reference cutover sweep** — bring all user + agent-facing docs to the implemented truth (the built-in tutorial/config-editor mount and consume them). **✅ done**: agent-facing doc tables remapped to the reorg tree + store layout flattened; cli.md code-grounded (0 stale/0 wrong, 11 missing flags added); removed-concept token probe clean (only migration/affirmation hits); shipped scaffold/setup doc pointers fixed; suite **1010/0**. | **PRE-MERGE — ✅ done** | **Merge gate (cleared)** | — (completed; handoff removed in post-merge cleanup) |
-| **B** | **config-editor/tutorial access scope** → generalized into a **session config capability model**. **✅ DESIGN DONE (2026-07-01)** on `feat/config-access/capability-model`: two axes (A `.cco`, B `.claude`) + read surface (R1 self-info, R2 global-read) + managed floor; three knobs (`claude_access`, `cco_access` granular `edit-project/global/all`, `show_host_paths` default on); wrapped-`cco` in-container (whitelist + container-operator mode, tokens host-only, no logic duplication); caller-context signal (D8); built-ins as presets; config-editor `--all`/`--project` (only `<repo>/.cco`). **ADR-0036** (model) + **ADR-0041** (R1) Accepted; config-editor + tutorial design docs rewritten. **Implementation COMPLETE (2026-07-01) on `feat/config-access/capability-model`** — **all 7 steps done**: (1) caller-context signal D8; (2) three-knob access resolution + precedence + `--enable-config-edit` alias; (3) Axis-B/Axis-A mount generation driven by the knobs (generalized `_committed_ro`); (4) **wrapped-`cco` shim + container-operator mode** (`_cco_container_operator` guard, whitelist/blocklist in `bin/cco`, Dockerfile bake to `/opt/cco`, bucket mounts DATA/CACHE-per-level + STATE index-only ro + tokens/secret-file masking; changelog #29; ships R2); (5) **built-in presets** (config-editor `all`/`edit-all` + `--all`/repeatable `--project`, tutorial `none`/`read`, both emitting the operator env; built-in docs rewritten to the wrapped-`cco` model; changelog #30; also fixed a pre-existing tutorial-mount bug — `source:`→name-based); (6) **R1 self-info (ADR-0041)** — unified `workspace.yml` absorbs `packs.md` (`knowledge`+`llms` sections) + gated `path_map` (`show_host_paths` default on); net cut (no dual-emit), all consumers migrated (hooks + `init-workspace`); changelog #31; doc-sweep. Suite **1095/1** (the 1 fail pre-existing env-only). **R1-D5 completeness gate PASSED via live host dogfood (2026-07-01)**: after `./bin/cco build && ./bin/cco start` from the branch, the container's baked hook renders `knowledge`/`llms` from the new `workspace.yml` (no `packs.md`), `path_map` carries the real host path, and `.cco` is `:ro` under `cco_access=none` (edit-protection confirmed). (7) **docs polish + host cleanup** — stale committed `.cco/claude/packs.md` removed via `git rm` on host (dead file, no migration needed); grep-audit confirms no `packs.md` survives in shipped code beyond the intentional `rm -f` stale-cleanup; forward-annotation added to `adr-0014` (→ ADR-0041 R1). **All 7 steps done — only release housekeeping remains: merge into `develop` + push (both from the Mac).** Additive. | post-merge, on `develop` | No (additive) | design brief: [`config-editor-access-design-handoff.md`](configuration/decentralized-config/config-editor-access-design-handoff.md) · impl: [`config-access-capability-model-impl-handoff.md`](configuration/decentralized-config/config-access-capability-model-impl-handoff.md) |
-| **B2** | **agent ↔ cco access & context** — follow-on to B, surfaced by host dogfooding. Reframes agent awareness + config read/write as a **three-level model** (A hook context injection / B wrapped-`cco` + read scoping / C managed rules) and **retires the `workspace.yml` file**. **✅ DESIGN APPROVED (2026-07-02)** — [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md) + [design](configuration/agent-cco-access/design.md). Ratified decisions: normal default `cco_access=read-project` (was none); full symmetric read scoping (`read-project/global/all`); config-editor **broad default** + `--project` repo-aware + `--repo`; `cco docs` at any read level; descriptions single-sourced in `project.yml` (optional `repos[]/extra_mounts[].description`), rendered into injected context (no file, no round-trip); `init-workspace` split (keeps CLAUDE.md, drops workspace.yml write-back). **Corrects a step-7 error**: legacy projects carry stale committed generated files (`workspace.yml`/`packs.md`/`scheduled_tasks.lock`) in `<repo>/.cco/claude/` → **migration 014 + `.gitignore`** required (the earlier "no migration needed" was wrong). Additive schema (changelog #32) + cleanup migration. **✅ IMPL + REVIEW COMPLETE (2026-07-02)** (7 steps + 4.5, dependency-first; stacked on B; only merge→develop + push from the Mac remain). **Step 1 ✅ DONE (2026-07-02, `0e6bc87`)**: symmetric read scoping (`read-project/global/all`, `read`→read-all alias), normal + tutorial default `read-project`, operator shim gates `template`/`remote list` behind `read-global`, scope-aware `usage()` in container-operator mode. **Step 2 ✅ DONE (2026-07-02, `8183b4a`)**: Level-A hook injection replaces `workspace.yml` (net cut) — session-info computed host-side, injected as `CCO_SESSION_CONTEXT`/`CCO_SUBAGENT_CONTEXT` env (base64) via new `lib/session-context.sh`; `lib/workspace.sh` retired; hooks decode+merge; `:ro` overlay gone; `init-workspace` reads injected context/`project.yml`, Step-6 write-back dropped; INV-2/3/4 honored; tests on the new parity surface; suite `1100/1` (pre-existing env-only fail). `read-project` mount-narrowing still open (re-eval with Step 4). **Steps 3–7 + 4.5 ✅ ALL DONE (2026-07-02)**: (3 `a098719`) `repos[]/extra_mounts[].description` rendered into Level A (changelog #32); (4 `9e4535f`) config-editor broad-default + `--project`(repo-aware)/`--repo` + **`read-project` mount-narrowing to referenced packs**; (4.5 `62a166b`) **`lib/access-scope.sh`** — unified env & access-scope layer scoping read-verb OUTPUT ([ADR-0043](cli/decisions/0043-unified-cli-environment-access-scope.md); `CCO_PROJECT_PACKS/LLMS` membership signals; count-only stderr notice; changelog #33); (5 `027c345`) managed `cco-config-interaction.md` (access-conditional) + Level-A read-project awareness; (6 `61c8503`) **migration 014** purges committed generated artifacts + `.gitignore` (single-source writer `_cco_write_project_gitignore`); (7 `c022b04`) docs cutover + `workspace.yml`-file retirement. **✅ CORRECTNESS REVIEW DONE (2026-07-02, commits `d8e6848..b33f458`)** — 5-domain cross-verified; no blockers; 2 MAJOR fixed (INV-B llms name-leak; stale `project.yml`/template access model) + MINORs (changelog #34). Suite **1128/1** (pre-existing env-only fail). **CODE/DOCS COMPLETE — only merge → `develop` + push (both branches, from the Mac) remain.** | post-merge, on `develop` (stacks on B) | No (additive) | [design](configuration/agent-cco-access/design.md) |
-| **C** | **npm packaging & distribution** — ship `cco` as an npm package. **ADR-0037 + design doc.** **✅ IMPLEMENTED 2026-06-30** on `feat/packaging/npm-distribution` (suite **1036/0**): `package.json` `@claude-orchestrator/cco` + `files` allowlist (`npm pack` clean 182 files; Linux `npm i -g` validated); `USER_CONFIG_DIR` **split** → STATE runtime (read-only `FRAMEWORK_ROOT` fix D5); **read-only publish-gate test** (`tests/test_readonly_framework.sh`, caught+fixed a cp-mode refresh bug); `docs/users`-only via allowlist; **`cco docs`** (D9, changelog #25); **`cco update` provenance-aware** (D8, changelog #26); `scripts/release.sh` + `check-pack-hygiene.sh` + CI `release.yml` (publish on tag **or manual `workflow_dispatch`**, via OIDC) + Pages `pages.yml`. settings.json decomposition resolved (D10). **✅ RELEASED 2026-06-30: `0.5.1` published to npm via CI OIDC trusted publishing — no stored token; the earlier NPM_TOKEN plan was replaced by OIDC trusted publishing (debug handoff removed after release).** **Follow-on `0.5.2` (2026-06-30)**: user-facing npm-install docs cutover (README/installation/cli/project-setup → `npm i -g` primary, clone demoted to "from source"; CONTRIBUTING gains local-dev + release/publishing) + top-level `cco --version`/`-v` and `--help`/`-h` (FI-11, changelog #27); `main`/`develop` reconciled, tag `v0.5.2` cut locally (push from the Mac publishes). Deferred: image-tag-by-version (v1 keeps `:latest`); macOS `npm i -g` validation (on a Mac). | post-merge, on `develop` | **Release gate** | [ADR-0037](engineering/decisions/0037-npm-packaging-distribution.md) · [design](engineering/design/packaging-distribution.md) · (handoffs removed — released) |
-| **D** | **`cco project save` — project-config versioning helper** — ergonomic, path-scoped commit of `<repo>/.cco/**` + isolated history. Reintroduces the old `vault save` convenience for the decentralized in-repo model. ADR-0038, additive. Needs its own design session (see below). | post-merge, on `develop` | No (additive) | _design session — see §D below_ |
-| **E** | **Native Claude Code install** — replace the deprecated `npm install -g @anthropic-ai/claude-code` with the official native installer run at first start, into a persistent CACHE-backed mount so Claude auto-updates in-place (no rebuild). Re-implements Rares' `#B2` onto develop's XDG/decentralized architecture. **✅ done + host e2e validated (2026-06-29)** on `feat/docker/native-claude-install` (commits `ebe0e1b` impl+tests, `5f6b975` docs): install home → CACHE `claude-install/{bin,share}` bind-mounted to `~/.local`; config knob `~/.cco/claude-version` (default `latest`, knob outranks the baked default); re-pin via channel marker; `cco build --no-cache` resets the cache; `cco clean --all` leaves it untouched (regression test). **No migration** (purely additive). ADR-0039, changelog #24. Suite **1022/0**. **▶ ready to merge `feat/docker/native-claude-install → develop`.** | **post-merge, FIRST — ✅ done** | No (additive) | (handoff removed — done + resolved) |
-
-Sequence: **A → merge → E (✅) → {B, C, D}; C ✅ RELEASED (`0.5.1` on npm via OIDC,
-2026-06-30) → remaining additive work {B, B2, D, F}** (B2 = agent↔cco access, stacks on
-B; F = opinionated extraction + `cco update` refactor, after C). ADR map: **0036** + **0041** (B — capability model +
-R1), **0042** (B2 — agent↔cco access, ✅ design approved), **0037** (C, ✅ shipped +
-released), **0038** (D), **0039** (E, ✅), **0040** (F). ADR **0042** (B2, ✅ accepted) +
-**0043** (unified CLI env & access-scope, ✅ accepted). Next free ADR = **0055**
-(0044–0054 landed since: the access-model refinements 0044/0046/0047/0048/0049, the session
-registry 0045, the naming/rename pair 0050/0051, the index cluster 0052/0053, and 0054
-framework-owned mountpoints).
-
-#### B2 e2e-review fix — agent ↔ cco access (✅ implemented 2026-07-05)
-
-The B2 host-dogfood e2e review's 9 consolidated roots are **implemented** on
-`feat/config-access/e2e-review` (fix design: `configuration/agent-cco-access/e2e-review/fix-design/`).
-Read/write **symmetric** scope model (edit-project reads at project scope; read-global ≠
-read-all; target-tree write gate); label-based session identity (R1); operator-mode project
-resolver + `cco whoami` introspection (R2/R4/F4); explicit `none` contract + declared-but-
-unresolved markers + Level-A-as-sole-authority hook (R6/R7/R8); shim refusal taxonomy +
-filtered in-container help + 0/2/1 exit codes (R9); `docs/users` baked into the image (R10).
-ADR-0036/0042/0043 forward-annotated; changelog #36. Suite green. **Needs `cco build` +
-re-run of the e2e harness (acceptance gate) before merge → develop + push (from the Mac).**
-
-**Two post-fix follow-ups** (deferred from the fix design overview §6, *pending maintainer approval*):
-- **Internal maintainer CLI reference** — matrix `command × {host, in-container} × cco_access`,
-  seeded by the R5 write-scope table, the R9 refusal taxonomy, and the D8 exit-code convention.
-- **Post-fix UX/CLI-completeness review** — verb intuitiveness/naming; finalizes the F4
-  introspection verb name (`whoami` is provisional; vs `session`; reserve `cco status`?).
-
-#### B2 e2e-review **v2** acceptance — cycle-1 fix (✅ CODE COMPLETE, 2026-07-20)
-
-The v2 acceptance re-review (7 sessions, 2026-07-16) returned **NOT ACCEPTED** — enforcement
-fidelity, not model: subsystems that declare `rw` mounted `ro`, one write path faked success,
-one read verb applied no scoping. Consolidated to 17 roots (`e2e-review/results/consolidated-review.md`);
-cycle-1 fix designs + maintainer decisions **D-M1…D-M11** ratified
-(`e2e-review/fix-design-v2/`). Method: incremental **review → fix → re-review** (D-M7: cycle 1
-ships alone; cycle 2 = RC-5 sweep + RC-7…RC-16, undesigned). Branch
-**`fix/config-access/e2e-v2-cycle1`** (from develop).
-
-Cycle-1 stages (each impl → adversarial revert-check verify): **RC-17** keystone container-operator
-test lane ✅ · **RC-1** nested-config clamp + D-M11 Q-12 escalation close ✅ · **RC-6** config-editor
-target repos ✅ · **RC-2** host-path class (INV-F, D-M2 vocabulary, D-M4 de-elevation) ✅ ·
-**RC-3** store write-path (lib/store.sh cascade layer, INV-S1..S6, E6A-13/E6B-03/04 closed, Q-10-OUT
-fail-fast provenance guard, §6.5 INV-S6 CLASS lint) ✅ — **Q-11 confirmed a §3.8 no-op, already
-closed by RC-2's D-M4 de-elevation** · **RC-4** `path list` fail-closed on the Po axis
-(maintainer-ratified) ✅ · **docs** ADR sweep + changelog #46 + folded test-harness cleanups ✅.
-**All six roots + docs landed; cycle 1 is code-complete.** Suite **1414/9** (the 9 = pre-existing
-FI-19 boundary artifacts, identical set to the RC-3 baseline). RC-4 revert-checked in an isolated
-worktree: all discriminators fail on pre-fix `lib/`.
-
-**Out of session reach — gates the release, not the implementation** (do on the Mac): **all of it
-is now scripted in [`e2e-review/handoff-v3.md`](configuration/agent-cco-access/e2e-review/handoff-v3.md)
-§10 (host runbook)** — FF-merge cycle-1 → develop then `cco build` **from develop** (closes the
-cycle-0 deviation; develop is an ancestor of the fix branch, so the tree is identical); the
-targeted **e2e v3** re-run (V1/V2 RC-4, V3 criterion F, V4 D+E, V5 RC-1-broad+RC-3); the **E6B-04
-pack-rename half-apply scratch reproduction** (🔴 data-loss if confirmed — never yet executed with
-`-y`, now a named gate in handoff-v3 §7); the Linux write-path check-in (D-M6, before develop →
-main); `git push` + `develop → main` only after v3 ACCEPTED. Resume pointer: memory
-[[e2e-v2-review]] + `e2e-review/fix-design-v2/IMPLEMENTATION-HANDOFF.md`.
-
-> **▶ v3 has since run and returned NOT ACCEPTED** — see the cycle-1.1 section below. Cycle 1 was
-> FF-merged into `develop` and the image rebuilt from it (launch rule 0 satisfied), so this section
-> is closed as *shipped-to-develop*, not as *accepted*. `develop → main` is now gated on cycle 1.1.
-
-#### B2 e2e-review **v3** acceptance → **cycle-1.1 fix** (✅ IMPL COMPLETE S1…S9, ⏳ GATED on the host, 2026-07-21)
-
-The v3 acceptance re-review ran on the rebuilt image (5 sessions V1…V5 + the §7 scratch procedure,
-2026-07-20) and returned **NOT ACCEPTED**. Verdict + findings→root map:
-[`e2e-review/results/consolidated-review-v3.md`](configuration/agent-cco-access/e2e-review/results/consolidated-review-v3.md);
-staged fix plan: [`e2e-review/fix-design-v3/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3/00-plan.md).
-Branch **`fix/config-access/e2e-v3-cycle1.1`** (from develop @ `f894245`).
-
-**Cycle 1's model held; its enforcement had one hole.** RC-4 is confirmed on **both halves across
-three independent projects** (and the observed row partitions discriminate against both rejected
-implementations, A1 and A7); RC-1 on both D-M5 arms, RC-6, the ADR-0047 boundary, criterion E, and
-`lib/store.sh`'s fail-closed contract are all live-verified. What failed is a **mount-composition
-defect the hermetic lane cannot see by construction** (RC-17's stated blind spot), plus a cluster of
-honesty-of-message defects around it.
-
-**Three 🔴, one root (R1).** V3-01 (`repo rename` half-applies + prints `✓`), V5-01 (6 store verbs
-dead at `edit-all`), V2-F01 (`path list` reports 0 rows at rc=0 on a stranded inode) are all the
-STATE bucket being bind-mounted as individual **files** — so its container-local parent is
-`root:root` and no sibling temp can be created, while a host-side `rename()` strands the bound inode.
-⚠ **The "bind the directory" fix two v3 sessions proposed is not safely applicable**: it would mount
-the 0600 `remotes-token`, transcripts and memory into every session, flipping the ADR-0047 boundary
-from allow-list (fail-safe) to deny-list (fail-open). Ratified instead: an explicit
-`state/cco/shared/` sub-bucket. Also ratified, **D-V3-1**: `cco remote remove|rename` become
-host-only, consistent with the already-host-only `remote set-token|remove-token` — the token never
-mounts, so `remote_get_token` cannot tell "no token" from "token invisible" and both ops would pass
-silently, orphaning the token and stripping the renamed remote's auth.
-
-Stages (each impl → adversarial revert-check): **S1** STATE shared sub-bucket + migration `017` +
-`INV-STATE` ✅ `517014b` · **S2** index-write error propagation + `INV-IDX` + `T-R2` ✅ `4aefc2f` ·
-**S3** fail-closed pre-flight probes **both** stores, each at its own identity ✅ `582347d` ·
-**S2b** the same unchecked-write class in the host-only writers ✅ `be1032c`+`cf9a3e5`+`578e755` · **S4** read-path
-honesty (empty ≠ unreadable) ✅ `501567b` · **S2b-P** the two token primitives ✅ `2177858` (**promoted ahead of
-S5**: S5's item 2 drops the STATE probe over a host write path whose primitive could not report failure;
-plan §6.0) · **S5** D-V3-1 + truthful store refusal ✅ `9e2496d` · **INV-S3b** exit-code unification
-✅ `2f2b560` (plan §6.3) · **S6** one predicate one spelling (`project show` + V1-F1) + `INV-ENV`
-✅ `987e38b` · **S7** config-editor announces every drop + the extra_mounts decision (b)
-✅ `097ef61` · **S8** minor + doc debt ✅ `8843680`+`221d8fb`+`16a129b`+`535a99b`+`a1e4c5e` ·
-**S9** changelog 47 + ADR forward-annotation + living-doc sweep ✅ `fcfe058`+`55dee32`+`a06f953`+`ad8f68d`.
-Suite **1463/9** (the 9 = the pre-existing host-only artifacts, unchanged set — names verified
-identical to baseline, and re-confirmed on the final tree after every S9 commit).
-
-**▶ Cycle-1.1 implementation is COMPLETE (2026-07-21).** Nothing pushed — the branch tip is the last
-commit on `fix/config-access/e2e-v3-cycle1.1` (`git log -1`; a hash written here can only ever name
-the commit *before* the one writing it). Everything that remains is either a host gate (§10 of the
-plan, below) or the three `.claude`-payload patches no session can apply.
-
-**S8** closed the five minor findings; its lesson is S7's inverted. `cco repo rename`'s ambiguity
-refusal was unreachable at the WORKDIR root — but the *reason* generalises past the bare form:
-`$unit` comes from a cwd walk, and a project's config lives in exactly one repo, so the
-**fully-specified** 2-arg form also dies there, advising the user to pass `<old> <new>` — which
-they just did. **A remedy pointing at an action that cannot succeed from where the message prints
-is a fix that reads correct and strands the reader.** The new message deliberately does not advise
-that form, and a guard pins it. The residue is **FI-26**.
-
-**S9** did the release hygiene and found the given file list was a lower bound. Three of the five
-named living docs needed nothing (already written by S5/S7/S8 — checked, not assumed); three
-surfaces the list did not name did: `cli.md`'s config-editor paragraph (S7's decision (b) had never
-reached a user-facing doc), **ADR-0045** (correctly called *unaffected*, but its "the mountpoint
-auto-creates under the root" line is true only *because* `running/` is a **directory** bind — the
-same claim that was false for the file-bound siblings), and a **second** stale spot in the managed
-rule. That last one is the sharpest: §6.-1 knew the rule under-reported the host-only set, but the
-same file's "editing config" bullet actively **prescribes** `cco remote remove`, so the rule
-injected into every session recommends a verb D-V3-1 now refuses. Under-reporting is a gap;
-prescribing an unreachable remedy is the false-remedy class one document out — which is why the two
-patches must land as one edit. ⚠ **Three host-only `.claude`-payload patches are the only
-in-repo work left** (plan §6.-1, blocked by **FI-25**): two in
-`defaults/managed/.claude/rules/cco-config-interaction.md`, one in
-`internal/config-editor/.claude/CLAUDE.md`. `defaults/global/.claude/` and
-`templates/project/base/.claude/` were swept and need nothing. Migration checklist re-verified:
-**017 is the only one owed** — no `*_FILE_POLICIES` change, no `templates/` change (the STATE
-layout is machine-local, so a migration that moves it needs no template counterpart), and S8's
-`Dockerfile` edit is image-level (`cco build`, not a migration).
-
-**S7** ratified decision **(b)**: config-editor never mounts a target's `extra_mounts` (it authors
-config; they are reference material, and mounting them widens the built-in's blast radius for no
-authoring gain) — and *announces* them, since `cco path list` prints those bindings as live host
-paths. Its other half carries a lesson worth the sibling of S2's: the plan's prescribed fix site
-for V5-05 was **dead code** — `_project_foreach` had already filtered the case one function
-upstream, so the `continue` the finding named could never execute. A fix at an unreachable site is
-indistinguishable from a fix until something makes it run; the guard, written first and watched
-failing *with the fix in place*, is what caught it.
-
-**S2b** closed the unchecked-write class in three commits: the `_yaml_rename_list_ref` primitive
-(the project.yml half of `repo rename`, S1–S3's acknowledged residual), then `join`/`init`, then the
-remaining five modules. `INV-IDX` now covers every module that writes the index from a command body
-and its exemption paragraph is gone. `lib/index.sh` stays out by design — it is the writer layer,
-where a tail-position call IS the propagation. What the pre-fix runs proved is worth carrying
-forward: S2's primitive already printed *"Cannot write the cco index … Nothing was changed"*, loudly
-and correctly, and the verb still exited 0 with a tick. **The defect was never the message; it was
-the discarded status.**
-
-**S2b-P** gave `_remote_token_remove` a three-valued contract (`0` removed / `1` absent / **`2`
-failed**) so a failed revocation is never rendered as *"No token found"* — a credential still on disk
-reported as revoked. Every `|| true` that swallowed the new signal was closed, including
-`cmd-config.sh:303`, which the plan had not listed. **S5** made `remote remove|rename` host-only,
-dropped the STATE-root probe, and replaced the store refusal's false reason with D-M2's vocabulary.
-
-**S6** closed R4: `cco project show` answered "is this project available?" with its own hardcoded
-sentence blaming ACCESS SCOPE and prescribing a widening that at read-all/edit-all does not exist —
-while its sibling `project validate` gave the correct D-M2 answer for the same project in the same
-session (three v3 sessions, three vantages, one call site). It now asks `_env_project_state` and
-renders with `_env_unavailable`. V1-F1 gave `validate` the shared WORKDIR-root session fallback, so
-the two verbs stop disagreeing at `/workspace` — the agent's default cwd. **`INV-ENV`** pins the
-class: the availability vocabulary is owned by `access-scope.sh`, with a budgeted five-module
-exception list, each entry documenting the *different* predicate it owns. This is the class RC-4 was
-created to eliminate, recurred — hence a guard rather than another fix.
-
-⚠ **INV-S3b — a taxonomy question S5 got wrong twice before it was settled.** The exit code for a
-failed store/rename precondition follows the **failure's nature**, not the module: an *in-session
-pre-flight* refusal is a session-shape fact → **2**; the same probe failing *on the host* is a real
-error → **1**; a write that *started and failed* stays **1** everywhere (INV-S3's core). S5 first
-applied D8 alone (2), the suite refuted it via INV-S3's eight guards, and the revert to 1 was also
-only half right. Recorded in `lib/store.sh`'s header with a warning not to re-derive it from either
-contract alone. It also governs `rename.sh`'s two probes, resolving S3's *"both halves move
-together"* note — which could not be resolved as written, because the answer depends on
-session-vs-host rather than on which store is probed.
-
-⚠ **One S5 item is NOT applicable from a session** (plan §6.-1): the managed rule
-`defaults/managed/.claude/rules/cco-config-interaction.md` must add `remove|rename` to its host-only
-list, but every `.claude` tree is clamped `:ro` in-session. Why is itself a finding — **FI-25**: the
-nested-`.claude` sweep is right for a normal project's authoring trees but also catches cco's OWN
-shipped `.claude` payload (`defaults/`, `templates/`, `internal/` are tool source). Workaround for a
-self-dev session: `--claude-access all`.
-
-**A codebase-wide audit of the same class ran before implementing S2b** (backlog convention:
-re-derive the boundary first) — [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
-The class is **systemic, not confined to the index writers**, and the remediation shape changed:
-several primitives (`_remote_token_set`, `_remote_token_remove`, `_yaml_rename_list_ref`) **cannot
-report failure at all**, so three correctly-written call-site guards are structurally inert today.
-S2b is now two-layered — fix the primitive, then the call site. The remainder (the update engine,
-`pack`/`template publish`, the local-destructive set) is **out of cycle-1.1** and tracked as
-**FI-24**; its first cluster overlaps workstream **F**, so scope them together.
-
-**Out of session reach — gates the release** (Mac): `cco remote remove v5probe` (V5 left a residue
-it could not remove); `cco build` from the cycle-1.1 tip then re-run V3 + V5; **V4b** the D-M11
-escalation test (the only v3 probe that fails **open** if the fix is wrong); **V5b** bare global;
-**§7 / E6B-04** the pack-rename fan-out gate, still never executed and now unblocked by S1; and the
-**D-M6 Linux write-path check-in**, promoted from follow-up to **hard gate** — macOS `fakeowner`
-makes the fail-closed pre-validation unfalsifiable (V3-02), so criterion F cannot be signed off from
-a macOS run. ⚠ **S2b widened what that gate covers**: every guard it added is a `chmod`-driven
-unwritable-bucket test, so the same `fakeowner` caveat applies to all of them — they pass in the
-Linux container, and a macOS run proves nothing about them. S2b also adds one gate of its own: the
-host-only verbs it touched (`join`, `init`, `forget`, `project import`, `resolve --scan`,
-`path set`, `migrate`) now die where they used to continue, so each deserves one live happy-path run
-after `cco build` — the hermetic suite covers the failure arms, but the success arms are what a user
-hits daily.
-
-⚠ **Do the provenance check FIRST, before the V3/V5 re-runs** (S8/V1-F3): `cco whoami` now reports
-`image built from: <branch>@<sha>`, and it must read the cycle-1.1 branch and tip **and match what
-you actually built**. The hermetic suite can only pin the row and its `unknown` fallback; the value
-is the exact thing that was wrong in v2's cycle-0, and it is what makes every later result
-attributable. Two more surfaces to exercise while there: **S7** — `cco start config-editor --all` on
-the real 8-project store, confirming every index-known project is either mounted **or** announced
-with the *right* remedy (`cco init` vs `cco resolve`), and that a target with `extra_mounts:`
-announces them and mounts none; **S8/V1-F2** — `cco project show <a project with extra_mounts>`,
-including the `[unresolved]` arm, since that is the surface the S7 announcement now points people
-at. And **S9's residue**: the three `.claude`-payload patches in plan §6.-1 (two in the managed
-rule, one in the config-editor built-in) must be applied on the host or from a
-`--claude-access all` self-dev session — FI-25 — **before** `cco build`, or the rebuilt image bakes
-a managed rule that still prescribes a verb D-V3-1 refuses.
-
-Resume pointer: memory [[e2e-v3-cycle11]] + `fix-design-v3/RESUME-HANDOFF-s9.md` (`-s8` and earlier
-are retired).
-
-#### B2-next — the three sessions between cycle-1.1 and release (planned 2026-07-21)
-
-Everything above is *implemented*; nothing is *accepted*. The route to `develop → main` is three
-scheduled pieces of work, in order. The runbook and session briefs for the first two live in one
-document: **[`e2e-review/handoff-v3.1.md`](configuration/agent-cco-access/e2e-review/handoff-v3.1.md)**
-— §10 is the host runbook (ordered, each step with its motivation, exact command, and how to verify),
-§5/§6 the session matrix.
-
-**0 — macOS host-suite portability (✅ fixed 2026-07-24, branch `fix/test-suite/macos-bash32-portability`
-from develop; NOTHING PUSHED).** The host suite showed ~20 failures the container never sees (container
-= bash 5.2 + GNU coreutils; host = bash 3.2.57 + BSD tools). Triaged to 6 root causes, split
-test-vs-impl. **Two real impl bugs** (user-facing on macOS): **(A)** the usage heredoc lived inside
-`_body=$(cat <<'EOF' … )` and bash 3.2's legacy command-sub scanner does not skip heredoc bodies — the
-odd apostrophe count desynced its quote tracking so `cco help`/`--help` printed only a syntax error on
-stock `/bin/bash` (`266886b`, moved into `_cco_usage_text()`); **(C)** `_cache_fresh`'s BSD `date -j`
-lacked `-u`, parsing the UTC cache stamp in local time and skewing remote-cache freshness on `cco
-update` (`5b89b43`). **Four test-fragility fixes**: **(B)** the macOS `/var`→`/private/var` symlink desynced index
-paths (`mktemp` tmpdir vs cco's `pwd -P` cwd resolution). A first pass canonicalized `TMPDIR`
-(`92bdad0`) but that is a **no-op on macOS** — BSD `mktemp` ignores a reassigned `TMPDIR` (it reads the
-Darwin temp dir via confstr), so the host suite still failed; the real fix wraps `mktemp` to
-canonicalize its OUTPUT with `pwd -P` (`8317222`), reproduced + verified in-container via a symlinked
-`TMPDIR`; **(D)** push the
-config-pull divergence to the branch `~/.cco` actually tracks, not a hardcoded `master`, which no-op'd
-under `init.defaultBranch=main` (`55efa43`); **(F)** a BSD-safe `_t_sed_i` replacing ten raw `sed -i`
-in `test_update.sh` that silently misfired on macOS (`eb8086c`); **(G)** `test_pack_install_cleanup`
-was NOT a symlink case (its cleanup works, zero residue) — BSD `wc -l` right-justifies the count with
-leading spaces and `assert_equals` compares as strings, so `"0" != "       0"` failed; add the
-`| tr -d ' '` every other wc site already uses (`7f5ef2c`). In-container suite unaffected (each fix is a
-no-op or output-identical on bash 5.2/GNU — verified). **Host FULLY GREEN 2026-07-24 across 4 rounds
-(all six A–G confirmed on bash 3.2 + BSD tools, 0 failures). ✅ MERGED → develop (`--no-ff` merge
-`03583de`) and PUSHED (`origin/develop == develop == d5b9a6d`, 2026-07-25); only the optional
-`git branch -d` of the merged branch remains.**
-✅ **[FI-27](improvements.md) — its gate is now LIFTED (done 2026-07-24, ADR-0053, on develop `d5b9a6d`, pushed).**
-B was a *test-harness* paper-over of a real index-model gap — `_index_normalize_path` canonicalized
-neither symlinks nor a trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` diverged.
-The impl fix (design pass first, per the maintainer's rule that impl-touching fixes settle pre-review)
-is done: two-tier canonicalization at the write boundary (lexical + best-effort physical symlink
-resolution) + a `cco config validate` re-key lane; merged → develop (`--no-ff` `d5b9a6d`), suite
-1522/7. **This macOS symlink/`/.` behaviour is now itself worth confirming on the real host during the
-v3.1 run** (a repo under `/var`|`/tmp`, `cco config validate --fix`).
-✅ **FI-27 follow-on — bash 3.2 regression in the new Tier-1 lexical canon, FIXED (2026-07-26).** The
-host suite caught what the in-container review could not: `_index_normalize_path`'s lexical loop used
-`${p//\/\//\/}` / `${p//\/.\//\/}`, whose replacement `\/` carries a backslash. bash ≥4.3 un-escapes it
-to `/`, but bash 3.2 (macOS default `/bin/bash`) keeps it literal, so `//`→`\/` and `/./`→`\/`
-(`/a//b`→`/a\/b`, `//`→`\`) — `test_index_normalize_path_lexical_canon` failed on the Mac, green in the
-container. Fix: move the slash sequences into variables so neither pattern nor replacement carries an
-escaped `/` (`c9b6d35` on `fix/index/normalize-bash32-replacement`, from develop). Behaviour identical
-on bash ≥4, correct on bash 3.2; only those two lines carried the antipattern (`remote.sh:41` escapes
-only in the pattern → safe). In-container suite unchanged (1522/7); **host suite fully green on bash 3.2**
-(`./bin/test` → 0 FAIL). No changelog/migration (bugfix to unreleased FI-27 code). Merged → develop
-(`--no-ff` `6b1cb2c`). ▶ Host-side, still open: `git push` develop, then `cco build` from develop
-before the v3.1 matrix.
-
-**1 — Host runbook + e2e review v3.1 (reduced).** Four sessions instead of v3's five: RC-4's A/B pair
-is retired (settled, and on the do-not-re-litigate list) and V5b folds into W2 as a sub-run.
-
-| # | Session | Validates |
+| File | Class | Holds |
 |---|---|---|
-| **W1** | `claude-orchestrator` @ `edit-project` | S1 + S2 + S2b + S3 + V3-03 + V3-P — the R1 root, from the verb that exposed it |
-| **W2** | `config-editor --all` (+ bare-global sub-run) | S1 store ops + S7 announcements + S5 refusals + V5b |
-| **W3** | `config-editor --project X` @ granular `current=ro` | **D-M11** — ⚠ the only probe that fails **open** |
-| **W4** | a project with `extra_mounts` @ `read-project` | S4 + S6 + V1-F2 + V4-F-V4-03 — the read vantage |
-| **§7** | E6B-04 scratch repro | pack-rename fan-out atomicity — **never executed in any round** |
+| **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
+| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-51`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
+| [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
+| [`handoff.md`](handoff.md) | ephemeral | Session state; deleted before the next one is written, and never linked *to* |
 
-W4 earns its place in a reduced matrix because it is the only vantage from which four cycle-1.1
-fixes are observable at all — **V4-F-V4-03 specifically needs a session where projects ARE hidden**,
-which `edit-all` can never produce. ⚠ Two ordering constraints are load-bearing: the three
-`.claude` patches go in **before** `cco build` (else the image bakes a rule that prescribes a verb
-D-V3-1 refuses), and the **provenance value check runs before any session's results count** (v2's
-cycle-0 built from the wrong branch and the whole round was discarded).
+Before 2026-08-04 the issue tracker was named `roadmap-backlog.md`, which made it read as a second
+plan. Git holds the rename.
 
-**1b — e2e review v3.1 RESULT: NOT ACCEPTED → cycle-1.2 (run 2026-07-28).** The four sessions ran on
-`develop@8fd479c` (provenance host-confirmed). Verdict and root map:
-**[`e2e-review/results/consolidated-review-v3.1.md`](configuration/agent-cco-access/e2e-review/results/consolidated-review-v3.1.md)**.
+## Where the project stands
 
-**Everything cycle-1.1 set out to fix HOLDS live** — S1, S2/S2b/S2b-P, S5, S6, S7 (+ decision (b)),
-S8, D-M11, RC-1, RC-4, RC-6, the ADR-0047 boundary and secret masking were all confirmed from
-independent vantages, several beyond spec (W3 proved D-M11 fails **closed** through a *second bind of
-the same inode*; W1's rename round trip was re-confirmed from two sessions that never ran it). **No
-`✓` at exit 0 with nothing behind it anywhere in the round.** The failures are in how the system
-narrates itself, plus three composition roots found off-matrix.
+**`v0.6.0` is released** (2026-08-04) on npm as
+[`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco), published by CI
+through OIDC trusted publishing. It closed the whole agent↔cco access line: the acceptance rounds
+(e2e v2 → v3 → v3.1) and their fix cycles (1 → 1.1 → 1.2) are **finished and accepted**; the
+narrative, the lessons, and the per-stage records live in
+[roadmap-history.md](roadmap-history.md).
 
-24 raw findings deduplicate to **8 product defects with one meta-root**, analysed in
-**[`engineering/analysis/invariant-gap-audit.md`](engineering/analysis/invariant-gap-audit.md)**:
-*a predicate every call site is free to compute for itself will diverge, and the divergence ships.*
-The three layers that fail (availability vocabulary · mountpoint ancestry · YAML section boundary)
-are exactly the three with **no invariant + lint** — while every layer that has one (INV-S1…S6,
-INV-IDX, the tty gate) held under direct attack. Each past cycle fixed the **reported site** and left
-its siblings; the `read-global`-for-a-project string was found independently by **all four sessions**.
+- **The upgrade is three commands**, in this order:
+  `npm update -g @claude-orchestrator/cco && cco update && cco build`. `cco update` has never rebuilt
+  the image and nothing else does, so a session started without the rebuild silently runs the previous
+  release. **Block B exists to end this.**
+- **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
+  `0.6.0`; `develop` is level with `origin/develop`.
+- **Test baseline**: macOS host (bash 3.2) **1626 passed / 0 failed** — the cycle's first complete
+  host run. In-container **1619/7** on the same tree with the mask on, **1616/9 of 1625** unmasked.
+  The 9 are 7 host-only tests defeated by the ADR-0047 boundary ([FI-19](improvements.md)) plus 2
+  update tests the mask hides.
+  ⚠ **`access: {claude: all}` is committed** in `.cco/project.yml` (self-dev workaround for
+  [FI-25](improvements.md), with its own expiry note), so **every in-container figure from now on is
+  masked** — expect `…/7`, never `…/9`.
+- **Next free ADR number: 0057.** ⚠ **ADR-0038 and ADR-0040 do not exist as documents** — they are
+  numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
+  for the first time; do not go looking for a file.
 
-Blocking: **3 🔴** against criterion C/A (`R-C` index taxonomy · `R-A` availability vocabulary ·
-`R-B` uncountable hidden packs) plus **three roots found in consolidation, invisible to the session
-matrix**:
+## The plan — order ratified 2026-08-04
 
-- **R-D** — `~/.claude/projects` is materialised `root:root 0755` by the runtime, so Claude Code
-  cannot create any per-project key other than `-workspace`: this is the maintainer's **subagent /
-  agent-team transcript `EACCES`**. Reproduced live on macOS. Third recurrence of R1's mechanism —
-  and the `Dockerfile:119-124` comment already states the rule it violates.
-- **R-F** — ADR-0049's `:ro` default clamps paths Claude Code needs for **runtime state** (project
-  `.claude/workflows/`): the **workflow-persistence `EACCES`**. The §5 functional-write floor was
-  derived from one bug-reported path instead of the documented set.
-- **R-E** — `_yml_append_coord` (`cmd-project-add.sh:70-75`) treats a comment block as *inside* the
-  current section, so `cco project add|init|join` insert entries **after the next section's header
-  comment**, corrupting `project.yml` structure.
+Four blocks, sequenced **A → B → C → D**, with one shared analysis pulled ahead of B. The criterion is
+not size but **which layer an item touches**, because that is where items collide with each other.
 
-**Decisions ratified 2026-07-28** (detail + anchoring rule in the consolidated review §6):
-**D-V31-1** hidden-vs-nonexistent → non-asserting wording, `unknown` arm only at read scope `all`
-(ADR-0043's own axis) · **D-V31-2** a session pre-flight refusal is **exit 2**, INV-S3b's text amended
-to state the axis without its example · **D-V31-3** dropped `extra_mounts` are **badged in the
-message**, the managed rule stays defense-in-depth (ADR-0047's mechanism-before-prose precedent) ·
-**D-V31-4** criterion C keeps its literal reading; release exceptions are written down, never
-inferred (so W1-01/W2-02 and W4-F01 are 🔴 despite being pre-existing).
+| Block | Subject | Release | Why here |
+|---|---|---|---|
+| **A** | Quick wins and coherence debts | `0.7.0` | Each item is self-contained; two of them close inconsistencies already shipped |
+| **—** | **Cross-cutting analysis**: resource taxonomy + scope model | *none* | Read-only. Feeds B, C and D; moving it earlier costs no release |
+| **B** | Lifecycle & distribution | `0.8.0` | The upgrade UX, and splitting `cco update`'s conflated responsibilities |
+| **C** | Shared-resource platform (packs & config) | `0.9.0` | **This is what unblocks external projects and packs** |
+| **D** | Cycle-2: config multiplicity, divergence, mount topology | `1.0.0` | The last open architectural debt |
 
-**2 — Cycle-1.2: fix at the root, not by report.** Three invariants with lints + two contracts; the
-eight findings close as a consequence. Session-by-session runbook in
-**[`e2e-review/fix-design-v3.1/00-plan.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md)**.
+```mermaid
+flowchart LR
+  A["Block A<br/>quick wins<br/>0.7.0"] --> AN["Cross-cutting analysis<br/>resource taxonomy + scope model"]
+  AN --> B["Block B<br/>lifecycle and distribution<br/>0.8.0"]
+  AN --> C["Block C<br/>shared-resource platform<br/>0.9.0"]
+  AN --> D["Block D<br/>cycle-2 topology<br/>1.0.0"]
+  B --> C
+  C --> D
+  B -. "declares the boundary,<br/>C implements the other side" .-> C
+```
 
-✅ **G3 — the block's single human gate: `ACCEPTED with follow-ups` (2026-07-31).** All five lanes are
-accepted; the verdict, what was on the table, and the follow-ups are written into the plan's
-[§7 acceptance log](configuration/agent-cco-access/e2e-review/fix-design-v3.1/00-plan.md) per D-V31-4
-(*release exceptions are written down, never inferred*). The follow-ups are **FI-42** (ships as the
-release known-issue, runbook G6) · **FI-43** · **FI-40**, all three deferred to cycle-2 by the step-2b
-decision; ADR-0046 §6 was ratified in place rather than deferred. **G1's residual host cleanup is
-done.** ✅ **G2 (the CLI-surface audit) is DONE 2026-07-31**, and both items it raised are closed —
-see step 3 below.
+Two ordering constraints are load-bearing:
 
-✅ **G4 — merged into `develop` 2026-08-03** (`b3e3496`). The pre-condition held (`git diff
-develop..fix/release/cycle-1.2 -- .cco/` empty, so FI-20 did not apply) and the 2026-07-30 topology
-fact still measured true (`tree(develop) == tree(merge-base 14779d4)`, so `develop` contributed zero).
-The gate's own check **passed**: `tree(fix/release/cycle-1.2) == tree(develop) == 73987ab5…`, i.e. the
-merge introduced no content nobody wrote. All three branches are pushed and level with `origin`.
+- **`cco attach` goes before Block D.** Both rewrite `lib/cmd-start.sh` — one the container lifecycle,
+  the other the mount composition. Sequential either way; the smaller one first.
+- **The shared analysis goes before B's design.** B must strip `cco update` of the opinionated-content
+  responsibility, and *what an opinionated resource is* is decided by that analysis. Designing B first
+  would settle the boundary by implementation.
 
-✅ **G5 — ALL FOUR ITEMS PASS (2026-08-03). The release is unblocked.**
+---
 
-- ✅ **Unmasked in-container suite** (mask OFF, session restarted so the `:ro` overlays actually
-  apply): **1616 passed / 9 failed of 1625**, `bin/test` exit 1. The 9 are the expected set *name for
-  name* — the 7 host-only (six `test_as_*` + `test_paths_symlink_safe_tool_root`) plus the 2 unmasked
-  (`test_update_new_file_added`, `test_update_dry_run`), each corroborated by **mechanism**, not by
-  name match.
-- ✅ **npm-pack hygiene** — `201 lines inspected; no forbidden paths`.
-- ✅ **`cco build` from `develop` + provenance + smoke dogfood** — `cco whoami` reports
-  `image built from: develop@b3e3496` with `diff -rq /opt/cco/lib lib` empty; `cco list`,
-  `cco path list`, `cco project show` all answer with correct scope notices.
-- ✅ **macOS host suite (bash 3.2) — COMPLETED 2026-08-03**: `Results: 1626 passed, 0 failed, 1626
-  total`, summary line present. *The history below is kept because it is the lesson, not the status.*
-  🔴 The **first** attempt ABORTED, not passed: 427 tests ran, then bash died with
-  `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
-  `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
-  tests that could fail. Root cause and fix: **[FI-46](improvements.md)**.
-  **↳ 2026-08-03: the DEFECT is fixed and covered**, merged into `develop` as `f1813c1` — four sites moved out of command substitutions (the lint found a fourth the diagnosis
-  had not named), covered by the **INV-B32** CLASS lint, and **parse-verified on real bash 3.2**:
-  173 shell sources exit 0 where the pre-fix file exits 2. **The gate item itself is still open** —
-  it is satisfied only by a macOS run that prints a `Results:` line, which is host-side work.
+### Block A — quick wins and coherence debts → `0.7.0`
 
-✅ **G6 is unblocked.** The macOS host suite completed on `develop@205c940`:
-**`Results: 1626 passed, 0 failed, 1626 total`** — the summary line is present, which is the only
-at-a-glance difference from the abort that blocked this gate. INV-B32 is among the passes, so the
-lint is itself parseable and effective on bash 3.2.
+Minor bump, not a patch: it introduces new verbs. Nothing here needs an analysis phase; A1 and A2 need
+a short design, A3 needs none.
 
-📝 **The seven in-container failures are now confirmed host-only by positive evidence**, not only by
-mechanism: 1626/1626 on the host against 1619/7 of the same 1626 in-container. First complete host
-run of the cycle.
-
-✅ **G6 — DONE 2026-08-04. `v0.6.0` is tagged, pushed and published.** `develop → main` merged with the
-tree-identity check holding (`tree(main) == tree(develop)`), `scripts/release.sh 0.6.0` bumped
-`package.json` **and** the README, and CI published to npm via OIDC on the tag.
-
-⚠ **Two operational traps this gate hit, worth carrying into the next release:**
-1. **The `develop → main` merge was host-only for a reason G4's was not.** Its `.cco/` diff is *not*
-   empty — it deletes three generated artefacts committed by mistake
-   (`.cco/claude/{workspace.yml,packs.md,scheduled_tasks.lock}`) and gitignores them. A merge writes
-   the **working tree**, and `.cco` is `:ro` at the default access level, so it fails partway. The fix
-   was not a workaround but the designed knob: a session at **`--cco-access edit-project`** mounts the
-   current project's `.cco` rw (`lib/cmd-start.sh:1885-1887`), and the merge then runs in-session.
-2. **`git push` without `--follow-tags` pushes the branch and leaves the tag behind.** That is exactly
-   what happened after an SSH-passphrase failure interrupted the scripted push: `pages.yml` fired (it
-   triggers on `push: branches: [main]`) while `release.yml` did not (it triggers on `push: tags:
-   ['v*']`). **The release workflow not firing is the signal that the tag never left.**
-
-🔑 **A premise recorded across FI-46, the handoff and the runbook is now measured FALSE: the
-container is NOT structurally blind to bash 3.2.** The session's Docker socket reaches the public
-`bash:3.2` image, so `docker run --rm --name cc-<project>-… -v <host-repo>:/src bash:3.2 bash -n <file>`
-is a real 3.2 oracle available in-session — it is what produced the verification above, and the truth
-table behind INV-B32 (what aborts the parse is an unbalanced quote or a bare paren in the heredoc
-BODY, so one of FI-46's three known sites was benign and two were not). Two constraints: the proxy
-requires the `cc-<project>-` container-name prefix, and it swallows container stdout — results come
-back through exit codes or a file written into the mounted repo. **Whether this becomes a gate, a
-suite test, or stays an ad-hoc tool is an open decision** — see FI-46's open question, which it
-directly bears on.
-
-| Lane | Deliverable | Closes |
-|---|---|---|
-| **L1** ✅ **accepted** (G3, 2026-07-31) | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. Designed 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved); **implemented by S4** 2026-07-29, merged into the cycle branch. The sweep enumerated **five sites the ADR's table did not name** — the largest being `tags.sh:287-313`, i.e. `cco list` itself, which at `G=none` counted nothing at all (that *is* R-B, and it is bigger than the `pack validate` site the ADR named). D5's host-side count ships as `CCO_STORE_TOTALS`. ⚠ **Its post-build probe RAN 2026-07-30 and FAILED — `cco build` had been done, and D5 was inert: `config/cco-svc-helper.c`'s `ALLOWED_KEYS[]` never listed the key S4 writes into the descriptor, so the setuid helper dropped it in silence and R-B was still live (`cco list packs` → 1 of 6 packs, no notice).** Fixed the same day: the key is whitelisted, and the correspondence across all **three** registries of that signal family is now the **INV-DESC** lint — the helper's whitelist, `bin/test`'s ambient-env unset list (the second instance of the same omission, which was inflating the in-session failure count from 7 to 10), and `tests/helpers.sh`'s per-lane sanitiser (the third, latent). Ratified in ADR-0056's annotations + changelog 59. **Round 2 of the probe (after the rebuild) confirmed the lane fixed — `5 packs hidden` where there had been silence — and found a second defect, D5's own**: the supplement looped over EVERY store kind on EVERY flush, so `cco list llms` claimed *"6 packs hidden"* while showing all llms, `cco list packs` claimed *"2 llms hidden"* about the two it was showing, and the same session answered 6 or 5 to the same question depending on the verb. Ratified fix (2026-07-30): a notice is **per-invocation** — a verb declares the kinds it enumerates exhaustively and only those are supplemented, with **no declaration ⇒ no supplement** so an omission is honest silence; guarded by **INV-AVAIL/D5**, which names exactly the four enumerators on the pre-fix tree. ✅ **Probe round 3 (3rd build) PASSED on all six arms** — `list packs` counts 5 packs and says nothing about llms · `list llms` no notice at all · `list` speaks for every kind · `path list` no store counts · `pack validate --all` pack-only · `project show` silent on the store. Every number matches what was ratified before the fix was written, so **L1's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31. **▶ A fourth INV-AVAIL arm landed 2026-07-30 (`1814ba3`, changelog 60, [FI-41](improvements.md))**, found by the G1 gate rather than by the sweep: `cco pack rename` refused on `_project_member_status`' `unresolved` — a word that in operator mode covers *both* an unbound member and one merely not bound into this container — and prescribed `cco resolve`, which the host answers *"already resolved"*. It shipped through all three original arms untouched (no predicate computed, no badge spelled, and D2's qualifier already present), so the invariant now also guards **which owner a refusal reads its answer from**, not only how a verb computes it. Fixed at the consumer; `_project_member_status` untouched (`join`/`forget --purge` share it) | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
-| **L2** ✅ **accepted** (G3, 2026-07-31) | index-health **session-vs-host axis** (`absent` is never benign in a session). Designed in the same ADR-0056; **implemented by S3** 2026-07-29, merged into the cycle branch. `_index_read_state` stays byte-unchanged (A3); the axis lives in `_index_assert_readable`, split into two causes by parent traversability. Regression cover written **independently from the ADR** by a separate tester (`tests/test_index_session_axis.sh`, 12 tests; 7 of them fail on the pre-S3 tree). **S6 extended it**: a *zero-row* index in a session reached the same §10.9d sentence at rc=0 from a different cause, and is now refused too. ✅ **Container probe COMPLETE — both arms PASSED 2026-07-30**, run as a *split* gate (the `mv` host-side with a session live, the observations from inside it). **Severed**: `path list`, `list`, `list projects`, `project show`, `project validate --all` all refuse at **rc=1** naming the session axis (*"this session was LAUNCHED from the index … this is NOT an empty index"*), while pre-S3 `develop:lib/index.sh:189` still carries the benign *"nothing is registered on this machine yet"* it replaced. **Restored**: all five back at **rc=0** with their fully scoped per-invocation notices and the same counts as S4's round 3 — so the entry guard (`_index_assert_readable`) is proven to refuse on failure *and* to get out of the way on success. **L2's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31 | W4-F06 🔴 — **and every Linux session's read path** |
-| **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **All three container probes green**: the `:ro` lane and the `Cp=rw`+composing arm 2026-07-28, and **D7's pack-less arm 2026-07-31** — a project adopting no pack still gets the composed view with both floor entries writable, observed at `claude_access: none` (all four axes `ro`), i.e. harder than the specified default. **L3 has no residual** | R-D, R-F |
-| **L4** ✅ **accepted** (G3, 2026-07-31) | **INV-YAML** — one comment-block-aware section boundary + golden-file lint. Landed 2026-07-29 on `fix/cycle-1.2/s5-inv-yaml` (S5): `_yml_append_coord` buffers the trailing top-level comment/blank run and emits before it; golden-file round trip against the shipped base template + an insertion-class CLASS lint. **No ADR** — the runbook's Produces column does not ask for one. Accepted at G3, 2026-07-31 | R-E |
-| **L5** ✅ **accepted** (G3, 2026-07-31) | EXIT-trap sentinel discipline + lint. Landed 2026-07-29 on the same branch: one exit primitive (`_cco_exit`, beside `die`/`refuse`), both arms covered by tests (group help on exit 0; the crash notice glued to a well-formed `--cco-access` refusal), plus a lint that no raw shell `exit` bypasses the sentinel | W2-06, W4-F02 |
-
-⚠ **L2 and L3 cannot be accepted on suite-green** — the hermetic lane is blind to mount-time and
-container-context reality by construction. Each needs a probe in a **real container after
-`cco build`**, recorded in the acceptance log. This is **RC-17's fourth recurrence** (RC-17, the R1
-mount shape, FI-31, now R-D).
-
-> **Corrected 2026-07-29 — L4 was named here and should not have been.** The maintainer ruled that
-> the **golden-file round trip is sufficient acceptance for L4**, and L4/L5 close in-session with no
-> host-side probe. Neither lane is mount-time or container-context: `_yml_append_coord` rewrites a
-> file the suite can hand it, and the EXIT-trap misfire is observable from any `bin/cco` run — both
-> reproduce identically on host and in session. `invariant-gap-audit.md` §5 already scoped the
-> probe requirement to items 2, 3 and 4, excluding INV-YAML. Runbook §1 corrected in step; ruling
-> logged in its §7.
-
-**Execution plan for the remaining implementation, approved 2026-07-29.** S3 → S4 → S5 run as **one
-block**, each unit in a **session with dedicated context** (a subagent per unit, or a workflow), each
-verified — and corrected if needed — before the next begins. **S3 before S4**: both land in
-`lib/cmd-project-query.sh` (S4 rewrites `:249-253`, S3 rewrites `:301` plus the index guard), so
-parallelising them would collide. **S5 runs in parallel in its own worktree** — its surface
-(`cmd-project-add.sh`, `cmd-init.sh`, `cmd-join.sh`, `bin/cco`) does not overlap. The maintainer
-relaxed the per-phase gates for this block to a **single human gate at the end**; what is *not*
-relaxed is the standing rule that a decision the design never made stops for a human, mid-block or
-not. ⚠ In-session verification (suite + regression tests + lint self-tests) is **not** acceptance for
-**L2** — the probe that lane owes is host-side and belongs to that final gate. **L4 and L5 do close
-in-session** (ruling of 2026-07-29, above).
-
-**S6 — close-out, in-session half landed 2026-07-29.** Three items, all ratified by the maintainer
-before implementation: (a) a **zero-row index in a session** is non-benign, extending L2's rule to the
-sibling cause the independent tester found — the same §10.9d sentence at rc=0, reached past the entry
-guard; (b) `lib/migrate.sh` `_backfill_one_pack_llms` **destroyed comments in a user-authored
-`pack.yml`** (both indented and top-level — same *class* as R-E, but R-E misplaces and this deletes),
-now fixed with S5's buffer-and-flush discipline, which earned `migrate.sh` its way **off** the INV-YAML
-lint allowlist; (c) the **README platform contradiction** (`:59` vs `:220`), sharpened by ADR-0056 —
-native Linux now refuses index-reading verbs by construction, and the release cannot state a platform
-until that is said plainly.
-
-Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`improvements.md`](improvements.md)).
-✅ **S6's host-only half is DONE (2026-07-31)** — **§10.9e / E6B-04** ran for the first time in any
-round, on the host, and **passed**: two projects referencing one pack, and the rename re-keyed **both**
-`project.yml` copies with no `failed` tag (v2 had only ever *inferred* the half-apply from a non-firing
-guard). ⚠ One arm is recorded as **vacuous**: the subject was `cco pack create`d, so it carried no
-provenance, no tags and no sync fingerprint — the sidecar re-key had nothing to move. A stronger fixture
-tags and installs the pack first. Evidence in the runbook's §7. Residual host cleanup (scratch projects +
-the four stale remotes) is listed in [`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) G1.
-
-**2b — Config mount topology & multi-repo config editing** (analysis → decision, **next session**;
-ordered *before* step 3 by the maintainer, 2026-07-31). Two refusals in the G1 gate exposed a question
-larger than either of them, and auditing the CLI's documentation before it is settled would document a
-surface that may move.
-
-The subject: **how a project's committed config is mounted, and by which path a verb reaches it.**
-Today the config-editor mounts each target's `.cco` at `/workspace/<name>-config`, one per *project* —
-so a **multi-repo** project exposes exactly one copy, while `project.yml` is replicated across owned
-members and may be `synced`, `divergent`, or deliberately hosted in a single repo. The maintainer's
-proposal to weigh: mount every involved repo's `.cco` **at the path it would occupy in a real repo**
-(`/workspace/<repo>/.cco`, without the rest of the repo), so there is never a second path to the same
-file, with the project→repo mapping surfaced to the agent through `cco project show`.
-
-What the analysis must weigh, per the maintainer:
-- **impact on the current system** — what changes, what it touches, what breaks;
-- **ADR conformance** — which decisions it honours (ADR-0024 D2 reach + clobber-guard, ADR-0044 §3 /
-  ADR-0048 min-privilege by mode, RC-6 §3.7's single-authoring-path rule, ADR-0046 §6's deferred
-  multi-repo `Pc` span) and which it would *supersede*, explicitly;
-- **UX correctness across the real launch modes** — mono-repo vs multi-repo, config-editor vs tutorial
-  vs standard project, a project with config editing enabled, config-editor with `--repo` / `--mount`;
-- **`cco sync` in-container**, which the three config modes (divergent / synced / one-config-repo) make
-  a first-class need rather than a host-only convenience.
-
-Open findings that feed it and should not be re-derived:
-[FI-42](improvements.md) (the fan-out's write path is resolved by member probe while its read path is
-operator-aware — the concrete defect this topology question explains),
-[FI-43](improvements.md) (`--repo` mounts the code `rw` while §3.7's rationale says *read*),
-[FI-40](improvements.md) (a refusal stating a count where naming is safe).
-Output: an analysis document, then **the maintainer's decision** — implementation scope, and whether any
-of it ships in this release, are decided at that gate, not assumed here.
-
-✅ **The analysis is DONE and persisted (2026-07-31)** — [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md),
-direction approved at the gate. Its load-bearing result: the proposal is structurally **"delete
-layout 2"**, and under it FI-42's fan-out writer becomes correct **verbatim** — a fix by removing a
-special case. Four blockers, each a decision and none fatal: **(a)** INV-MP — `/workspace/<repo>` as a
-passed-through ancestor is materialised root-owned and `test_invariant_mount_ancestry_owned` would
-fail, so a framework-owned scaffold (ADR-0054 D2's mechanism) is mandatory; **(b)** ADR-0051 homonyms
-— sound in project mode (names are 1:1 within a project), **unsound in `--all`**, where N×M
-collisions are the expected case and today's *mount-the-first, announce-the-second* arm would
-silently author the wrong project's config; **(c)** no ADR states which of N replicated copies is
-canonical in-session — today glob order decides; **(d)** a `.cco`-only stub trips three dir-test
-predicates into *absent-reported-as-present*, landing on **`cco project show`**, the very verb the
-proposal designates as the mapping surface. Supersessions required: **RC-6 §3.7** (its rule survives,
-its rationale becomes false; its `Po=none` gain needs role-aware per-member modes) and **ADR-0046 §6**
-— which the analysis shows a **normal** `edit-project` session already ships unenforced
-(`cmd-start.sh:1885-1887`), so §6 should be settled in the same ADR, not re-deferred. On `cco sync`:
-the topology removes reachability only — the blocking prerequisite is that `sync-meta` never crosses
-INV-STATE, so `synced`/`divergent`/one-config-repo are **indistinguishable in-session today**. FI-40
-is topology-independent and can ship either side of the gate.
-
-✅ **STEP 2b IS CLOSED — the maintainer's decision, 2026-07-31: release at the current state; the whole
-block moves to cycle-2.** Nothing about the mount topology ships in this release, and **FI-42 is
-deferred with it**.
-
-- **Why FI-42 is not fixed first** (the decisive reason, not the cheapest): the fix *cannot be taken
-  without taking the contract decision it carries* — all-or-nothing vs all-or-declared-partial — and
-  that decision is exactly what the cycle-2 session is for. Implementing now would settle a contract
-  by implementation. Secondary: `lib/rename.sh` is the surface **E6B-04** validates, and that gate ran
-  for the first time in any round today; touching it invalidates the evidence and buys a full host
-  round on a cycle whose only remaining work is verification.
-- **Why deferring is safe** — reachability was established before deciding (table in
-  [FI-42](improvements.md)): a **normal** session is layout 1, so the probe is correct there;
-  `edit-project` and `config-editor --project` refuse at the access boundary (`G=rw` required);
-  `--all` without `--repo` refuses **before any mutation**. The **only** path reaching the fan-out is
-  `config-editor --cco-access edit-all --repo …` and it exits **declared** (rc 1 + the `failed` paths,
-  S2b contract), not silently. → release known-issue.
-  ⚠ **Spelling corrected at G2, 2026-07-31**: the literal `--all --repo …` this entry first named is
-  **refused by `cco start`** (`cmd-start.sh:2687`) — only `--cco-access edit-all`, the unguarded
-  spelling of the same mode, gets through. Verified by running both. The deferral stands unchanged;
-  what changed is which command the release note may name.
-- 🔑 **A result derived while persisting the analysis, which reframes the proposal**: *"the writer
-  becomes correct verbatim"* and *soundness in `--all`* are **mutually exclusive** — `--all` exists to
-  reach projects whose repos are not mounted, and a repo name is a per-project label (ADR-0051 D2), so
-  `--all` structurally needs a project-keyed component. **The topology's residual value is UX (host /
-  session path parity), not FI-42's correctness.**
-- ✅ **Landed here, docs-only**: the [ADR-0046 §6 ratification annotation](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)
-  — the *normal* session already ships `include_member_configs: true`'s span unenforced, so the
-  config-editor built-in is the **stricter** of the two; the shipped behaviour is ratified, the
-  rewrite of §6 belongs to cycle-2.
-- ⏸ **Deferred to cycle-2**: [FI-42](improvements.md) · [FI-43](improvements.md) (a
-  *sub-question* of the topology decision, not a standalone flag) · [FI-40](improvements.md)
-  (topology-independent; deferred only to keep the release tree unchanged).
-
-✅ **BEFORE G6 — living-docs coherence sweep DONE 2026-08-03**, branch
-`docs/release/living-docs-sweep`, merged into `develop` as `da1fcb6`. Seven scopes, disjoint file sets, every
-claim verified against `bin/cco` / `lib/*.sh` rather than against another document.
-
-**The drifts worth remembering** (each was believed correct until it was checked):
-
-- **The README presented `cco init` as a global setup step** to run after `npm install -g`. It is
-  the project entry verb and acts on `$PWD` (`lib/cmd-init.sh:270-282`); the image is built only on
-  a fresh global seed (`:104-112`). The guides were already right and the README contradicted its
-  own text twenty lines below — the drift was localized to the one file that **ships** and is read
-  first. *(The maintainer's find; verified, not taken on report.)*
-- **A pack rule beats a project rule of the same filename** — the guide said the opposite. The
-  committed file is skipped, not layered (`lib/cmd-start.sh:694`, ADR-0005 F2; warning at
-  `lib/packs.sh:133`).
-- **Credentials are not per-project.** `claude.json` / `.credentials.json` live at the STATE root
-  and are shared by every project (`lib/cmd-start.sh:1521,1903`); the guide placed them under
-  `<state>/projects/<id>/session/`. Anyone reasoning about session isolation was reading it wrong.
-- **`cco stop` documented an implementation that cannot work** (`docker stop cc-<project>`):
-  `docker compose run --rm` discards `container_name`, so identity is the `cco.project` label.
-- **`context-hierarchy.md` illustrated the shipped global CLAUDE.md with a fabricated example** —
-  an eight-phase workflow absent from the 19-line real file. An invented example is worse than
-  none: it is the part readers copy.
-- **The retired `workspace.yml`** was still documented as a generated overlay file in three
-  separate documents (ADR-0041/0042 replaced it with `CCO_SESSION_CONTEXT`), and ADR-0036/0041
-  were still marked *"impl pending"* — the same "still design-intent" class G2 fixed elsewhere.
-- Three `--help` strings were **objectively false** (llms download path, `--keep`'s merge base,
-  `--sort status`) and were corrected in code, with the pinning tests run.
-
-🔑 **Coverage was measured, not asserted.** Verbs enumerated from the dispatcher and checked
-against `docs/users/reference/cli.md`: the only absentees are `store-op` and its `plan` sub-op —
-the ADR-0047 internal crossing, correctly not user documentation. ⚠ The first subcommand-level
-check reported "no gaps" **because its extraction returned nothing**; re-run with a non-emptiness
-proof it found a real one (`cco pack internalize`'s duplicate section at §3.27 had already
-diverged, omitting `--as`). *A green check that measured nothing is the same failure as the host
-log with `0 failed` and no `Results:` line.*
-
-📋 **Open for the maintainer** — (a) **`cco init` has no `$HOME` guard**: it scaffolds `$PWD/.cco`,
-and in a home directory that is the personal store's own path. On a fresh machine the outcome is a
-confusing `refusing to clobber`, not corruption — but it is exactly the mistake the old README
-invited. A guard is a code change, deliberately not made here. (b) **`cco pack internalize` is
-documented twice** (§3.23 unified, §3.27 dedicated); the divergence is fixed, the duplication is
-not — merging sections in a shipped reference at a release gate is an editorial call.
-
-**⏭ CYCLE-2 — config multiplicity, divergence awareness & mount topology** (analysis → design, one
-session, subject fixed by the maintainer 2026-07-31). ⚠ **The subject is wider than the mount
-topology, and the topology is downstream of it.** The prior question is that **a session does not know
-how many config copies exist for a project, nor whether they diverge** — the analysis grounds this
-mechanically: `sync-meta` never crosses **INV-STATE**, so `_sync_is_divergent` always returns false and
-every owned member reports `synced`. The question is not badly answered, it is **unaskable**. From
-there:
-
-- **config-editor is the config-authoring tool** and must therefore *know* a project's sync/divergence
-  state and let the user handle it **explicitly** (which implies `cco sync`, or a successor, being
-  reachable in that session — and its blocking prerequisite is the STATE crossing, not the mounts).
-- **A standard session is right to see only the config of the project it was started from** (which
-  repo hosted the launch — already documented at length in the design). The two modes have different
-  needs, and today's single mechanism serves both by accident.
-- **Then, and only then, the topology**: validate or discard the two-path model
-  (`/workspace/<name>-config` vs `/workspace/<repo>/.cco`) against real use cases and user intent,
-  with the four blockers and the six open questions of
-  [`analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
-  §3.3/§8 as ready-made input. ⚠ Start from the analysis: it is *not* a dead end even if the topology
-  is discarded — it either validates the current design or names what is wrong with it, and it has
-  already surfaced one thing nobody had seen (a repo name is per-project, so a repo-keyed mount cannot
-  address several projects at once).
-
-✅ **3 — CLI-surface documentation audit — DONE 2026-07-31 (gate G2).** Report:
-[`cli/reviews/2026-07-31-cli-surface-audit.md`](cli/reviews/2026-07-31-cli-surface-audit.md).
-Eight objective drifts corrected in place; the **two items it raised are both closed the same day** —
-the corrected **release-note sentence** is **approved** (G6 step 5: the known-issue had named
-`--all --repo …`, which `cco start` refuses; the reachable spelling is `--cco-access edit-all
---repo …`), and **[FI-45](improvements.md) is FIXED** (`remote list` no longer tells a user to
-widen access for a **removed** verb — it refuses with the removal notice at every level, like its four
-siblings; changelog 61). ⚠ FI-45 lands `bin/cco` **after** G3's acceptance — recorded as a
-post-acceptance in-cycle fix in the plan's §7, the treatment FI-41 got. ⚠ The largest find was outside the
-matrix: the **config-editor user guide** still documented the pre-ADR-0048 access model and
-advertised three verbs project mode refuses — while the built-in's own agent-facing rules were
-correct. *Original scope, for the record:* verify
-every verb declares correctly **which access levels it runs at** and **host vs container**. This
-cycle moved that surface twice — `remote remove|rename` became host-only, and config-editor's
-`extra_mounts` contract was ratified — and the last full audit
-([2026-07-02](cli/reviews/2026-07-02-cli-surface-awareness-review.md)) predates both. Subjects:
-[`cli/reference/cli-surface-matrix.md`](cli/reference/cli-surface-matrix.md) (the canonical matrix —
-check it first: if a verb's row is wrong there, every downstream doc inherits it),
-[`docs/users/reference/cli.md`](../users/reference/cli.md), the user guides,
-[`e2e-review/analysis/A1-command-scope-matrix.md`](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md),
-and [`cli/design/design-cli-environment-awareness.md`](cli/design/design-cli-environment-awareness.md).
-⚠ Ordered **before** the merge deliberately: a
-release whose CLI reference misstates where a verb runs ships the same defect class this cycle was
-about — a message that reads correct and strands the reader.
-
-**4 — Merge `develop → main` + release**, stating the verified platform (below).
-✅ **The README's self-contradiction on Linux is fixed** (`9599111`, on the cycle branch): both sites now
-say *partially supported* and both name the same cause — the internal store is mode `0700` for `cco-svc`,
-so in-session index-reading verbs and config writes refuse — plus the OAuth caveat the table used to omit.
-Remaining for this step: the merge itself, then `scripts/release.sh <x.y.z>` from `main` (CI publishes via
-OIDC). ⚠ Verify the housekeeping line in §*Path to release* before acting on it — it still asks to
-validate `npm i -g @claude-orchestrator/cco` on a Mac and to push `--follow-tags` for `0.5.2`, which the
-same section records as already released on 2026-06-30.
-
-**⚠ D-M6 re-scoped — the Linux write-path gate (decided 2026-07-21).** It was classified a hard
-blocking gate. Grounding it in the code changes the classification: `cco-svc` is **uid 900**
-(`Dockerfile:140`) and the internal-store binds have **host** sources
-(`cmd-start.sh:1716,1727,1729`), with the entrypoint deliberately **not** chowning the bind children
-(*"their ownership belongs to the host"*). So on native Linux the children keep the host user's uid
-and `cco-svc` would get `EACCES` on its own store — while on macOS `fakeowner` makes ownership moot,
-which is **why it works there and is verified there**. The question is therefore not *"is the code
-correct"* but *"which platform can we claim"*. Two consequences: (a) the gate becomes
-**non-blocking for a macOS-scoped release**, recorded explicitly rather than allowed to lapse; and
-(b) it **is** testable on a Mac after all — Docker **named volumes live inside the Linux VM on a
-real filesystem with real DAC**, so a two-command probe (`handoff-v3.1.md` §11) answers it directly.
-⚠ That probe must run from the **host** terminal: attempted from a session it is refused twice by
-`cco-docker-proxy` (container name, then mount path) — the proxy working as designed.
-
-**✅ The §11 probe RAN (2026-07-28) and returned `EACCES`** — the prediction is now an observation
-(`e2e-review/host-verifications.md`). **And the exposure is wider than "writes", which the session
-reports did not catch.** The host buckets are created **mode 0700** (`paths.sh:448-451`, `umask 077`)
-and owned by the host user, so on native Linux `cco-svc` (uid 900) is neither owner nor group:
-
-- **writes** fail **closed and honestly** — `_store_probe` tests `-r`/`-x` on the bucket
-  (`store.sh:210`) → `reach unreachable` → `die` exit 1, *"nothing was changed"*. This is fine.
-- **reads LIE** — `_index_health` does `[[ -e "$f" ]]` (`index.sh:130`); with no search permission on
-  the parent the stat fails, so the index classifies **`absent`**, the only benign state → *"the path
-  index is empty — nothing is registered on this machine yet"* at **rc=0**, in **every** session.
-
-So **W4-F06 / root R-C is not a macOS edge case — on Linux it is the default experience**, which
-raises its priority and means one fix serves both: giving the taxonomy its session-vs-host axis
-(cycle-1.2 **L2**) converts Linux from *silently wrong* to *honestly refusing* — the precondition for
-stating a verified platform at all. **Criterion F stays signed off as macOS-verified**, with the
-Linux write path carried explicitly open. The Linux fix itself is an **ADR, not a patch**: the
-conflict is structural (the agent's uid must equal the host user's or it cannot write the repos; the
-store content is owned by that same uid; the elevated identity must **not** be that uid). Candidates
-— a dedicated host group + setgid dirs + the gid joined in the entrypoint; POSIX ACLs granting uid
-900; or dropping the boundary on Linux (a security regression) — all imply host-side setup and belong
-in **cycle-2**.
-
-#### F — opinionated-config extraction + `cco update` responsibility refactor (post-C, structural)
-
-Make the cco **core agnostic** of opinionated config: keep `managed/` baked in, move the opinionated
-defaults (workflow/git/documentation rules, agents, skills, global `CLAUDE.md`, parts of `settings.json`)
-into a **separate official axis-2 sharing repo** (working name `cco-config-defaults`), installable like any
-shared resource. Refactor `cco update` to split its two mixed responsibilities — **core engine+migrations**
-vs **external shared-source 3-way merge**. Realizes **F-opin** (`../configuration/decentralized-config/design.md`
-§12). **Decoupled from C** (packaging does not require it); sequenced **after** C. Analysis (2026-06-30):
-axis-2 lacks a global-config install target + per-scope install + single-resource granularity + global
-source/meta tracking (gaps G1–G7); recommended vehicle = a new **`config` resource kind**
-(`cco config install/publish/update [--scope global|project] [--pick]`), pending a **resource-taxonomy
-analysis** first. Full reference:
-[`opinionated-extraction-and-update-refactor-handoff.md`](engineering/opinionated-extraction-and-update-refactor-handoff.md).
-ADR-0040, additive, **non-gating**.
-
-#### D — `cco project save` (project-config versioning helper) — design notes
+#### A1 — `cco save`: project-config versioning helper
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
-repo's **own git**. To version just the config the user must manually stage only `.cco/**` among unrelated
-repo changes — error-prone and easy to get wrong. The old `cco vault save` gave a one-command,
-secret-checked commit of the personal store; the in-repo model lost that ergonomics for **project** config.
-
-**Proposed scope (v1 of the helper).**
-- A verb that stages **exclusively** `<repo>/.cco/**` (never touches the rest of the repo's working tree)
-  and commits it with a message, in the repo's own git — a path-scoped `git add <repo>/.cco && git commit`.
-- **Secret detection** before commit, reusing the existing scan from `cco config save` (`lib/secrets.sh`);
-  `<repo>/.cco/secrets.env` stays gitignored and is never staged.
-- **Isolated history** view: surface only the commits that touched the project config.
-
-**Naming — open question.** `cco config save` is **taken** (it versions the personal store `~/.cco`).
-Candidates, for symmetry: **`cco project save`** (recommended — mirrors `cco config save`, but for the
-repo's project store) · `cco save` · `cco project commit`. Decide in the design session.
-
-**Isolated history — feasibility: YES.** `git log -- <repo>/.cco/` already path-filters commits that
-touched the project config (works regardless of how the commit was made). For commits made specifically
-via the helper, optionally add a commit **trailer** (e.g. `Cco-Save: true`) and filter with
-`git log --grep`. A companion read verb (`cco project history` / `cco project log`) can wrap either.
-
-**Type & gating.** Additive, non-gating. **Open questions for the session**: exact verb name; path-only
-vs trailer-based history; whether to offer `--amend`/message templating; interaction with a multi-repo
-project (commit `.cco/` in the invoking repo only, or fan out to config-bearing repos like `--sync`?).
-
-**⚠ Integration with agent↔cco access (B2, [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md)).**
-B2 designs/references `cco project save` **as if it already exists**: the Level-C config-interaction
-rule tells edit-level agents to version config atomically with `cco project save`, and it is expected to
-be reachable via wrapped-`cco`. When D is designed/built, **verify the fit with the agent↔cco model**:
-(a) classify the verb in the operator shim (in-container write verb at `cco_access ≥ edit-project`, vs
-host-only?); (b) ensure the injected context + managed rule reference the real verb name once decided
-(§D naming is open — B2 assumes `cco project save`); (c) confirm secret-scan + path-scoping hold under
-the container-operator mode. Until D lands, the managed rule (post-review, `2b0934e`) degrades
-gracefully — it names `cco project save` as *forthcoming* and tells the agent to commit a project's
-`<repo>/.cco/` with the repo's own git in the meantime, so an edit-level session never hits an
-"Unknown project command". When D ships, restore the direct `cco project save` guidance.
-
-## Decentralized-config v1 — phase index
-
-All phases closed; Phase 5 build-complete. Full per-phase commit/baseline log:
-[roadmap-history.md → phase-by-phase log](roadmap-history.md#decentralized-config-refactor--phase-by-phase-log).
-
-| Phase | Scope | Status | Key outcome |
-|-------|-------|--------|-------------|
-| Design + review (V) | Analyses, ADRs, impl-readiness review | ✅ Closed | ADRs 0005–0023; 4-bucket taxonomy, coordinate-per-unit, sharing unification; 58-finding review resolved into ADR-0021/0022/0023 |
-| **P0** Substrate | Resolver, STATE index, coordinate parsers, mount re-point | ✅ Closed | `cco resolve` substrate; `.claude` overlays → CACHE `:ro`; baseline 982/16 |
-| **P1** Core local | `cco resolve`/`path`/`sync`, reminder aggregator, `project add` | ✅ Closed | Index-backed local commands; suite 1043/16 |
-| **P2** Migration & bootstrap | J0 bootstrap, backup, `init --migrate`, `join` | ✅ Closed | Eager global + lazy per-project migration; ADR-0024/0025; suite 1087/8 |
-| **P3** Legacy cutover | Decentralized `start`, `tag`/`config`, vault removed, `init` scaffold | ✅ Closed | Vault/profile world deleted; config-editor built-in (ADR-0026/0027); suite 936/3 |
-| **P4** Sharing core | source→DATA, structure discovery, sync-before-publish, 2×2 verbs | ✅ Closed | Manifest subsystem deleted; schema bridge → index-only; ADR-0022; suite 827/1 |
-| **P5** Sharing-ext + lifecycle | `forget`, `config validate`, pack resolution/internalize, `project validate`/`coords`, `update --check`, `config protect` | ✅ Build complete | Lifecycle + sharing-ext verbs; changelog #15; suite **894/0** |
-
-## What's next
-
-### Index-integrity hardening (ADR-0052) — 4-session plan ✅ **COMPLETE** (S1–S4 landed, merged into `develop`)
-
-**Branch**: `feat/index/integrity-hardening` (from `develop`). **Decision**:
-[ADR-0052](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md).
-**Plan detail** (WS-1..7, file anchors, tests):
-[`index-integrity/00-plan.md`](configuration/decentralized-config/index-integrity/00-plan.md).
-**Why**: the host e2e-review v3.1 §10.6 incident — the path index moved location + schema and the two
-transitions were conflated, causing data loss (N1: migration 017 "new wins" `rm -f`s the legacy
-index), no hot-path reconcile (N2), silent version divergence (FI-16), extra_mount residue (FI-23),
-and `q`/Exit not aborting start (N3). **Single delivery of the whole cluster before resuming e2e v3.1.**
-
-**Delivery shape**: 4 consecutive implementation sessions. **Every session follows the same ritual**
-— (1) **design micro-pass + verify against ADR-0052 and the cited ADRs + a correctness review of the
-current tree** *before* touching code; (2) implement; (3) tests green (baseline **1465/7** in-container
-— the earlier "1463/9" was stale, same 1472 total — + the session's new tests); (4) atomic commit(s) +
-flip the WS row in `00-plan.md`. Never auto-advance between sessions — each is launched explicitly.
-**S1 done**: WS-1 fail-loud gate landed `93b3354`, reviewed + hardened `8811108` (fail-honestly on
-unreadable/malformed state; F1/F2 critical). Suite **1481/7**. **S2 done**: WS-2 non-destructive reconcile
-+ WS-3 residue absorption + the shared `_index_rehome_dump` classifier landed `5e43863`, docs `2ab5edf`.
-Suite **1493/7** (+12). **S3 done**: WS-4 extra_mount re-home (host-only `_index_rehome_extra_mounts`
-enrichment + `config validate --fix` re-home lane) + WS-5 malformed-lane doctor landed `564040e`, docs
-`8dde097`. Suite **1498/7** (+5). **S4 done**: WS-6 developer sandbox (`--dev-sandbox` isolated XDG root) + N3
-(`q`/Exit propagates rc=2 so `cco start` aborts) + WS-7 docs cutover (changelog **#48**, FI-16/22/23
-flips, living-doc sweep) — `50ba8f7`. **▶ Cluster COMPLETE 2026-07-23** and `feat/index/integrity-hardening`
-is an ancestor of `develop`; both session handoffs retired. Detail:
-[`index-integrity/00-plan.md`](configuration/decentralized-config/index-integrity/00-plan.md).
-
-```mermaid
-flowchart LR
-  S1["S1 · WS-1<br/>version gate + const"] --> S2["S2 · WS-2+3<br/>reconcile + residue"]
-  S1 --> S4["S4 · WS-6+7<br/>dev-sandbox + docs"]
-  S2 --> S3["S3 · WS-4+5<br/>extra_mount re-home + doctor"]
-  S3 --> S4
-```
-
-| Session | WS | Scope | Verify against | Depends on |
-|---|---|---|---|---|
-| **S1 — Version-gate foundations** | WS-1 | `CCO_INDEX_VERSION` single source + `_latest_index_version`; `_cco_version_gate` in `_cco_first_run` (after `_cco_bootstrap_roots`, before flatten/backup) `disk>supported → die` on **all** verbs; `_cco_in_container`==0 fix. Tests: `test_version_gate.sh`. | ADR-0052 §1; FI-16 mutation-order; ADR-0051 D6 (index self-upgrade, not `migrations/`) | — |
-| **S2 — Reconcile + residue** ✅ **DONE (2026-07-23, `5e43863`)** | WS-2, WS-3 | `_index_reconcile_legacy_location` non-destructive **merge**, wired into `_cco_first_run` (NON-interactive N2 backstop — a prompt would block any command) **and** migration 017 (INTERACTIVE, replaces its `rm -f` = N1; conflict prompts only on a TTY, else keep both + warn, never delete); residue absorption in `_index_migrate_if_needed` (v2 file with stray `paths:`, re-entrancy-guarded). Shared **PURE** `_index_rehome_dump` classifier now drives the rewrite + reconcile + residue. Tests: `test_index_reconcile.sh` (8) + `test_index.sh` (+4) → suite **1493/7**; no `test_migrate*` "new wins" assertion existed to drop. | ADR-0052 §2/§3; ADR-0051 D6 losslessness; ADR-0017 D2 (non-destructive / no-prune); ADR-0047 (host-only) | S1 |
-| **S3 — Scoping + doctor** ✅ **DONE (2026-07-23, `564040e`)** | WS-4, WS-5 | extra_mount re-home under the declaring project: host-only `_index_rehome_extra_mounts` enrichment (additive to the PURE `_index_rehome_dump`, keyed off `yml_get_mount_coords`) in the v1→v2 migration + `config validate --fix` re-home lane (`_cv_detect_fi23_residue` → `_cv_prune_record` fi23_rehome arm, its OWN confirm — a re-home MOVES, it never deletes); index-focused doctor: malformed (non-absolute) index values reported **separately** (`_CV_MALFORMED`), **never pruned**, orphan prune keeps the two-phase sync-class confirm. Both re-home sites use the operator-aware `_resolve_project_yml` (INV-F.3). Tests landed in `test_index.sh` (+3) + `test_config_validate.sh` (+2) → suite **1498/7**. | ADR-0052 §4/§5; ADR-0051 D2 (no global-default layer); ADR-0021 Dec.5 (sync-class two-phase) | S2 |
-| **S4 — Dev-sandbox + docs cutover** ✅ **DONE (2026-07-23, `50ba8f7`)** | WS-6, WS-7 | `CCO_DEV_SANDBOX` toggle redirecting `CCO_STATE/CACHE/DATA_HOME` to an isolated root + optional seed-copy + `cco whoami` indicator (off by default, no behaviour change); N3 `q`/Exit abort; changelog; **flip FI-16/22/23 to landed + record N1/N2/N3**; living-doc sweep (root `CLAUDE.md` STATE bucket, `design.md`, `cli.md`). Tests: `test_dev_sandbox.sh`. | ADR-0052 §6/§7; `paths.sh` XDG resolution; `.claude/rules/update-system.md` + `documentation-lifecycle.md` | S1, S3 |
-
-**Launch pointers** (paste to start each session in turn):
-- S1 → *"Esegui Sessione 1 del piano index-integrity (roadmap §Index-integrity; ADR-0052 §1; 00-plan WS-1): design+verifica-ADR/correttezza → implementa → test."*
-- S2 → *"…Sessione 2 (WS-2+3, ADR-0052 §2/§3)…"* · S3 → *"…Sessione 3 (WS-4+5, ADR-0052 §4/§5)…"* · S4 → *"…Sessione 4 (WS-6+7, ADR-0052 §6/§7)…"*
-
-**Out-of-session / host gates after S4** (from the Mac): `cco build` + live dogfood (0.5.2→develop
-reconcile, gate refusing a downgraded binary, dev-sandbox toggle); host suite run toward a clean pass;
-push both branches + merge → develop (host-only per FI-20). Only then resume the e2e-review v3.1 host
-runbook. ⚠ **The prior "host suite is clean/0" assumption was FALSE** — the first full host run
-(2026-07-24) surfaced a silent-hang class (a captured `/dev/tty` prompt) and, once fixed, **1500/20** on
-macOS bash 3.2. The 7 in-container FI-19 boundary failures do pass on the host, but the host has its own
-~20 terminal/bash-3.2 failures. See **§Test runner — host-side green** below (the interactivity-hang
-class is already fixed on develop; the remaining 20 are the pre-e2e-v3.1 gate).
-
-### Test runner — host-side green (pre-e2e-v3.1 gate)
-
-The first full **host-side** suite run (macOS default bash 3.2, from a real Terminal) exposed failures
-invisible in Docker/CI. Getting the host suite green is a gate before resuming the e2e-review v3.1.
-
-**✅ DONE — interactivity-hang class fix** (2026-07-24, commit **`04143e4`**, FF-merged to `develop`;
-branch `fix/test-runner/noninteractive-suite` — push + branch-delete are Mac-only; changelog **#49**).
-Two defects, both green in CI/Docker (no controlling terminal) but biting only from a real terminal:
-- **Bug 1** — spurious detail-less `[FAIL]`s: `_run_test`'s `$(( set -e; fn ))` relied on bash 5.x
-  suppressing errexit inside the capture; Apple bash 3.2 does not. Fix = drop the inner `set -e`
-  (mask-guard + final rc stay the detectors).
-- **Bug 2** — silent HANG. **Root cause was NOT bash 3.2**: a cco prompt blocking on `read < /dev/tty`
-  while the runner's `$()` swallowed its text (first offender = `cco init`'s repo-name prompt, since
-  `init_global` never passes `--repo-name`). A CLASS — ~20 gates spelled interactivity three ways
-  (`(exec < /dev/tty)`, `[[ -t 0 ]]`, `[[ ! -t 0 ]]`) across `lib/` + one in `migrations/010`.
-- **Class fix** (one spelling, one opt-out): `_cco_have_tty` now honours `CCO_NONINTERACTIVE=1`; every
-  raw gate routes through it; `_confirm_destructive` reads `/dev/tty` to match its gate; `bin/test`
-  exports `CCO_NONINTERACTIVE=1`; new static invariant `test_invariant_tty_gate_single_spelling` bans
-  the raw probe across `lib/`+`bin/`+`migrations/`. Completes the migration to `_cco_have_tty` begun by
-  the earlier `cco resolve` fix (`c558568`). Also fixed a pre-existing unconditional failure in
-  `test_migration_010_user_project_named_tutorial` (+2 siblings) — they sourced the migration without
-  `colors.sh`. **Repro trick** (no Mac needed): `script -qec './bin/test …' /dev/null` gives a pty so
-  `/dev/tty` is reachable → the hang reproduces in-container on bash 5.2/Linux.
-- **Verified**: full suite under a pty in-container = **1513/7** (the 7 = pre-existing FI-19 host-only,
-  identical on `develop`), zero hangs. `test_clean` now passes host-side.
-
-**▶ NEXT (own session, before e2e v3.1)** — **host-side suite is 1500/20** after this fix. The 20 are a
-DIFFERENT set from both the interactivity hang (fixed) and the 7 in-container FI-19 boundary failures
-(which pass on the host). They are the remaining macOS-bash-3.2 / terminal-environment failures; each
-must be triaged and fixed (or confirmed genuinely host-only) to reach a clean host pass. Only then
-resume the e2e-review v3.1 host runbook (the `e2e-review/handoff-v3.1.md` handoff).
-
-### Pre-merge review cycle (gate to v1)
-
-```mermaid
-flowchart LR
-  A["1. Impl review<br/>✅ done"] --> B["2. Docs review<br/>✅ done"]
-  B --> X["Pre-merge flatten<br/>✅ done (914/0)"]
-  X --> C["3. Refactoring /<br/>optimization review<br/>✅ done (921/0)"]
-  C --> D["4. UX-UI review<br/>✅ done (943/0)"]
-  D --> R["5. Comprehensive<br/>pre-e2e review<br/>✅ done (945/0)"]
-  R --> E["6. Dogfooding<br/>e2e (Mac)<br/>▶ next"]
-  E --> F["7. Merge /<br/>release v1"]
-```
-
-1. **Implementation review** — ✅ done (2026-06-25 adherence review + 2026-06-26 deep
-   migration review; all findings resolved, baseline 905/0).
-2. **Documentation review** — ▶ **largely done** (this step). Reorganized `docs/` to the
-   Cave structure (`maintainers/` + `users/` + `archive/`, audience→domain→doc-type leaf;
-   `guiding-principles` promoted to `foundation/`); ran the shipped-behavior coherence
-   sweep (browser-mcp/llms/packs/update-system/environment/security designs aligned to the
-   4-bucket model; ~220 cross-refs repaired; `users/` verified clean). Plan + execution
-   log: `configuration/decentralized-config/documentation-reorganization-plan.md`.
-   **Deferred to post-merge** (see backlog): per-domain split of `cli.md` /
-   `context-hierarchy.md` / the `configuration-management.md` guide, and the by-domain
-   redistribution of the `decentralized-config/` sprint folder.
-3. **Refactoring / optimization review** — ✅ **done (2026-06-27).** Record:
-   [`reviews/27-06-2026-refactoring-review.md`](configuration/decentralized-config/reviews/27-06-2026-refactoring-review.md).
-   8 atomic LOCAL commits `e65aa2f`→`0c3c822`, behaviour-preserving, suite **914/0 → 921/0**.
-   Applied: `_peel_tab` TSV splitter (#1) + `_coords_scan_section` (#5) + per-section split of
-   `_pv_validate_unit` (#4) + `_project_foreach` (#2, honest 6-of-13 scope) + `cmd_update`
-   307→212 via `_update_usage`/`_update_discover_pack_remotes` (#7/#11) + `cmd-build` secret
-   scan routed through `lib/secrets.sh` (#10, "route-as-is" — non-blocking warn) + L4/NIT
-   backup-diagnostics polish. Skipped as moot/forced (KISS/YAGNI): #3, #6, #8, #9, #12, #13.
-   **L6** (container-detection false-positive for a host user named `claude`) **fixed**
-   (`a216c8b`): dropped the `HOME=/home/claude` heuristic, kept the daemon-injected
-   `/.dockerenv` signal + an explicit `CCO_IN_CONTAINER` test/dev seam — cco is Docker-only,
-   so no entrypoint/image change was needed. The **global build-extension reader bug**
-   (`cco build` read setup scripts from `~/.cco/global`, now `~/.cco` top level) was fixed
-   2026-06-26 (`a92effc`); **re-validate in dogfooding** (step 6).
-4. **UX-UI review** — ✅ **done (2026-06-27).** Record:
-   [`reviews/27-06-2026-ux-ui-review.md`](configuration/decentralized-config/reviews/27-06-2026-ux-ui-review.md);
-   design in **[ADR-0029](configuration/decentralized-config/decisions/0029-ux-ui-review-unified-list-confirm-symmetry.md)**
-   (refines ADR-0023 D1). A reachability sweep came back clean; the fixes were coherence
-   defects, implemented in 7 phases (Ph.1–7) across atomic LOCAL commits, suite **921/0 → 943/0**:
-   unified `cco list [<kind>] [--tag] [--sort]` + redirect stubs (D1); uniform
-   destructive-confirm contract `-y`/`--yes`/`--force`-override (D2); `cco tag remove` +
-   `cco template update`/`validate` (D3); `cco path` demoted out of `cco help` (D4); the help
-   sweep + `-h` alias + `cco forget` L8 recovery hint (D5). Shipped-behavior docs re-synced
-   (`cli.md`, repo `CLAUDE.md`, design §7).
-5. **Comprehensive pre-e2e review** — ✅ **done (2026-06-27).** Record:
-   [`reviews/27-06-2026-pre-e2e-comprehensive-review.md`](configuration/decentralized-config/reviews/27-06-2026-pre-e2e-comprehensive-review.md).
-   Multi-agent, read-only, adversarial whole-system pass over v1 across four dimensions
-   (bug-free · design adherence · user-guide/CLI coherence · migration completeness). **No
-   blocker**; the D4 migration dimension came back clean. 20 verified findings (6 high / 5 med /
-   9 nit) resolved in 5 atomic LOCAL commits (one per cluster), suite **943/0 → 945/0** (+2
-   regression tests). Headline fixes: migration 009 no longer rewrites `~/.gitignore` on fresh
-   installs (C1); the ADR-0029 D2 destructive-confirm contract is enforced in code (C6/C7);
-   `start`/`stop` resolve multi-repo projects via index membership (C2/C3); `docs/users/` +
-   `CLAUDE.md` re-synced to the shipped surface (C12–C20); dead-code/comment cleanup
-   (C4/C8/C9/C10/C11). Open items handed to step 6: the `_confirm_destructive` `/dev/tty` idiom
-   decision, and a spot-check of the §6 coverage gaps (`cmd-update.sh`, `cmd-resolve.sh`,
-   `index.sh` atomicity).
-6. **Dogfooding e2e on Mac** — plan: `configuration/decentralized-config/P2-dogfooding-validation.md`
-   (sandboxed roots + HOME-flip; legacy-vault removal accepted only after merge + validation);
-   runnable checklist (legacy → backup → migration → functional test → failure-path, with the
-   pre-migration safety nets): [`configuration/decentralized-config/e2e-validation-checklist.md`](configuration/decentralized-config/e2e-validation-checklist.md).
-7. **Merge / release v1** — merge `feat/vault/decentralized-config`, reconcile both roadmaps,
-   mark ADRs.
-
-### Dogfooding findings (step 6 — in progress, host e2e on Mac)
-
-Real-host migration of `cave-flow` surfaced a sequence of defects; fixing them all
-**pre-merge**. Commits are LOCAL (push from Mac). Suite baseline 945 → **966/0** (A/B/B-robustness/C/D).
-
-- **Migration completeness** ✅ — `cco init --migrate` dropped most of `project.yml`
-  (extra_mounts/docker/auth/github/browser). Fixed (passthrough-by-default + extra_mounts
-  name-synth, **ADR-0030**); GAP-1 remotes de-tokenize split; GAP-2 template provenance.
-- **A — `cco resolve` never prompted** ✅ (`c558568`) — the interactivity guard used
-  `[[ -t 0 ]]` inside `while read … done < <(yml_…)` loops (fd 0 = the process-substitution
-  pipe), so it always took the non-interactive branch; local-only `extra_mounts` were
-  permanently unresolvable. Fixed with `_cco_have_tty()` (the `/dev/tty`-reachability idiom),
-  replacing 5 broken guards.
-- **B — `cco start` crashed `yaml: line 52`** ✅ (`7f65268` + `c558568`) — migrated
-  `extra_mounts` whose legacy source was `@local` stored the marker in the index → reached the
-  generated compose as `- @local:/…:ro`, whose leading `@` is a reserved YAML char that breaks
-  `docker compose`. Fixed at the root (migration resolves `@local`→real path via
-  `local-paths.yml`) + defense (bridges skip non-absolute index values, so a dirty index can't
-  crash start before re-migration).
-- **B-robustness — quote compose volume paths** ✅ (`02c17f4`) — cco emitted volume paths
-  UNQUOTED, so a resolved path with a space / YAML-special char (the host has `…/Cave gif/…`)
-  broke the compose. Added a DRY `_compose_vol()` emitter (double-quoted) routed through every
-  bind-mount site (`cmd-start.sh`/`packs.sh`/`llms.sh`); verified with `docker compose config`
-  on space-bearing paths. Suite 950 → 953/0.
-- **C — `cco list` packs UX** ✅ (`9434919` + `451c385`) — the packs table wrapped because of
-  hardcoded column widths plus a latent `grep -c` count bug (empty category → `"0\n0"`, an
-  embedded newline that split rows). Fixed with a shared `_fit_col` helper (dynamic NAME width +
-  ellipsis) across `cmd_list`/`cmd_pack_list`, the count bug, `--sort tag` (untagged last,
-  tie-break by name), `--reverse`/`-r`, and a TAGS column on `cco list packs`. Additive flags +
-  a rendering fix refining ADR-0029 D1 (forward-annotated, no new ADR). Suite 953 → **959/0**
-  (+6 tests; the 6 in-container `test_paths`/`test_is_installed` failures are a pre-existing
-  XDG-base env quirk, identical with/without this change — not a regression).
-- **D — `cco project rename [<old>] <new>`** ✅ (**ADR-0031**) — new verb that re-keys the project
-  identity across every store: `project.yml` `name:` in each member repo, the STATE index
-  membership, the DATA tags, and the STATE/CACHE/DATA identity dirs. New `lib/cmd-project-rename.sh`
-  + `_index_rename_project`/`_tags_rename` helpers; cwd-first one-arg + explicit two-arg forms;
-  preview + confirm (`-y`, non-TTY→die). **Strict (D3)**: refuses unless every member resolves on
-  this machine — a partial `name:` rewrite would diverge members permanently under `cco sync`'s D2
-  guard. Surfaced two related findings: (1) `:`/`/` in a name silently corrupts the index/dirs →
-  added the shared `_cco_valid_project_name` validator (Design Invariant 10) used by init/start/
-  rename, closing a latent `cco start` regex inconsistency; (2) cross-resource name policy +
-  id-consumption re-validation deferred to a hardening follow-up (below). +7 tests; suite 959 →
-  **966/0** (the 6 in-container `test_paths`/`test_is_installed` failures are the same pre-existing
-  XDG-base env quirk).
-
-#### Round 2 (host e2e of `cave-web`/`cave-flow`, 2026-06-29) — ✅ DONE pre-merge
-
-Five findings from a second e2e pass: multi-agent analysis → design → implementation. **All resolved
-pre-merge** (commits LOCAL on `feat/vault/decentralized-config`, push from Mac). Suite **966 → 978/0**
-in-container. changelog **#19** + **#20**.
-
-- **F2 — pack llms not re-fetchable (coordinate drift)** ✅ (**ADR-0032**; `cc182dd`, `57ad53b`, `2d2a718`)
-  — `cco pack validate` flagged missing llms with a **non-executable** remedy (`cco llms install` needs a
-  url it never supplied). Root cause: `pack.yml` allowed url-less (short-form) llms, pack migration
-  relocated wholesale without url backfill, and pack validate checked only local presence — drifting from
-  the ADR-0017 D1 / ADR-0019 D6 invariant (llms url mandatory → always re-fetchable). Closed: D2 validate
-  parity + executable remedy / url-gap flag; D3 `_backfill_pack_llms_urls` run from `cco update` (an
-  update-flow step, **not** a `migrations/pack/NNN` — pack-scope migrations are unwired); D4 long-form
-  template with required url; D5 `cco resolve` heals missing llms (hybrid install-from-url / different-url
-  / skip), unified under one heal verb (P14), **not** a separate `cco llms resolve`.
-- **F1 — `validate` output inconsistency** ✅ (`9797386`) — `project validate` is greppable/no-symbols
-  (ADR-0023 D2) while `pack`/`template validate` used inline `✓/✗/⚠`. Unified `pack` + `template validate`
-  to the greppable contract (`<name>: <reason>` lines + `validate: N issue(s)` summary; success still
-  prints "… is valid"). `config validate` left unchanged (orphan-sanitization, ADR-0021; outside the
-  user-stated `{project,pack,template}` scope). Refines ADR-0023 D2 / ADR-0029; no new ADR.
-- **F3 — `cco project coords` wording** ✅ (`5aab14c`) — not a bug (validate = per-unit reachability;
-  coords = cross-unit consistency), but the empty-result message read as a contradiction. Reworded +
-  help note distinguishing the two.
-- **F4 — `cco clean` default friction** ✅ (`cfb105e`) — no path/scope bug; default cleans only `.bak`, so
-  `.tmp` needs explicit `--tmp`. Shipped: conservative default + discoverability hint + clearer help/scope
-  docs. Deeper redesign deferred to the Post-v1 backlog.
-- **F5 — 6 in-container test failures** ✅ (`6fcd185`) — not regressions; the anti-resolve guard
-  (ADR-0007, keyed on `/.dockerenv` since `a216c8b`) fires in-container while 6 tests omitted
-  `CCO_ALLOW_HOST_RESOLVE=1`. Added the flag so the suite is green in-container **and** on host.
-
-Residual gate: Mac host re-validation (`e2e-validation-checklist.md`) before merge.
-
-#### Round 3 (first real `cco start` of `claude-orchestrator` itself via decentralized-config, 2026-06-29) — ✅ S1 · S2 · S3 ALL DONE
-
-The project's own first migration + start on the Mac surfaced four scopes of defects.
-Each was **verified against the shipped code** (read-only multi-agent analysis, file:line
-evidence — not trusting any prior resolution-log). They are organized into **three
-sequential fix sessions**, each running the full Analysis → Design → Implementation cycle
-with approval gates (per `.claude/rules/workflow.md`). Order is dictated by data/dependency
-flow: correct the index data → unify the resolution surface → multi-repo membership ops that
-depend on clean resolution. Commits will be LOCAL (push from Mac). Baseline **978/0**.
-
-> **Pre-merge migration principle (applies to S1–S3 and the whole decentralized-config
-> branch).** This branch is **unreleased** — there are **zero external installs**, so no user has
-> received any of these bugs or the decentralized migration at all. Therefore: **fix the *live*
-> legacy→new migration path** (`_cco_migrate_project` / `_cco_populate_global_from`) so the one
-> migration real users run post-merge is correct in a single pass (**born-at-latest**). Do **not**
-> author fix-up `migrations/{scope}/NNN` scripts to repair an install already on the new layout from
-> an intermediate branch state — the only such install is the developer's own e2e test, rebuilt from
-> backup via `cco forget` + `cco init --migrate` (or a fresh `cco update`). **Keep** the legacy-vault
-> chains `migrations/{global,project}/001-015`: real legacy vaults still migrate exactly once. This
-> avoids designing redundant migration scripts in S2/S3.
-
-Verified findings (read-only analysis, 2026-06-29):
-
-- **Scope 1 — resolve/path** (all confirmed): tilde/`@local` written raw into the STATE index
-  by the migration repos branch (`lib/migrate.sh:761-763`; the mounts branch `802-813`
-  already normalizes) → false AD5 conflict in `_index_path_conflicts` (`lib/index.sh:184-188`,
-  exact-string compare) and `cco resolve <name>` "not resolvable" (`lib/cmd-resolve.sh:65-77`);
-  `cco path list` surfaces the resulting `@local` entries. `<name>` vs cwd asymmetry resolves
-  with the tilde fix.
-- **Scope 2 — migration completeness** (MERGE-BLOCKER, data-loss): transcripts are **not
-  migrated** — the helper `_cco_project_session_transcripts` (`lib/paths.sh:163`,
-  dest `<state>/.../session/claude-state`) exists but is **never invoked**; migration copies
-  only memory (`lib/migrate.sh:1010-1015`). Memory migrates correctly; the legacy backup is a
-  complete raw tar (`lib/migrate.sh:158`, incl. `.git` + gitignored + all profiles' shadows),
-  so no data is lost at source — the gap is the missing local backup→destination mapping.
-  **Decision premise (confirmed 2026-06-29):** the local legacy→new-layout migration **must
-  copy transcripts** (no data loss); ADR-0009's deferral applies **only to cross-PC sync**,
-  not to local migration. The session re-audits *every* resource type independently.
-- **Scope 3 — `cco join`** (design↔code gap): current `cco join` (`lib/migrate.sh:1058-1084`)
-  is Journey C (no `<project>` arg, registers a repo that already hosts its own `.cco/`),
-  which is **redundant** — `cco start` (cwd-first, `lib/cmd-start.sh:114-123`) and
-  `cco resolve --scan` (`lib/cmd-resolve.sh:297,308`) already cover it. `design.md:707` +
-  `cli.md:275-295` promise `cco join <project>` = Journey E (add the current repo as a member
-  to an existing project's `repos[]`), **not implemented**. Repurpose `join`→Journey E (drop C),
-  mirroring the multi-repo same-id edit pattern of `cco project rename` (ADR-0031).
-- **Scope 4 — `cco forget`** (cleanup enhancement): current `lib/cmd-forget.sh` removes index
-  membership + per-repo path (shared-guard), STATE/DATA/CACHE dirs (incl. memory, `:132`), and
-  tags, but **never touches `<repo>/.cco`**. Add an always-on TTY final prompt + `--purge` flag
-  to delete `<repo>/.cco` across member repos, **ownership-guarded** (`project.yml` `name:` ==
-  forgotten id, via `_cco_project_id`), with uncommitted-changes warning + backup; default
-  "repo untouched" preserved. Reuses `_confirm_destructive`/`_reminder_git_dirty`.
-
-| Session | Scopes | Goal | Decision artifact |
-|---|---|---|---|
-| **S1 — Resolution surface + index normalization** ✅ **DONE (2026-06-29)** | 1 | Fix tilde/AD5/`@local` at the index boundary (`_index_set_path` + `_index_path_conflicts` + expansion in `_resolve_unit_dir_for_project`) + a one-shot index-cleanup migration; `cco path list` expands & flags non-absolute entries. Design the unified `resolve↔start` resolution surface: status of **all** referenced resources (repos/llms/packs/mounts) + per-resource actions (clone/download-to-chosen-path / explicit local path / cached pack), `cco start` on an unresolved project **invokes** resolve (no command duplication, P14 never-block). | new **ADR-0033** |
-| **S2 — Migration completeness (data-loss)** ✅ **DONE (2026-06-29)** | 2 | Independent re-audit (4 parallel analyst agents: per-project / global / transcript-wiring / backup+chains) → **2 confirmed data-loss gaps, all else SAFE**. **GAP#2 transcripts**: wired the missing `session/claude-state` copy mirroring memory (dual-resolve active+shadow, `cp -rn`, dest == `cco start` mount). **GAP#1 arbitrary secret files**: glob-copy `*.env`/`*.key`/`*.pem` into `<repo>/.cco/` gitignored-by-design, secret-scan aligned to the project `.gitignore`. D2 dissolved (projects are profile-exclusive → no multi-profile divergence). | forward-annotated **ADR-0009** + design §9; **no new ADR, no changelog** (completeness bugfix) |
-| **S3 — Multi-repo same-id ops: `join` + `forget`** ✅ **DONE (2026-06-29)** | 3 + 4 | Built one reusable ownership-guarded classifier `_project_member_status` (5-way: unresolved/code-only/foreign/divergent/synced via index + `name:` + sync-meta F39) shared by `join`, `forget --purge`, and `cco project show` (the `_project_member_role` retrofit, which closed two latent ADR-0024 D5 bugs). **`cco join`→Journey E** (`<project>` arg + `--name` + `--sync`; edits `repos[]` in all in-sync same-id members, prompts on divergent Case C — NOT strict since `repos[]` ≠ the `name:` sync discriminator, refuses non-TTY divergent; url auto-derived from `git remote origin`; D2 clobber-guard on `--sync`; Journey C dropped). **`cco forget --purge`** deletes owned `.cco/` with backup + consent (default repo-untouched preserved). 4 commits `6926d35`→`4a176ee`, suite **1005/0**. | new **ADR-0034** (join/Journey E); forward-annotated **ADR-0021** D2 (forget) + **ADR-0024** D5 (classifier); changelog **#22** (join) + **#23** (forget --purge) |
-
-Dependencies: S1's index-boundary fix also corrects the migration writer (`migrate.sh:762`
-flows through `_index_set_path`), so S1 precedes S2 (re-test migration on a corrected index)
-and S3 (join/forget rely on clean member resolution). **S1 shipped** as ADR-0033 + changelog #21
-(7 commits `cb99e60`→`dbb1e96`, suite **989/0**); the bug-fix (a) corrected the migration writer +
-added cleanup migration `016`, and (b) unified the resolve surface (one heal verb for
-repos/mounts/llms/packs, `cco start` invokes `_resolve_unit`, never-block). **S2 shipped** (3 commits
-`784016f`→`ab15880`, suite **989→993/0**): wired the transcript copy (GAP#2) + arbitrary secret-file
-copy (GAP#1) into the live `cco init --migrate` path, forward-annotated ADR-0009, re-synced design §9,
-added `test_migrate_completeness.sh` as the audit-matrix oracle — **no new ADR, no changelog, no
-migration script** (per the pre-merge principle above). **S3 shipped** (4 commits `6926d35`→`4a176ee`,
-suite **993→1005/0**): shared `_project_member_status` classifier + `cco join` Journey E (new
-`lib/cmd-join.sh`, ADR-0034) + `cco forget --purge` (ADR-0021 D2 fwd-annot), changelog #22/#23,
-`test_join.sh` + extended `test_index.sh`/`test_forget.sh`. Residual gate = **host re-validation on
-the Mac** (`e2e-validation-checklist.md` + `P2-dogfooding-validation.md`). **Next free ADR = 0035;
-next changelog = #24.** ▶ Next session = **v1 merge/release (step 7)** after host e2e.
-
-### Pre-merge: flatten `~/.cco/global/.claude/` → `~/.cco/.claude/` ✅ DONE (2026-06-27)
-
-The global Claude config now lives at the flat `~/.cco/.claude/` (the vault-era `global/`
-wrapper is gone — `~/.cco` is already the global config scope). Folded into the single
-decentralized-config v1 migration so every user gets the flat layout in one coherent move,
-with no second `mv` later. Decision recorded in **ADR-0028** (supersedes the layout in
-ADR-0024 / ADR-0026; foundation ADRs forward-annotated). The future per-project
-centralization becomes `~/.cco/projects/<name>/` (P18), a clean sibling of `~/.cco/.claude/`.
-
-- **ADR + living design** — ADR-0028 + design.md §2/§6/§7/§9/§11 + file-destinations and
-  scope-hierarchy design rewritten to the flat layout (`b1a35cc`).
-- **Code + migration** — new `_cco_global_claude_dir()` resolver; `GLOBAL_DIR` /
-  `CCO_GLOBAL_DIR` retired; all readers/writers repointed; `migrations/global/015`
-  (idempotent flatten, converges fresh / legacy-vault / eager-update). Also fixed a latent
-  inconsistency: global root files (`setup.sh`, `setup-build.sh`) reseed to `~/.cco` top
-  level. `defaults/global/.claude` (shipped source) unchanged (`cd6c0b3`).
-- **Tests** — `CCO_GLOBAL_DIR` removed from the harness; +4 migration-015 tests; suite
-  green **912/0** (`CCO_ALLOW_HOST_RESOLVE=1 ./bin/test`).
-- **Docs** — shipped-behavior user docs + root `CLAUDE.md` repointed to `~/.cco/.claude`.
-- **Remaining** — pre-merge dogfooding (real `cco update` flatten on a live install).
-
-### Post-v1 (decentralized-config backlog)
-
-Decided-but-deferred; each rides the shipped v1 substrate. Priorities are a recommendation —
-confirm before scheduling. None blocks the v1 merge.
-
-- **Close shipped-surface gaps** — `cco template update` (symmetric twin of `cco pack
-  update`); make `cco pack update` a 3-way merge (currently overwrites local edits).
-- **Language rule → context injection (agent↔cco access follow-up)** — surfaced by B2
-  ([ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md),
-  design §9 deferral). Today the user's language preference is delivered via the
-  template-interpolation mechanism (`.claude/rules/language.md`). Candidate to move into the
-  Level A/C injection model so it is delivered like other managed awareness, dropping the
-  template path. **Decision (2026-07-02): left unchanged / out of the B2 sprint scope** —
-  recorded here for a future analysis+design session (evaluate template-retirement impact,
-  migration, and whether other template-interpolated rules follow).
-- **Name/id validation hardening** (surfaced by ADR-0031 D5) — a single cross-resource name
-  policy (packs/templates/remotes/llms still carry their own regexes) and a **defensive
-  re-validation at the id-consumption layer** (`_cco_project_id`) so a hand-edited or shared
-  malformed `name:` (esp. with `:`/`/`, proven to corrupt the index/dirs) cannot silently break
-  the stores. `cco project rename` already validates `<new>`; this generalizes the guard.
-- **Governance & resolution UX** — `cco config protect` helper (CODEOWNERS + ruleset
-  scaffold; contract ADR-0020 D4 / ADR-0023 D6; docs already shipped);
-  internalize-as-cache interactive prompt (ADR-0019 D6).
-- **State-sync (T / R-state-sync)** — opt-in cross-PC/cross-team sync of STATE + DATA
-  (memory, transcripts, tags, provenance). Largest deferred item; needs its own design.
-  - *Idea to analyze & expand — background sync daemon (user-local cross-PC STATE).* A native
-    daemon started at login that keeps a single user's STATE (sessions, history, memory) in
-    sync across their own machines — precisely the data where git is a poor fit (append-heavy,
-    high-frequency, machine-local), which is why STATE is never-sync in v1. Three scopes to
-    evaluate separately: **(a)** user-local cross-PC STATE sync = the real new value the daemon
-    unlocks; **(b)** frictionless `~/.cco` vault sync = automation *over git* (daemon as a
-    scheduler/watcher for `cco config push/pull`), not a new engine; **(c)** peer/team
-    transport = a separate, larger bet. **Boundary to preserve:** git stays the one engine for
-    vault sync (project `.cco` + `~/.cco`) and resource sharing — the daemon owns only what git
-    can't carry well. Open questions: conflict model for concurrent sessions (per-device
-    namespacing / last-writer-wins / CRDT), secret exposure of synced sessions+memory, daemon
-    lifecycle (launchd/systemd) vs the dependency-light bash CLI, and reconciling identity/trust
-    without re-introducing the gatekeeping that P7/P8/P17 deliberately delegated to git.
-- **`cco project internalize` (Case-C)** + `~/.cco/projects/` config home — sever a
-  project's config from its code repo (solo-adopter case). Name reserved (ADR-0023 D4).
-- **`cco clean` redesign for the decentralized model** (surfaced by dogfooding round-2 F4) — a fuller
-  classification of *what* is cleanable in the new architecture (XDG STATE/CACHE + `<repo>/.cco`, plus
-  later-added cached resources), and a use-case-driven choice of defaults / behaviour / subcommands:
-  validate the legacy `.bak`-only-default approach or adapt/expand it for decentralized config. Pre-merge
-  ships only the conservative-default + discoverability hint (ADR-0032 round-2 scope); this is the
-  deferred deeper pass.
-- **`cco update` responsibility re-analysis** (dogfooding round-2) — re-examine how `cco update` mixes
-  native-cco updates, schema migrations, and team-shared resource updates (e.g. llms version bumps) under
-  the new decentralized architecture and newly-added cached resources: evaluate explicit command
-  separation by responsibility vs the maintained unification + subcommands. Needs its own analysis.
-- **Index per-project namespacing** (ADR-0022 D2 / H7) — **✅ TRIGGERED → design done** ([ADR-0051](naming/decisions/0051-per-project-name-scoping.md), naming workstream): real collisions appeared (sharing/import homonyms + generic mount names). Identity = **path**, name = per-project label; scoped index + add-time disambiguation. Breaking migration; sequenced **before** the rename verbs. Awaiting impl.
-- **Distribution / packaging (R-pkg)** — distribute as npm/npx + publish the image to a
-  registry so users need not clone the source. Also: an opinionated official sharing repo
-  (F-opin, ADR-0020).
-- **Deferred documentation operations (post-merge)** — split the monolithic references
-  `cli.md` and `context-hierarchy.md` (and the `configuration-management.md` user guide)
-  into per-domain pages; **redistribute the `decentralized-config/` sprint folder** into the
-  by-domain `design/` + `adr/` homes (deferral decided during the docs reorg; the 27 ADRs
-  keep their numbers, the living design splits into the config/sharing/packs/update domains).
-  Tracked in `configuration/decentralized-config/documentation-reorganization-plan.md` §11.
-  (The `browser-mcp/design.md` deep layout rewrite was already applied in the docs review.)
-
-## Agent ↔ cco access — hardening v2 (active)
-
-> **Status (2026-07-10)**: **design phase COMPLETE (D1–D3 approved); implementation IN PROGRESS —
-> S1 Phase I (model `(G,Pc,Po)`) + Phase II (privilege boundary) DONE + dogfooded on the Mac
-> (boundary confirmed: `cat index` → EACCES); S2 Phase III (per-command A1 fixes) + Phase IV
-> (built-in presets, ADR-0044) ✅ DONE (2026-07-09). **Unified implementation review over Phases
-> I–IV ✅ DONE (2026-07-10)** — 3 fixes landed (F1 `7f06be7`, F2 `9b4f27d`, F3 `eac219c`) + **F4
-> CLOSED/FIXED `82dbdc7`** (fail-loud guard on inert config-editor edit-project). **Post-`cco
-> build` dogfood CONFIRMS live**: boundary, trampoline, whoami+ triple, F3 hint. **S3 Phase V ✅
-> DONE (2026-07-10)** — running registry (ADR-0045) + B1–B4 + B-DF2 in 5 commits
-> `95eb8b5`..`0b8f295` (registry `:ro` **under the ADR-0047 boundary** since marker filenames are
-> S1-confidential; `cco start` owns the marker, host reconcile is the reaper per B-DF3; tri-state
-> status + STATUS column + `--sort status`; whoami/empty-section help; init prompt; ADR-0045
-> forward-annotation). Suite **1197/7** (7 = pre-existing §6.2 in-container artifacts, no
-> regressions). **S3 Phase VI ✅ DONE in-session (2026-07-11)** — changelog #37 (`6436665`),
-> config-editor project mode → `edit-global` fix + tests (`67ad13f`; ADR-0044 §3 reconciled with
-> the ADR-0046 ladder, maintainer-approved Option A), DOC5 shipped-doc cutover across 6 docs
-> (`3b947ad`), CLI-surface ⏳ flags cleared + `design-docker.md` `running/` mount + ADR-0044
-> forward-annotation (`9f179b4`); migrations **verified none needed** (additive/code-only, schema
-> stays project 014/global 016); suite **1197/7**. **`cco build` DONE** (session restarted on the
-> rebuilt image — boundary/preset fixes live). **▶ The access-model refinements are now COMPLETE
-> (WS-A + WS-B, ADR-0048/0049 — see the "Access-model refinements" subsection), so e2e v2 is the
-> next acceptance gate** (run on the final, settled model). Pre-merge open: ~~B-DF1~~ **✅ FIXED
-> 2026-07-16** (`8ae2a12` on `fix/cli/project-show-container-paths`, from `develop`, **not pushed** —
-> merge it **before** the e2e `cco build`, else the run re-finds a known bug); config-editor
-> `--project` host live-dogfood, Linux write-path check-in; then push all access branches (from the
-> Mac) + merge → develop.
-> The shipped access model (ADR-0036/0042/0043 +
-> the e2e fix) was reviewed by the maintainer; the review surfaced **two structural gaps to
-> close before releasing the feature**: (1) the permission model can't express legit
-> asymmetric read/write cases, and (2) a **confidentiality bypass** — an agent can `cat` the
-> unscoped STATE index / DATA bucket and enumerate out-of-scope projects' names/host-paths/
-> membership/tags/remotes, and read host paths even at `show_host_paths=off` (integrity is
-> safe; only confidentiality leaks). Root: agent + wrapped `cco` share UID, no FS confinement.
->
-> **Design plan** (complete): captured in **ADR-0046/0047** + the
-> [A1 matrix](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md)
-> (D1/D2/D3 rows below), implemented across **3 dedicated-context sessions** then the e2e
-> re-validation. Item tracker:
-> [`…/e2e-review/pre-revalidation-backlog.md`](configuration/agent-cco-access/e2e-review/pre-revalidation-backlog.md).
-> *(The hardening-v2 design/impl handoffs were consumed and removed — see the ADRs + design.md.)*
-
-| Phase | Session | Output | Context to load |
-|---|---|---|---|
-| **D1** — unified `(G,Pc,Po)` permission model | **✅ DESIGN DONE (2026-07-08)** | **[ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md)**: 3 axes `none<ro<rw` (G governs non-referenced store; referenced ride with Pc), invariants + `Po≤Pc` + auto-promotion, presets = symmetric-ladder sugar (`edit-global`→`(rw,rw,none)`), cases 6 & 7 + curate-global-only granular-only via `{global,current,others}` map, multi-repo Pc (opt-in `include_member_configs`, sync host-only). design.md §4 + ADR-0043 §1 + matrix §1/§5 updated. → **D2 next** | ADR-0036/0042/0043/0044, `access-scope.sh`, `cmd-start.sh:_start_resolve_access`; handoff §0.1/§0.2 |
-| **D2** — enforcement architecture (security) | **✅ DESIGN DONE (2026-07-08)** | **[ADR-0047](configuration/agent-cco-access/decisions/0047-config-access-enforcement.md)**: not a broker — confine only the **internal store** behind a **privilege boundary** (dedicated `cco-svc` mode-0700 real-FS parent `/var/lib/cco-internal` the `claude` user can't traverse, crossed by a setuid helper enforcing `(G,Pc,Po)`); no daemon/protocol/duplication; config-content stays mounted. Grounded in a macOS-DD `fakeowner` test (Test A/B/C). Options A (ro projection) + B (socket broker) rejected/fallback. Forward-annotates ADR-0043 INV-D; design.md INV-5 + design-docker.md §1.2.3. → **D3 next** | handoff §0, `security/design/design-socket-proxy.md`, `config/entrypoint.sh:47-85`, `cmd-start.sh` mount block |
-| **D3** — A1 per-command info × scope | **✅ DONE + APPROVED (2026-07-08)** — [`analysis/A1-command-scope-matrix.md`](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md) | Every verb classified on two orthogonal axes — **enforcement side** (config-content / internal-store / environment-host) + **resource area** (`(G,Pc,Po)` × read/write, [ADR-0046](configuration/agent-cco-access/decisions/0046-unified-cco-access-model.md) §7); shim's hardcoded level literals → **gate-by-resource-area**. Decisions: **B5** tag gated by tagged resource's axis (project→`Pc`/`Po`, pack/template→`G`); **B6** hint invariant (audited clean); **`path`** keep+scope `path list`, `path set` host-only; **`cco sync` divergent = host-only, config-editor incl.** (closes ADR-0046 §6); **no `cco state`**, `whoami`→triple. Fix list B1–B6+`path`+`whoami+`; ⏳ CLI-surface rows | ADR-0046 §7/§6, ADR-0047, CLI-surface matrix, `bin/cco:_cco_operator_shim`, `lib/tags.sh`, `lib/paths.sh` |
-| **Impl** — `implementation` | **▶ IN PROGRESS — 3 dedicated-context sessions** | **S1 Phase I ✅ DONE (2026-07-09)** — model `(G,Pc,Po)` on `feat/config-access/e2e-review` (5 commits `ec56f9f`→`274723e`; suite **1147→1169/0**; §6 mount-narrowing deferred). **S1 Phase II ✅ DONE (2026-07-09)** — privilege boundary (ADR-0047), 6 commits `3d77c8d`→`81f191d` + dogfood fix `98de9b1` (cco-svc uid + setuid C helper + `/var/lib/cco-internal` 0700 + XDG symlinks + trampoline `cco __store` + `:ro` session descriptor; suite **1169→1174/0**). **Dogfooded on the Mac**: boundary CONFIRMED (`cat ~/.local/state/cco/index` → EACCES; `cco list` scoped works); a `setgroups`/bash-privilege helper bug was fixed (`98de9b1` — euid-only + `bash -p`, stays within ADR-0047 §2 "not root"). **Maintainer check-in** (ADR-0047 §8 Test B) + helper-variant decision (bash-p vs setuid-root full-drop) pending. **S2 Phase III + IV ✅ DONE (2026-07-09)** — 7 atomic commits `1b4ec02`→`c0f5dbe`: B5 tag gate-by-axis (`6458fd1`), `path list` scoping (`0605f15`), whoami+ triple (`91e8e54`), B6 no-silent-exit-2 (`176f344`), test-infra (`1b4ec02`), ADR-0044 presets tutorial `read-all` + config-editor min-privilege (`8617e24`), docs (`c0f5dbe`); host suite **1174/0 + new tests → 1187/0** (in-container 1180/7 = 7 pre-existing env artifacts, zero regressions). **Unified implementation review over Phases I–IV ✅ DONE (2026-07-10)** (the unified review) — 3 fixes landed (F1 `7f06be7`, F2 `9b4f27d`, F3 `eac219c`) + backlog log `aad1a02`; suite → **in-container 1183/7** (+3 tests, same 7 §6.2 artifacts); **post-`cco build` dogfood CONFIRMS boundary + trampoline + whoami+ + F3 hint live**. **F4 CLOSED/FIXED `82dbdc7`** (fail-loud guard). **S3 Phase V ✅ DONE (2026-07-10)** — running registry (ADR-0045) + B1–B4 + B-DF2, 5 commits `95eb8b5`..`0b8f295` (registry `:ro` under the ADR-0047 boundary; `cco start` owns the marker + host reconcile reaper per B-DF3; tri-state status + STATUS column + `--sort status`; whoami/empty-section help; init prompt; ADR-0045 fwd-annot); suite **1197/7** (pre-existing §6.2 artifacts, no regressions). **S3 Phase VI ✅ DONE in-session (2026-07-11)** — 4 commits `6436665` (changelog #37), `67ad13f` (config-editor project mode → `edit-global` fix + tests; ADR-0044 §3 reconciled with the ADR-0046 ladder, maintainer Option A), `3b947ad` (DOC5 cutover, 6 docs), `9f179b4` (CLI-surface ⏳ cleared + `design-docker.md` `running/` mount + ADR-0044 fwd-annot); migrations **verified none needed** (schema stays project 014/global 016); suite **1197/7**. **`cco build` DONE** (session restarted on the rebuilt image; fixes live). **▶ Access-model refinements now COMPLETE (WS-A ADR-0048 + WS-B ADR-0049, suite 1234/7) → e2e v2 is the next acceptance gate on the settled model.** Dogfood bug **B-DF1** (in-container `cco project show` repo-resolution) logged for pre-merge. | Review handoff: the unified review; Phase III kickoff: [`phase-III-kickoff.md`](configuration/agent-cco-access/hardening-v2/phase-III-kickoff.md); approved D1/D2/D3 ADRs + [A1 matrix](configuration/agent-cco-access/e2e-review/analysis/A1-command-scope-matrix.md) |
-| **e2e v2** | Mac | acceptance re-validation vs the definitive CLI-surface matrix (S1–S8 + S1/S1b as criteria; `cco build` as launch rule 0) | e2e handoff v2 (written post-impl) |
-
-Base produced 2026-07-07/08 (in working tree, pending review/commit): **ADR-0044**
-(built-in presets + config-editor scope; tutorial→read-all), **ADR-0045** (running registry
-DI1), **CLI-surface matrix** (`cli/reference/cli-surface-matrix.md`), **DOC1** central-gate
-(`cli/design/design-cli-environment-awareness.md` v1.3.0), living `design.md` §8, backlog.
-
-### Access-model refinements (post hardening-v2)
-
-> Emerged from the Phase VI maintainer dialogue (2026-07-11).
-> **WS-A DONE + shipped** (config-editor min-privilege, [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md); incl. 4 UX refinements).
-> **WS-B — claude×cco coupling — ✅ IMPLEMENTATION DONE (2026-07-13)**: [ADR-0049](configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md)
-> (concordant Axis-B triple + cco-derived defaults) implemented in **5 atomic commits**
-> `96b08ae`→`2f0cd19` on `feat/config-access/claude-access-model` (from the WS-A tip). Suite
-> **1234/7** (7 pre-existing — **host-only tests defeated by the ADR-0047 boundary, not a defect;
-> see FI-19**). `cco build` + live dogfood ✅ done (2026-07-15) — and they **caught a blocking bug
-> in the ADR-0049 §5 functional-write floor**: the rw child overlay never seeded its **mountpoint**,
-> so runc could not `mknod` it inside the `:ro` parent and **every normal `cco start` failed**
-> (`read-only file system`). Because §2 makes `Cp=ro`/`Cr=ro` the default, only an explicit
-> `--claude-access repo/all` still started. **✅ FIXED + merged (2026-07-15)** on
-> `fix/start/local-settings-mountpoint`: mountpoint seeded host-side at both call sites; STATE seeded
-> *from* it so pre-existing local prefs survive; migration **015** gitignores the stub; ADR-0049 §5
-> forward-annotated; changelog #44. The dry-run compose suite could not see it (it asserts the YAML
-> and never executes it) — **the real-container check belongs to the e2e gate**, not the hermetic
-> suite. **▶ NEXT: e2e v2 acceptance, running ON `develop`.** The `init-workspace` re-analysis
-> (ADR-0049 §6 / design §7) is a separate future task.
-
-> **Second dogfood catch — stale Claude Code launcher (ADR-0039) — ✅ FIXED (2026-07-15)** on
-> `fix/entrypoint/claude-install-stale-launcher` (branch **NOT pushed**, needs `cco build` on the Mac).
-> A `cco start` FATAL'd at the first-start install: `claude install` **refuses to overwrite a launcher
-> it does not own** and exits non-zero, and the entrypoint had no recovery. Because the install home is
-> the **CACHE dir shared by every project and session**, one stale launcher (npm-era wrapper,
-> `claude migrate-installer` result, symlink dangling into a wiped `share/claude/versions`) poisoned
-> `cco start` everywhere — with the escape hatch (`cco build --no-cache`) unnamed and the message
-> blaming a network that was fine. Fix: clear the launcher path before invoking `install.sh` (that
-> branch is only reached once a (re)install is already decided; the install itself lives in
-> `share/claude/versions`), and name the reset in the FATAL. The marker check is untouched, so a
-> healthy install still never reinstalls. Changelog **#45**. Note for the record: this was **not** a
-> bin-vs-npm defect — v0.5.2 and `develop` carry byte-identical install logic; the npm run only
-> succeeded because it came **second**, after the failed run had already cleared the bad launcher.
-> Same lesson as the §5 bug: the hermetic suite cannot see it (the new tests drive the extracted
-> install block against a fake `install.sh` — the real one is a network fetch), so **the live check
-> belongs to the e2e gate**.
-
-| Workstream | Status | Decision |
-|---|---|---|
-| **WS-A — config-editor default + read floor** | **✅ DONE + SHIPPED (2026-07-13, `cco build` live)** on `feat/config-access/config-editor-access` | config-editor min-privilege **by mode**: project **`(ro,rw,none)`** (edit project, read store) / bare-global **`(rw,none,none)`** / `edit-global` → `(rw,rw,none)` / `--all` → edit-all; **`G ≥ ro` clamp** + **`claude_access` follows `G`** (A-V3, closes C2 at config-editor level); **INV-2 conditional** project floor (Pc≥ro iff a current project is in scope). [ADR-0048](configuration/agent-cco-access/decisions/0048-config-editor-min-privilege-refinement.md) + annot 0044/0046. Commits `aab422f`→`00b8b2a`; changelog #38. **+ 4 UX refinements (2026-07-13, model unchanged):** R1/R2 `whoami` identity-first + dedup (`eea8395`), R3 `cco list` KIND `builtin` + `--include-internal` (`327add2`), R4 bare `project show` at `/workspace` root (`a87dcd8`), docs+changelog #39 (`394c649`). Suite **1211/7** (7 pre-existing). ⏳ pre-merge: push both branches from the Mac. |
-| **WS-B — `claude_access` × `cco_access` coupling** | **✅ IMPLEMENTATION DONE (2026-07-13)** on `feat/config-access/claude-access-model` (NOT pushed) | Final model = **concordant derived defaults**, NOT a runtime clamp (the "bounds/clamp" direction was rejected). `claude_access` is a per-tree **triple `(Cr,Cp,Cg,Co)`** on the `ro<rw` lattice mirroring cco `(G,Pc,Po)`; unset → each axis DERIVES from cco (Cr always ro), so the default never authors `.claude` wider than cco config — a normal session's `.claude` is **read-only by default** (reverses ADR-0027 P17). `none\|repo\|all` = preset sugar; both knobs share one scalar\|map grammar in every source. Explicit discordance is honored with a note (never refused). Functional-write floor keeps `settings.json`/`settings.local.json` writable. extra_mounts gained `config_access_policy` (ro\|project\|write) + recursive nested-config detection. [ADR-0049](configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md) + design.md §4bis; 5 commits `96b08ae`→`2f0cd19`; changelog #40; migration **none** (additive, schema stays 14). Suite **1234/7**. ⏳ pre-merge (Mac): `cco build` + e2e v2 + push. |
-
-Tutorial `read-all` overridable-downward = **confirmed correct as-is** (no change). To extract into a
-new ADR (refining 0036/0044/0046) + living `design.md` once validated.
-
-> **Post-e2e sequencing (maintainer, 2026-07-15).** The **e2e v2 acceptance run is the current
-> gate**. Corrected 2026-07-15: it does **not** gate the merge to `develop` — the access-model +
-> naming stack is **already on `develop`**, e2e v2 **runs on `develop`**, and what it gates is
-> **`develop` → `main`** (i.e. the release). **Once it passes**, the next priorities (in order) are **`cco attach` / session
-> persistence** (see [Session persistence & reattach](#session-persistence--reattach-cco-attach--needs-design))
-> **together with `cco project save` (workstream D, ADR-0038)** — both small, ergonomic, non-gating,
-> each needing a short design session first. The rest of the backlog ordering (F, the Broader-planned-
-> work table, exploratory items) is to be **re-evaluated after e2e** to confirm the sequence still holds.
-
-### Resource naming & init consistency (`feat/naming/resource-management`)
-
-> Umbrella branch off **develop fast-forwarded to the access-model tip** (`57a0554`,
-> 2026-07-14) so it starts aligned with the settled access model. Local FF only —
-> host-mounted `.git`, so it applies on the Mac too; **NOT pushed**. e2e v2 (access
-> model) still gates push + develop→main, not this local FF. Hosts the `cco init`
-> repo-seed fix + upcoming **project-rename / resource (pack·template·llms) naming**
-> incongruities the maintainer will specify as design + fix.
-
-| Unit | Status | Notes |
-|---|---|---|
-| **init seeds the current repo into `repos[]`** | **✅ DONE (2026-07-14, `35e41bb`) — live-verified** (repo mounts; `origin` url injected when the git remote is present) | `cco init` now seeds the hosting repo into `project.yml` `repos[]` (was `repos: []`, so `cco start` mounted nothing and warned until a manual edit). Machine-agnostic coordinate: logical name + `url` derived from `git remote get-url origin` (guarded for non-git repos). New **`--repo-name`** flag (+ interactive prompt), an axis **independent of `--name`**, default = dir basename. The STATE index binds path + project membership under the **repo** name (not the project name), so a repo name that diverges from the project name still resolves — same coordinate model as `cco join` (ADR-0017 D1/D2). Reuses `_yml_append_coord` (upgrades the `repos: []` stub); base template unchanged. Additive (**changelog #41**); **migration none** (project.yml schema unchanged, existing projects untouched). Suite **1238/7** (+4 init tests; 7 = pre-existing §6.2 access-scope artifacts). ⏳ pre-merge: `cco build` + push from the Mac. |
-| **Unit A — per-project name scoping (H7)** | ✅ DONE (2026-07-14) — A.1–A.5 committed, suite 1259/7 | Make repo/extra_mount names **per-project scoped**; identity = **path**, name = per-project label ([ADR-0051](naming/decisions/0051-per-project-name-scoping.md), supersedes ADR-0022 D2). **A.4 ✅ `5b7a7ed`** (add-time disambiguation: reuse-vs-homonym prompt on the resolve/start surface + git-origin/url divergence flag; `_index_bindings_for_name`, pure `_resolve_reuse_menu`, TTY `_resolve_disambiguate`; 6 tests). **A.5 ✅ `8ac2ee3`** (changelog #42 BREAKING index-v2 + `cli.md` resolve/path per-project model + disambiguation + `CLAUDE.md` + `lib/index.sh` header). **A.1 ✅ COMMITTED `9b3a38d`** (pure-addition v2 nested `project_paths` primitives + `_index_pp_conflicts` AD5′ chokepoint + `_index_paths_get_bindings` path reverse-lookup; 16 tests; 1254/7). **A.3+cutover+A.2 ✅ COMMITTED `fbb36fe`** (maintainer-approved single-cutover sequencing since the index is an atomic unit; delta-green can't hold half-way): v2 schema flip + `_index_get/set/remove_path`+`_index_path_conflicts`+`_index_name_for_path` project-scoped (v2 pp + **unscoped escape-hatch fallback** + v1 transitional read), `_index_get_path_any` for cross-project by-name (`--from`/config-editor `--repo`), ~32 call-sites rethreaded, `_index_repos_get_projects`→path-based (removed), **transparent v1→v2 migration** (`_index_migrate_if_needed`, first host-side write, no `migrations/` script / no `cco update`), migration 016 rewritten v2-aware. **Delta-green: suite 1253/7** (the 7 = pre-existing in-container env artifacts — 6 `test_as_list_*` operator-mode store-resolution + `test_paths_symlink` — unchanged from the A.1 baseline; verified via a full baseline vs cutover run, zero net-new failures). The cutover tail included **3 real production bugs** (not just fixtures): `_cv_prune_record` empty-field TAB collapse (orphan unscoped index paths never pruned), `path set` non-zero exit on a not-yet-on-disk pin, and `resolve --scan` not binding shared members under referencing projects. **Unit A COMPLETE** (A.1 primitives → A.2 migration → A.3 cutover → A.4 disambiguation → A.5 docs). ⏳ pre-merge (from the Mac): `cco build` + push both branches; **Unit B (rename verbs) is next**. Refs: [ADR-0051](naming/decisions/0051-per-project-name-scoping.md) · [analysis §12–§13](naming/analysis/resource-name-storage-map.md) · [handoff](naming/implementation-handoff.md). |
-| **Unit B — resource rename verbs** | ✅ DONE (2026-07-14) — B.1–B.6 committed, suite 1259/7 baseline held. B.1 `lib/rename.sh` (`9cc10a5`), B.2 `_index_rename_path` (`dab12cc`), B.3 verbs — repo/extra-mount `3158358`, pack/template `370a438`, remote `1c0c072`, llms align `34053f7`, B.4 operator gating `dbbc98d`, B.5 quote-strip `97e3d81`, B.6 docs (this commit). Per-kind `rename` for the five kinds that lacked it (**repo · extra-mount · pack · template · remote**; `project`/`llms` already existed): repo/extra-mount project-scoped + path-anchored (cwd-first, opt-in `--move-dir`), pack cross-project `packs[]` fan-out, template/remote store re-key. UX: `_resolve_to_abs` quote-strip + the `path set` divergence hint (already shipped A.4). Latent bug closed: `llms rename` now rewrites the mapping-form ref too. **Pre-merge (Mac): `cco build` + live dogfood (esp. the first in-container index-writing verbs repo/extra-mount rename across the ADR-0047 boundary — verify the elevated project.yml write), then push + merge→develop (gated on e2e v2).** **Decisions** ([ADR-0050](naming/decisions/0050-resource-rename-model.md), generalizes ADR-0031, **builds on ADR-0051**): per-kind verbs (no top-level `cco rename`); kind-scoped re-key; **repo/extra_mount rename is project-scoped + path-anchored** (no cross-project fan-out); pack keeps `packs[]` cross-project fan-out (ADR-0031 D3 strictness); repo/extra_mount dir-move opt-in (basename-gated, default No); shared `lib/rename.sh`; operator-shim gating (repo→edit-project, pack/template/remote→edit-global). Refs: [design](naming/design/design-resource-rename.md) · [storage map](naming/analysis/resource-name-storage-map.md). Changelog additive, migration none. |
-
-### Session persistence & reattach (`cco attach`) — 🔍 NEEDS DESIGN (proposed 2026-07-14)
-
-> **Queued: post-e2e priority (maintainer, 2026-07-15).** After the e2e v2 gate + merge, this is a
-> next-up priority **paired with `cco project save` (workstream D)** — start with a short design/ADR
-> session (domain `environment/`, beside ADR-0045) before touching code. Re-evaluate ordering vs the
-> rest of the backlog after e2e. See [Post-e2e sequencing](#access-model-refinements-post-hardening-v2).
-
-**Goal.** When a `cco start` session is interrupted abruptly (IDE/terminal closed without a clean
-`/exit`), the Docker container should be able to **keep running** so the user can **resume** it with a
-dedicated `cco attach <project>`, instead of losing in-progress work.
-
-**Why the architecture already supports it.** The container runs `tmux` with `claude` inside it —
-tmux detach/reattach is native, so the session state survives a dropped client. Sessions already
-carry a `cco.project` label, and the **running registry (ADR-0045)** already tracks running sessions
-(marker lifecycle owned by `cco start`, host-side **reconcile reaper** for orphans). So the substrate
-for "find the running container + reattach + clean up orphans" is largely in place.
-
-**The blocker.** `cco start` launches `docker compose run --rm --service-ports claude` — foreground +
-**`--rm`**. When the client disconnects abruptly the ephemeral container is stopped and removed, so
-there is nothing to reattach to. Persistence means: drop `--rm`, run **detached + named** (`up -d`),
-then attach into it.
-
-```mermaid
-flowchart LR
-  subgraph ephemeral["Ephemeral (today, --rm)"]
-    A["cco start"] --> B["run --rm (foreground)"]
-    B --> C["abrupt close → container stopped + removed → session lost"]
-  end
-  subgraph persistent["Persistent (opt-in)"]
-    D["cco start (persist)"] --> E["up -d + named + cco.project label"]
-    E --> F["docker exec -it … tmux attach"]
-    F --> G["abrupt close → container keeps running"]
-    G --> H["cco attach <project> → re-exec tmux attach"]
-    H --> I["cco stop → tear down"]
-  end
-```
-
-**Proposed shape (to ratify in a short ADR).**
-- **Opt-in setting** `session.persist: true|false` with precedence mirroring the access knobs:
-  CLI (`--persist`/`--no-persist`) > `project.yml` > `~/.cco` global default > built-in default.
-  Default likely `false` (preserve today's clean, resource-cheap ephemeral behavior) — **open
-  question**: default-off vs default-on-with-`cco stop`-cleanup.
-- **`cco attach <project>`** (cwd-first): resolve the running container via the `cco.project` label /
-  running registry, then `docker exec -it <c> tmux attach`. Refuse gracefully if none is running
-  (hint `cco start`).
-- **Lifecycle & cleanup**: lean on the ADR-0045 reconcile reaper for orphaned persistent containers;
-  `cco stop` already tears a session down. Decide idle-timeout / max-persistent-count policy.
-- **Trade-offs to weigh**: persistence keeps RAM/CPU (and cost) allocated and risks orphans (mitigated
-  by the reaper) — vs. losing work on an abrupt close. This is precisely why it should be **opt-in**.
-
-**Effort**: Med. Touches `cco start` (compose gen: `--rm`/detached toggle), a new `cco attach`, the
-settings-precedence resolver, and `cco stop`/registry cleanup. Needs `cco build` to test. Supersedes
-the old one-line exploratory note ("Session reattach — likely a one-liner post-worktree"); the
-`--rm`/opt-in/lifecycle design is the substantive part, not the attach one-liner. Refs:
-[ADR-0045](environment/decisions/0045-session-running-registry.md) ·
-[design-docker.md](environment/design/design-docker.md).
-
-## Broader planned work (beyond decentralized-config v1)
-
-Full long-form descriptions (scope, design, effort) are preserved in
-[roadmap-history.md → Planned Sprints](roadmap-history.md#planned-sprints).
+repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
+changes. `cco config save` gives exactly this ergonomics for the personal store `~/.cco`; the in-repo
+model never got its twin.
+
+**Why it is first.** It closes a coherence debt **already in production**: the baked managed rule
+`cco-config-interaction.md` and ADR-0042's Level-C guidance tell edit-level agents to version config
+atomically with `cco project save` — a verb that does not exist. Today the rule degrades gracefully by
+calling it *forthcoming* and pointing at plain git. When this ships, that text is restored to the real
+verb.
+
+**Scope (v1).** Stage **exclusively** `<repo>/.cco/**`, never the rest of the working tree; secret
+detection before commit, reusing `lib/secrets.sh` as `cco config save` does; `secrets.env` stays
+gitignored and is never staged; an isolated-history read (`git log -- <repo>/.cco/` already
+path-filters, regardless of how a commit was made).
+
+**Decisions the session owes.**
+- **The verb name.** The maintainer's note says `cco save`; ADR-0042 and the managed rule assume
+  `cco project save`; `cco config save` is taken by the personal store. Pick once — the injected
+  context and the managed rule must name the real verb.
+- Path-filtered history vs a commit trailer (`Cco-Save: true` + `git log --grep`), and whether a
+  companion read verb (`cco project history`) exists at all.
+- `--amend` / message templating: in or out.
+- **Multi-repo**: commit the invoking repo's `.cco/` only, or fan out to every config-bearing member
+  the way `--sync` does?
+- **Operator-shim classification**: in-container write verb at `cco_access ≥ edit-project`, or
+  host-only? Confirm the secret scan and the path scoping hold under container-operator mode.
+
+**References.** ADR number **reserved as 0038, never written**. Twins to read first: `lib/cmd-config.sh`
+(`cco config save`), `lib/secrets.sh`, `bin/cco` `_cco_operator_shim`. Integration contract:
+[ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md).
+
+#### A2 — Per-project custom Docker image ([FI-49](improvements.md))
+
+**What already exists**: `project.yml` accepts `image:` (`templates/project/base/project.yml:113`) and
+`cco start` honours it (`lib/cmd-start.sh:1682`). **What is missing** is everything around it.
+
+Three sub-problems, all raised from real use on an adopting project:
+
+1. **Maintenance is manual and silent.** The docs say a base `cco build` obliges you to rebuild the
+   derived image too. Forget, and you run yesterday's entrypoint with no signal. `lib/cmd-build.sh`
+   has no project awareness at all. Options to weigh: `cco build` rebuilding the derived images it
+   knows about · an explicit `cco build --project <name>` · a lazy prompt at `cco start` (*"the custom
+   image is older than the base — rebuild?"*).
+2. **A missing image gives no actionable error.** A project declaring an image nobody built should say
+   so and name the fix, not fail deep inside compose.
+3. **The `setup.sh` docs contradict themselves**: the generated script header says *runs as root*, the
+   guide says *runs as user `claude` — cannot install system packages*, and the decision matrix then
+   recommends that same file for *"an apt package for one project"*. One of these is wrong; find out
+   which by running it, not by reading further.
+
+**Note for the session.** Sub-problem 3 is a doc fix gated on a measurement, and it is the cheapest of
+the three — do it first, because the answer changes what the guide should recommend for 1 and 2.
+
+#### A3 — Cross-scope collision warning ([FI-32](improvements.md)) + the three open decisions
+
+**FI-32** is Low effort and directly protects work on adopting projects.
+`_detect_cross_tree_conflicts` (`lib/packs.sh:106`) compares a pack's `rules`/`agents`/`skills` against
+the **committed project tree** only; the global store `~/.cco/.claude/{rules,agents,skills}` — mounted
+user-level into *every* session — is never consulted. Real instance: `core-dev-framework` duplicates
+three of the four shipped global rules and overlaps the shipped skills and agents, and the agent then
+reads two possibly divergent copies with **no signal at all**.
+
+⚠ **This is the detection half of [FI-51](improvements.md)** (Block C). Keep it a *warning, never a
+block* (P14) and make the message name the **scopes and the resolution order** — cross-scope
+duplication is legitimate when a project deliberately overrides a global rule, so a message implying
+an error would be wrong.
+
+The **three open decisions** in the section below are also A-sized: take them here, or answer them
+inline.
+
+---
+
+### Cross-cutting analysis — resource taxonomy & the configuration-scope model
+
+**One analysis session, read-only, no release.** It exists because three separate blocks are each
+about to decide the same thing, and deciding it three times guarantees divergence.
+
+**What it must settle.**
+
+- **What a shareable configuration resource is**: what it may contain, where it installs, at which
+  scope, and how it is instantiated and updated. Today packs carry knowledge/skills/agents/rules and
+  nothing else; templates, llms and the personal store each hold a partial answer; the recommended
+  vehicle on record is a new **`config` resource kind**, pending exactly this taxonomy.
+- **The configuration-scope model**: what governs a session when several scopes carry a file of the
+  same name, and whether the session can *say* which one is in force.
+- ⚠ **Fix the two senses of "scope" in the first paragraph** — the recursive *scope level* (task ·
+  feature · module · app) and the *configuration scope* (global · project · repo-native · managed).
+  In one sentence they look like the same word and are not. The input document flags this explicitly.
+
+**Preconditions the inputs state, and that are not optional.**
+
+- **Measure before sizing.** The collision problem was found by *measuring* a live session, not by
+  reasoning — three name collisions were in context while it was being debated whether they could
+  exist. Repeat that measurement on a few real configurations before designing.
+- **A documentary source is not a verified outcome.** Three claims in the originating pack turned out
+  false because they were deduced from documentation and never executed.
+
+**Inputs — do not re-derive.**
+
+- [`packs/analysis/input-pack-templates-and-scope-resolution.md`](packs/analysis/input-pack-templates-and-scope-resolution.md)
+  — §1 the measurement, §4 the three directions for scope resolution, §5 the hardest template
+- [`packs/analysis/input-pack-enforcement-transport.md`](packs/analysis/input-pack-enforcement-transport.md)
+  — §2 what is already verified, §3 the composition question
+- [`engineering/opinionated-extraction-and-update-refactor-handoff.md`](engineering/opinionated-extraction-and-update-refactor-handoff.md)
+  — gaps G1–G7 of the axis-2 sharing model (ADR number reserved as **0040**, never written)
+- [FI-28](improvements.md) global adoption · [FI-29](improvements.md) `commands/` ·
+  [FI-32](improvements.md) detection · [FI-47](improvements.md) templates ·
+  [FI-48](improvements.md) enforcement · [FI-50](improvements.md) publish sources ·
+  [FI-51](improvements.md) scope resolution
+
+**Output**: an analysis document — suggested home
+`configuration/analysis/resource-taxonomy-and-scope-model.md` — persisted by the lead when the
+direction is approved. Per the workflow, `/design` for B and C does not begin until that file exists.
+
+---
+
+### Block B — lifecycle & distribution → `0.8.0`
+
+The maintainer's ruling (2026-08-04): **one definitive design, no interim verb.** A temporary reshuffle
+of `cco update` that a later refactor revisits costs more than waiting one cycle — the three commands
+have been three commands until now, and one more cycle changes little.
+
+#### B1 — `cco update`: responsibilities, orchestration, post-install
+
+**The direction, ratified.** `cco update` becomes the **orchestrator** of
+`npm update → migrations → cco build`. Updating **opinionated content** leaves it entirely: that
+content is leaving the core (workstream F, Block C), so it deserves its own update path rather than
+sharing a verb with migrations.
+
+**What `cco update` conflates today** — read the code before designing: `lib/cmd-update.sh` plus
+`lib/update*.sh`, already split by responsibility into hash-io, merge, meta, discovery, sync, changelog
+and remote. It runs migrations, discovers framework and remote changes, reports the changelog, applies
+a 3-way merge of opinionated defaults via `--sync`, and is provenance-aware. **It has never built the
+image.**
+
+**Decisions the design owes.**
+- Always unified, or are the single steps still separately invocable?
+- If `cco update` becomes the orchestrator, do migrations need their own on-demand verb, or is a flag
+  enough? (The same question decides whether the current name still fits.)
+- What the **npm post-install hook** does: notify that steps are pending, or execute them?
+- **Where the boundary is declared** toward the opinionated-resource update path — B names the
+  boundary; C implements the other side of it.
+
+**References.** ADR **0040 reserved, unwritten** · the opinionated-extraction handoff ·
+`.claude/rules/update-system.md` (the changelog/migration conventions any new verb must respect) ·
+the post-v1 *"`cco update` responsibility re-analysis"* note, now folded into this item.
+
+#### B2 — `cco attach` and session persistence
+
+**Goal.** When a session is interrupted abruptly (IDE or terminal closed without `/exit`), the
+container keeps running and `cco attach <project>` resumes it, instead of losing in-progress work.
+
+**Why the substrate is nearly there.** The container runs `tmux` with `claude` inside it, so
+detach/reattach is native; sessions already carry the `cco.project` label; the running registry
+([ADR-0045](environment/decisions/0045-session-running-registry.md)) already tracks live sessions with
+a host-side reconcile reaper for orphans.
+
+**The blocker.** `cco start` runs `docker compose run --rm --service-ports claude` — foreground **and
+`--rm`**, so an abrupt disconnect stops *and removes* the container. Persistence means detached and
+named (`up -d`), then attaching into it.
+
+**Shape to ratify in a short ADR.** Opt-in `session.persist: true|false`, precedence mirroring the
+access knobs (CLI > `project.yml` > `~/.cco` global default > built-in). Default likely `false`;
+**open**: default-off vs default-on-with-`cco stop`-cleanup. `cco attach <project>` cwd-first,
+resolving through the label / running registry, refusing gracefully with a `cco start` hint. Lifecycle
+leans on the ADR-0045 reaper; decide the idle-timeout and max-persistent-count policy.
+
+**Trade-off to weigh explicitly**: persistence holds RAM/CPU and risks orphans, against losing work.
+That asymmetry is the whole argument for opt-in.
+
+**Effort**: Med — touches compose generation in `cco start`, a new verb, the settings-precedence
+resolver, and `cco stop`/registry cleanup. Needs `cco build` to test.
+
+#### B3 — Install / init / configuration coherence review ([FI-30](improvements.md))
+
+**Sequenced last in the block on purpose**: the guides are rewritten once the procedure is decided,
+never before.
+
+The README quick start presents `cco init` as a global bootstrap runnable from anywhere; it is the
+**project entry verb** and acts on `$PWD` (`lib/cmd-init.sh:270-282`), with the `~/.cco` seed and the
+image build as first-run side effects (`:104-112`). The living-docs sweep already fixed the README's
+own contradiction; what is owed is the coherence pass across README, the user guides (installation,
+project-setup, configuration-management), the tutorial, and the maintainer docs — **shipped-behavior
+docs, so they track what works today, not a target model.**
+
+---
+
+### Block C — shared-resource platform (packs & config) → `0.9.0`
+
+**This is the block that unblocks external projects.** Four stages, in dependency order. C1 is a
+declared prerequisite of C2, not a preference: shipping enforcement without parametrization produces
+one `settings.json` for every project, and *how much* enforcement to want is per-project by nature.
+
+#### C1 — `*.template.md` in packs, instantiated at install ([FI-47](improvements.md))
+
+A pack may carry `*.template.md`; cco instantiates them **at pack install**, writing the result into
+the user's configuration — never inside the pack.
+
+**Constraints the analysis must not rediscover** (all from the input document):
+- The instance does **not** live in the pack: the pack mounts `:ro` and a reinstall would overwrite it.
+- The instantiation scope is the scope the pack is active in — global install → global instance,
+  project install → project instance.
+- Override on a more specific scope, through a dedicated post-install command.
+- Repo-native (`<repo>/.claude/`) is a valid home with a caveat: it loads **on demand**, when the agent
+  reads a file there — so a decision taken before the first read was never governed by it, and a
+  multi-repo project can end up with two peer policies and no criterion between them.
+- **An instantiated template is a user file.** A pack update must never silently overwrite it; at most
+  report that the upstream template changed.
+
+**Parameters and prompts** (the second half): every template declares its parameters and how to ask
+for each; install and re-instantiation run them interactively. Every parameter has a default equal to
+**current behaviour**, so pressing enter through the whole thing changes nothing. Prompts must be
+skippable non-interactively and re-runnable on an existing instance. Some cells are structurally
+**not** parameters, and the template must be able to mark them so with the reason beside them.
+
+**Already-existing use cases to count** (the mechanism was missing before anyone asked for it):
+`maintenance-policy` was already a copy-by-hand template in the pack, and **`language` was already a
+cco rule** — which is the decisive clue that the missing layer is cco's, not the pack's. There is a
+standing note to move the language rule into the Level-A/C injection model and retire its template
+path; **decide it here**, in the same design, rather than as a separate item.
+
+#### C2 — `settings.json` and hooks transported by packs ([FI-48](improvements.md))
+
+Packs ship prose; **the only real enforcement available to a method pack lives in `permissions` and
+`hooks`**, which packs cannot carry. The project-scope channel already exists and is empty:
+`<repo>/.cco/claude/settings.json`. The ask is not a new channel but that a pack may write to it, with
+a declared composition semantics.
+
+**The field precondition is satisfied** (measured 2026-08-04, not deduced): the hook denies under
+`bypassPermissions` — which is how cco launches every session — and sees `agent_type` inside a
+subagent. Both halves of the request therefore have value under cco.
+
+**The hard question is composition.** Markdown rules concatenate; `settings.json` is a structured
+object, and two packs carrying one must be **composed**, not concatenated. The existing *last pack in
+the list wins, with a warning* rule would be **worse than the problem**: a pack overwriting another's
+`deny` rules removes them. Proposed starting point — `deny` union always, `ask` union, `allow` union
+*with a warning*, `hooks.<event>[]` concatenated by matcher group; conflicts made **visible**, never
+silently resolved.
+
+**Mechanics not to underestimate — where the hook script lives.** A `type: command` hook points at an
+executable. If the pack ships the rule but not the script, the rule is broken; if it ships the script,
+that script lives in the pack's **read-only mount**. Open: can `command` point at the pack's mounted
+path, and is it stable across sessions? What does `$CLAUDE_PROJECT_DIR` resolve to under cco? Is the
+exec bit preserved through the mount? And a hook with state or a log **needs a declared writable
+destination**, because `.claude` is `:ro` — the same STATE treatment the lead's auto-memory already has.
+
+⚠ **Two things to carry into any hook template cco ships.** An enforcement hook **evaluates its deny
+before it logs, and logging is never fatal** — the test hook printed to its log first under
+`set -euo pipefail`, and with the log unwritable it aborted **fail-open**, leaving no trace. And
+whatever ships must be presented as **surface reduction, not a guarantee**: an arbitrary subprocess
+launched from `Bash` is not covered, and the measurement bypassed the hook in two moves by writing a
+script inside the permitted directory and running it from there.
+
+📝 **A doc item that stands on its own, whatever else is decided.** cco already gives a guarantee it
+states nowhere: `<repo>/.claude` and `<repo>/.cco` mount `:ro`, so **a session cannot tamper with its
+own hooks, agents, skills and settings**. That is OS-level, therefore independent of permission mode —
+it holds under `bypassPermissions` — and not bypassable by a subprocess, i.e. precisely the gap no hook
+can close. Documenting it is also the strongest argument for pack transport: a `settings.json` mounted
+by cco is *harder* to neutralize than one copied into the repo by hand.
+
+#### C3 — Global adoption, slash commands, scope resolution
+
+- **[FI-28](improvements.md) — global pack adoption.** A settings surface in `~/.cco` declaring a pack
+  adopted across projects, with **filters** (tags/attributes) to scope it to a subset; the CLI verb is
+  a thin editor of that config. Second mode: **materialize** the adoption into every matching
+  `project.yml`. Today there is no default-pack mechanism at all — `packs:` is per-project only.
+- **[FI-29](improvements.md) — `commands/` has no home.** No handling of `commands/` anywhere in
+  `lib/`, `config/` or `defaults/`: the global `.claude` mount is entry-by-entry and would silently
+  ignore it, and `pack.yml` declares only knowledge/skills/agents/rules. Only the project tree works,
+  and only incidentally.
+- **[FI-51](improvements.md) — scope resolution and marking.** Three non-exclusive directions, from
+  strongest to weakest: **(1) resolve at mount** — cco already materializes the rule set, so on a
+  *name* collision it could mount only the most specific version; real enforcement, the agent never
+  sees two conflicting rules. **(2) mount everything but generate a precedence header** into the
+  session preamble, the way the knowledge list already is — still prose, but framework-generated, so
+  it cannot diverge from reality. **(3) `scope:` frontmatter** on every config file — a declarative
+  mitigation: it makes the ambiguity *readable*, it does not remove it. Direction 3 is needed even if 1
+  is taken, because legitimate coexistence still requires the reader to tell the files apart.
+  ⚠ Direction 1 needs a **proof on a real configuration as a precondition, not a follow-up.**
+
+#### C4 — Publish sources, and the opinionated extraction (workstream F)
+
+- **[FI-50](improvements.md) — publish from an arbitrary directory.** `cmd_pack_publish` takes a pack
+  **name** resolved from the personal store, so today the source must be a store pack or an archive;
+  publishing a directory straight to a remote — the shape a team wants for shared config — is not
+  supported. Decide the target model too: sharing **repo** vs **package**.
+- **Workstream F — opinionated extraction + the update split.** Make the cco core agnostic of
+  opinionated config: `managed/` stays baked, and the opinionated defaults (workflow/git/documentation
+  rules, agents, skills, the global `CLAUDE.md`, parts of `settings.json`) move into a separate
+  official sharing repo, installable like any shared resource. **This is the other side of the boundary
+  Block B declared**, and the first consumer of the resource kind the shared analysis defines.
+  ADR **0040 reserved, unwritten**. Reference:
+  [`engineering/opinionated-extraction-and-update-refactor-handoff.md`](engineering/opinionated-extraction-and-update-refactor-handoff.md).
+- Also here, as shipped-surface gaps in the same family: `cco template update` as the symmetric twin of
+  `cco pack update`, and making `cco pack update` a **3-way merge** (it currently overwrites local
+  edits).
+
+---
+
+### Block D — cycle-2: config multiplicity, divergence awareness, mount topology → `1.0.0`
+
+Analysis → design, subject fixed by the maintainer 2026-07-31. ⚠ **The subject is wider than the mount
+topology, and the topology is downstream of it.**
+
+**The prior question.** A session cannot ask **how many config copies exist for a project, nor whether
+they diverge.** Mechanically: `sync-meta` never crosses **INV-STATE**, so `_sync_is_divergent` always
+returns false and every owned member reports `synced`. The question is not badly answered — it is
+**unaskable**.
+
+Three consequences, in this order:
+
+1. **config-editor is the authoring tool** and must therefore *know* a project's sync/divergence state
+   and let the user handle it explicitly — which implies `cco sync`, or a successor, being reachable in
+   that session. Its blocking prerequisite is **the STATE crossing, not the mounts.**
+2. **A standard session is right to see only the config of the project it was launched from.** The two
+   modes have different needs, and today a single mechanism serves both by accident.
+3. **Then, and only then, the topology**: validate or discard the two-path model
+   (`/workspace/<name>-config` vs `/workspace/<repo>/.cco`).
+
+**Start from the analysis, which is already written and approved**:
+[`configuration/agent-cco-access/analysis/config-mount-topology.md`](configuration/agent-cco-access/analysis/config-mount-topology.md)
+§3.3 and §8 — four blockers and six open questions, all code-grounded. It is not a dead end even if the
+topology is discarded: it either validates the current design or names what is wrong with it.
+
+**Results already derived — do not re-litigate.**
+- The proposal is structurally *"delete layout 2"*, and under it FI-42's fan-out writer becomes correct
+  **verbatim** — a fix by removing a special case.
+- 🔑 But *"the writer becomes correct verbatim"* and **soundness under `--all`** are **mutually
+  exclusive**: `--all` exists to reach projects whose repos are not mounted, and a repo name is a
+  per-project label (ADR-0051 D2), so `--all` structurally needs a project-keyed component.
+  **The topology's residual value is UX — host/session path parity — not FI-42's correctness.**
+- The four blockers: **(a)** INV-MP — a passed-through `/workspace/<repo>` ancestor materializes
+  root-owned and would fail `test_invariant_mount_ancestry_owned`, so an ADR-0054-style framework-owned
+  scaffold is mandatory · **(b)** ADR-0051 homonyms are sound in project mode, **unsound under `--all`**
+  where N×M collisions are the expected case · **(c)** no ADR states which of N replicated copies is
+  canonical in-session — glob order decides today · **(d)** a `.cco`-only stub trips three dir-test
+  predicates into *absent-reported-as-present*, landing on `cco project show`, the very verb the
+  proposal designates as the mapping surface.
+- Supersessions to make explicit if the topology is taken: **RC-6 §3.7** and **ADR-0046 §6** (already
+  ratified in place — a normal `edit-project` session ships `include_member_configs`' span unenforced
+  at `cmd-start.sh:1885-1887`, so config-editor is the stricter of the two).
+
+**Carried into this block:**
+
+| Item | Note |
+|---|---|
+| [FI-42](improvements.md) | The fan-out resolves its WRITE path by member probe while its READ path is operator-aware. **Cannot be fixed without taking the contract decision it carries** — all-or-nothing vs all-or-declared-partial. Reachability is bounded and documented: the only path reaching the fan-out is `config-editor --cco-access edit-all --repo …`, and it exits **declared** (rc 1 + the failed paths), not silently. Shipped as the `0.6.0` known-issue |
+| [FI-43](improvements.md) | `--repo` mounts the code **rw** while its stated purpose is to read it. A **sub-question of the topology decision**, not a standalone flag |
+| [FI-40](improvements.md) | A fail-closed refusal states a count where naming is safe (`pack rename` unmounted census). **Topology-independent** — it could have shipped on either side of the gate; deferred only to keep the release tree unchanged |
+| **Linux write path** | ⚠ **An ADR, not a patch.** The conflict is structural: the agent's uid must equal the host user's or it cannot write the repos; the store content is owned by that same uid; the elevated identity must **not** be that uid. Candidates — a dedicated host group + setgid dirs with the gid joined in the entrypoint · POSIX ACLs granting uid 900 · dropping the boundary on Linux (a security regression). All imply host-side setup. ⚠ Criterion F is signed off as **macOS-verified only**: macOS `fakeowner` makes the fail-closed pre-validation unfalsifiable, so every `chmod`-driven unwritable-bucket test passes in the Linux container and proves nothing from a macOS run |
+
+---
+
+## Not in the sequence — schedule when convenient
+
+Each is independent and rides the shipped substrate. None blocks anything in A–D.
+
+| Item | Why it is not in a block |
+|---|---|
+| [FI-37](improvements.md) — no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`) | Usability, no data loss. ADR-0055 gave the *project* tree a functional-write floor; the repo tree deliberately did not get one, because a repo's native `.claude/` is cross-cutting config shared with everyone who clones it. The fix is a mechanism choice, not a patch |
+| [FI-38](improvements.md) — workflows STATE overlay hygiene | Two policy choices, not bugs: a stub outlives the entry that justified it, and a collision with a later-committed workflow is resolved silently. ⚠ The emitting function runs inside `$( )` and its stdout **is** compose YAML — any notice must go to stderr or be emitted by the caller |
+| [FI-39](improvements.md) — Claude Code memory state cco does not persist | **One ADR covering both halves; do not split it.** (a) per-agent `memory:` is declared on eight agents and evaporates — measured: of four declared scopes only the lead's works, and six pack agents produced **zero bytes** in weeks. (b) `autoMemoryDirectory` — a simplification. ⚠ **Weigh it together with cross-PC state sync, never before**: role memory becomes an object to sync, with its own ownership/conflict/confidentiality questions, and deciding it first means deciding it without its most binding requirement. ⚠ And the fix **cannot be "make `.claude` writable"** — that would buy a low-priority feature by selling the security guarantee named in C2 |
+| **State sync (cross-PC / cross-team)** | The largest deferred item; needs its own design. Boundary to preserve: git stays the one engine for vault sync and resource sharing; a daemon would own only what git carries badly (append-heavy, machine-local STATE) |
+| #10b — statusline | Show session usage/limit percentage instead of (or beside) the dollar cost; fix stale ctx% after `/compact`; configurable format. Low effort, fits any release |
+| FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
+| **Developer-mode residue** | ✅ **Mostly shipped**: `cco --dev-sandbox` / `--dev-sandbox-seed` isolate STATE/DATA/CACHE and seed them one-shot from the real buckets (`docs/users/reference/cli.md` §3.34). What remains is ergonomics — running the local `bin/` build against an npm-installed cco without typing the path |
+| Name/id validation hardening · `cco config protect` · `cco project internalize` (Case-C) · `cco clean` redesign · the deferred doc splits | Post-v1 backlog, unchanged. Detail in [roadmap-history.md](roadmap-history.md) |
+
+## Open decisions for the maintainer
+
+None blocking. Each is cheap to answer and expensive to discover later.
+
+1. **180 latent bash-3.2 fixtures in `tests/`.** Argument-position `"$(cat <<YAML` sites that parse
+   today and abort the **whole host suite** the day one gains an apostrophe. Options: leave the
+   two-arm INV-B32 as shipped · refactor them and tighten to one arm · make the **bash-3.2 parse sweep
+   a gate**. ⚠ The sweep answers *"should the host suite be a gate?"* more cheaply but **not the same
+   way**: it proves the suite is *readable* on 3.2, never that it *passes*.
+2. **`cco init` has no `$HOME` guard.** It scaffolds `$PWD/.cco`, and in a home directory that is the
+   personal store's own path. On a fresh machine the outcome is a confusing `refusing to clobber`, not
+   corruption — but it is exactly the mistake the old README invited. A guard is a code change.
+3. **`cco pack internalize` is documented twice** (`cli.md` §3.23 unified, §3.27 dedicated). The
+   divergence is fixed; the duplication is not. Merging sections in a shipped reference is editorial.
+
+## Long-term planned work
+
+Full descriptions in [roadmap-history.md → Planned Sprints](roadmap-history.md#planned-sprints).
 
 | Item | Priority | Effort | Summary |
-|------|----------|--------|---------|
-| **CLI surface environment-awareness review** (post-B2) | 1 | Med | Audit the **entire** `cco` verb surface against the [CLI environment-awareness principle](cli/design/design-cli-environment-awareness.md): every command must detect host vs container-operator context (D8 / `_cco_container_operator`) and behave correctly — shim classification, resolver guard, secret masking, host-path hygiene, scope-aware help, **and output scoping (§4b)**. Surfaced by ADR-0042/0043 (wrapped-`cco` is now a *primary* channel present in almost every session). **✅ DONE (2026-07-02)** on `feat/cli/surface-awareness-review` (from `develop`) — [findings report](cli/reviews/2026-07-02-cli-surface-awareness-review.md), design doc §6 marked done. Five findings, all fixed: **F1** `config validate`→host-only (host-path leak + false orphans in-container), **F2** `remote add --token` refused in-container (ephemeral secret + false "[token saved]"), **F3** `config save` edit-project message, **F4** `usage()` top-level granularity recorded, **F5** `llms remove` relative path. Network-write cluster + host-only refusals + B2 read surface confirmed correct. Commits `d78a46e` (fix) · `312cea7` (tests) · `b893b9c` (docs); changelog #35; suite 1132/1 (pre-existing env-only fail). Touches `bin/cco` shim + `lib/*` → needs `cco build` to be live. **Only merge → `develop` + push (from the Mac) remain.** |
-| **Design-doc consolidation review** — scattered concepts → unified references (post-B2) | 2 | Med | Sweep the maintainer docs for **long-living concepts reused by multiple features but living scattered across per-sprint ADRs**, and decide which deserve a consolidated **living design doc + domain home** (the same signal that produced `cli/design/design-cli-environment-awareness.md`). Known case: the **CLI surface/UX conventions** are spread across `decentralized-config/decisions` (**0017** consolidation, **0023** command surface, **0029** unified list/verb symmetry, **0033** unified resolution) with no unified `cli/design/` reference — the `cli/` domain currently holds only env-awareness + ADR-0043. Output: a short gap report + a plan for which concepts to re-home/cross-reference (ADRs stay history; new living design docs consolidate the "how it is/will be"). |
-| Quick wins: FI-4 model config, `cco project edit` | 1 | Low–Med | Per-project `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
-| AI-assisted merge (Update System Phase 4) | 2 | Low–Med | `(I)` AI-merge option for `.md` files on `cco update --sync` when `MERGE_AVAILABLE` |
-| Sprint 6C — Network hardening | 2/3 | Med–High | Squid sidecar + `internal: true` network, SNI domain filtering (Phase A/B shipped, Phase C pending). Security: required pre-open-source |
-| Sprint 8 — E2E integration tests | 3 | Med | `bin/test-e2e` verifying real container behavior (mounts, socket, auth, entrypoint) |
-| Sprint 9 — Linux OAuth | 4 | Med | OAuth on Linux without Keychain (pre-generated credentials / `secret-tool` / `pass` / encrypted file / API-key default) |
-| Sprint 10 — Git worktree isolation (#6) | 5 | Med | Opt-in per-session worktrees on `cco/<project>` branches; enables PR/merge workflow |
-| #9 Pack inheritance / composition | 5 | Med | `extends:` in `pack.yml` |
-| #10b StatusLine improvements | 5 | Low | Remaining-session % for Max users; fix stale ctx% after `/compact`; configurable format |
-| Sprint 12 — Project RAG (#13) | Exploratory | High | Built-in opt-in RAG MCP (default `mcp-local-rag`/LanceDB), auto-generated config at `cco start` |
-
-> Note: `#6b`/`#6c` (worktree-based vault profile sync) and the Vault UI/UX enhancements
-> are **superseded/mooted** by the decentralized-config refactor (no branch-switch vault
-> remains). See history for the original entries.
+|---|---|---|---|
+| **Design-doc consolidation review** | 2 | Med | Sweep the maintainer docs for long-living concepts reused by several features but scattered across per-sprint ADRs, and decide which deserve a consolidated living design doc. Known case: the CLI surface/UX conventions, spread across four ADRs with no unified `cli/design/` reference |
+| AI-assisted merge (Update System Phase 4) | 2 | Low–Med | `(I)` AI-merge option for `.md` files on `cco update --sync`. ⚠ Overlaps Block B — re-check it there |
+| Sprint 6C — Network hardening | 2/3 | Med–High | Squid sidecar + `internal: true` network, SNI domain filtering (Phases A/B shipped, C pending). Required pre-open-source |
+| Sprint 8 — E2E integration tests | 3 | Med | `bin/test-e2e` verifying real container behaviour (mounts, socket, auth, entrypoint). ⚠ Every acceptance round of cycle 1 was blocked on exactly this gap |
+| Sprint 9 — Linux OAuth | 4 | Med | OAuth on Linux without Keychain. ⚠ Same platform as Block D's Linux write path — consider pairing them |
+| Sprint 10 — Git worktree isolation | 5 | Med | Opt-in per-session worktrees on `cco/<project>` branches |
+| #9 — Pack inheritance / composition | 5 | Med | `extends:` in `pack.yml`. ⚠ Re-evaluate **after** Block C: the taxonomy may subsume it |
+| Sprint 12 — Project RAG | Exploratory | High | Built-in opt-in RAG MCP, auto-generated config at `cco start` |
 
 ## Exploratory (long-term)
 
-Uncommitted ideas — evaluate demand before scheduling. Details in
+Uncommitted ideas — evaluate demand before scheduling. Detail in
 [roadmap-history.md → Long-term / Exploratory](roadmap-history.md#long-term--exploratory).
 
-- Native installer migration (auto-update support, persistent volume)
-- Hot-reload for in-container configuration (Docker-proxy `SIGHUP`, `cco reload`)
-- Session reattach (`cco attach`) — **promoted → see [Session persistence & reattach](#session-persistence--reattach-cco-attach--needs-design)** (opt-in persistence vs `--rm`; needs a short ADR)
-- Remote sessions (SSHFS-mounted repos) · Multi-project sessions
-- System notifications for human-in-the-loop (OS notification / webhook)
-- Web UI dashboard
+- Native installer migration · hot-reload for in-container configuration (`cco reload`)
+- Remote sessions (SSHFS-mounted repos) · multi-project sessions
+- System notifications for human-in-the-loop · web UI dashboard
 
-## Declined / Won't Do
+## Declined / Won't do
 
-Decisions preserved in
-[roadmap-history.md → Declined / Won't Do](roadmap-history.md#declined--wont-do).
+Decisions preserved in [roadmap-history.md](roadmap-history.md#declined--wont-do).
 
-- **PreToolUse safety hook** — Docker is the sandbox (ADR-1); block commands case-by-case if needed.
-- **claude-mem integration** — heavy deps, per-tool-call overhead, AGPL; native memory covers the need.
-- **claude-context (Zilliz) as default RAG** — cloud dependency + OpenAI key + privacy concern; allowed only as an optional provider.
+- **PreToolUse safety hook as a cco default** — Docker is the sandbox (ADR-1). ⚠ Note the distinction
+  Block C draws: what is declined is cco *imposing* one, not a pack being *able* to ship one.
+- **claude-mem integration** — heavy deps, per-tool-call overhead, AGPL.
+- **claude-context (Zilliz) as the default RAG** — cloud dependency + key + privacy; optional provider
+  only.
 
-## Backlog
+## Standing operational notes
 
-The framework-improvements tracker (FI-1 … FI-32, with analysis and decisions) is the
-detailed backlog: see [improvements.md](improvements.md).
+Cheap to read, expensive to rediscover. The full release procedure is the gates runbook
+[`08-gates-to-release.md`](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md),
+kept as the template for the next release.
 
-✅ **[FI-31](improvements.md) — found and FIXED on 2026-07-26** (design + implementation in one
-cycle, on `docs/roadmap/pack-global-adoption`). Pack (and llms) child binds under
-`/workspace/.claude` seeded no mountpoint, so `cco start` died in runc with `read-only file system`
-whenever `claude` `Cp=ro` — i.e. **the ADR-0049 default** — and the committed `<repo>/.cco/claude/`
-tree had no matching entry: the ADR-0049 §5 class, fixed for `settings.local.json` and never
-extended to the pack/llms lanes, on top of the **ADR-0005 F3 precondition ("parent stays rw") that
-ADR-0049 §2 invalidated**. Pre-ADR-0049 projects were masked by auto-created stub residue.
-[**ADR-0054**](configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md)
-replaces the precondition with **INV-MP** (cco owns every framework mountpoint, host-side): when a
-session injects children, the `/workspace/.claude` parent is composed from a mountpoints-only CACHE
-view at the policy's mode and the committed tree is bound back in entry by entry. Changelog #51, no
-migration, suite **1531/7** (+9 tests, 8 of them revert-checked against pre-fix `lib/`). ⚠ Still
-**worth one e2e v3.1 probe**: this class is invisible to the hermetic suite by construction (third
-recurrence — ADR-0049 §5, e2e v2 RC-17, now this), so only a real container start with a
-skills-shipping pack at default access proves it on the host.
-
-Newest entries (2026-07-26, all 📝 to design/analyze — raised by the maintainer's "adopt a pack
-across all my projects" question):
-
-- **FI-28** — **global pack adoption**: a personal-store settings surface in `~/.cco` that declares a
-  pack adopted across projects, with **filters** (tags/attributes) to scope it to a subset; the CLI
-  verb is a thin editor of that config. Alternative **materialized mode** (bulk-write `packs:` into
-  every matching `project.yml`) kept as a second mode. Today there is **no** default-pack mechanism at
-  all — `packs:` is per-project only, and `~/.cco/.claude/` is the only always-on layer.
-- **FI-29** — `commands/` (slash commands) has **no home** in the global store or in `pack.yml`; only
-  the per-project `<repo>/.cco/claude/commands/` works, and only incidentally.
-- **FI-30** — user-facing **install/init/configuration procedure coherence review** (the README quick
-  start presents the repo-scoped `cco init` as a global bootstrap).
+- **`git push` without `--follow-tags` leaves the tag behind**, and then `release.yml` never fires
+  while `pages.yml` does. **The release workflow not firing is the signal that the tag never left.**
+- **A `develop → main` merge is host-only when its `.cco/` diff is non-empty** — a merge writes the
+  working tree, and `.cco` is `:ro` at the default access level. The fix is the designed knob, not a
+  workaround: `--cco-access edit-project`.
+- **The host and the container share one working tree.** Never switch branches while something is
+  running on the host — it produces failures that are artefacts, not data.
+- **Prove a check's input is non-empty before believing its PASS.** A green check that measured nothing
+  recurred twice in the last cycle: a host log reading `0 failed` **with no `Results:` line** was an
+  abort, and a coverage check reported "no gaps" because its extraction returned nothing.
+- **A named list is a lower bound.** Three separate sweeps missed a site their file list did not name.
+  Ask what actually executes in the hostile environment.
+- **The container is NOT blind to bash 3.2.** The Docker socket reaches the public `bash:3.2` image:
+  `docker run --rm --name cc-<project>-b32 -v <host-repo>:/src bash:3.2 bash -n <file>` is a real parse
+  oracle in-session. ⚠ Two constraints: the proxy demands the `cc-<project>-` name prefix and
+  **swallows container stdout** — read results from exit codes or a file written into the mounted repo.
+  What stays true is narrower: the *suite's* interpreter is bash 5.2, so a behavioural regression test
+  proves nothing about 3.2.
 
 ## History
 
-Detailed chronology — the full status snapshot, per-phase build log, completed sprints,
-and the known-bug log: see [roadmap-history.md](roadmap-history.md).
+Full chronology — closed cycles, the phase-by-phase build log, completed sprints and the resolved-bug
+log: [roadmap-history.md](roadmap-history.md).
