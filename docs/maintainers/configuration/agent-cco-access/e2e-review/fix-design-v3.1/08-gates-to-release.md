@@ -461,9 +461,18 @@ Fold it into the docs sweep.
    modifies `.cco/.gitignore` and **deletes** `.cco/claude/{packs.md,scheduled_tasks.lock,workspace.yml}`
    (the artefacts ADR-0041/0042 retired). `.cco` is mounted `:ro` in a session, so an in-session merge
    fails partway and leaves the tree half-applied. Run it from the host.
-   Pre-computed so the check is a comparison, not a derivation:
-   `tree(main) == tree(merge-base 740f201) == 99e5648` (main contributes nothing) and the expected
-   result is `tree(main) == tree(develop) == be56a851177034700f14e285eed62126bfcfac24`.
+   The stable half of the check, safe to pin because neither ref moves:
+   `tree(main) == tree(merge-base 740f201) == 99e5648` — **main contributes nothing**, so the merge is
+   a content fast-forward and the merged tree must equal develop's exactly.
+   ⚠ **Do not pin develop's tree hash here.** This file lives *in* that tree, so writing the expected
+   hash into it invalidates the hash — the first draft of this note pinned one and the very next commit
+   falsified it. Compute both sides at merge time instead:
+
+   ```bash
+   git rev-parse develop^{tree}        # before the merge — note it
+   git checkout main && git merge --no-ff develop
+   git rev-parse main^{tree}           # must equal the value above
+   ```
    ⚠ `scripts/release.sh` refuses a dirty tree, and `.cco/project.yml` carries three long-standing
    uncommitted changes (the `access:` mask, the `8082:8080` port, `packs:`). **`git stash` first —
    never `git checkout .cco/project.yml`**, which would discard the port and packs edits too.
