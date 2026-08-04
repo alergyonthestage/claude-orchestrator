@@ -67,5 +67,5 @@ There are two ADR streams:
 
 - [roadmap.md](roadmap.md) — the single source of truth for planned work,
   priorities, and feature status.
-- [roadmap-backlog.md](roadmap-backlog.md) — backlog of deferred and candidate
+- [improvements.md](improvements.md) — backlog of deferred and candidate
   items.

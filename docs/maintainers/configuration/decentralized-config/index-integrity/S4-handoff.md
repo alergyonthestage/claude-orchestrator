@@ -81,7 +81,7 @@ cleanly; bindings already written stay valid. Test in `tests/test_resolve.sh` / 
   non-destructive reconcile + residue absorption), the fail-loud version gate, the extra_mount re-home,
   the `config validate` malformed report, and the developer sandbox. (ADR-0052 batched it here on
   purpose — WS-1…WS-5 shipped no changelog.)
-- **`docs/maintainers/roadmap-backlog.md`** — flip **FI-16** (gate), **FI-23** (extra_mount re-home),
+- **`docs/maintainers/improvements.md`** — flip **FI-16** (gate), **FI-23** (extra_mount re-home),
   and the **index-part of FI-22** (the doctor) to landed with a pointer to ADR-0052; record N1/N2/N3;
   **note the still-open FI-22 remainder** (broad structural validation of the OTHER lenient readers —
   tags, remotes — is explicitly out of scope this cluster, ADR-0052 §5); add FI-27 only if the sandbox

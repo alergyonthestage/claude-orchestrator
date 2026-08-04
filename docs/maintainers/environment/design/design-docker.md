@@ -970,7 +970,7 @@ claude-orchestrator/
 │   │   └── <domain>/{guides,reference}/    #   foundation · configuration · environment ·
 │   │                                       #   integration · security · packs · internal-projects
 │   ├── maintainers/                        # NOT shipped — maintainer-facing
-│   │   ├── roadmap.md · roadmap-backlog.md · roadmap-history.md · handoff.md
+│   │   ├── roadmap.md · improvements.md · roadmap-history.md · handoff.md
 │   │   └── <domain>/{analysis,design,decisions,reviews}/
 │   │                                       #   foundation · environment (this file) · cli ·
 │   │                                       #   configuration · security · naming · update-system …

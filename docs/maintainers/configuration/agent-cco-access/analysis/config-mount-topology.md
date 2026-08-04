@@ -27,7 +27,7 @@
 > deliberately, per the step-2b brief.
 >
 > **Feeds / consumes**: [roadmap step 2b](../../../roadmap.md) ·
-> [FI-42, FI-43, FI-40](../../../roadmap-backlog.md).
+> [FI-42, FI-43, FI-40](../../../improvements.md).
 
 ---
 

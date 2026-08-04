@@ -735,7 +735,7 @@ relevant if FI-23 is ever fixed by narrowing it.
 - The `lib/access-scope.sh` header comment (`:17-22`) enumerates the scope classes;
   add `path` to the `project` class line, and keep the "SOLE difference" sentence — §4.1
   reason 1 is the argument that it stays true.
-- `docs/maintainers/roadmap-backlog.md` FI-23 — correct the "self-healing (`cco resolve`
+- `docs/maintainers/improvements.md` FI-23 — correct the "self-healing (`cco resolve`
   re-binds per project)" claim per §5.5; it is not what `_resolve_entry_index` does. A
   one-line correction, not a re-triage.
 

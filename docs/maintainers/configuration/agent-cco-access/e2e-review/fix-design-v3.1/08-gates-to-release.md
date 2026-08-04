@@ -254,7 +254,7 @@ Expected: the view **is** composed, and both floor entries are writable while th
 > 1. ✅ **The release known-issue named an invocation `cco start` refuses** — `--all --repo …` is
 >    rejected at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …`.
 >    G6 step 5's wording is corrected below and **approved by the maintainer** — ship it verbatim.
-> 2. ✅ **[FI-45](../../../../roadmap-backlog.md) FIXED** — `remote list` no longer answers *"widen
+> 2. ✅ **[FI-45](../../../../improvements.md) FIXED** — `remote list` no longer answers *"widen
 >    your access"* for a removed verb; it refuses with the removal notice at every level, like its
 >    four siblings. Decided by the maintainer the same day; no new contract (it copies the sibling
 >    shape), changelog 61. ⚠ **This lands `bin/cco` AFTER G3's acceptance** — recorded as a
@@ -310,9 +310,9 @@ host-side and `show_host_paths` is on, so the reader cannot act on the path they
 > is now the historical checklist of what the gate covered. **G1's residual host cleanup is also done**
 > (scratch projects, `scratch-pack*`, the four stale remotes).
 >
-> **Follow-ups carried out of the cycle**: [FI-42](../../../../roadmap-backlog.md) (→ the **release
-> known-issue**, G6 step 5) · [FI-43](../../../../roadmap-backlog.md) ·
-> [FI-40](../../../../roadmap-backlog.md) — all three deferred to **cycle-2** by the step-2b decision.
+> **Follow-ups carried out of the cycle**: [FI-42](../../../../improvements.md) (→ the **release
+> known-issue**, G6 step 5) · [FI-43](../../../../improvements.md) ·
+> [FI-40](../../../../improvements.md) — all three deferred to **cycle-2** by the step-2b decision.
 > ADR-0046 §6 was **ratified in place**, not deferred. Lanes L1/L2/L4/L5 move from *landed* to
 > **accepted** in the roadmap; L3 already was.
 
@@ -328,7 +328,7 @@ on the table:
       **vacuous** (a locally created pack carries no provenance/tags/fingerprint to re-key).
 - [ ] **Step 2b's decision is TAKEN, not open** (2026-07-31): the mount topology does not change in this
       release; **FI-40, FI-42 and FI-43 are deferred to cycle-2**, each with its reason written into
-      [`roadmap-backlog.md`](../../../../roadmap-backlog.md). ADR-0046 §6 was ratified in place. **Do not
+      [`improvements.md`](../../../../improvements.md). ADR-0046 §6 was ratified in place. **Do not
       re-litigate** — what this gate still owes is the *release known-issue* below.
 - [ ] **G2's findings**, split into *corrected in place* vs *needs your decision*.
 - [ ] The **seven ratified deviations** in ADR-0056's *"Implementation annotations"* — already decided,
@@ -405,7 +405,7 @@ G4 proves the *tree* is the same. This gate covers what a tree identity cannot:
       (`tests/test_update.sh:156`, `:172`), i.e. the now-`:ro` real directory.
 - [ ] 🔴 **Host suite on macOS (bash 3.2 + BSD userland) — RUN 2026-08-03, and it did NOT pass: it
       ABORTED.** 427 tests, then `tests/test_invariants.sh: line 1398: unexpected EOF while looking for
-      matching ')'`. Root cause + fix: **[FI-46](../../../../roadmap-backlog.md)** — a heredoc inside
+      matching ')'`. Root cause + fix: **[FI-46](../../../../improvements.md)** — a heredoc inside
       `$( … )`, which bash 3.2 cannot parse and bash 5.x can.
       ⚠ **How to read this log, because it looks green:** it ends with `0 failed` and **no `Results:`
       line**. The zero means the run never reached a test that could fail. **Check for the summary line
@@ -456,7 +456,7 @@ Fold it into the docs sweep.
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 
 1. Merge `develop → main` (content fast-forward per G4; verify the tree hash the same way).
-   🔴 **HOST-ONLY — [FI-20](../../../../roadmap-backlog.md) APPLIES to this merge, unlike G4's.**
+   🔴 **HOST-ONLY — [FI-20](../../../../improvements.md) APPLIES to this merge, unlike G4's.**
    Measured 2026-08-04: `git diff --name-status main develop -- .cco/` is **not** empty — the merge
    modifies `.cco/.gitignore` and **deletes** `.cco/claude/{packs.md,scheduled_tasks.lock,workspace.yml}`
    (the artefacts ADR-0041/0042 retired). `.cco` is mounted `:ro` in a session, so an in-session merge
@@ -511,7 +511,7 @@ Fold it into the docs sweep.
 
    ⚠ Two things this wording protects, both learned the hard way: it names the **one** invocation instead
    of implying `pack rename` is broken, and it says the failure is **declared**, so a user meeting it does
-   not assume silent corruption. Tracked as [FI-42](../../../../roadmap-backlog.md) → cycle-2.
+   not assume silent corruption. Tracked as [FI-42](../../../../improvements.md) → cycle-2.
 
    ⚠ **The invocation was corrected at G2, 2026-07-31 — do not restore the earlier wording.** It read
    `config-editor --all` + `--repo`, which **`cco start` refuses** (`cmd-start.sh:2687` rejects `--all`

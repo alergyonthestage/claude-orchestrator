@@ -153,7 +153,7 @@ future session under-reports the host-only set. **Exact patch in `00-plan.md` §
 
 Every `.claude` tree is clamped `:ro` in a session, including `defaults/managed/.claude/` even though
 `defaults/managed/` itself is rw. **Why is a finding in its own right — `FI-25`** in
-`roadmap-backlog.md`: the nested-`.claude` sweep (`_find_nested_config_dirs`, `cmd-start.sh`) is
+`improvements.md`: the nested-`.claude` sweep (`_find_nested_config_dirs`, `cmd-start.sh`) is
 correct for a normal project's authoring trees but also catches cco's OWN shipped `.claude` payload
 (`defaults/`, `templates/`, `internal/` are tool source, not authoring trees).
 

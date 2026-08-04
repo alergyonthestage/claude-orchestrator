@@ -3,7 +3,7 @@
 > The live, forward-looking plan for claude-orchestrator. Detailed chronology,
 > completed sprints, and the known-bug log live in
 > [roadmap-history.md](roadmap-history.md). The framework-improvements backlog
-> lives in [roadmap-backlog.md](roadmap-backlog.md).
+> lives in [improvements.md](improvements.md).
 >
 > Last updated: 2026-07-28.
 
@@ -340,7 +340,7 @@ no-op or output-identical on bash 5.2/GNU — verified). **Host FULLY GREEN 2026
 (all six A–G confirmed on bash 3.2 + BSD tools, 0 failures). ✅ MERGED → develop (`--no-ff` merge
 `03583de`) and PUSHED (`origin/develop == develop == d5b9a6d`, 2026-07-25); only the optional
 `git branch -d` of the merged branch remains.**
-✅ **[FI-27](roadmap-backlog.md) — its gate is now LIFTED (done 2026-07-24, ADR-0053, on develop `d5b9a6d`, pushed).**
+✅ **[FI-27](improvements.md) — its gate is now LIFTED (done 2026-07-24, ADR-0053, on develop `d5b9a6d`, pushed).**
 B was a *test-harness* paper-over of a real index-model gap — `_index_normalize_path` canonicalized
 neither symlinks nor a trailing `/.`, so a macOS user whose repo sits under `/var`|`/tmp` diverged.
 The impl fix (design pass first, per the maintainer's rule that impl-touching fixes settle pre-review)
@@ -456,7 +456,7 @@ merge introduced no content nobody wrote. All three branches are pushed and leve
   🔴 The **first** attempt ABORTED, not passed: 427 tests ran, then bash died with
   `tests/test_invariants.sh: line 1398: unexpected EOF while looking for matching ')'`. **No
   `Results:` line was ever printed**: the `0 failed` in that log means the run never reached the
-  tests that could fail. Root cause and fix: **[FI-46](roadmap-backlog.md)**.
+  tests that could fail. Root cause and fix: **[FI-46](improvements.md)**.
   **↳ 2026-08-03: the DEFECT is fixed and covered**, merged into `develop` as `f1813c1` — four sites moved out of command substitutions (the lint found a fourth the diagnosis
   had not named), covered by the **INV-B32** CLASS lint, and **parse-verified on real bash 3.2**:
   173 shell sources exit 0 where the pre-fix file exits 2. **The gate item itself is still open** —
@@ -500,7 +500,7 @@ directly bears on.
 
 | Lane | Deliverable | Closes |
 |---|---|---|
-| **L1** ✅ **accepted** (G3, 2026-07-31) | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. Designed 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved); **implemented by S4** 2026-07-29, merged into the cycle branch. The sweep enumerated **five sites the ADR's table did not name** — the largest being `tags.sh:287-313`, i.e. `cco list` itself, which at `G=none` counted nothing at all (that *is* R-B, and it is bigger than the `pack validate` site the ADR named). D5's host-side count ships as `CCO_STORE_TOTALS`. ⚠ **Its post-build probe RAN 2026-07-30 and FAILED — `cco build` had been done, and D5 was inert: `config/cco-svc-helper.c`'s `ALLOWED_KEYS[]` never listed the key S4 writes into the descriptor, so the setuid helper dropped it in silence and R-B was still live (`cco list packs` → 1 of 6 packs, no notice).** Fixed the same day: the key is whitelisted, and the correspondence across all **three** registries of that signal family is now the **INV-DESC** lint — the helper's whitelist, `bin/test`'s ambient-env unset list (the second instance of the same omission, which was inflating the in-session failure count from 7 to 10), and `tests/helpers.sh`'s per-lane sanitiser (the third, latent). Ratified in ADR-0056's annotations + changelog 59. **Round 2 of the probe (after the rebuild) confirmed the lane fixed — `5 packs hidden` where there had been silence — and found a second defect, D5's own**: the supplement looped over EVERY store kind on EVERY flush, so `cco list llms` claimed *"6 packs hidden"* while showing all llms, `cco list packs` claimed *"2 llms hidden"* about the two it was showing, and the same session answered 6 or 5 to the same question depending on the verb. Ratified fix (2026-07-30): a notice is **per-invocation** — a verb declares the kinds it enumerates exhaustively and only those are supplemented, with **no declaration ⇒ no supplement** so an omission is honest silence; guarded by **INV-AVAIL/D5**, which names exactly the four enumerators on the pre-fix tree. ✅ **Probe round 3 (3rd build) PASSED on all six arms** — `list packs` counts 5 packs and says nothing about llms · `list llms` no notice at all · `list` speaks for every kind · `path list` no store counts · `pack validate --all` pack-only · `project show` silent on the store. Every number matches what was ratified before the fix was written, so **L1's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31. **▶ A fourth INV-AVAIL arm landed 2026-07-30 (`1814ba3`, changelog 60, [FI-41](roadmap-backlog.md))**, found by the G1 gate rather than by the sweep: `cco pack rename` refused on `_project_member_status`' `unresolved` — a word that in operator mode covers *both* an unbound member and one merely not bound into this container — and prescribed `cco resolve`, which the host answers *"already resolved"*. It shipped through all three original arms untouched (no predicate computed, no badge spelled, and D2's qualifier already present), so the invariant now also guards **which owner a refusal reads its answer from**, not only how a verb computes it. Fixed at the consumer; `_project_member_status` untouched (`join`/`forget --purge` share it) | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
+| **L1** ✅ **accepted** (G3, 2026-07-31) | **INV-AVAIL** — one owner for availability/widening answers (`access-scope.sh`), + CLASS lint. Designed 2026-07-29, **[ADR-0056](configuration/agent-cco-access/decisions/0056-availability-model-and-index-session-axis.md)** (S2, design-only, approved); **implemented by S4** 2026-07-29, merged into the cycle branch. The sweep enumerated **five sites the ADR's table did not name** — the largest being `tags.sh:287-313`, i.e. `cco list` itself, which at `G=none` counted nothing at all (that *is* R-B, and it is bigger than the `pack validate` site the ADR named). D5's host-side count ships as `CCO_STORE_TOTALS`. ⚠ **Its post-build probe RAN 2026-07-30 and FAILED — `cco build` had been done, and D5 was inert: `config/cco-svc-helper.c`'s `ALLOWED_KEYS[]` never listed the key S4 writes into the descriptor, so the setuid helper dropped it in silence and R-B was still live (`cco list packs` → 1 of 6 packs, no notice).** Fixed the same day: the key is whitelisted, and the correspondence across all **three** registries of that signal family is now the **INV-DESC** lint — the helper's whitelist, `bin/test`'s ambient-env unset list (the second instance of the same omission, which was inflating the in-session failure count from 7 to 10), and `tests/helpers.sh`'s per-lane sanitiser (the third, latent). Ratified in ADR-0056's annotations + changelog 59. **Round 2 of the probe (after the rebuild) confirmed the lane fixed — `5 packs hidden` where there had been silence — and found a second defect, D5's own**: the supplement looped over EVERY store kind on EVERY flush, so `cco list llms` claimed *"6 packs hidden"* while showing all llms, `cco list packs` claimed *"2 llms hidden"* about the two it was showing, and the same session answered 6 or 5 to the same question depending on the verb. Ratified fix (2026-07-30): a notice is **per-invocation** — a verb declares the kinds it enumerates exhaustively and only those are supplemented, with **no declaration ⇒ no supplement** so an omission is honest silence; guarded by **INV-AVAIL/D5**, which names exactly the four enumerators on the pre-fix tree. ✅ **Probe round 3 (3rd build) PASSED on all six arms** — `list packs` counts 5 packs and says nothing about llms · `list llms` no notice at all · `list` speaks for every kind · `path list` no store counts · `pack validate --all` pack-only · `project show` silent on the store. Every number matches what was ratified before the fix was written, so **L1's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31. **▶ A fourth INV-AVAIL arm landed 2026-07-30 (`1814ba3`, changelog 60, [FI-41](improvements.md))**, found by the G1 gate rather than by the sweep: `cco pack rename` refused on `_project_member_status`' `unresolved` — a word that in operator mode covers *both* an unbound member and one merely not bound into this container — and prescribed `cco resolve`, which the host answers *"already resolved"*. It shipped through all three original arms untouched (no predicate computed, no badge spelled, and D2's qualifier already present), so the invariant now also guards **which owner a refusal reads its answer from**, not only how a verb computes it. Fixed at the consumer; `_project_member_status` untouched (`join`/`forget --purge` share it) | W1-01/02, W2-01/02/03/08, W3-F01/F02/F05, W4-F03/F04/F05 |
 | **L2** ✅ **accepted** (G3, 2026-07-31) | index-health **session-vs-host axis** (`absent` is never benign in a session). Designed in the same ADR-0056; **implemented by S3** 2026-07-29, merged into the cycle branch. `_index_read_state` stays byte-unchanged (A3); the axis lives in `_index_assert_readable`, split into two causes by parent traversability. Regression cover written **independently from the ADR** by a separate tester (`tests/test_index_session_axis.sh`, 12 tests; 7 of them fail on the pre-S3 tree). **S6 extended it**: a *zero-row* index in a session reached the same §10.9d sentence at rc=0 from a different cause, and is now refused too. ✅ **Container probe COMPLETE — both arms PASSED 2026-07-30**, run as a *split* gate (the `mv` host-side with a session live, the observations from inside it). **Severed**: `path list`, `list`, `list projects`, `project show`, `project validate --all` all refuse at **rc=1** naming the session axis (*"this session was LAUNCHED from the index … this is NOT an empty index"*), while pre-S3 `develop:lib/index.sh:189` still carries the benign *"nothing is registered on this machine yet"* it replaced. **Restored**: all five back at **rc=0** with their fully scoped per-invocation notices and the same counts as S4's round 3 — so the entry guard (`_index_assert_readable`) is proven to refuse on failure *and* to get out of the way on success. **L2's Rule-1 evidence is complete**, and G3 accepted the lane on 2026-07-31 | W4-F06 🔴 — **and every Linux session's read path** |
 | **L3** ✅ **accepted** | **INV-MP generalised** (container-side ancestors too) + compose-ancestry lint · **functional-write floor derived from the official Claude Code docs** — landed 2026-07-28, **[ADR-0055](environment/decisions/0055-claude-runtime-state-and-mountpoint-ancestry.md)**, branch `fix/release/cycle-1.2`, suite **1551/9 unmasked** (an earlier `1549/7` was measured with `access:{claude:all}` on). **All three container probes green**: the `:ro` lane and the `Cp=rw`+composing arm 2026-07-28, and **D7's pack-less arm 2026-07-31** — a project adopting no pack still gets the composed view with both floor entries writable, observed at `claude_access: none` (all four axes `ro`), i.e. harder than the specified default. **L3 has no residual** | R-D, R-F |
 | **L4** ✅ **accepted** (G3, 2026-07-31) | **INV-YAML** — one comment-block-aware section boundary + golden-file lint. Landed 2026-07-29 on `fix/cycle-1.2/s5-inv-yaml` (S5): `_yml_append_coord` buffers the trailing top-level comment/blank run and emits before it; golden-file round trip against the shipped base template + an insertion-class CLASS lint. **No ADR** — the runbook's Produces column does not ask for one. Accepted at G3, 2026-07-31 | R-E |
@@ -541,7 +541,7 @@ lint allowlist; (c) the **README platform contradiction** (`:59` vs `:220`), sha
 native Linux now refuses index-reading verbs by construction, and the release cannot state a platform
 until that is said plainly.
 
-Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`roadmap-backlog.md`](roadmap-backlog.md)).
+Deferred from v3.1 → **FI-33 · FI-34 · FI-35 · FI-36** ([`improvements.md`](improvements.md)).
 ✅ **S6's host-only half is DONE (2026-07-31)** — **§10.9e / E6B-04** ran for the first time in any
 round, on the host, and **passed**: two projects referencing one pack, and the rename re-keyed **both**
 `project.yml` copies with no `failed` tag (v2 had only ever *inferred* the half-apply from a non-firing
@@ -574,10 +574,10 @@ What the analysis must weigh, per the maintainer:
   a first-class need rather than a host-only convenience.
 
 Open findings that feed it and should not be re-derived:
-[FI-42](roadmap-backlog.md) (the fan-out's write path is resolved by member probe while its read path is
+[FI-42](improvements.md) (the fan-out's write path is resolved by member probe while its read path is
 operator-aware — the concrete defect this topology question explains),
-[FI-43](roadmap-backlog.md) (`--repo` mounts the code `rw` while §3.7's rationale says *read*),
-[FI-40](roadmap-backlog.md) (a refusal stating a count where naming is safe).
+[FI-43](improvements.md) (`--repo` mounts the code `rw` while §3.7's rationale says *read*),
+[FI-40](improvements.md) (a refusal stating a count where naming is safe).
 Output: an analysis document, then **the maintainer's decision** — implementation scope, and whether any
 of it ships in this release, are decided at that gate, not assumed here.
 
@@ -611,7 +611,7 @@ deferred with it**.
   for the first time in any round today; touching it invalidates the evidence and buys a full host
   round on a cycle whose only remaining work is verification.
 - **Why deferring is safe** — reachability was established before deciding (table in
-  [FI-42](roadmap-backlog.md)): a **normal** session is layout 1, so the probe is correct there;
+  [FI-42](improvements.md)): a **normal** session is layout 1, so the probe is correct there;
   `edit-project` and `config-editor --project` refuse at the access boundary (`G=rw` required);
   `--all` without `--repo` refuses **before any mutation**. The **only** path reaching the fan-out is
   `config-editor --cco-access edit-all --repo …` and it exits **declared** (rc 1 + the `failed` paths,
@@ -629,8 +629,8 @@ deferred with it**.
   — the *normal* session already ships `include_member_configs: true`'s span unenforced, so the
   config-editor built-in is the **stricter** of the two; the shipped behaviour is ratified, the
   rewrite of §6 belongs to cycle-2.
-- ⏸ **Deferred to cycle-2**: [FI-42](roadmap-backlog.md) · [FI-43](roadmap-backlog.md) (a
-  *sub-question* of the topology decision, not a standalone flag) · [FI-40](roadmap-backlog.md)
+- ⏸ **Deferred to cycle-2**: [FI-42](improvements.md) · [FI-43](improvements.md) (a
+  *sub-question* of the topology decision, not a standalone flag) · [FI-40](improvements.md)
   (topology-independent; deferred only to keep the release tree unchanged).
 
 ✅ **BEFORE G6 — living-docs coherence sweep DONE 2026-08-03**, branch
@@ -704,7 +704,7 @@ there:
 Eight objective drifts corrected in place; the **two items it raised are both closed the same day** —
 the corrected **release-note sentence** is **approved** (G6 step 5: the known-issue had named
 `--all --repo …`, which `cco start` refuses; the reachable spelling is `--cco-access edit-all
---repo …`), and **[FI-45](roadmap-backlog.md) is FIXED** (`remote list` no longer tells a user to
+--repo …`), and **[FI-45](improvements.md) is FIXED** (`remote list` no longer tells a user to
 widen access for a **removed** verb — it refuses with the removal notice at every level, like its four
 siblings; changelog 61). ⚠ FI-45 lands `bin/cco` **after** G3's acceptance — recorded as a
 post-acceptance in-cycle fix in the plan's §7, the treatment FI-41 got. ⚠ The largest find was outside the
@@ -1457,9 +1457,9 @@ Decisions preserved in
 ## Backlog
 
 The framework-improvements tracker (FI-1 … FI-32, with analysis and decisions) is the
-detailed backlog: see [roadmap-backlog.md](roadmap-backlog.md).
+detailed backlog: see [improvements.md](improvements.md).
 
-✅ **[FI-31](roadmap-backlog.md) — found and FIXED on 2026-07-26** (design + implementation in one
+✅ **[FI-31](improvements.md) — found and FIXED on 2026-07-26** (design + implementation in one
 cycle, on `docs/roadmap/pack-global-adoption`). Pack (and llms) child binds under
 `/workspace/.claude` seeded no mountpoint, so `cco start` died in runc with `read-only file system`
 whenever `claude` `Cp=ro` — i.e. **the ADR-0049 default** — and the committed `<repo>/.cco/claude/`

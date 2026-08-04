@@ -279,7 +279,7 @@ three classes (code-grounded; cco always launches `claude --dangerously-skip-per
 **Carried out of this ADR:**
 - **Class O extraction → workstream F** (`../opinionated-extraction-and-update-refactor-handoff.md`,
   ADR-0040): make the public default *neutral*, opinions become an opt-in layer.
-- **Security finding → backlog** (`../roadmap-backlog.md`): verify whether managed
+- **Security finding → backlog** (`../improvements.md`): verify whether managed
   `permissions.deny` is actually enforced under `--dangerously-skip-permissions`
   (bypassPermissions). If not, the security backstop is decorative and cco would
   need `allowManagedPermissionRulesOnly` / `permissions.disableBypassPermissionsMode`

@@ -7,7 +7,7 @@
 > descriptions of planned / exploratory / declined items as they stood in the previous
 > single-file roadmap. The forward-looking, scannable plan lives in
 > [roadmap.md](roadmap.md); the framework-improvements backlog lives in
-> [roadmap-backlog.md](roadmap-backlog.md).
+> [improvements.md](improvements.md).
 
 ## Contents
 
@@ -451,7 +451,7 @@ Priorities are a **recommendation** — confirm before scheduling. None blocks t
 
 Add `model:` field to `project.yml`, passed to `claude --model` at launch.
 
-**Ref**: [FI-4](roadmap-backlog.md#fi-4-per-project-llm-model-configuration)
+**Ref**: [FI-4](improvements.md#fi-4-per-project-llm-model-configuration)
 **Effort**: Medium-Low.
 
 #### #10 `cco project edit <name>` command
@@ -1473,7 +1473,7 @@ Phase 4 (AI-assisted merge) designed but deferred to a separate cycle.
 
 **FI-5**: Defaults aligned with user guides — managed CLAUDE.md expanded (+context hierarchy, +workspace safety), global CLAUDE.md rewritten (no duplications, points to rules), `workflow.md` expanded with approval gates and task decomposition, `diagrams.md` → `documentation.md` (+ docs structure, project tracking, stale review), template cleaned up (removed non-functional language.md override), migrations 011 (global rename) and 012 (project cleanup).
 
-**Ref**: [FI-2](roadmap-backlog.md#fi-2-init-workspace-on-empty-projects) | [FI-5](roadmap-backlog.md#fi-5-human-workflow-guide-and-review-best-practices)
+**Ref**: [FI-2](improvements.md#fi-2-init-workspace-on-empty-projects) | [FI-5](improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
 **Design**: [`defaults-alignment-design.md`](configuration/rules-and-guidelines/design/design-defaults-alignment.md)
 
 ---
@@ -1496,7 +1496,7 @@ design decisions.
 **Review of defaults (8c-8e)**: Global rules, global CLAUDE.md, and managed CLAUDE.md were
 reviewed against user guides — no changes needed beyond FI-5 alignment (already completed).
 
-**Ref**: [FI-8](roadmap-backlog.md)
+**Ref**: [FI-8](improvements.md)
 **Design**: [`defaults-alignment-design.md`](configuration/rules-and-guidelines/design/design-defaults-alignment.md) §2.2, §2.3
 
 ---
@@ -1523,7 +1523,7 @@ Completes the user-config lifecycle with update notification and merge for publi
 
 **New commands**: `cco project update`, `cco project internalize`, `cco update --offline/--no-cache`, `cco update --sync <project> --local`, `cco project publish` (enhanced).
 
-**Docs**: [analysis](../archive/sharing/publish-install-sync-analysis.md) | [design](../archive/sharing/publish-install-sync-design.md) | [FI-7](roadmap-backlog.md#fi-7-publish-install-sync-and-resource-versioning)
+**Docs**: [analysis](../archive/sharing/publish-install-sync-analysis.md) | [design](../archive/sharing/publish-install-sync-design.md) | [FI-7](improvements.md#fi-7-publish-install-sync-and-resource-versioning)
 
 ---
 

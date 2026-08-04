@@ -245,7 +245,7 @@ already landed. That is a stage with tests, not a footnote.
 
 ### ⚠ Re-scoped 2026-07-21 after a codebase-wide audit — read that first
 
-Per the `roadmap-backlog.md` convention (re-derive an item's real boundary before designing it),
+Per the `improvements.md` convention (re-derive an item's real boundary before designing it),
 S2b was audited across the whole `lib/` tree before implementation. The boundary is **larger and a
 different shape** than "add `||` to 15 call sites". Full report:
 [`../../../../engineering/analysis/false-success-class-audit.md`](../../../../engineering/analysis/false-success-class-audit.md).
@@ -399,7 +399,7 @@ Until it is applied, the rule injected into every future session under-reports t
 The same constraint applies to anything else this cycle needs in `defaults/managed/.claude/` or
 `defaults/global/.claude/` — fold the check into **S9**'s doc sweep, and run that part on the Mac.
 
-**Why it is blocked is itself a finding**, recorded as **FI-25** in `roadmap-backlog.md`: the clamp
+**Why it is blocked is itself a finding**, recorded as **FI-25** in `improvements.md`: the clamp
 is the nested-`.claude` sweep (`_find_nested_config_dirs`, `cmd-start.sh:507`), which is correct for
 a normal project's authoring trees but also catches cco's OWN shipped `.claude` payload —
 `defaults/managed/`, `defaults/global/`, `templates/project/base/`, `internal/*/` are tool SOURCE,

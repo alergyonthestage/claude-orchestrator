@@ -162,7 +162,7 @@ flowchart TD
 - These should be **clearly separated responsibilities** (distinct subcommands or clearly distinct phases),
   not one tangled `cco update`.
 
-**Newly-noticed v0.4.0 migration UX gaps to fix in this workstream (also in `roadmap-backlog.md`):**
+**Newly-noticed v0.4.0 migration UX gaps to fix in this workstream (also in `improvements.md`):**
 1. After `cco init --migrate`, the user is **not told a fresh `cco build` (`--no-cache`?) is needed before
    `cco start`** (a new release needs a new image). Surface this hint — possibly auto-trigger the rebuild.
 2. Clarify whether `cco update` **as the first command** performs the **preventive vault backup** other

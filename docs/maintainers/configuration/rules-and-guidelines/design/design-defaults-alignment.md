@@ -10,8 +10,8 @@
 > **Predecessors**:
 > - [`analysis.md`](../analysis/analysis-001-rules-and-guidelines.md) — rules categories, scope mapping, file grouping
 > - [`../update-system/design.md`](../../../update-system/design/design-update-system.md) — update policies (file-policy taxonomy §4.4)
-> - [FI-2](../../../roadmap-backlog.md#fi-2-init-workspace-on-empty-projects)
-> - [FI-5](../../../roadmap-backlog.md#fi-5-human-workflow-guide-and-review-best-practices)
+> - [FI-2](../../../improvements.md#fi-2-init-workspace-on-empty-projects)
+> - [FI-5](../../../improvements.md#fi-5-human-workflow-guide-and-review-best-practices)
 >
 > **User guides** (the reference for what "good practice" means):
 > - [`development-workflow.md`](../../../../users/foundation/guides/development-workflow.md)

@@ -34,7 +34,7 @@ calls (below) and the start of cycle-2.
 
 ## Open for the maintainer — none blocking
 
-Each is recorded in full on the [roadmap](roadmap.md) / [backlog](roadmap-backlog.md); this is the
+Each is recorded in full on the [roadmap](roadmap.md) / [backlog](improvements.md); this is the
 index.
 
 1. **180 latent bash-3.2 fixtures in `tests/`** — argument-position `"$(cat <<YAML` sites that parse
@@ -79,7 +79,7 @@ index.
 ## Reference documents
 
 - [Roadmap](roadmap.md) — G0…G6 all ✅ · `0.6.0` released · **cycle-2 subject and inputs** ·
-  [backlog](roadmap-backlog.md) — FI-40/42/43 deferred to cycle-2, FI-46 resolved
+  [backlog](improvements.md) — FI-40/42/43 deferred to cycle-2, FI-46 resolved
 - [Gates runbook](configuration/agent-cco-access/e2e-review/fix-design-v3.1/08-gates-to-release.md) —
   complete; keep as the template for the next release (it generalises)
 - [Config mount topology analysis](configuration/agent-cco-access/analysis/config-mount-topology.md) —

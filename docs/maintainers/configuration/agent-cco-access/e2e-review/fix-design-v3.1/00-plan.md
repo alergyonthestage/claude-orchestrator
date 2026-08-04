@@ -468,7 +468,7 @@ git repo (so the project root is used → `-workspace`) while `/workspace/<repo>
 subagent inherits the session's cwd and therefore shares the main session's memory. Both this and a
 second, unrelated hole — eight agents declare `memory: user`, whose target `~/.claude/agent-memory/` is
 bound nowhere and dies with the `--rm` container — are filed together as
-**[FI-39](../../../../roadmap-backlog.md)**, to be settled in one ADR **after** this cycle.
+**[FI-39](../../../../improvements.md)**, to be settled in one ADR **after** this cycle.
 
 #### S5 — the Rule-1 ruling, and what closes L4/L5 in-session — 2026-07-29
 
@@ -819,9 +819,9 @@ carried out of the cycle by an explicit decision, and one of them ships as a kno
 
 | Follow-up | Disposition |
 |---|---|
-| [FI-42](../../../../roadmap-backlog.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --cco-access edit-all --repo …`; ⚠ *the `--all --repo` spelling written here at the gate is refused by `cco start` — corrected at G2, see below*), failing **declared** (rc 1 + the `failed` paths). |
-| [FI-43](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — a sub-question of the topology decision, not a standalone flag. No exposure: the current `rw` default is documented as such. |
-| [FI-40](../../../../roadmap-backlog.md) | Deferred to **cycle-2** — topology-independent, deferred only to keep the release tree unchanged. |
+| [FI-42](../../../../improvements.md) | Deferred to **cycle-2**. The fix cannot be taken without taking the contract decision it carries, which *is* the cycle-2 subject. Ships as the **release known-issue** in runbook **G6** — one invocation (`config-editor --cco-access edit-all --repo …`; ⚠ *the `--all --repo` spelling written here at the gate is refused by `cco start` — corrected at G2, see below*), failing **declared** (rc 1 + the `failed` paths). |
+| [FI-43](../../../../improvements.md) | Deferred to **cycle-2** — a sub-question of the topology decision, not a standalone flag. No exposure: the current `rw` default is documented as such. |
+| [FI-40](../../../../improvements.md) | Deferred to **cycle-2** — topology-independent, deferred only to keep the release tree unchanged. |
 | ADR-0046 §6 | **Ratified in place** 2026-07-31 (annotation on the ADR), not deferred. |
 
 **What the gate had on the table**: the four §7 acceptance rows (S1 both arms · S3 both arms · S4
@@ -846,7 +846,7 @@ same day**, and one of them lands code **after** G3 — recorded here rather tha
 | Item | Disposition |
 |---|---|
 | The **release known-issue named an invocation `cco start` refuses** — `--all --repo …` dies at `cmd-start.sh:2687`; the reachable route is `--cco-access edit-all --repo …` (both probed) | ✅ **Corrected and approved** in the G3-accepted shape — only the named command changed. Runbook G6 step 5 carries the signed-off sentence. |
-| [**FI-45**](../../../../roadmap-backlog.md) — `cco remote list` told a read-project session to widen its access to reach a **removed** verb | ✅ **FIXED** (`bin/cco` + 2 rewritten tests + 1 new one, changelog 61). **This is a post-acceptance change to `bin/cco`**, taken deliberately: it copies the shape four sibling removed aliases already have, so it adds **no contract** — and shipping a known false remedy in the release that exists to close that class was the worse option. |
+| [**FI-45**](../../../../improvements.md) — `cco remote list` told a read-project session to widen its access to reach a **removed** verb | ✅ **FIXED** (`bin/cco` + 2 rewritten tests + 1 new one, changelog 61). **This is a post-acceptance change to `bin/cco`**, taken deliberately: it copies the shape four sibling removed aliases already have, so it adds **no contract** — and shipping a known false remedy in the release that exists to close that class was the worse option. |
 
 ⚠ **What the post-acceptance fix costs, stated rather than assumed**: G3's verdict was recorded on a
 tree that did not contain it. The change is confined to one `case` arm in the shim's `remote` branch

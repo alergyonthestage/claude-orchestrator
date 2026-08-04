@@ -5,7 +5,7 @@
 > cycle-1.1 remediation (**S2b**, incl. **S2b-P**) is **✅ DONE** — `be1032c` + `cf9a3e5` +
 > `578e755`, after `2177858`. The remainder is tracked as **FI-24**.
 >
-> This exists because the backlog convention (`roadmap-backlog.md`, header) requires re-deriving an
+> This exists because the backlog convention (`improvements.md`, header) requires re-deriving an
 > item's real boundary before designing it — *"which related defects sit in the same neighbourhood —
 > then design and fix them as one boundary-aware change."* S2b was raised as "~15 unchecked
 > `_index_*` call sites". The boundary turned out to be much larger, and — more importantly — a
@@ -172,5 +172,5 @@ when the six `prev_*` vars are empty.
   mid-write, still reports success for that repo. This is inside S2b's scope and is stated here
   rather than left implied by the S2/S3 commit messages.
 - The remainder — the update engine (A1–A6), publish (B1–B3), and the local-destructive set — is
-  **outside cycle-1.1** and tracked as **FI-24** in `roadmap-backlog.md`.
+  **outside cycle-1.1** and tracked as **FI-24** in `improvements.md`.
 </content>

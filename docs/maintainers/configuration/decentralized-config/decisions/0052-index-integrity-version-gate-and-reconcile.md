@@ -3,7 +3,7 @@
 **Status**: Accepted (2026-07-22) — implementing on `feat/index/integrity-hardening`; per-workstream
 status tracked in [`index-integrity/00-plan.md`](../index-integrity/00-plan.md).
 **Deciders**: maintainer + design session (4-way code recon)
-**Context docs**: `../../../roadmap-backlog.md` (FI-16, FI-22, FI-23), the host e2e-review v3.1
+**Context docs**: `../../../improvements.md` (FI-16, FI-22, FI-23), the host e2e-review v3.1
 §10.6 incident report (2026-07-22)
 **Related ADRs**: **0051 (per-project name scoping — the v2 index model this protects; D2 rejects a
 global-default layer, D6 defines the in-index v1→v2 self-upgrade)**, 0021 (resource lifecycle /

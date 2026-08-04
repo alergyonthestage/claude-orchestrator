@@ -145,7 +145,7 @@ Design: `00-plan.md` §11. Four parts.
 future session under-reports the host-only set. **Exact patch in `00-plan.md` §6.-1.**
 
 Every `.claude` tree is clamped `:ro` in a session, including `defaults/managed/.claude/`. Why is a
-finding in its own right — **`FI-25`** in `roadmap-backlog.md`.
+finding in its own right — **`FI-25`** in `improvements.md`.
 
 **Two ways to close it**: apply the patch on the host, or run a self-dev session with
 `--claude-access all` (FI-25 option (d)). **S9 must check for any other `defaults/**/.claude/` or
@@ -224,7 +224,7 @@ Q-10 provenance writers, FI-21/22/23, E4-02/RC-16 mis-ownership, **FI-24** (the 
 
 ## 7. New finding recorded this stage
 
-**FI-26** (`roadmap-backlog.md`) — `repo`/`extra-mount rename` resolves `$unit` from cwd via
+**FI-26** (`improvements.md`) — `repo`/`extra-mount rename` resolves `$unit` from cwd via
 `_resolve_find_unit_dir`, so in a session it runs **only from the hosting repo's mount**. The
 fully-specified 2-arg form dies at the WORKDIR root advising the user to pass `<old> <new>`, which
 they just did. S8's V3-03 fixed the **bare** form's diagnosis (what Q-6 governs) and deliberately

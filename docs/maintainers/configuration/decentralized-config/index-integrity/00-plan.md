@@ -192,7 +192,7 @@ off by default (no behaviour change).
 ## WS-7 — Docs
 
 - `changelog.yml` — one additive entry (data-preservation on upgrade + gate + dev sandbox).
-- `docs/maintainers/roadmap-backlog.md` — flip FI-16 / FI-23 / (index-part of) FI-22 to landed with a
+- `docs/maintainers/improvements.md` — flip FI-16 / FI-23 / (index-part of) FI-22 to landed with a
   pointer to ADR-0052; record N1/N2/N3; note the deferred broad-reader validation still under FI-22;
   add FI-27 only if the sandbox scope splits.
 - Living-doc sweep: root `CLAUDE.md` index section (STATE bucket description), the decentralized-config
