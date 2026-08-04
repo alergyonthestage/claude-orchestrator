@@ -95,18 +95,25 @@ cco start tutorial
 
 ### Keeping cco up to date
 
-cco has **two independent update tracks** — don't confuse them:
+cco has **three independent update tracks** — don't confuse them, and don't stop
+after the first:
 
 ```bash
-# Upgrade the cco engine itself (the CLI + framework defaults), then apply migrations:
-npm update -g @claude-orchestrator/cco && cco update
+# Upgrade the engine, migrate your config, then rebuild the image:
+npm update -g @claude-orchestrator/cco && cco update && cco build
 ```
 
 - `npm update -g @claude-orchestrator/cco` upgrades the **engine** (the `cco`
-  command and its shipped defaults).
+  command on your host and its shipped defaults).
 - `cco update` runs **migrations + config discovery** for your existing
   projects; it does *not* upgrade the engine. After an engine upgrade it tells
   you the exact command to run for your install method (npm / source).
+- `cco build` rebuilds the **Docker image**, and nothing else does it for you —
+  neither of the other two commands touches it. The image carries the copy of
+  cco that runs *inside* a session, the socket proxy, and the privilege boundary
+  around cco's internal store. Skip it and your sessions keep running the
+  previous release while your host runs the new one, with no warning that the
+  two disagree.
 - Claude Code itself is upgraded separately — the native installer auto-updates
   it in place (see [Always-current Claude Code](#feature-highlights)).
 

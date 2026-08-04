@@ -463,6 +463,22 @@ Fold it into the docs sweep.
 3. The version number is the **maintainer's call** — `package.json` is at `0.5.2`.
 4. State the **verified platform** in the release notes: macOS verified; Linux partially supported with the
    internal-store reachability caveat (README already says this consistently in both places since `9599111`).
+   For this release the sentence is **supported by evidence**: the macOS host suite completed on
+   `develop@205c940` at `1626 passed, 0 failed, 1626 total`.
+
+4b. **Tell users the upgrade is THREE commands, not one** (maintainer, 2026-08-04). This release ships
+   migrations (`global/017`, `project/014`, `project/015`) *and* an image-level change — the ADR-0047
+   privilege boundary lives in the Docker image, not in the npm package. So:
+
+   > **Upgrading:** `npm update -g @claude-orchestrator/cco && cco update && cco build`.
+   > `cco update` applies this release's migrations; `cco build` rebuilds the image, which carries the
+   > in-session `cco`, the socket proxy and the privilege boundary around the internal store. Neither of
+   > the first two commands rebuilds the image, and a session started without the rebuild silently runs
+   > the previous release.
+
+   ⚠ **This is not release-specific advice that happens to apply here** — `cco update` has never
+   rebuilt the image, so the gap existed for every prior release too. The README's update section said
+   *"two independent update tracks"* and omitted the third; corrected in the same change.
 5. **Carry the FI-42 known-issue into the release notes** (decided with step 2b, 2026-07-31). Suggested
    wording, already reduced to what a user can act on:
 
