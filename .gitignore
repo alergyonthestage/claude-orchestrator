@@ -31,3 +31,5 @@ global/secrets.env
 
 # macOS
 .DS_Store
+
+scratchpad/
