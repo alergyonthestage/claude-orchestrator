@@ -456,6 +456,17 @@ Fold it into the docs sweep.
 > ⚙ **Generalises** — candidate for a long-living release runbook.
 
 1. Merge `develop → main` (content fast-forward per G4; verify the tree hash the same way).
+   🔴 **HOST-ONLY — [FI-20](../../../../roadmap-backlog.md) APPLIES to this merge, unlike G4's.**
+   Measured 2026-08-04: `git diff --name-status main develop -- .cco/` is **not** empty — the merge
+   modifies `.cco/.gitignore` and **deletes** `.cco/claude/{packs.md,scheduled_tasks.lock,workspace.yml}`
+   (the artefacts ADR-0041/0042 retired). `.cco` is mounted `:ro` in a session, so an in-session merge
+   fails partway and leaves the tree half-applied. Run it from the host.
+   Pre-computed so the check is a comparison, not a derivation:
+   `tree(main) == tree(merge-base 740f201) == 99e5648` (main contributes nothing) and the expected
+   result is `tree(main) == tree(develop) == be56a851177034700f14e285eed62126bfcfac24`.
+   ⚠ `scripts/release.sh` refuses a dirty tree, and `.cco/project.yml` carries three long-standing
+   uncommitted changes (the `access:` mask, the `8082:8080` port, `packs:`). **`git stash` first —
+   never `git checkout .cco/project.yml`**, which would discard the port and packs edits too.
 2. `scripts/release.sh <x.y.z>` from `main` — bumps `package.json` (the single source of truth), runs the
    local pre-flight gate, commits, tags, pushes. `--full-tests` runs the whole suite locally; the default
    is the fast read-only publish gate because **CI re-runs the full suite + the read-only `FRAMEWORK_ROOT`
