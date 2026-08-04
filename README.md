@@ -47,7 +47,7 @@ glue the rest together with shell scripts; cco is that glue, hardened and shared
 
 ## Status
 
-**Alpha (v0.5.2)** — Under active development and already used daily by the
+**Alpha (v0.6.0)** — Under active development and already used daily by the
 author for real-world agentic development. It works well in practice, but APIs,
 configuration format, and defaults may change between releases. cco is
 distributed on npm as [`@claude-orchestrator/cco`](https://www.npmjs.com/package/@claude-orchestrator/cco);
