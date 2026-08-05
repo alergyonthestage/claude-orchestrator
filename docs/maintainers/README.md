@@ -16,7 +16,7 @@ directories (see the convention below).
 |--------|-------|---------------------|
 | **foundation** | Core system design: the project-wide **governing law** ([guiding-principles.md](foundation/design/guiding-principles.md), P1–P18), the four-tier context hierarchy, Docker-as-sandbox, workspace layout, plus the foundational ADRs (0001–0015) and the requirements spec. | [design/guiding-principles.md](foundation/design/guiding-principles.md) · [design/architecture.md](foundation/design/architecture.md) · [analysis/spec.md](foundation/analysis/spec.md) · [adr/](foundation/adr/) |
 | **configuration** | The config lifecycle and distribution: scope hierarchy, rules & guidelines, llms.txt integration, file destinations, and the decentralized in-repo config model. | [configuration/README.md](configuration/README.md) |
-| **packs** | Knowledge pack format, `pack.yml` schema, and zero-duplication resource delivery. | [packs/design/](packs/design/) |
+| **packs** | Knowledge pack format, `pack.yml` schema, and zero-duplication resource delivery. Also holds the external adopter inputs feeding the shared-resource platform (roadmap Block C). | [packs/design/](packs/design/) · [packs/analysis/](packs/analysis/) |
 | **update-system** | Migration runner, discovery engine, opinionated-file sync, and the additive/opinionated/breaking change taxonomy. | [update-system/design/](update-system/design/) · [update-system/analysis/](update-system/analysis/) |
 | **environment** | Build-time and runtime container extensibility (setup scripts, packages, custom images, Docker). | [environment/design/](environment/design/) · [environment/analysis/](environment/analysis/) |
 | **integration** | Infrastructure and external services: authentication, browser MCP, agent teams, git-worktree isolation, and the managed-integrations protocol. | [integration/auth/](integration/auth/) · [integration/browser-mcp/](integration/browser-mcp/) · [integration/agent-teams/](integration/agent-teams/) · [integration/worktree/](integration/worktree/) · [integration/guides/managed-integrations.md](integration/guides/managed-integrations.md) |
@@ -63,9 +63,17 @@ There are two ADR streams:
   the **whole CLI** behaves in-container, so they live in the **cli** domain's normative design
   ([cli/design/design-cli-environment-awareness.md](cli/design/design-cli-environment-awareness.md)).
 
-## Roadmap
+## Roadmap and its companions
 
-- [roadmap.md](roadmap.md) — the single source of truth for planned work,
-  priorities, and feature status.
-- [improvements.md](improvements.md) — backlog of deferred and candidate
-  items.
+There is **exactly one roadmap**. The other files are different document
+classes, not competing plans — the roadmap links out to each.
+
+- [roadmap.md](roadmap.md) — **living SSOT** for planned work, priorities and
+  status. Start here.
+- [improvements.md](improvements.md) — the **issue tracker** (`FI-1 … FI-51`),
+  each item with its own analysis. It is the detail the roadmap cites, not a
+  second plan. *(Named `roadmap-backlog.md` before 2026-08-04.)*
+- [roadmap-history.md](roadmap-history.md) — **historical**: closed cycles,
+  completed sprints, the resolved-bug log.
+- `handoff.md` — **ephemeral**, at most one at a time, deleted before the next
+  is written. Nothing here ever links *to* it.
