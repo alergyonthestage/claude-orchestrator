@@ -561,6 +561,16 @@ kept as the template for the next release.
 - **A `develop → main` merge is host-only when its `.cco/` diff is non-empty** — a merge writes the
   working tree, and `.cco` is `:ro` at the default access level. The fix is the designed knob, not a
   workaround: `--cco-access edit-project`.
+- ⚠ **`git stash -u` half-applies in-container** (observed 2026-08-05, same family as the note above).
+  Framework-generated **empty** mountpoint dirs under the `:ro` `.cco` (`claude/llms/*`,
+  `claude/workflows/`) are untracked, so `-u` tries to remove them and fails with
+  `Read-only file system`. The stash **is created with everything in it**, but the cleanup aborts and
+  the tracked modifications **stay in the working tree** — so a later `pop` collides with itself. `git
+  status` never shows the offenders (git does not track empty directories; `git clean`, which `-u`
+  calls, does try to remove them). Recovery: confirm the stash holds the work
+  (`git stash show --name-only` **and** `git show --name-only stash@{0}^3` for the untracked half),
+  then `git checkout --` the tracked files and `pop` onto a clean tree. Prefer committing on a scratch
+  branch over stashing.
 - **The host and the container share one working tree.** Never switch branches while something is
   running on the host — it produces failures that are artefacts, not data.
 - **Prove a check's input is non-empty before believing its PASS.** A green check that measured nothing
