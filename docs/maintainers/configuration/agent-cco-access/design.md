@@ -273,8 +273,15 @@ under repos *and* extra_mounts — not root-only.
 ### 4bis.1 The `ask` value and the resource-class dimension
 
 > **Model** ([ADR-0057](decisions/0057-ask-enforcement-plane-and-resource-classes.md)) — ratified
-> 2026-08-05, **implementation gated on host probes P1–P4**. Closes FI-18. Extends the lattice and
-> the grammar above; leaves §4bis's derivation, floor and extra_mount rules unchanged.
+> 2026-08-05, host probes P1–P4 passed, **implemented** (`b324c0e` + `24ec2fb`, awaiting
+> `cco build` + the six container checks in the ADR's Verification). Closes FI-18. Extends the
+> lattice and the grammar above; leaves §4bis's derivation, floor and extra_mount rules unchanged.
+>
+> **Where it lives**: the resolver and the matrix in `lib/access-scope.sh`
+> (`_claude_matrix` and its `_mount_mode`/`_asks` projections); the two emitters in
+> `lib/cmd-start.sh` (`_emit_class_overlays` + `_emit_claude_view` for mounts,
+> `_emit_managed_settings_overlay` for permissions); the seeding in `_seed_claude_md_stub`;
+> INV-P's lint in `tests/test_invariants.sh`.
 
 **Two planes, not interchangeable.** The mount is a **boundary** (OS-level: holds under
 `bypassPermissions` and against an arbitrary subprocess, but only over a set enumerated at
@@ -336,8 +343,24 @@ consumer re-derives. Enforced by **INV-P** (§5).
 
 **Seeding.** When `entries.claude_md` resolves to `ask`/`rw` and the file is absent, `cco start` seeds
 an empty stub host-side — ADR-0054 D4 otherwise makes a newly created `CLAUDE.md` session-local, i.e.
-silently lost at exit. ⚠ Unlike the `settings.local.json` stub it must **not** be gitignored. The
-`init-workspace` nudge is unaffected (it tests `-s`).
+silently lost at exit, and INV-MP separately requires the mountpoint to pre-exist inside the `:ro`
+parent. ⚠ Unlike the `settings.local.json` stub it must **not** be gitignored. The `init-workspace`
+nudge is unaffected (it tests `-s`, and the stub is empty).
+
+⚠ **The `repo` tree is deliberately NOT seeded** (implementation decision, 2026-08-05). Neither
+reason above reaches it: `<repo>/.claude` is a plain bind of a real directory, not a composed
+namespace. Seeding it would mean `cco start` creating files inside the user's repos as a side
+effect. An absent `<repo>/.claude/CLAUDE.md` simply gets no child bind; the ordinary home for a
+repo's own instructions is `<repo>/CLAUDE.md`, which lives in the rw repo mount and is gated by
+D8's glob without any of this.
+
+**⚠ The overlay REPLACES the baked file, it does not merge with it** — that is what P1 measured. The
+emitter therefore carries the baked content forward (hooks, `env`, `statusLine`, `permissions.deny`)
+from the installed framework's own `defaults/managed/managed-settings.json`, the only host-side copy
+there is. Image and source move together under `npm update && cco update && cco build`, so the skew
+is the one that already governs every other baked file. It **fails closed**: the mount emitter has
+already projected `ask` to rw, so a missing `jq` or a missing baked file refuses the start rather
+than shipping a writable tree with no gate.
 
 ## 5. Invariants
 

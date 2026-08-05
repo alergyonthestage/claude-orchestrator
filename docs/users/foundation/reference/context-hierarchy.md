@@ -410,11 +410,14 @@ User skills live in `defaults/global/.claude/skills/`, copied once to `~/.cco/.c
 ### 7.5 Project-Specific Skills
 
 Projects can add custom skills in `<repo>/.cco/claude/skills/`. They appear at
-`/workspace/.claude/skills/`, **read-only by default**: the whole project `.claude` tree
-is mounted `:ro` unless the session's `claude_access` makes the project axis writable
+`/workspace/.claude/skills/`, **read-only by default**: the project `.claude` tree is
+mounted `:ro` unless the session's `claude_access` makes the project axis writable
 (ADR-0049 — the authoring tree follows `cco_access` unless you set `claude_access`
 explicitly). Author them on the host, or start the session with a `claude_access` that
-grants project authoring. **Note**: for skills, User > Project — user-level skills take
+grants project authoring. Skills specifically keep that default — the class
+`entries.skills` is `ro` (ADR-0057), because a skill encodes *your* intent rather than
+something the session's own work makes stale. `CLAUDE.md` is the one entry of that tree
+that does **not** follow it: it is `ask` by default, so it is writable behind a prompt. **Note**: for skills, User > Project — user-level skills take
 precedence over project-level skills with the same name. Packs can add new skills but
 cannot override existing global ones. See [scope-design.md §3.5](../../../maintainers/configuration/scope-hierarchy/design/design-scope-hierarchy.md) for details.
 

@@ -2829,7 +2829,7 @@ cmd_start() {
             --from) [[ $# -lt 2 ]] && die "--from requires a <repo> name."; from_repo="$2"; shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
             --enable-config-edit) enable_config_edit=true; shift ;;
-            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all, or granular repo=…,current=…,global=…,others=…)."; cli_claude_access="$2"; shift 2 ;;
+            --claude-access) [[ $# -lt 2 ]] && die "--claude-access requires a value (none|repo|all, or granular repo=…,current=…,global=…,others=…,entries.<class>=…)."; cli_claude_access="$2"; shift 2 ;;
             --cco-access) [[ $# -lt 2 ]] && die "--cco-access requires a value (none|read-project|read-global|read-all|edit-project|edit-global|edit-all)."; cli_cco_access="$2"; shift 2 ;;
             --show-host-paths) cli_show_host_paths="true"; shift ;;
             --no-show-host-paths) cli_show_host_paths="false"; shift ;;
@@ -2880,9 +2880,14 @@ Options:
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
   --claude-access <l>  .claude authoring access: none | repo | all, or granular
-                       repo=,current=,global=,others= (each ro|rw). UNSET it
+                       repo=,current=,global=,others= (repo/current ro|ask|rw;
+                       global/others ro|rw) plus entries.claude_md=,entries.rules=,
+                       entries.agents=,entries.skills= (each ro|ask|rw). UNSET it
                        DERIVES from --cco-access (ADR-0049), so a normal session's
-                       .claude is read-only by default
+                       .claude is read-only by default EXCEPT CLAUDE.md, which is
+                       `ask`: writable, but every write prompts (ADR-0057).
+                       ⚠ a prompt never times out — for unattended runs declare
+                       `none` (locked) or `repo`/`all` (open)
   --cco-access <l>     .cco/framework access: none | read-project (default) |
                        read-global | read-all | edit-project | edit-global |
                        edit-all, or granular global=,current=,others= (each

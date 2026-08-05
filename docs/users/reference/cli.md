@@ -190,14 +190,19 @@ Options:
                        /workspace/<basename>)
   --claude-access <m>  .claude authoring access for this session. Either a preset
                        scalar (none | repo | all) or a granular map over the four
-                       authoring trees (repo,current,global,others), each ro|rw
-                       (comma-separated, order-free, partial): e.g.
-                       current=rw,global=ro. UNSET → DERIVES from --cco-access
-                       (Cg=G, Cp=Pc, Co=Po, repo-native always read-only), so the
-                       default never authors .claude more broadly than your config
-                       access. An explicit value wider than cco is honored with a
-                       note. `settings.json`/`settings.local.json` stay writable
-                       regardless (ADR-0049)
+                       authoring trees (repo,current,global,others) and the four
+                       content classes (entries.claude_md, entries.rules,
+                       entries.agents, entries.skills) — comma-separated,
+                       order-free, partial: e.g. current=rw,entries.rules=ask.
+                       Lattice ro < ask < rw; `global`/`others` are two-valued and
+                       refuse `ask`. UNSET → DERIVES from --cco-access
+                       (Cg=G, Cp=Pc, Co=Po, repo-native always read-only) with
+                       entries.claude_md=ask, so the default never authors .claude
+                       more broadly than your config access — except CLAUDE.md,
+                       which is writable behind a prompt. An explicit value wider
+                       than the derived default is honored with a note.
+                       `settings.json`/`settings.local.json` stay writable
+                       regardless (ADR-0049/0057)
   --cco-access <m>     .cco/framework config access for this session. Either a
                        preset scalar:
                        none | read-project (default) | read-global | read-all |
@@ -347,16 +352,85 @@ boundary** (ADR-0047), not just output filtering — see the note below the matr
 
 | Knob | Values (default **bold**) | Governs |
 |------|---------------------------|---------|
-| `claude_access` | preset none · repo · all — **or** a granular `(Cr,Cp,Cg,Co)` triple. **Default: DERIVED from `cco_access`** (never authored more broadly than config access) | `.claude` authoring trees — repo-native (Cr), project (Cp), global (Cg), other projects (Co). `settings.json`/`settings.local.json` stay rw regardless (functional-write floor). A normal session's `.claude` is **read-only by default**. |
+| `claude_access` | preset none · repo · all — **or** a granular `(Cr,Cp,Cg,Co)` triple plus an `entries` map. Lattice **`ro < ask < rw`**. **Default: DERIVED from `cco_access`** (never authored more broadly than config access), with **`entries.claude_md: ask`** | `.claude` authoring trees — repo-native (Cr), project (Cp), global (Cg), other projects (Co) — and, within them, the content classes `claude_md`/`rules`/`agents`/`skills`. `settings.json`/`settings.local.json` stay rw regardless (functional-write floor). A normal session's `.claude` is **read-only by default, except `CLAUDE.md`**, which is writable behind a prompt. |
 | `cco_access` | preset **read-project** (default) · read-global · read-all · edit-project · edit-global · edit-all · none — **or** a granular `(G,Pc,Po)` triple | `.cco` framework config + the whitelisted in-session `cco`. Any read level enables it and **scopes its read output** to that level (bare `read` = alias for `read-all`). |
 | `show_host_paths` | **true** · false | Whether the session gets the host↔container path map (for copy-pasteable host commands). |
 
 Both knobs share one grammar in every source: a **scalar preset** or a **granular map**
-(`{repo,current,global,others}` for `claude`, `{global,current,others}` for `cco`). For
-`claude`, omitted map axes derive from `cco`; the `none|repo|all` presets are fixed triples
-(`none`=all read-only, `repo`=`(rw,rw,ro,ro)`, `all`=all-rw). An explicit `claude` **more
-permissive** than the cco-concordant default is honored with a one-line note — never refused
-(ADR-0049).
+(`{repo,current,global,others}` plus an `entries` map for `claude`, `{global,current,others}`
+for `cco`). For `claude`, omitted map axes derive from `cco`; the `none|repo|all` presets are
+fixed (`none`=all read-only, `repo`=`(rw,rw,ro,ro)`, `all`=all-rw, each fixing the classes
+too). An explicit `claude` **more permissive** than the derived default is honored with a
+one-line note — never refused (ADR-0049).
+
+#### `ask` — writable, but never silent
+
+`claude_access` has a middle value between `ro` and `rw`. Because access is resolved at
+`cco start` and mounts are fixed for the session's lifetime, `ro` does not mean *"not now"* —
+it means *"not without restarting the session"*, and that cost falls exactly when the need is
+discovered, mid-task. `ask` closes that gap: the file is mounted **writable** and every
+modification **prompts you first**.
+
+It is not a grant of write; it is the capability to *request* one. Every write behind it ends
+in a human decision, so it does not widen what the agent may do unilaterally — it makes the
+decision timely instead of anticipated.
+
+Two enforcement planes are now in play, and they are not interchangeable:
+
+| | mount (`:ro`) | `permissions` (`ask`) |
+|---|---|---|
+| Nature | **boundary**, OS-level | **gate**, in-session |
+| Holds against an arbitrary subprocess | yes | **no** (`dd`, interpreters) |
+| Covers files created mid-session | no (enumerated at start) | yes (one glob) |
+
+Choosing `ask` therefore always trades a boundary for a gate — which is why cco offers it only
+where a versioned backstop exists to review the write against. `global` and `others` are
+**two-valued** (`ro|rw`) and refuse `ask` outright: neither goes stale because of this
+session's work, and `~/.cco` is versioned only if you run `cco config save`.
+
+#### `entries` — the four content classes
+
+Within the `repo` and `current` trees you can set the authoring content kinds separately.
+They compose with the tree axes by `max()`, so a tree already `rw` absorbs `ask`.
+
+```yaml
+access:
+  claude:
+    current: ro
+    entries:
+      claude_md: ask      # default
+      rules: ro           # default
+      agents: ro          # default
+      skills: ro          # default
+```
+
+On the CLI the same grammar uses a dotted key:
+`--claude-access current=ro,entries.claude_md=ask`.
+
+**Why `CLAUDE.md` is `ask` by default and the others are not.** The criterion is whether the
+file goes stale *as a consequence of the work the session is doing*. `CLAUDE.md` describes the
+codebase, and the session changes the codebase — so the session is the only party that knows,
+and a prompt is proportionate. `rules/`, `agents/` and `skills/` encode **your** intent, which
+does not age with the code; the deliberate vehicle for editing them already exists, a
+config-editor session.
+
+`settings.json` and hooks are deliberately **not** classes at all. They *are* the enforcement
+plane, which is what lets cco state a guarantee it could not otherwise make:
+
+> **A session cannot alter its own mechanical enforcement.** `settings.json` and hooks stay
+> `:ro` at OS level — not bypassable by a subprocess, and independent of permission mode.
+> Prose governance (`CLAUDE.md`, `rules/`, `agents/`, `skills/`) is modifiable only through an
+> explicit in-session human approval, and every such modification lands in a versioned tree.
+
+**⚠ Two things to know before this bites you.**
+
+- **`<repo>/**/CLAUDE.md` tightens.** Every `CLAUDE.md` inside your repos — root and nested —
+  was governed by *nothing* until now, and was silently writable like any other file. It now
+  prompts. This is the change you will actually notice.
+- **A prompt never times out.** An unanswered dialog blocks; the session simply waits. cco
+  cannot detect that nobody is watching — a session runs a TUI on a pty either way — so
+  autonomy must be **declared**, never inferred. For unattended runs set `claude_access: none`
+  (locked, zero prompts) or `repo` / `all` (open, zero prompts).
 
 **Where to set them** (precedence, highest first):
 
@@ -697,7 +771,7 @@ when a developer sandbox is active (§3.34).
 | Block | Contents |
 |-------|----------|
 | **Session** | `identity` (the project name) · `editing target` (config-editor's `--project` targets, only when set) · `code repos` (mounted repos, or `— (config only)`) · `image built from` (the source ref baked into the image at build time) |
-| **Access** | `level` — the **preset name** when the resolved triple is symmetric, else `custom (global=…,current=…,others=…)`, which is the copy-pasteable `--cco-access` value · `triple` (`G`/`Pc`/`Po` + read/write scope) · `claude_access` and its `(Cr,Cp,Cg,Co)` triple · `show_host_paths` |
+| **Access** | `level` — the **preset name** when the resolved triple is symmetric, else `custom (global=…,current=…,others=…)`, which is the copy-pasteable `--cco-access` value · `triple` (`G`/`Pc`/`Po` + read/write scope) · `claude_access` with **both** its `(Cr,Cp,Cg,Co)` triple and its `entries` classes · `show_host_paths`. A **Resolved cells** block then lists every file whose governance differs from its tree — chiefly `CLAUDE.md`, which is `ask` on two trees that are otherwise `ro`. |
 | **Config trees (.cco)** | `rw` / `ro` / `—` per tree: project config (`<repo>/.cco`), personal store + registry (`~/.cco`), llms cache, and other projects' config (shown only when `Po ≥ ro`) |
 | **Authoring trees (.claude)** | `rw` / `ro` / `—` per tree: repo-native `Cr`, project `Cp`, global `Cg`, and other projects' `Co` (shown only when `Co = rw`) |
 

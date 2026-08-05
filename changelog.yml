@@ -1277,3 +1277,45 @@ entries:
       `cco project list`: one line naming the command that replaced it. Nothing
       changed about what `cco list remote` shows, or about which access level
       you need to see remotes — only about being told the truth first.
+  - id: 62
+    date: "2026-08-05"
+    type: additive
+    title: "`ask`: a CLAUDE.md your session made stale can now be updated, with a prompt"
+    description: >
+      `claude_access` gains a middle value between `ro` and `rw`: **`ask`**. Where
+      `ro` means "not without restarting the session" and `rw` means "silently",
+      `ask` means the write is possible and never silent — the file is mounted
+      writable and every modification asks you first.
+      It also gains a second dimension. Beside the per-tree axes
+      (`repo`/`current`/`global`/`others`) you can now set the authoring content
+      kinds separately, under `entries`:
+      `claude_md`, `rules`, `agents`, `skills`. The grammar is unchanged — one flat
+      key=value form in every source, with a dotted key:
+      `--claude-access current=ro,entries.claude_md=ask`, or the matching
+      `access.claude.entries.claude_md` block in `project.yml` / `~/.cco/access.yml`.
+      **Two things change for an existing project, and the second is the one you
+      will notice.** By default `entries.claude_md` is `ask` and the other three are
+      `ro`. So (1) your project's `CLAUDE.md` opens up — a session that finds it
+      stale because of the work it just did can fix it, with one keystroke instead
+      of a restart; and (2) every `CLAUDE.md` inside your repos, which until now was
+      silently writable like any other file, starts prompting before it is changed.
+      Nothing else moves: `rules/`, `agents/` and `skills/` stay read-only by
+      default, and the deliberate way to edit them is still a config-editor session.
+      Why `CLAUDE.md` and not the rest — it is the one file that goes stale as a
+      *consequence* of the work the session is doing, so the session is the only
+      party that knows. The others encode your intent, which does not age with the
+      code.
+      Two values are deliberately not offered. `ask` is not available on the global
+      store or on other projects' config: neither can go stale because of this
+      session, and neither gives you a git diff to review the prompt against.
+      And it is not available on `cco_access` at all — that boundary is enforced by
+      a setuid helper in a different trust domain, which has no channel to a dialog.
+      **If your sessions run unattended, declare it.** An unanswered prompt does not
+      time out — the session waits. cco cannot detect that nobody is watching, so
+      autonomy is declared, never inferred: use `claude_access: none` (locked, zero
+      prompts) or `repo` / `all` (open, zero prompts). Both already exist and are
+      unchanged.
+      Requires `cco build`: the mount composition and the per-session permission
+      rules are both start-time. Run `cco whoami` in a session to see the resolved
+      state — it now reports both dimensions, and lists any file whose governance
+      differs from its tree.
