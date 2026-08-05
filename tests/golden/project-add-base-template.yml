@@ -31,13 +31,44 @@ description: "Demo project"
 # read-only too, so a normal session no longer authors .claude by default. Set it
 # only to author .claude. It accepts the same grammar — a scalar preset (none =
 # all read-only · repo = author repo-native + this project · all = author every
-# tree) OR a granular MAP on the lattice ro < rw (omitted axes derive from cco):
+# tree) OR a granular MAP on the lattice ro < ask < rw (omitted axes derive from cco):
 #
 #   claude:
 #     repo: ro              # Cr — <repo>/.claude repo-native      (default ro)
 #     current: rw           # Cp — <repo>/.cco/claude (this project) (default = cco current)
 #     global: ro            # Cg — ~/.cco/.claude                  (default = cco global)
 #     others: ro            # Co — other projects' .claude         (default = cco others)
+#
+# `ask` (ADR-0057) is the middle value: the file is mounted WRITABLE and every
+# modification prompts you first. Where `ro` means "not without restarting the
+# session" — the cost falls exactly when the need is discovered, mid-task — `ask`
+# means possible but never silent. It is not a grant of write: it is the capability
+# to REQUEST one, and every write behind it ends in a human decision.
+# `global` and `others` are two-valued (ro|rw) and REFUSE `ask`: neither goes stale
+# because of this session's work, and neither hands you a git diff to review the
+# prompt against.
+#
+# A second dimension, `entries`, sets the authoring CONTENT KINDS separately. It
+# reaches `repo` and `current` only, and composes with the tree axes by max() —
+# a tree already rw absorbs `ask`.
+#
+#   claude:
+#     entries:
+#       claude_md: ask      # <tree>/CLAUDE.md   (default ask)
+#       rules: ro           # <tree>/rules/      (default ro)
+#       agents: ro          # <tree>/agents/     (default ro)
+#       skills: ro          # <tree>/skills/     (default ro)
+#
+# Why CLAUDE.md alone is `ask` by default: it is the one file that goes stale as a
+# CONSEQUENCE of the work the session is doing, so the session is the only party
+# that knows it needs updating. The other three encode YOUR intent, which does not
+# age with the code — the deliberate way to edit them is a config-editor session.
+# `settings.json` and hooks are deliberately absent from this list: they ARE the
+# enforcement plane, so a session can never modify its own mechanical enforcement.
+#
+# ⚠ An unanswered prompt does NOT time out — the session waits. cco cannot detect
+# that nobody is watching, so autonomy must be DECLARED, never inferred: use
+# `claude: none` (locked, zero prompts) or `repo` / `all` (open, zero prompts).
 
 # ── Repositories ─────────────────────────────────────────────────────
 # Each repo is referenced by a logical name + an optional machine-agnostic
