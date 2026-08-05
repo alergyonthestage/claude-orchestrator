@@ -1854,6 +1854,113 @@ _b32_lint_violations() {
     done
 }
 
+# ── INV-P the two-planes CLASS guard (ADR-0057 D10) ──────────────────
+# ONE resolver, TWO pure emitters, one point of change per plane. The resolved
+# access matrix `(tree × class) → {ro, ask, rw}` is produced ONCE, by the resolver;
+# every consumer reads it and none re-derives it.
+#
+# WHY IT IS A LINT AND NOT A COMMENT. cco now enforces access on two planes at
+# once — a Docker mount (a boundary) and a `permissions` rule (a gate) — and they
+# are emitted by different code from the same decision. If they drift, the session
+# sees a mount that says one thing and a rule that says another, and from inside
+# that session the difference is indistinguishable from a bug. "The point of change
+# is one" is a property that decays the moment it is only intended, so it is
+# checked. Same shape as INV-S6, whose CLASS lint has held.
+#
+# TWO ARMS:
+#   [REDERIVE] the raw Axis-B axes (claude_cr/cp/cg/co) are read OUTSIDE the
+#     resolver. That is the re-derivation D10 forbids: those axes are the
+#     resolver's INPUT, and every mount decision must come from the matrix it
+#     produced — which already folded in precedence, the cco derivation, D3's
+#     max() and the D4/D5 exclusions.
+#   [PERM] a `permissions` key is written into a settings file cco generates,
+#     outside the permissions emitter. A second writer would compose with the
+#     first by accident rather than by the platform's documented precedence.
+#
+# EXCLUSIONS + ALLOWLIST (each with its reason):
+#   EXCLUDED: access-scope.sh — it DEFINES the model (axes, lattice, matrix).
+#   ALLOWED function: _start_resolve_access — the single producer.
+#   ALLOWED line shapes, by what they do rather than where they sit:
+#     · CCO_CLAUDE_TRIPLE  — TRANSPORT, not a decision: the triple is handed to the
+#       container as an env var and to the session-context surface. Reading the axes
+#       to SHIP them is not re-deriving a mode from them.
+#     · _nested_config_modes — extra_mounts. ADR-0057 states that ADR-0049 §7 is
+#       "unchanged in mechanism": a nested .claude inside an extra_mount is ro by
+#       default regardless of the session's knobs, because extra_mounts are
+#       arbitrary directories, not config repos. A DECLARED exception, not drift.
+_invp_lint_prog() {
+    cat <<'AWK'
+BEGIN { fn="(toplevel)"; ok_cont=0 }
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ { fn=$0; sub(/\(\).*/,"",fn); ok_cont=0; next }
+{
+  line=$0
+  # Strip a trailing comment so prose naming the axes is never a hit.
+  sub(/[ \t]#.*$/, "", line)
+  # An allowlisted call may be split across lines with a trailing backslash, and
+  # the axes then sit on a CONTINUATION that carries none of its markers. Carry
+  # the exemption forward for as long as the continuation runs — without this the
+  # lint flags the second half of a call whose first half it just excused.
+  exempt = (line ~ /CCO_CLAUDE_TRIPLE/ || line ~ /_nested_config_modes/ || ok_cont)
+  # A `local` declaration NAMES the axes, it does not read them. The declaration
+  # has to live somewhere, and that somewhere is the function owning the scope.
+  if (line ~ /^[ \t]*local[ \t]/) exempt = 1
+  if (line ~ /claude_c[rpgo][^A-Za-z0-9_]/ || line ~ /claude_c[rpgo]$/) {
+    if (fn != "_start_resolve_access" && !exempt) print FILENAME "|" fn "|REDERIVE"
+  }
+  ok_cont = (exempt && line ~ /\\[ \t]*$/)
+  if (line ~ /permissions/ && (line ~ /jq[ \t]/ || line ~ />>?[ \t]*"/ || line ~ /printf/)) {
+    if (fn != "_emit_managed_settings_overlay") print FILENAME "|" fn "|PERM"
+  }
+}
+AWK
+}
+
+# Echo the VIOLATING hits ("<basename>|<func>|<arm>" per line) found in <libdir>.
+# Empty output = clean.
+_invp_lint_violations() {
+    local libdir="$1" f b prog hf fn arm
+    prog=$(_invp_lint_prog)
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        [[ "$b" == "access-scope.sh" ]] && continue
+        while IFS='|' read -r hf fn arm; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$arm"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_one_resolver_two_pure_emitters() {
+    # 1. The live tree must be clean.
+    local v; v=$(_invp_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || { fail "INV-P: the access matrix is re-derived outside the resolver [REDERIVE], or a permissions key is written outside the permissions emitter [PERM]. Read the matrix (_claude_matrix_mount_mode / _claude_matrix_asks) instead — a mount and a rule that disagree are indistinguishable from a bug inside the session:"$'\n'"$v"; return 1; }
+
+    # 2. Discrimination, per arm — a static invariant cannot "fail on a reverted
+    #    tree", so it must prove it catches the real shapes.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    # Flat, not $tmp/lib: _invp_lint_violations globs <libdir>/*.sh directly.
+    printf '\n_invp_probe_rederive() {\n    local m=""\n    [[ "$claude_cp" == "ro" ]] && m="ro"\n    echo "$m"\n}\n' > "$tmp/probe.sh"
+    printf '\n_invp_probe_perm() {\n    jq ".permissions.ask = []" "$1" > "$2"\n}\n' > "$tmp/probe2.sh"
+    local planted; planted=$(_invp_lint_violations "$tmp")
+    [[ "$planted" == *"probe.sh|_invp_probe_rederive|REDERIVE"* ]] \
+        || { fail "INV-P does NOT discriminate: a planted re-derivation from the raw axes went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+    [[ "$planted" == *"probe2.sh|_invp_probe_perm|PERM"* ]] \
+        || { fail "INV-P does NOT discriminate: a planted second permissions writer went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 3. Over-reach: the three declared-legitimate shapes must stay silent, or the
+    #    lint would push its own exceptions into the code it is meant to protect.
+    rm -f "$tmp"/*.sh
+    {
+        printf '_invp_legit_transport() {\n    echo "      - CCO_CLAUDE_TRIPLE=${claude_cr},${claude_cp}"\n}\n'
+        printf '_invp_legit_extra_mount() {\n    _nested_config_modes "$a" "$b" "$c" "$claude_cr,$claude_cp,$claude_cg,$claude_co" "$d"\n}\n'
+        printf '_invp_legit_comment() {\n    local x=1   # claude_cp drives nothing here\n}\n'
+    } > "$tmp/legit.sh"
+    local overreach; overreach=$(_invp_lint_violations "$tmp")
+    [[ -z "$overreach" ]] \
+        || { fail "INV-P over-reaches: a declared-legitimate shape (env transport, the ADR-0049 §7 extra_mount path, or prose in a comment) was flagged:"$'\n'"$overreach"; return 1; }
+    return 0
+}
+
 test_invariant_no_heredoc_inside_command_substitution() {
     # 1. The live tree must be clean.
     local v; v=$(_b32_lint_violations "$REPO_ROOT")
