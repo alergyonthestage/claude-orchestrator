@@ -76,7 +76,9 @@ EOF
     read -r _wg _wpc _wpo <<< "$(_env_triple)"
 
     # rw/ro/— for an axis value (rw>ro>none).
-    _wm() { case "$1" in rw) printf 'rw' ;; ro) printf 'ro' ;; *) printf '—' ;; esac; }
+    # `ask` MUST be spelled out: the fallback renders an unknown value as '—',
+    # which reads as "no access" — the opposite of what ask grants (ADR-0057 D1).
+    _wm() { case "$1" in rw) printf 'rw' ;; ask) printf 'ask' ;; ro) printf 'ro' ;; *) printf '—' ;; esac; }
 
     # ── Session identity (R1) ────────────────────────────────────────────
     # Identity first (the envelope), THEN access. In a config-editor session the
@@ -116,12 +118,21 @@ EOF
     # (ADR-0049); CCO_CLAUDE_ACCESS is its label, CCO_CLAUDE_TRIPLE the axes.
     local _cr _cp _cg _co
     IFS=, read -r _cr _cp _cg _co <<< "${CCO_CLAUDE_TRIPLE:-ro,ro,ro,ro}"
+    # ADR-0057 D2: Axis B carries a SECOND dimension — the resource classes. The
+    # tree axes alone no longer describe the session: a default one is all-ro on
+    # every tree and can still write a CLAUDE.md behind a prompt. Both dimensions
+    # are reported, and the per-tree lines below show the RESOLVED cells rather
+    # than the tree axis, because the cell is what actually governs the file.
+    local _emd _eru _eag _esk _matrix
+    IFS=, read -r _emd _eru _eag _esk <<< "${CCO_CLAUDE_ENTRIES:-ask,ro,ro,ro}"
+    _matrix=$(_claude_matrix "$_cr" "$_cp" "$_cg" "$_co" "$_emd" "$_eru" "$_eag" "$_esk")
     printf '%bAccess%b\n' "$BOLD" "$NC"
     printf '  level:            %s\n' "$level_display"
     printf '  triple:           G=%s Pc=%s Po=%s  (read: %s, write: %s)\n' \
         "$_wg" "$_wpc" "$_wpo" "$rscope" "$wscope"
     printf '  claude_access:    %s\n' "${CCO_CLAUDE_ACCESS:-none}"
     printf '  claude triple:    Cr=%s Cp=%s Cg=%s Co=%s\n' "$_cr" "$_cp" "$_cg" "$_co"
+    printf '  claude entries:   claude_md=%s rules=%s agents=%s skills=%s\n' "$_emd" "$_eru" "$_eag" "$_esk"
     printf '  show_host_paths:  %s\n' "${CCO_SHOW_HOST_PATHS:-true}"
     echo ""
     printf '%bConfig trees (.cco)%b\n' "$BOLD" "$NC"
@@ -140,6 +151,31 @@ EOF
         printf "  other projects' .claude (Co):        %s\n" "$(_wm "$_co")"
     fi
     echo ""
+    # The resolved matrix, only where it says something the tree lines do not: a
+    # cell that differs from its tree's own mode. That is exactly the set of files
+    # whose governance would surprise someone reading the trees alone — chiefly
+    # CLAUDE.md, which is `ask` by default on two trees that are otherwise ro.
+    local _mrow_shown=0 _mtree _mcls _mcell _mtreemode _mlabel
+    for _mtree in repo current global others; do
+        for _mcls in $(_claude_classes); do
+            _mcell=$(_claude_matrix_get "$_matrix" "$_mtree" "$_mcls")
+            _mtreemode=$(_claude_matrix_get "$_matrix" "$_mtree" '*')
+            [[ "$_mcell" == "$_mtreemode" ]] && continue
+            if [[ "$_mrow_shown" -eq 0 ]]; then
+                printf '%bResolved cells that differ from their tree%b\n' "$BOLD" "$NC"
+                _mrow_shown=1
+            fi
+            _mlabel=$(_claude_class_entry "$_mcls")
+            printf '  %-8s %-12s %s\n' "$_mtree" "$_mlabel" "$(_wm "$_mcell")"
+        done
+    done
+    if [[ "$_mrow_shown" -eq 1 ]]; then
+        # `ask` is not a grant of write; it is the capability to REQUEST one. Every
+        # write behind it ends in a human decision, so it does not weaken minimum
+        # privilege — it makes the decision timely instead of anticipated.
+        printf '  (ask = the mount is writable, every write prompts — ADR-0057)\n'
+        echo ""
+    fi
     # Enforcement note (ADR-0047): the internal store (STATE index, DATA
     # registries, CACHE internals) is confined behind a mode-0700 cco-svc root the
     # agent cannot traverse; store-touching verbs are re-executed through a setuid

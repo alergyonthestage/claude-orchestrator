@@ -157,7 +157,7 @@ test_start_tutorial_preset_read_all() {
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     run_cco start tutorial --dry-run
-    assert_output_contains "claude=none cco=read-all"
+    assert_output_contains "claude=repo=ro,current=ro,global=ro,others=ro,entries.claude_md=ask cco=read-all"
     run_cco start tutorial --dry-run --dump
     assert_file_contains "$DRY_RUN_DIR/.cco/docker-compose.yml" "CCO_CCO_ACCESS=read-all"
 }

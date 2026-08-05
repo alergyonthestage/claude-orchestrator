@@ -307,8 +307,10 @@ _start_resolve_access() {
     # scalar within each source's tier.
     local _mg="" _mc="" _mo=""                  # project.yml access.cco map
     local _clr="" _clc="" _clg="" _clo=""       # project.yml access.claude map (Cr,Cp,Cg,Co)
+    local _cle_md="" _cle_ru="" _cle_ag="" _cle_sk=""     # project.yml access.claude.entries map (ADR-0057 D2)
     local _gmg="" _gmc="" _gmo=""               # access.yml cco map
     local _gclr="" _gclc="" _gclg="" _gclo=""   # access.yml claude map
+    local _gcle_md="" _gcle_ru="" _gcle_ag="" _gcle_sk=""  # access.yml claude.entries map
     if [[ "$_preset" == "normal" ]]; then
         # access.<key> is a 2-level block (2-space indent) → yml_get auto-depth 2
         # (NOT yml_get_deep, which forces depth 3 and would miss it).
@@ -322,6 +324,12 @@ _start_resolve_access() {
         _clc=$(yml_get_deep "$project_yml" "access.claude.current" 2>/dev/null)
         _clg=$(yml_get_deep "$project_yml" "access.claude.global"  2>/dev/null)
         _clo=$(yml_get_deep "$project_yml" "access.claude.others"  2>/dev/null)
+        # The class dimension sits one level deeper (access.claude.entries.<class>),
+        # hence yml_get_deep4 — yml_get_deep forces depth 3 and would read nothing.
+        _cle_md=$(yml_get_deep4 "$project_yml" "access.claude.entries.claude_md" 2>/dev/null)
+        _cle_ru=$(yml_get_deep4 "$project_yml" "access.claude.entries.rules"     2>/dev/null)
+        _cle_ag=$(yml_get_deep4 "$project_yml" "access.claude.entries.agents"    2>/dev/null)
+        _cle_sk=$(yml_get_deep4 "$project_yml" "access.claude.entries.skills"    2>/dev/null)
         local gfile; gfile=$(_cco_access_file)
         if [[ -f "$gfile" ]]; then
             g_claude=$(yml_get "$gfile" "claude" 2>/dev/null)
@@ -334,6 +342,12 @@ _start_resolve_access() {
             _gclc=$(yml_get "$gfile" "claude.current" 2>/dev/null)
             _gclg=$(yml_get "$gfile" "claude.global"  2>/dev/null)
             _gclo=$(yml_get "$gfile" "claude.others"  2>/dev/null)
+            # One level shallower than project.yml's (the top-level key is at depth 1
+            # in access.yml), so claude.entries.<class> is a depth-3 read.
+            _gcle_md=$(yml_get_deep "$gfile" "claude.entries.claude_md" 2>/dev/null)
+            _gcle_ru=$(yml_get_deep "$gfile" "claude.entries.rules"     2>/dev/null)
+            _gcle_ag=$(yml_get_deep "$gfile" "claude.entries.agents"    2>/dev/null)
+            _gcle_sk=$(yml_get_deep "$gfile" "claude.entries.skills"    2>/dev/null)
         fi
     fi
 
@@ -391,23 +405,40 @@ _start_resolve_access() {
     # (exit 1) on a bad preset/token; propagate the exit. claude_access is then the
     # DISPLAY LABEL; claude_cr/cp/cg/co are the machine source consumers derive mount
     # modes from (INV-E). A map's omitted axes derive from cco just like a scalar's.
+    # ADR-0057 D2 adds the `entries` class dimension to every source, additively: a
+    # MAP tier now fires when EITHER dimension is present, so a project.yml carrying
+    # only `access.claude.entries.rules: ask` is honoured rather than silently
+    # falling through to the scalar tier below it.
     local _claude_triple
     if   [[ -n "$cli_claude_access" ]];      then _claude_triple=$(_claude_resolve_access "$cli_claude_access" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
-    elif [[ -n "$_clr$_clc$_clg$_clo" ]];    then _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_clr$_clc$_clg$_clo$_cle_md$_cle_ru$_cle_ag$_cle_sk" ]]; then
+                                                  _claude_triple=$(_claude_derive_triple "$_clr" "$_clc" "$_clg" "$_clo" "$cco_g" "$cco_pc" "$cco_po" "$_cle_md" "$_cle_ru" "$_cle_ag" "$_cle_sk") || _cco_exit $?
     elif [[ -n "$p_claude" ]];               then _claude_triple=$(_claude_resolve_access "$p_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
-    elif [[ -n "$_gclr$_gclc$_gclg$_gclo" ]]; then _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
+    elif [[ -n "$_gclr$_gclc$_gclg$_gclo$_gcle_md$_gcle_ru$_gcle_ag$_gcle_sk" ]]; then
+                                                  _claude_triple=$(_claude_derive_triple "$_gclr" "$_gclc" "$_gclg" "$_gclo" "$cco_g" "$cco_pc" "$cco_po" "$_gcle_md" "$_gcle_ru" "$_gcle_ag" "$_gcle_sk") || _cco_exit $?
     elif [[ -n "$g_claude" ]];               then _claude_triple=$(_claude_resolve_access "$g_claude" "$cco_g" "$cco_pc" "$cco_po") || _cco_exit $?
     else                                          _claude_triple=$(_claude_derive_triple "" "" "" "" "$cco_g" "$cco_pc" "$cco_po")
     fi
-    read -r claude_cr claude_cp claude_cg claude_co <<< "$_claude_triple"
-    claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co")
+    read -r claude_cr claude_cp claude_cg claude_co claude_emd claude_eru claude_eag claude_esk <<< "$_claude_triple"
+    claude_access=$(_claude_triple_label "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" \
+                                         "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk")
+
+    # ── The resolved access matrix (ADR-0057 D10 / INV-P) ────────────
+    # Produced HERE, once, by the resolver — the single assembly point. Both emitters
+    # are pure functions of it: the mount emitter reads only its ro/rw projection,
+    # the permissions emitter only its `ask` cells. Nothing downstream re-derives a
+    # mode from claude_cr/cp/cg/co + claude_e*, and INV-P's static lint is what keeps
+    # that from decaying into an intention.
+    claude_matrix=$(_claude_matrix "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" \
+                                   "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk")
 
     # P2 discordance warning (ADR-0049 §4): the resolved Axis B grants MORE .claude
     # write than the cco-concordant default on a tree that lives inside .cco (Cp/Cg/Co
     # vs Pc/G/Po). Awareness, never a refusal — the knobs stay orthogonal explicit
     # choices. A derived triple is concordant by construction (never fires); only an
     # explicit preset/override wider than cco does. Cr never warns (no cco counterpart).
-    if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po"; then
+    if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po" \
+                          "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk"; then
         echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
     fi
 
@@ -427,7 +458,8 @@ _start_resolve_access() {
     show_host_paths="$shp_norm"
 
     [[ "${CCO_DEBUG:-}" == "1" ]] && \
-        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po) (Cr=$claude_cr Cp=$claude_cp Cg=$claude_cg Co=$claude_co)" >&2
+        echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po) (Cr=$claude_cr Cp=$claude_cp Cg=$claude_cg Co=$claude_co) (entries: claude_md=$claude_emd rules=$claude_eru agents=$claude_eag skills=$claude_esk)" >&2
+        echo "[debug] matrix: $(printf '%s' "$claude_matrix" | tr '\n' ';' | sed 's/ /=/2;s/;/ /g')" >&2
     return 0
 }
 
@@ -492,6 +524,142 @@ _emit_local_settings_overlay() {
         [[ -f "$src" ]] || cp "$seed_from" "$src" 2>/dev/null || printf '{}\n' > "$src" 2>/dev/null || true
     fi
     _compose_vol "$src" "$tgt"
+}
+
+# ── Seeding: a missing CLAUDE.md must not be created into the void (D13) ─────
+# When `entries.claude_md` opens the B2 tree and the file is ABSENT, cco seeds an
+# empty stub host-side, in the mount's backing directory. Two independent reasons,
+# and both have already bitten this project:
+#
+#   1. ADR-0054 D4 — a NEW file created directly in the composed /workspace/.claude
+#      namespace is session-local: the agent would create CLAUDE.md, watch it
+#      succeed, and lose it at exit. ADR-0054 itself calls that the hardest failure
+#      mode to explain.
+#   2. INV-MP — the rw child bind that opens the file needs its mountpoint to
+#      pre-exist inside the :ro parent; runc cannot create one through a read-only
+#      bind, and the container simply fails to start.
+#
+# ⚠ Unlike the settings.local.json stub this one must NOT be gitignored: the whole
+# point of the file is to be committed. It is created EMPTY, which also leaves the
+# `init-workspace` nudge intact — that tests `-s` (non-empty), so an empty stub
+# still reads as "absent" and still prompts the agent to write a real one.
+#
+# ⚠ Skipped on dry-run: this writes into the user's committed tree, and a dry-run
+# must leave the working tree exactly as it found it.
+#
+# The `repo` tree (<repo>/.claude/CLAUDE.md) is deliberately NOT seeded. Neither
+# reason above applies — it is a plain bind of a real directory, not a composed
+# namespace — and the remedy would be cco creating files inside the user's repos as
+# a side effect of `cco start`. An absent one simply gets no child bind; the
+# ordinary home for a repo's own instructions is <repo>/CLAUDE.md, which lives in
+# the rw repo mount and is gated by D8's glob without any of this.
+# Args: <claude_src> <matrix> <dry_run:true|false>
+_seed_claude_md_stub() {
+    local claude_src="$1" matrix="$2" dry="$3"
+    [[ "$dry" == "true" ]] && return 0
+    [[ "$(_claude_matrix_get "$matrix" current claude_md)" == "ro" ]] && return 0
+    [[ -e "$claude_src/CLAUDE.md" ]] && return 0
+    mkdir -p "$claude_src" 2>/dev/null || return 0
+    : > "$claude_src/CLAUDE.md" 2>/dev/null || true
+    return 0
+}
+
+# ── Permissions emitter: the second enforcement plane (ADR-0057 D9) ──────────
+# cco has enforced access through Docker mounts only. `permissions` is a second
+# plane, and the two are NOT interchangeable (P6): the mount is a BOUNDARY
+# (OS-level, holds against an arbitrary subprocess, but only over a set enumerated
+# at `cco start`); `permissions` is a GATE (in-session, coverable by a single glob
+# over files that do not exist yet, but bypassable by `dd` or an interpreter —
+# measured, FI-48). `ask` needs the mount rw, so choosing it always trades a
+# boundary for a gate.
+#
+# WHERE THE RULES LAND, and why it is the managed layer. The generated file is
+# bind-mounted :ro OVER the baked /etc/claude-code/managed-settings.json — the one
+# layer the session cannot rewrite. Both halves were measured on the host before
+# this was designed (P1: the overlay wins, with a negative control proving the
+# substitution was what got measured; P3: a lower-layer `allow` does NOT remove a
+# managed `ask`). Because permission arrays merge across layers and a lower layer
+# cannot remove a managed entry, cco never merges its rules with pack- or
+# user-authored ones: THE LAYERS COMPOSE, and precedence (deny → ask → allow) is
+# the platform's. That is the answer C2/FI-48 inherits for its composition question.
+#
+# ⚠ The overlay REPLACES the baked file rather than merging with it — that is what
+# P1 measured. So it must carry the baked content forward: hooks, env, statusLine
+# and the existing permissions.deny. The source is the installed framework's own
+# defaults/managed/managed-settings.json, which is the only host-side copy there
+# is. Image and source move together (`npm update && cco update && cco build`), so
+# a skew between them is the same skew that already governs every other baked file.
+#
+# ⚠ `Edit(…)`, never `Write(…)`: a path rule on Write is ACCEPTED and never
+# consulted (FI-48 — a syntax trap this project has already paid for once). `Edit`
+# covers every modifying tool.
+#
+# Args: <matrix> <out_file> <baked_defaults>
+# Emits the compose volume line on stdout when a rule was generated; returns 1
+# (emitting nothing) when the session needs no gate at all.
+_emit_managed_settings_overlay() {
+    local matrix="$1" out="$2" baked="$3"
+    local rules="" cls entry tree
+
+    # claude_md — D8's ONE rule, deliberately broader than the trees it came from.
+    # `<repo>/**/CLAUDE.md` (root and nested) was governed by NOTHING before this:
+    # _find_nested_config_dirs matches DIRECTORIES and those are files, so they
+    # followed the repo mount and were writable in every session. The set is
+    # unbounded — files appear mid-session — so enumeration cannot win and its
+    # failure mode is "looks enforced, is not". One glob covers both governed trees
+    # and leaves ~/.claude/CLAUDE.md out, because that path is outside /workspace.
+    if _claude_matrix_asks "$matrix" claude_md; then
+        rules="$rules"$'\n'"Edit(//workspace/**/CLAUDE.md)"
+    fi
+    # rules / agents / skills stay MOUNT-authoritative (bounded and already bound
+    # entry by entry); `ask` adds the gate on top, per tree.
+    for cls in rules agents skills; do
+        entry=$(_claude_class_entry "$cls") || continue
+        for tree in current repo; do
+            [[ "$(_claude_matrix_get "$matrix" "$tree" "$cls")" == "ask" ]] || continue
+            case "$tree" in
+                current) rules="$rules"$'\n'"Edit(//workspace/.claude/${entry}/**)" ;;
+                # Every repo, and every nested .claude a monorepo carries — the same
+                # recursion ADR-0049 §7 gives the mount side.
+                repo)    rules="$rules"$'\n'"Edit(//workspace/**/.claude/${entry}/**)" ;;
+            esac
+        done
+    done
+
+    rules="${rules#$'\n'}"
+    if [[ -z "$rules" ]]; then
+        # No gate needed: leave the baked managed settings alone and drop any stale
+        # overlay from a previous start, so a session that narrowed its access does
+        # not keep yesterday's rules.
+        rm -f "$out" 2>/dev/null || true
+        return 1
+    fi
+
+    # ⚠ Written on dry-run TOO — unlike the STATE seeding of the functional-write
+    # floor, and for the same reason `policy.json` is: this is a GENERATED OVERLAY,
+    # and `--dump`'s whole purpose is to let a human inspect the artefacts a start
+    # would produce. Its path is already branched to the dump dir upstream, so a
+    # dry-run writes there and never touches CACHE.
+    #
+    # FAIL-CLOSED. The mount emitter has already projected `ask` to rw, so if the
+    # rule cannot be written the session would run with a WRITABLE tree and no gate —
+    # a silent rw, the exact failure D3's corollary exists to prevent. Refusing to
+    # start is the only honest outcome.
+    command -v jq >/dev/null 2>&1 \
+        || die "cco needs jq to emit the permission rules for claude_access 'ask' (ADR-0057 D9). Without them the mount would be writable with no prompt — refusing to start. Install jq, or set the affected classes to ro/rw."
+    [[ -f "$baked" ]] \
+        || die "Cannot read the baked managed settings at $baked — the per-session overlay REPLACES that file, so generating one without it would silently drop cco's hooks and deny rules."
+    mkdir -p "$(dirname "$out")" 2>/dev/null || true
+    local rules_json
+    rules_json=$(printf '%s\n' "$rules" | jq -R . | jq -s .) \
+        || die "Cannot encode the permission rules for the managed overlay."
+    jq --argjson add "$rules_json" \
+       '.permissions = ((.permissions // {}) | .ask = (((.ask // []) + $add) | unique))' \
+       "$baked" > "$out.tmp" \
+        && mv "$out.tmp" "$out" \
+        || die "Cannot generate the per-session managed settings at $out."
+    _compose_vol "$out" "/etc/claude-code/managed-settings.json" "ro"
+    return 0
 }
 
 # ── Functional-write floor: project-scope workflows (ADR-0055 D2/D3) ─────────
@@ -648,11 +816,54 @@ _claude_view_stub() {
     return 0
 }
 
+# The mount mode for ONE entry of a `.claude` tree, read out of the resolved access
+# matrix (ADR-0057 D10). An entry that names a declared class takes that class's
+# cell; anything else takes the tree's unclassified fallback, which is where D3's
+# fail-closed corollary lives — a tree-level `ask` never reaches an entry no rule
+# was emitted for.
+#
+# ⚠ INV-P: this is the mount emitter's ONLY route to a mode. It consumes the
+# matrix's ro/rw projection and never sees the word `ask` — `ask` needs the mount
+# writable, and that projection is the whole of what the mount plane knows about it.
+_claude_entry_mount_mode() {
+    local matrix="$1" tree="$2" base="$3" cls
+    if cls=$(_claude_entry_class "$base" 2>/dev/null) && [[ -n "$cls" ]]; then
+        _claude_matrix_mount_mode "$matrix" "$tree" "$cls"
+    else
+        _claude_matrix_mount_mode "$matrix" "$tree" '*'
+    fi
+}
+
+# Emit the child binds that make a tree's per-CLASS modes real when they differ
+# from the mode its parent bind carries. Docker applies the deeper child after the
+# parent, so a rw child punches a hole in a :ro tree and a :ro child tightens one
+# entry of a rw tree — the two directions ADR-0057's behaviour change runs in.
+#
+# A class whose source does NOT exist is skipped, deliberately and silently: the
+# mountpoint must pre-exist inside the parent (INV-MP) and cco does not create one
+# by writing into a user's repo. The single exception is `CLAUDE.md` in the B2
+# tree, which D13 seeds — for the reason ADR-0054 D4 gives, not for this one.
+# Args: <matrix> <tree> <host_dir> <container_dir> <parent_mount_mode>
+_emit_class_overlays() {
+    local matrix="$1" tree="$2" hdir="$3" ctgt="$4" parent="$5" cls entry mode
+    for cls in $(_claude_classes); do
+        entry=$(_claude_class_entry "$cls") || continue
+        mode=$(_claude_matrix_mount_mode "$matrix" "$tree" "$cls")
+        [[ "$mode" == "$parent" ]] && continue
+        [[ -e "$hdir/$entry" ]] || continue
+        _compose_vol "$hdir/$entry" "$ctgt/$entry" "$mode"
+    done
+}
+
 # Emit the B2 parent + the committed tree's per-entry binds for a composing
-# session, creating every mountpoint in the view as it goes.
+# session, creating every mountpoint in the view as it goes. Each entry is bound at
+# its own CLASS mode (ADR-0057), so the view carries the class dimension natively
+# instead of needing the child-hole overlays a whole-tree bind does.
 # Args: <view> <claude_src> <b2_mode> <injected_lines> <dry_run:true|false>
+#       <matrix> <tree>
 _emit_claude_view() {
     local view="$1" claude_src="$2" mode="$3" injected="$4" dry="$5"
+    local matrix="${6:-}" tree="${7:-current}" entry_mode
     local line rel ns e f base fb
     # Sets, newline-delimited (bash 3.2 — no associative arrays).
     local inj_targets=$'\n' inj_ns=$'\n'
@@ -687,6 +898,14 @@ _emit_claude_view() {
         base="${e##*/}"
         # The rw STATE overlay owns settings.local.json when B2 is :ro.
         [[ "$base" == "settings.local.json" && "$mode" == "ro" ]] && continue
+        # Per-CLASS mode (ADR-0057). With no matrix supplied the tree mode governs,
+        # which is exactly the pre-0057 behaviour — the fallback keeps every caller
+        # that has not been converted emitting byte-identical compose.
+        if [[ -n "$matrix" ]]; then
+            entry_mode=$(_claude_entry_mount_mode "$matrix" "$tree" "$base")
+        else
+            entry_mode="$mode"
+        fi
         if [[ -d "$e" && "$inj_ns" == *$'\n'"$base"$'\n'* ]]; then
             for f in "$e"/* "$e"/.[!.]*; do
                 [[ -e "$f" ]] || continue
@@ -698,7 +917,7 @@ _emit_claude_view() {
                     _claude_view_stub "$view" "$base/$fb" "$f" \
                         || die "Cannot create the .claude mountpoint view at $view (entry '$base/$fb')."
                 fi
-                _compose_vol "$f" "/workspace/.claude/$base/$fb" "$mode"
+                _compose_vol "$f" "/workspace/.claude/$base/$fb" "$entry_mode"
             done
         else
             [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base"$'\n'* ]] && continue
@@ -706,7 +925,7 @@ _emit_claude_view() {
                 _claude_view_stub "$view" "$base" "$e" \
                     || die "Cannot create the .claude mountpoint view at $view (entry '$base')."
             fi
-            _compose_vol "$e" "/workspace/.claude/$base" "$mode"
+            _compose_vol "$e" "/workspace/.claude/$base" "$entry_mode"
         fi
     done
 }
@@ -1446,12 +1665,18 @@ _start_prepare_state() {
         # Dry-run inspects generated overlays under the dump dir.
         managed_gen_dir="$output_dir/.cco/managed"
         claude_gen_dir="$output_dir/.claude"
+        managed_settings_file="$output_dir/.cco/managed-settings.json"
     else
         # Real start: generated overlays are regenerable → CACHE (keyed by id).
         # claude_gen_dir holds only the legacy-cleanup target now (ADR-0042: the
         # session-info surface is injected via env, no workspace.yml file).
         managed_gen_dir="$session_cache_dir/managed"
         claude_gen_dir="$session_cache_dir/.claude"
+        # ⚠ BESIDE managed/, never inside it: that directory is bulk-mounted at
+        # /workspace/.managed and the entrypoint iterates its *.json as MCP server
+        # definitions. A settings file dropped in there would be fed to the MCP
+        # merge instead of overlaying /etc/claude-code/ (ADR-0057 D9).
+        managed_settings_file="$session_cache_dir/managed-settings.json"
     fi
 
     # ── Persistent side effects: skip in dry-run ─────────────────────────
@@ -1773,6 +1998,12 @@ YAML
             # CCO_CLAUDE_TRIPLE is the resolved (Cr,Cp,Cg,Co) Axis-B triple (ADR-0049);
             # CCO_CLAUDE_ACCESS is its display label. whoami renders both.
             echo "      - CCO_CLAUDE_TRIPLE=${claude_cr},${claude_cp},${claude_cg},${claude_co}"
+            # CCO_CLAUDE_ENTRIES is Axis B's SECOND dimension (ADR-0057 D2). Shipped
+            # beside the triple rather than folded into it: the two dimensions compose
+            # by max() and whoami rebuilds the matrix from both. Without it an
+            # in-container `cco whoami` would report all-ro trees and stay silent
+            # about the one cell that lets the session write — claude_md.
+            echo "      - CCO_CLAUDE_ENTRIES=${claude_emd},${claude_eru},${claude_eag},${claude_esk}"
             echo "      - CCO_SHOW_HOST_PATHS=${show_host_paths}"
             # config-editor editing targets (D9): PROJECT_NAME stays the started
             # project (config-editor); CCO_CONFIG_TARGETS carries the names whose
@@ -1869,10 +2100,20 @@ YAML
         # a functional need, not authoring). The functional-write floor also keeps
         # settings.local.json writable via a rw child overlay when B2/B1 is :ro
         # (ADR-0049 §5) — emitted next to each tree below.
+        # ⚠ INV-P (ADR-0057 D10): every mode below is READ OUT of the resolved access
+        # matrix, never re-derived from claude_cr/cp/cg/co. The resolver already
+        # folded precedence, the cco derivation, D3's max() and the exclusions into
+        # it; a second derivation here is precisely how the two planes drift apart,
+        # and a policy expressed in a mount and contradicted by a rule is
+        # indistinguishable, from inside a session, from a bug.
+        #
+        # A tree's PARENT bind takes the tree's unclassified fallback ('*'); its
+        # per-class cells are applied on top, either per entry (the B2 view) or as
+        # child overlays (_emit_class_overlays).
         local _b2_mode="" _b3_auth_mode="" _b1_ro=""
-        [[ "$claude_cp" == "ro" ]] && _b2_mode="ro"
-        [[ "$claude_cg" == "ro" ]] && _b3_auth_mode="ro"
-        [[ "$claude_cr" == "ro" ]] && _b1_ro=":ro"
+        _b2_mode=$(_claude_matrix_mount_mode "$claude_matrix" current '*')
+        _b3_auth_mode=$(_claude_matrix_mount_mode "$claude_matrix" global '*')
+        [[ "$(_claude_matrix_mount_mode "$claude_matrix" repo '*')" == "ro" ]] && _b1_ro=":ro"
         # Axis A (write_scope): the committed <repo>/.cco structural config
         # (project.yml, secrets.env, .cco metadata) is overlaid READ-ONLY unless the
         # session's write_scope grants the project tree (edit-project / edit-all).
@@ -1914,16 +2155,24 @@ YAML
         # Global config B3 (~/.cco/.claude). settings.json is always rw (runtime
         # prefs); the authoring tree (CLAUDE.md/rules/agents/skills) is rw only when
         # Cg=rw, ro otherwise (_b3_auth_mode, ADR-0049 §2).
-        echo "      # Global config B3 (settings.json always rw; authoring tree mode from claude Cg)"
+        # Each authoring entry takes its own CLASS cell on the `global` tree. Cg is
+        # two-valued (D5), so every cell there resolves ro/rw and `ask` never
+        # appears — including the DEFAULT claude_md=ask, which clamps DOWN to ro.
+        # That clamp is the point: ~/.cco/.claude/CLAUDE.md has no git backstop, so
+        # a prompt there would hand out a write with nothing to review it against.
+        echo "      # Global config B3 (settings.json always rw; authoring entries from the matrix, tree 'global')"
         _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
-        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "${_b3_auth_mode}"
-        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "${_b3_auth_mode}"
-        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "${_b3_auth_mode}"
-        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "${_b3_auth_mode}"
+        _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "$(_claude_matrix_mount_mode "$claude_matrix" global claude_md)"
+        _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "$(_claude_matrix_mount_mode "$claude_matrix" global rules)"
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "$(_claude_matrix_mount_mode "$claude_matrix" global agents)"
+        _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "$(_claude_matrix_mount_mode "$claude_matrix" global skills)"
         # Project config B2 (/workspace/.claude). Mode from claude Cp (_b2_mode: rw
         # when Cp=rw, ro otherwise — ADR-0049 reverses P17, so a normal read-project
         # session is ro). The structural framework config (project.yml/secrets/.cco
         # metadata) is protected separately by the <repo>/.cco overlay below (Axis A).
+        # D13: seed the CLAUDE.md stub BEFORE anything enumerates the tree, so the
+        # view, the class overlays and the bind all see a file that exists.
+        _seed_claude_md_stub "$claude_src" "$claude_matrix" "$dry_run"
         echo "      # Project config B2 (/workspace/.claude — mode from claude Cp; .cco metadata overlay below per cco_access)"
         # The framework-injected children (packs + llms) are GENERATED here, ahead of
         # the parent decision that needs to see them (ADR-0054 D2); their lines are
@@ -1967,7 +2216,8 @@ YAML
                 mkdir -p "$_claude_view" \
                     || die "Cannot create the .claude mountpoint view at $_claude_view."
             fi
-            _emit_claude_view "$_claude_view" "$claude_src" "$_b2_mode" "$_injected" "$dry_run"
+            _emit_claude_view "$_claude_view" "$claude_src" "$_b2_mode" "$_injected" "$dry_run" \
+                "$claude_matrix" "current"
             _b2_local_mp="${_claude_view}/settings.local.json"
             # ADR-0054 D4: the one behavioural delta, surfaced instead of silent. A
             # composed namespace holds files from two sources, so it belongs to the
@@ -1978,7 +2228,10 @@ YAML
                 info "/workspace/.claude is composed for this session (pack/llms overlays). Edits to existing files reach the repo; NEW files created directly under it are session-local — author them in ${claude_src#"$source_repo/"}/."
             fi
         else
+            # No injected children: the committed tree is bound whole, so the class
+            # dimension arrives as child overlays on top of it rather than per entry.
             _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
+            _emit_class_overlays "$claude_matrix" "current" "$claude_src" "/workspace/.claude" "$_b2_mode"
         fi
         # Functional-write floor (ADR-0049 §5, re-derived by ADR-0055 D2): when B2 is
         # :ro, Claude Code's project-scope runtime state stays writable through rw
@@ -2152,6 +2405,17 @@ YAML
             _compose_vol "${session_cache_dir}/managed" "/workspace/.managed" "ro"
         fi
 
+        # The second enforcement plane (ADR-0057 D9): a per-session overlay of the
+        # baked managed settings, carrying the `ask` rules the matrix asked for.
+        # Emitted only when some cell actually resolves to `ask`, so a locked or a
+        # fully-open session keeps the baked file untouched.
+        local _ms_line
+        if _ms_line=$(_emit_managed_settings_overlay "$claude_matrix" "$managed_settings_file" \
+                        "$DEFAULTS_DIR/managed/managed-settings.json"); then
+            echo "      # Per-session managed settings: the permissions plane (ADR-0057 D9)"
+            printf '%s\n' "$_ms_line"
+        fi
+
         # Repository mounts. Unresolved references were already dropped upstream
         # by the P14 conscious-skip in _effective_repo_mounts (warn + exclude,
         # never a silent empty bind-mount, #B17), so every path here is a real,
@@ -2182,6 +2446,14 @@ YAML
                 while IFS= read -r _cl_rel; do
                     [[ -z "$_cl_rel" ]] && continue
                     _compose_vol "${repo_path}/${_cl_rel}" "/workspace/${repo_name}/${_cl_rel}" "ro"
+                    # ADR-0057: the class cells of the `repo` tree, punched through
+                    # the :ro overlay as child binds. Applied to EVERY nested
+                    # <repo>/**/.claude too — ADR-0049 §7's recursion is about the
+                    # tree, and a class does not stop being that class one directory
+                    # down. A class whose entry is absent is skipped: cco will not
+                    # create a mountpoint by writing into the user's repo.
+                    _emit_class_overlays "$claude_matrix" "repo" \
+                        "${repo_path}/${_cl_rel}" "/workspace/${repo_name}/${_cl_rel}" "ro"
                     # Functional-write floor only at the repo-root tree (where a
                     # session started in the repo would write settings.local.json).
                     [[ "$_cl_rel" == ".claude" ]] && \
@@ -2670,6 +2942,9 @@ EOF
     local config_dir session_state_dir session_cache_dir managed_gen_dir claude_gen_dir
     local claude_access cco_access show_host_paths   # resolved by _start_resolve_access (ADR-0036)
     local claude_cr claude_cp claude_cg claude_co    # resolved (Cr,Cp,Cg,Co) claude triple (ADR-0049); claude_access = its label
+    local claude_emd claude_eru claude_eag claude_esk # resolved entries.{claude_md,rules,agents,skills} (ADR-0057 D2)
+    local claude_matrix                              # the resolved (tree x class) access matrix — the ONE producer's output (ADR-0057 D10 / INV-P)
+    local managed_settings_file                      # per-session managed-settings.json overlay, when the permissions emitter writes one (D9)
     local cco_g cco_pc cco_po                        # resolved (G,Pc,Po) triple (ADR-0046); cco_access = its label
     local cco_include_member_configs="false"         # access.cco.include_member_configs (ADR-0046 §6)
     local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)

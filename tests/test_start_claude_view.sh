@@ -252,8 +252,14 @@ test_claude_view_committed_tree_survives_composition_without_packs() {
     run_cco start "test-proj" --dry-run --dump
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
 
-    assert_file_contains "$compose" "claude/CLAUDE.md:/workspace/.claude/CLAUDE.md:ro" || return 1
-    # rules/ receives no injection here, so it keeps its cheap whole-dir bind.
+    # ADR-0057: the view binds each entry at its own CLASS cell, not at the tree
+    # mode. CLAUDE.md is `ask` by default — which the mount plane spells `rw`,
+    # because a gate needs the mount writable — while the tree around it stays :ro.
+    # The two assertions together are what proves the class dimension survives
+    # composition: same tree, same start, two different modes.
+    assert_file_contains "$compose" "claude/CLAUDE.md:/workspace/.claude/CLAUDE.md\"" || return 1
+    # rules/ receives no injection here, so it keeps its cheap whole-dir bind — and
+    # stays :ro, because P5 makes the USER its maintainer (default entries.rules=ro).
     assert_file_contains "$compose" "claude/rules:/workspace/.claude/rules:ro"
 }
 

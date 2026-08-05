@@ -255,74 +255,199 @@ _cco_triple_write_satisfies() {
 # (a not-writable tree is still READABLE, so cco `none` maps to `ro`, §2).
 _claude_from_cco_axis() { case "$1" in rw) printf 'rw' ;; *) printf 'ro' ;; esac; }
 
-# Preset name → its FIXED claude triple "Cr Cp Cg Co" (ADR-0049 §3). Presets do
-# not derive from cco. Returns 1 for a non-preset token (the caller then tries the
-# granular parse).
+# Rank on the ADR-0057 D1 lattice `ro < ask < rw`. The SINGLE ordering source for
+# Axis B — every "more permissive than" comparison goes through it, so adding a
+# future value is one edit here rather than N scattered string tests. An unknown
+# token ranks 0 (fail-closed: it can never read as MORE permissive).
+_claude_axis_rank() { case "$1" in rw) printf '2' ;; ask) printf '1' ;; *) printf '0' ;; esac; }
+
+# ── The resource-class dimension (ADR-0057 D2) ───────────────────────
+# Beside the per-tree axes, Axis B carries the authoring CONTENT KINDS under an
+# `entries` sub-section. Named `entries`, deliberately NOT `resources`: in cco a
+# *resource* is a pack/template/llms/project and the cross-cutting taxonomy is
+# about to fix that word — a lexical collision planted here would be paid there.
+#
+# THE DECLARED SET IS THIS LIST AND NOTHING ELSE. D3's fail-closed corollary hangs
+# off it: an entry of a tree that is NOT a declared class treats a tree-level `ask`
+# as `ro`, because `ask` without an emitted permission rule would be a SILENT rw
+# mount. A future class (`commands/`, FI-29) is governed the day it is added here
+# and not one start before — "a named list is a lower bound", applied before it
+# bites rather than after.
+#
+# `settings.json` and hooks are deliberately ABSENT (D4): they ARE the enforcement
+# plane, so `ask` is never legal on them at any level. That exclusion is data — the
+# absence from this list — not a branch.
+_claude_classes() { printf 'claude_md rules agents skills'; }
+
+# The class → filesystem entry name inside a `.claude` tree. The mount emitter maps
+# a tree entry back to its class through this; an entry with no class here is
+# unclassified and takes the fail-closed treatment above.
+_claude_class_entry() {
+    case "$1" in
+        claude_md) printf 'CLAUDE.md' ;;
+        rules)     printf 'rules' ;;
+        agents)    printf 'agents' ;;
+        skills)    printf 'skills' ;;
+        *)         return 1 ;;
+    esac
+}
+
+# Reverse of _claude_class_entry: a `.claude` tree entry name → its class, or 1
+# when the entry is not a declared class (the fail-closed path).
+_claude_entry_class() {
+    case "$1" in
+        CLAUDE.md) printf 'claude_md' ;;
+        rules)     printf 'rules' ;;
+        agents)    printf 'agents' ;;
+        skills)    printf 'skills' ;;
+        *)         return 1 ;;
+    esac
+}
+
+# D7 defaults, derived (not a preset) so they compose with the cco-derived tree
+# axes. `claude_md` is `ask` because P5's maintainership criterion says the SESSION
+# is the file's maintainer — it goes stale as a consequence of the work the session
+# is doing — and the block always lands mid-task, where the only other remedy is a
+# restart. The other three are `ro`: they encode user intent that does not age with
+# the code, so the edit is deliberate and belongs to a config-editor session.
+_claude_class_default() {
+    case "$1" in
+        claude_md) printf 'ask' ;;
+        *)         printf 'ro' ;;
+    esac
+}
+
+# Preset name → its FIXED claude axes "Cr Cp Cg Co Emd Erules Eagents Eskills"
+# (ADR-0049 §3 + ADR-0057 D11). Presets do not derive from cco, and D11 makes
+# declaring their position on the class dimension MANDATORY rather than cosmetic:
+# §3 states that a preset fixes ALL axes, so leaving `entries` unstated would leave
+# resolution undefined. `repo`/`all` reach `rw` on every class by D3's max() — they
+# are written out rather than computed so the table is readable as data.
+# No new preset in v1 (YAGNI): the default already produces the `ask` shape and
+# "ask everywhere" is two keys (`repo=ask,current=ask`).
+# Returns 1 for a non-preset token (the caller then tries the granular parse).
 _claude_preset_triple() {
     case "$1" in
-        none) printf 'ro ro ro ro' ;;   # lock all .claude authoring
-        repo) printf 'rw rw ro ro' ;;   # author the local trees (repo-native + current project)
-        all)  printf 'rw rw rw rw' ;;   # author every .claude tree
+        none) printf 'ro ro ro ro ro ro ro ro' ;;   # lock all .claude authoring
+        repo) printf 'rw rw ro ro rw rw rw rw' ;;   # author the local trees (repo-native + current project)
+        all)  printf 'rw rw rw rw rw rw rw rw' ;;   # author every .claude tree
         *)    return 1 ;;
     esac
 }
 
-# Reverse of _claude_preset_triple: a resolved "Cr Cp Cg Co" triple → its preset
-# NAME, or empty (return 1) when it is a custom/derived triple (e.g. config-editor
-# project mode `ro rw ro ro`). Lets whoami/labels name a session by its preset when
-# one applies. Whitespace-tolerant.
+# Reverse of _claude_preset_triple: a resolved "Cr Cp Cg Co Emd Erules Eagents
+# Eskills" tuple → its preset NAME, or empty (return 1) when no preset describes it
+# (e.g. config-editor project mode, or the DEFAULT session). Lets whoami and the
+# labels name a session by its preset when one applies. Whitespace-tolerant.
+#
+# ⚠ It compares RESOLVED MATRICES, not raw tuples, and both dimensions — never the
+# trees alone. Two things follow, and both matter:
+#
+#   · The default session's trees are `ro ro ro ro`, identical to preset `none`'s,
+#     while its `claude_md` is `ask`. Their matrices differ, so it is not labelled
+#     "none" — reporting a locked session that is not locked would be worse than a
+#     long label.
+#   · Conversely `repo=rw,current=rw,global=rw,others=rw` with the DEFAULT classes
+#     resolves, cell for cell, to preset `all`'s matrix (a rw tree absorbs `ask`,
+#     D3). It IS `all`, and says so. Comparing raw tuples would have called two
+#     identical sessions by two different names.
 _claude_triple_preset() {
-    case "$(printf '%s' "$*" | tr -s ' ')" in
-        'ro ro ro ro') printf 'none' ;;
-        'rw rw ro ro') printf 'repo' ;;
-        'rw rw rw rw') printf 'all' ;;
-        *)             return 1 ;;
+    # Unquoted on purpose: it accepts BOTH call shapes — eight separate axes, and a
+    # single pre-joined "Cr Cp … Eskills" string (what the tests and messages pass).
+    # ${n:-} keeps `set -u` out of it when the caller used the joined form.
+    local want; want=$(_claude_matrix ${1:-} ${2:-} ${3:-} ${4:-} ${5:-} ${6:-} ${7:-} ${8:-})
+    local p
+    for p in none repo all; do
+        [[ "$want" == "$(_claude_matrix $(_claude_preset_triple "$p"))" ]] && { printf '%s' "$p"; return 0; }
+    done
+    return 1
+}
+
+# _claude_validate_mode <value> <key> <allow_ask:true|false> — the SINGLE lattice
+# validator for Axis B, shared by the CSV parse and the MAP form so a project.yml
+# map and a CLI flag reject the same tokens with the same words. <allow_ask> is
+# false for the two-valued axes (D5: `Cg`/`Co` never accept `ask`) — refusing it
+# loudly is deliberate, because silently clamping would hide a real intent.
+_claude_validate_mode() {
+    local v="$1" k="$2" allow_ask="$3" expected="ro|rw"
+    [[ "$allow_ask" == "true" ]] && expected="ro|ask|rw"
+    case "$v" in
+        ro|rw) return 0 ;;
+        ask)   [[ "$allow_ask" == "true" ]] && return 0
+               die "Invalid claude_access value 'ask' for '$k': the global store and other projects' config are two-valued (ro|rw). Neither goes stale as a consequence of this session's work, and neither has a git backstop the prompt could hand you (ADR-0057 D5)." ;;
+        *)     die "Invalid claude_access value '$v' for '$k' (expected $expected)." ;;
     esac
 }
 
-# _claude_parse_granular <csv> — parse the granular form "repo=ro,current=rw,
-# global=ro,others=rw" (order-free, partial, spaces tolerated) into "Cr|Cp|Cg|Co"
-# with an EMPTY field for each unspecified axis (the caller derives it from cco).
+# _claude_parse_granular <csv> — parse the granular form "repo=ro,current=ask,
+# global=ro,others=rw,entries.claude_md=ask" (order-free, partial, spaces
+# tolerated) into "Cr|Cp|Cg|Co|Emd|Erules|Eagents|Eskills" with an EMPTY field for
+# each unspecified axis (the caller derives it from cco / the class defaults).
 # Pipe-delimited (not space) so `IFS='|' read` preserves empty/leading fields.
 # Dies on an unknown key or an out-of-lattice value. Returns 1 when <csv> carries
 # no '=' (not a granular form — the caller treats it as a preset scalar).
+#
+# The class dimension keeps the SAME flat key=value grammar through a DOTTED key
+# (ADR-0057 D2), so ADR-0049 §3's "one grammar in every source" survives the second
+# dimension: `--claude-access current=ro,entries.claude_md=ask`.
 _claude_parse_granular() {
-    local csv="${1// /}" cr="" cp="" cg="" co="" tok k v
+    local csv="${1// /}" cr="" cp="" cg="" co="" emd="" eru="" eag="" esk="" tok k v
     case "$csv" in *"="*) : ;; *) return 1 ;; esac
     local IFS=','
     for tok in $csv; do
         [[ -z "$tok" ]] && continue
         k="${tok%%=*}"; v="${tok#*=}"
-        case "$v" in ro|rw) : ;; *) die "Invalid claude_access value '$v' for '$k' (expected ro|rw)." ;; esac
         case "$k" in
-            repo)    cr="$v" ;;
-            current) cp="$v" ;;
-            global)  cg="$v" ;;
-            others)  co="$v" ;;
-            *)       die "Unknown claude_access key '$k' (expected repo|current|global|others)." ;;
+            repo)                _claude_validate_mode "$v" "$k" true;  cr="$v" ;;
+            current)             _claude_validate_mode "$v" "$k" true;  cp="$v" ;;
+            global)              _claude_validate_mode "$v" "$k" false; cg="$v" ;;
+            others)              _claude_validate_mode "$v" "$k" false; co="$v" ;;
+            entries.claude_md)   _claude_validate_mode "$v" "$k" true;  emd="$v" ;;
+            entries.rules)       _claude_validate_mode "$v" "$k" true;  eru="$v" ;;
+            entries.agents)      _claude_validate_mode "$v" "$k" true;  eag="$v" ;;
+            entries.skills)      _claude_validate_mode "$v" "$k" true;  esk="$v" ;;
+            entries.*)           die "Unknown claude_access entry class '${k#entries.}' (declared classes: $(_claude_classes)). settings.json and hooks are deliberately NOT classes — they are the enforcement plane itself (ADR-0057 D4)." ;;
+            *)                   die "Unknown claude_access key '$k' (expected repo|current|global|others or entries.<class>)." ;;
         esac
     done
-    printf '%s|%s|%s|%s' "$cr" "$cp" "$cg" "$co"
+    printf '%s|%s|%s|%s|%s|%s|%s|%s' "$cr" "$cp" "$cg" "$co" "$emd" "$eru" "$eag" "$esk"
 }
 
-# _claude_derive_triple <cr> <cp> <cg> <co> <cco_g> <cco_pc> <cco_po> — fill each
-# EMPTY axis from the concordant cco default (ADR-0049 §2): Cr→ro (ALWAYS — never
-# derived up), Cp→collapse(Pc), Cg→collapse(G), Co→collapse(Po). Explicit axes
-# pass through untouched. No invariant floors (Axis B has none). Emits the resolved
-# "Cr Cp Cg Co". The all-empty call (`_claude_derive_triple "" "" "" "" …`) yields
-# the pure cco-derived default used when claude_access is entirely unspecified.
-# Each non-empty explicit axis is validated (ro|rw) — this is the single validator
-# for the project.yml/access.yml MAP form, whose axes bypass the granular CSV parse.
+# _claude_derive_triple <cr> <cp> <cg> <co> <cco_g> <cco_pc> <cco_po>
+#                       [<emd> <erules> <eagents> <eskills>] — fill each EMPTY axis
+# from its default and emit the resolved eight-tuple "Cr Cp Cg Co Emd Erules
+# Eagents Eskills".
+#
+# Tree axes (ADR-0049 §2): Cr→ro (ALWAYS — never derived up), Cp→collapse(Pc),
+# Cg→collapse(G), Co→collapse(Po). Class axes (ADR-0057 D7): each → its
+# _claude_class_default. Explicit axes pass through untouched, validated on the
+# lattice their key allows — this is the single validator for the project.yml /
+# access.yml MAP form, whose axes bypass the granular CSV parse.
+#
+# The all-empty call yields the pure DERIVED default used when claude_access is
+# entirely unspecified: it is a derivation, not a preset (ADR-0049 §3), which is
+# exactly what lets the class defaults compose with cco-derived tree axes instead
+# of overriding them. No invariant floors (Axis B has none).
 _claude_derive_triple() {
-    local cr="$1" cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7" _a
-    for _a in "$cr" "$cp" "$cg" "$co"; do
-        case "$_a" in ""|ro|rw) : ;; *) die "Invalid claude_access value '$_a' (expected ro|rw)." ;; esac
-    done
-    [[ -z "$cr" ]] && cr="ro"
-    [[ -z "$cp" ]] && cp="$(_claude_from_cco_axis "$pc")"
-    [[ -z "$cg" ]] && cg="$(_claude_from_cco_axis "$g")"
-    [[ -z "$co" ]] && co="$(_claude_from_cco_axis "$po")"
-    printf '%s %s %s %s' "$cr" "$cp" "$cg" "$co"
+    local cr="$1" cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7"
+    local emd="${8:-}" eru="${9:-}" eag="${10:-}" esk="${11:-}"
+    [[ -n "$cr" ]]  && _claude_validate_mode "$cr"  "repo"              true
+    [[ -n "$cp" ]]  && _claude_validate_mode "$cp"  "current"           true
+    [[ -n "$cg" ]]  && _claude_validate_mode "$cg"  "global"            false
+    [[ -n "$co" ]]  && _claude_validate_mode "$co"  "others"            false
+    [[ -n "$emd" ]] && _claude_validate_mode "$emd" "entries.claude_md" true
+    [[ -n "$eru" ]] && _claude_validate_mode "$eru" "entries.rules"     true
+    [[ -n "$eag" ]] && _claude_validate_mode "$eag" "entries.agents"    true
+    [[ -n "$esk" ]] && _claude_validate_mode "$esk" "entries.skills"    true
+    [[ -z "$cr" ]]  && cr="ro"
+    [[ -z "$cp" ]]  && cp="$(_claude_from_cco_axis "$pc")"
+    [[ -z "$cg" ]]  && cg="$(_claude_from_cco_axis "$g")"
+    [[ -z "$co" ]]  && co="$(_claude_from_cco_axis "$po")"
+    [[ -z "$emd" ]] && emd="$(_claude_class_default claude_md)"
+    [[ -z "$eru" ]] && eru="$(_claude_class_default rules)"
+    [[ -z "$eag" ]] && eag="$(_claude_class_default agents)"
+    [[ -z "$esk" ]] && esk="$(_claude_class_default skills)"
+    printf '%s %s %s %s %s %s %s %s' "$cr" "$cp" "$cg" "$co" "$emd" "$eru" "$eag" "$esk"
 }
 
 # _claude_resolve_access <intent> <cco_g> <cco_pc> <cco_po> — resolve a SCALAR
@@ -333,23 +458,53 @@ _claude_derive_triple() {
 # scalar project.yml/access.yml value). The project.yml/access.yml MAP form is fed
 # to _claude_derive_triple directly by the caller (axes already split).
 _claude_resolve_access() {
-    local intent="$1" g="$2" pc="$3" po="$4" parsed cr cp cg co
+    local intent="$1" g="$2" pc="$3" po="$4" parsed cr cp cg co emd eru eag esk
     if parsed=$(_claude_parse_granular "$intent"); then
-        IFS='|' read -r cr cp cg co <<< "$parsed"
-        _claude_derive_triple "$cr" "$cp" "$cg" "$co" "$g" "$pc" "$po"
+        IFS='|' read -r cr cp cg co emd eru eag esk <<< "$parsed"
+        _claude_derive_triple "$cr" "$cp" "$cg" "$co" "$g" "$pc" "$po" "$emd" "$eru" "$eag" "$esk"
         return
     fi
     _claude_preset_triple "$intent" && return 0
-    die "Invalid claude_access '$intent' (expected a preset name none|repo|all or granular repo=…,current=…,global=…,others=…)."
+    die "Invalid claude_access '$intent' (expected a preset name none|repo|all or granular repo=…,current=…,global=…,others=…,entries.<class>=…)."
 }
 
-# _claude_triple_label <cr> <cp> <cg> <co> — the human/display label for a resolved
-# claude triple: the preset name when it matches, else the granular
-# "repo=…,current=…,global=…,others=…" form. Used for messages/whoami/env
-# transport; the triple stays the authoritative machine value.
+# _claude_triple_label <cr> <cp> <cg> <co> <emd> <erules> <eagents> <eskills> —
+# the human/display label for a resolved Axis-B tuple: the preset name when the
+# FULL tuple matches one, else the granular form, which is verbatim what you would
+# type on `--claude-access` to reproduce it. Used for messages/whoami/env
+# transport; the tuple stays the authoritative machine value.
+#
+# The granular form always spells out the four trees, and then names each class
+# that CHANGES SOMETHING — one whose cell differs from its tree's unclassified
+# fallback on `repo` or `current`. Both halves of that rule are load-bearing:
+#
+#   · A class at its tree's own mode adds nothing, and this string is read by a
+#     human in the session summary. Printing all four every time turned a one-line
+#     summary into 130 characters of mostly-noise.
+#   · A class that does change something is never omitted — `claude_md: ask` is the
+#     single cell deciding whether this session can write a CLAUDE.md at all, so a
+#     label that hid it would understate the session's own reach. The DEFAULT
+#     session therefore reads `…,others=ro,entries.claude_md=ask`, which is both
+#     short and true.
 _claude_triple_label() {
-    _claude_triple_preset "$1 $2 $3 $4" && return 0
-    printf 'repo=%s,current=%s,global=%s,others=%s' "$1" "$2" "$3" "$4"
+    _claude_triple_preset "$1 $2 $3 $4 $5 $6 $7 $8" && return 0
+    local out matrix cls val tree
+    out=$(printf 'repo=%s,current=%s,global=%s,others=%s' "$1" "$2" "$3" "$4")
+    matrix=$(_claude_matrix "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8")
+    for cls in $(_claude_classes); do
+        case "$cls" in
+            claude_md) val="$5" ;; rules) val="$6" ;;
+            agents)    val="$7" ;; skills) val="$8" ;;
+        esac
+        for tree in repo current; do
+            if [[ "$(_claude_matrix_get "$matrix" "$tree" "$cls")" \
+               != "$(_claude_matrix_get "$matrix" "$tree" '*')" ]]; then
+                out="$out,entries.$cls=$val"
+                break
+            fi
+        done
+    done
+    printf '%s' "$out"
 }
 
 # _claude_discordant <cr> <cp> <cg> <co> <cco_g> <cco_pc> <cco_po> → 0 when the
@@ -361,9 +516,130 @@ _claude_triple_label() {
 # warns. Emits nothing; the caller decides how to warn.
 _claude_discordant() {
     local cp="$2" cg="$3" co="$4" g="$5" pc="$6" po="$7"
-    [[ "$cp" == "rw" && "$(_claude_from_cco_axis "$pc")" == "ro" ]] && return 0
-    [[ "$cg" == "rw" && "$(_claude_from_cco_axis "$g")"  == "ro" ]] && return 0
-    [[ "$co" == "rw" && "$(_claude_from_cco_axis "$po")" == "ro" ]] && return 0
+    local emd="${8:-}" eru="${9:-}" eag="${10:-}" esk="${11:-}"
+    # Tree axes, compared by RANK so `ask` counts as more permissive than `ro` — a
+    # tree-level `ask` is an explicit widening and deserves the same note `rw` gets.
+    [[ "$(_claude_axis_rank "$cp")" -gt "$(_claude_axis_rank "$(_claude_from_cco_axis "$pc")")" ]] && return 0
+    [[ "$(_claude_axis_rank "$cg")" -gt "$(_claude_axis_rank "$(_claude_from_cco_axis "$g")")"  ]] && return 0
+    [[ "$(_claude_axis_rank "$co")" -gt "$(_claude_axis_rank "$(_claude_from_cco_axis "$po")")" ]] && return 0
+    # Class axes (ADR-0057 D12): the comparison base is the DERIVED DEFAULT, not the
+    # bare tree axis. With `claude_md: ask` inside that default, comparing a class
+    # against its tree would warn on EVERY session — the letter of ADR-0049 §4
+    # applied to a model it predates. One line here, one bug not shipped.
+    [[ -n "$emd" && "$(_claude_axis_rank "$emd")" -gt "$(_claude_axis_rank "$(_claude_class_default claude_md)")" ]] && return 0
+    [[ -n "$eru" && "$(_claude_axis_rank "$eru")" -gt "$(_claude_axis_rank "$(_claude_class_default rules)")"     ]] && return 0
+    [[ -n "$eag" && "$(_claude_axis_rank "$eag")" -gt "$(_claude_axis_rank "$(_claude_class_default agents)")"    ]] && return 0
+    [[ -n "$esk" && "$(_claude_axis_rank "$esk")" -gt "$(_claude_axis_rank "$(_claude_class_default skills)")"    ]] && return 0
+    return 1
+}
+
+# ── The resolved access matrix (ADR-0057 D3 + D10, INV-P) ────────────
+# THE SINGLE PRODUCER. Everything the two emitters need is computed here, once, and
+# no consumer re-derives it: the mount emitter reads only the ro/rw projection
+# (`ask ⇒ rw`), the permissions emitter only the `ask` cells. INV-P is the static
+# lint that keeps that true rather than merely intended — a policy expressed in a
+# mount and contradicted by a rule is indistinguishable, from inside a session,
+# from a bug.
+#
+# The cell rule is `effective(class, tree) = max(axis(tree), value(class))` with the
+# two exclusions as DATA rather than branches:
+#   · `Cg`/`Co` are two-valued (D5) — `ask` clamps DOWN to `ro` there. Fail-closed,
+#     and it is the DEFAULT path, not an edge case: the derived `claude_md: ask`
+#     must not open `~/.cco/.claude/CLAUDE.md`, which has no git backstop.
+#   · `settings.json` and hooks are absent from _claude_classes (D4), so they never
+#     produce a cell at all and take the unclassified treatment below.
+#
+# ⚠ The fail-closed corollary (D3) lives in _claude_tree_unclassified, not here: an
+# entry that is NOT a declared class treats a tree-level `ask` as `ro`. Without it a
+# tree-level `ask` would hand a future class (`commands/`, FI-29) a `rw` mount with
+# no rule emitted — a SILENT rw.
+
+# Whether a tree accepts `ask` at all. `repo`/`current` do; `global`/`others` are
+# two-valued (D5). Data, consulted by the cell rule — not a branch inside it.
+_claude_tree_allows_ask() {
+    case "$1" in repo|current) return 0 ;; *) return 1 ;; esac
+}
+
+# One cell: <tree> <tree_axis> <class_mode> → ro|ask|rw.
+_claude_cell() {
+    # SEPARATE statement (INV-LOCAL): `local a="$2" out="$a"` expands the RHS BEFORE
+    # the assignment, so `out` would take the CALLER's `axis`. Here that caller is
+    # _claude_matrix, which HAS a local named `axis` holding the same value — so the
+    # bug would have been invisible until the second caller.
+    local tree="$1" axis="$2" cls="$3" out
+    out="$axis"
+    [[ "$(_claude_axis_rank "$cls")" -gt "$(_claude_axis_rank "$axis")" ]] && out="$cls"
+    if [[ "$out" == "ask" ]] && ! _claude_tree_allows_ask "$tree"; then out="ro"; fi
+    printf '%s' "$out"
+}
+
+# The mode an UNCLASSIFIED entry of a tree gets: the tree axis, with `ask` clamped
+# to `ro`. This IS the fail-closed corollary — the one place it is expressed.
+_claude_tree_unclassified() {
+    case "$1" in ask) printf 'ro' ;; *) printf '%s' "$1" ;; esac
+}
+
+# _claude_matrix <cr> <cp> <cg> <co> <emd> <erules> <eagents> <eskills> — emit the
+# resolved matrix, one "<tree> <class> <mode>" per line, trees in the canonical
+# order repo·current·global·others and classes in _claude_classes order. Plus one
+# "<tree> * <mode>" row per tree carrying the unclassified fallback, so a consumer
+# that meets an entry with no class has somewhere to read its mode from instead of
+# re-deriving one.
+_claude_matrix() {
+    local cr="$1" cp="$2" cg="$3" co="$4" emd="$5" eru="$6" eag="$7" esk="$8"
+    local tree axis cls val
+    for tree in repo current global others; do
+        case "$tree" in
+            repo)    axis="$cr" ;;
+            current) axis="$cp" ;;
+            global)  axis="$cg" ;;
+            others)  axis="$co" ;;
+        esac
+        for cls in $(_claude_classes); do
+            case "$cls" in
+                claude_md) val="$emd" ;;
+                rules)     val="$eru" ;;
+                agents)    val="$eag" ;;
+                skills)    val="$esk" ;;
+            esac
+            printf '%s %s %s\n' "$tree" "$cls" "$(_claude_cell "$tree" "$axis" "$val")"
+        done
+        printf '%s * %s\n' "$tree" "$(_claude_tree_unclassified "$axis")"
+    done
+}
+
+# _claude_matrix_get <matrix> <tree> <class> → the cell's mode. <class> may be '*'
+# for the unclassified fallback. Dies on a lookup the matrix does not carry: a
+# missing cell means the producer and the consumer disagree about the class set,
+# which is precisely what INV-P exists to prevent — failing loudly beats defaulting.
+_claude_matrix_get() {
+    local matrix="$1" tree="$2" cls="$3" t c m
+    while read -r t c m; do
+        [[ "$t" == "$tree" && "$c" == "$cls" ]] && { printf '%s' "$m"; return 0; }
+    done <<< "$matrix"
+    die "Internal: no access-matrix cell for tree '$tree' class '$cls' (ADR-0057 D10 / INV-P)."
+}
+
+# _claude_matrix_mount_mode <matrix> <tree> <class> → the MOUNT projection of a
+# cell: "" (rw, compose's default) or "ro". `ask` projects to rw — it needs the
+# mount writable, which is the whole trade it makes (a boundary for a gate).
+# The mount emitter consumes ONLY this; it never sees the word `ask`.
+_claude_matrix_mount_mode() {
+    case "$(_claude_matrix_get "$1" "$2" "$3")" in
+        ro) printf 'ro' ;;
+        *)  printf '' ;;
+    esac
+}
+
+# _claude_matrix_asks <matrix> <class> → 0 when ANY tree resolves <class> to `ask`.
+# The permissions emitter consumes ONLY this: a rule's reach is a glob spanning
+# whole trees (D8), so what it needs is "does this class need a gate anywhere",
+# never a per-tree answer.
+_claude_matrix_asks() {
+    local matrix="$1" cls="$2" t c m
+    while read -r t c m; do
+        [[ "$c" == "$cls" && "$m" == "ask" ]] && return 0
+    done <<< "$matrix"
     return 1
 }
 

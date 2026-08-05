@@ -133,11 +133,23 @@ test_access_resolve_defaults() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     # ADR-0049 §2/§6: claude_access now DERIVES from cco. Default cco read-project
-    # (none,ro,none) → (Cr=ro, Cp=ro, Cg=ro, Co=ro) = preset `none` — a normal
-    # session no longer authors .claude by default (reverses ADR-0027 P17).
-    [[ "$claude_access" == "none" ]]  || fail "default claude derives to none, got: $claude_access"
+    # (none,ro,none) → (Cr=ro, Cp=ro, Cg=ro, Co=ro) — a normal session no longer
+    # authors .claude by default (reverses ADR-0027 P17). The TREE axes are what
+    # that rule fixes, and they are unchanged by ADR-0057.
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro ro ro" ]] \
+        || fail "default claude tree axes, got: $claude_cr $claude_cp $claude_cg $claude_co"
+    # ADR-0057 D7: the class dimension defaults to claude_md=ask, the rest ro — a
+    # DERIVED default, so it composes with the cco-derived trees above.
+    [[ "$claude_emd $claude_eru $claude_eag $claude_esk" == "ask ro ro ro" ]] \
+        || fail "default entries, got: $claude_emd $claude_eru $claude_eag $claude_esk"
+    # …and therefore the session is NO LONGER labelled `none`. The trees match
+    # preset `none`'s exactly, but the session can still write a CLAUDE.md behind a
+    # prompt: reporting "none" would understate its own reach.
+    [[ "$claude_access" != "none" ]] \
+        || fail "a session with claude_md=ask must not report itself as 'none'"
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro ro ro" ]] \
         || fail "default claude axes (ro,ro,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
     [[ "$cco_access" == "read-project" ]] || fail "default cco=read-project (ADR-0042), got: $cco_access"
@@ -245,7 +257,11 @@ test_access_preset_tutorial_read_all() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths
     _start_resolve_access
-    [[ "$claude_access" == "none" ]]  || fail "tutorial claude=none, got: $claude_access"
+    # The tutorial is a read-only teacher: read-all on cco, no .claude authoring.
+    # Its tree axes derive to all-ro; the class dimension takes the D7 default like
+    # any other session, so the label is the granular form rather than `none`.
+    [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro ro ro" ]] \
+        || fail "tutorial claude tree axes, got: $claude_cr $claude_cp $claude_cg $claude_co"
     [[ "$cco_access" == "read-all" ]] || fail "tutorial cco=read-all (ADR-0044 §2), got: $cco_access"
 }
 
@@ -266,14 +282,26 @@ test_access_preset_config_editor_by_mode() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths config_editor_mode
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     local cco_g cco_pc cco_po cco_include_member_configs
     config_editor_mode="project"; _start_resolve_access
     [[ "$cco_g $cco_pc $cco_po" == "ro rw none" ]] || fail "config-editor project→(ro,rw,none), got: $cco_g $cco_pc $cco_po"
     [[ "$cco_access" == "global=ro,current=rw,others=none" ]] || fail "project label, got: $cco_access"
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw ro ro" ]] \
         || fail "config-editor project→claude (ro,rw,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
-    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro" ]] \
+    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro,entries.claude_md=ask" ]] \
         || fail "config-editor project claude label, got: $claude_access"
+    # ADR-0057 D5, consequence requiring no code — and acceptance check 5: config-editor
+    # derives Cp=rw for its target, so by D3's max() EVERY class resolves rw there and
+    # `ask` never appears in a config-editor session. Its whole purpose is deliberate
+    # authoring; a prompt on every file would be pure friction.
+    local _ce_m; _ce_m=$(_claude_matrix "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" \
+                                        "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk")
+    local _cls
+    for _cls in $(_claude_classes); do
+        [[ "$(_claude_matrix_get "$_ce_m" current "$_cls")" == "rw" ]] \
+            || fail "config-editor target must resolve $_cls to rw, never ask (D5 consequence)"
+    done
     config_editor_mode="global"; _start_resolve_access
     [[ "$cco_g $cco_pc $cco_po" == "rw none none" ]] || fail "config-editor global→(rw,none,none), got: $cco_g $cco_pc $cco_po"
     [[ "$cco_access" == "global=rw,current=none,others=none" ]] || fail "global label, got: $cco_access"
@@ -296,6 +324,7 @@ test_access_preset_config_editor_cli_override() {
     local cli_claude_access="" cli_cco_access="edit-global" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$cco_access" == "edit-global" ]] || fail "CLI edit-global overrides the config-editor default, got: $cco_access"
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw rw ro" ]] \
@@ -325,35 +354,124 @@ test_access_config_editor_g_clamp() {
 # cco-derived fill, label, and the discordance predicate.
 test_claude_axis_b_pure_helpers() {
     _access_src
-    # Preset → fixed "Cr Cp Cg Co" and its reverse.
-    [[ "$(_claude_preset_triple none)" == "ro ro ro ro" ]] || fail "preset none"
-    [[ "$(_claude_preset_triple repo)" == "rw rw ro ro" ]] || fail "preset repo"
-    [[ "$(_claude_preset_triple all)"  == "rw rw rw rw" ]] || fail "preset all"
+    # Preset → its FIXED eight-tuple "Cr Cp Cg Co Emd Erules Eagents Eskills" and
+    # its reverse (ADR-0057 D11: a preset fixes ALL axes, both dimensions).
+    [[ "$(_claude_preset_triple none)" == "ro ro ro ro ro ro ro ro" ]] || fail "preset none"
+    [[ "$(_claude_preset_triple repo)" == "rw rw ro ro rw rw rw rw" ]] || fail "preset repo"
+    [[ "$(_claude_preset_triple all)"  == "rw rw rw rw rw rw rw rw" ]] || fail "preset all"
     ( _claude_preset_triple bogus ); [[ $? -ne 0 ]] || fail "unknown preset returns non-zero"
-    [[ "$(_claude_triple_preset "ro ro ro ro")" == "none" ]] || fail "reverse none"
-    [[ "$(_claude_triple_preset "rw rw ro ro")" == "repo" ]] || fail "reverse repo"
-    ( _claude_triple_preset "ro rw ro ro" ); [[ $? -ne 0 ]] || fail "custom triple has no preset name"
+    [[ "$(_claude_triple_preset "ro ro ro ro ro ro ro ro")" == "none" ]] || fail "reverse none"
+    [[ "$(_claude_triple_preset "rw rw ro ro rw rw rw rw")" == "repo" ]] || fail "reverse repo"
+    ( _claude_triple_preset "ro rw ro ro ro ro ro ro" ); [[ $? -ne 0 ]] || fail "custom tuple has no preset name"
+    # The DEFAULT session's trees are identical to preset `none`'s while its
+    # claude_md is `ask` — naming it "none" would report a locked session that is
+    # not locked, so the reverse map must match the FULL tuple.
+    ( _claude_triple_preset "ro ro ro ro ask ro ro ro" ); [[ $? -ne 0 ]] \
+        || fail "default session (trees=none, claude_md=ask) must NOT be labelled 'none'"
     # cco-axis collapse onto the {ro,rw} lattice: rw→rw, none/ro→ro.
     [[ "$(_claude_from_cco_axis rw)"   == "rw" ]] || fail "collapse rw"
     [[ "$(_claude_from_cco_axis ro)"   == "ro" ]] || fail "collapse ro"
     [[ "$(_claude_from_cco_axis none)" == "ro" ]] || fail "collapse none→ro"
+    # Lattice ordering ro < ask < rw (ADR-0057 D1) — the single ordering source.
+    [[ "$(_claude_axis_rank ro)" -lt "$(_claude_axis_rank ask)" ]] || fail "ro < ask"
+    [[ "$(_claude_axis_rank ask)" -lt "$(_claude_axis_rank rw)" ]] || fail "ask < rw"
     # Granular parse (partial, pipe-delimited, EMPTY for unspecified axes).
-    [[ "$(_claude_parse_granular "current=rw,global=ro")" == "|rw|ro|" ]] \
+    [[ "$(_claude_parse_granular "current=rw,global=ro")" == "|rw|ro|||||" ]] \
         || fail "parse partial, got: $(_claude_parse_granular 'current=rw,global=ro')"
     ( _claude_parse_granular "current=maybe" 2>/dev/null ); [[ $? -ne 0 ]] || fail "bad value dies"
     ( _claude_parse_granular "bogus=rw" 2>/dev/null );     [[ $? -ne 0 ]] || fail "unknown key dies"
     _claude_parse_granular "none" >/dev/null && fail "no '=' returns 1 (a preset scalar)"
-    # Derive: empty axes fill from cco (Cr→ro ALWAYS); explicit axes pass through.
-    [[ "$(_claude_derive_triple "" "" "" "" rw rw none)" == "ro rw rw ro" ]] || fail "derive from cco (edit-global-ish)"
-    [[ "$(_claude_derive_triple rw "" "" "" none ro none)" == "rw ro ro ro" ]] || fail "explicit Cr=rw passes through"
-    # Label round-trips (preset name when it matches, else granular).
-    [[ "$(_claude_triple_label ro ro ro ro)" == "none" ]] || fail "label none"
-    [[ "$(_claude_triple_label ro rw ro ro)" == "repo=ro,current=rw,global=ro,others=ro" ]] || fail "custom label"
-    # Discordance predicate (0 = discordant): rw where the cco-concordant default is ro.
+    # Derive: empty axes fill from cco (Cr→ro ALWAYS) and from the D7 class
+    # defaults (claude_md→ask, the rest→ro); explicit axes pass through.
+    [[ "$(_claude_derive_triple "" "" "" "" rw rw none)" == "ro rw rw ro ask ro ro ro" ]] || fail "derive from cco (edit-global-ish)"
+    [[ "$(_claude_derive_triple rw "" "" "" none ro none)" == "rw ro ro ro ask ro ro ro" ]] || fail "explicit Cr=rw passes through"
+    # Label round-trips (preset name when the full tuple matches, else granular).
+    [[ "$(_claude_triple_label ro ro ro ro ro ro ro ro)" == "none" ]] || fail "label none"
+    # The granular label names only the classes that CHANGE something. Here Cp=rw
+    # absorbs ask on `current`, but the `repo` tree is ro — so claude_md is gated
+    # there and the label says so.
+    [[ "$(_claude_triple_label ro rw ro ro ask ro ro ro)" \
+        == "repo=ro,current=rw,global=ro,others=ro,entries.claude_md=ask" ]] \
+        || fail "custom label names the class that changes something"
+    # …and a class sitting at its tree's own mode is omitted as pure noise.
+    [[ "$(_claude_triple_label ro rw ro ro ro ro ro ro)" \
+        == "repo=ro,current=rw,global=ro,others=ro" ]] \
+        || fail "a class equal to its tree fallback is omitted, got: $(_claude_triple_label ro rw ro ro ro ro ro ro)"
+    # Discordance predicate (0 = discordant): more permissive than the DERIVED
+    # DEFAULT — tree axes vs the cco collapse, class axes vs their D7 default.
     _claude_discordant ro rw rw ro rw rw none && fail "claude derived from cco (rw,rw,none) is concordant, not discordant"
     _claude_discordant ro ro rw ro none ro none || fail "Cg=rw over G=none(→ro) IS discordant"
     _claude_discordant ro rw ro ro none ro none || fail "Cp=rw over Pc=ro(→ro) IS discordant"
     _claude_discordant rw ro ro ro none ro none && fail "Cr=rw never warns (no cco counterpart)"
+    # D12: the default claude_md=ask must NOT warn — the base is the derived
+    # default, which already carries it. Warning on every session is the bug D12
+    # exists to prevent.
+    _claude_discordant ro ro ro ro none ro none ask ro ro ro \
+        && fail "the DEFAULT claude_md=ask must not fire the discordance note (D12)"
+    _claude_discordant ro ro ro ro none ro none ask ask ro ro \
+        || fail "entries.rules=ask (default ro) IS more permissive than the derived default"
+    return 0
+}
+
+# The class dimension: parse, the two-valued exclusion, and the D4 non-classes.
+test_claude_axis_b_entries_dimension() {
+    _access_src
+    # Dotted key keeps ADR-0049 §3's one grammar in every source.
+    [[ "$(_claude_parse_granular "current=ro,entries.claude_md=ask")" == "|ro|||ask|||" ]] \
+        || fail "dotted entries key, got: $(_claude_parse_granular 'current=ro,entries.claude_md=ask')"
+    [[ "$(_claude_parse_granular "entries.rules=rw,entries.skills=ask")" == "|||||rw||ask" ]] \
+        || fail "several entries keys"
+    # D5 — Cg/Co are two-valued: an explicit `ask` there is REFUSED, not clamped.
+    ( _claude_parse_granular "global=ask" 2>/dev/null );  [[ $? -ne 0 ]] || fail "ask on global must die (D5)"
+    ( _claude_parse_granular "others=ask" 2>/dev/null );  [[ $? -ne 0 ]] || fail "ask on others must die (D5)"
+    ( _claude_parse_granular "repo=ask" >/dev/null 2>&1 ); [[ $? -eq 0 ]] || fail "ask on repo is legal (D1)"
+    ( _claude_parse_granular "current=ask" >/dev/null 2>&1 ); [[ $? -eq 0 ]] || fail "ask on current is legal (D1)"
+    # D4 — settings.json and hooks are NOT classes: `ask` is never legal on them,
+    # and the grammar must say so rather than accept an unknown key.
+    ( _claude_parse_granular "entries.settings=ask" 2>/dev/null ); [[ $? -ne 0 ]] || fail "settings is not a class (D4)"
+    ( _claude_parse_granular "entries.hooks=ask" 2>/dev/null );    [[ $? -ne 0 ]] || fail "hooks is not a class (D4)"
+    ( _claude_parse_granular "entries.commands=ask" 2>/dev/null ); [[ $? -ne 0 ]] || fail "an undeclared class dies (fail-closed)"
+    # The declared set is the one list D3's fail-closed corollary hangs off.
+    [[ "$(_claude_classes)" == "claude_md rules agents skills" ]] || fail "declared class set"
+    [[ "$(_claude_class_default claude_md)" == "ask" ]] || fail "D7 claude_md default"
+    [[ "$(_claude_class_default rules)"     == "ro"  ]] || fail "D7 rules default"
+    [[ "$(_claude_class_entry claude_md)" == "CLAUDE.md" ]] || fail "class → entry name"
+    [[ "$(_claude_entry_class CLAUDE.md)" == "claude_md" ]] || fail "entry name → class"
+    ( _claude_entry_class settings.json ); [[ $? -ne 0 ]] || fail "settings.json has no class (D4)"
+    return 0
+}
+
+# The resolved matrix: max(), the two exclusions as data, and both projections.
+test_claude_access_matrix() {
+    _access_src
+    local m
+    # The DEFAULT session: cco read-project derives (ro,ro,ro,ro) + claude_md=ask.
+    m=$(_claude_matrix ro ro ro ro ask ro ro ro)
+    # D3 max(): the class lifts the cell above its tree axis on the two trees it reaches.
+    [[ "$(_claude_matrix_get "$m" current claude_md)" == "ask" ]] || fail "max() lifts Cp/claude_md to ask"
+    [[ "$(_claude_matrix_get "$m" repo claude_md)"    == "ask" ]] || fail "max() lifts Cr/claude_md to ask"
+    [[ "$(_claude_matrix_get "$m" current rules)"     == "ro"  ]] || fail "rules stays ro"
+    # D5 as DATA: `ask` clamps DOWN on the two-valued trees. This is the DEFAULT
+    # path, not an edge case — ~/.cco/.claude/CLAUDE.md has no git backstop.
+    [[ "$(_claude_matrix_get "$m" global claude_md)" == "ro" ]] || fail "ask clamps to ro on the global tree (D5)"
+    [[ "$(_claude_matrix_get "$m" others claude_md)" == "ro" ]] || fail "ask clamps to ro on the others tree (D5)"
+    # A tree already rw absorbs ask — prompting where authoring was granted is noise.
+    m=$(_claude_matrix ro rw ro ro ask ro ro ro)
+    [[ "$(_claude_matrix_get "$m" current claude_md)" == "rw" ]] || fail "a rw tree absorbs ask"
+    # D3's fail-closed corollary: a tree-level `ask` must NOT reach an entry that is
+    # not a declared class, or a future class would get a silent rw mount.
+    m=$(_claude_matrix ro ask ro ro ro ro ro ro)
+    [[ "$(_claude_matrix_get "$m" current '*')" == "ro" ]] || fail "tree-level ask is ro for an unclassified entry (D3 fail-closed)"
+    [[ "$(_claude_matrix_get "$m" current rules)" == "ask" ]] || fail "tree-level ask DOES reach a declared class"
+    # The two projections the emitters consume — and nothing else.
+    m=$(_claude_matrix ro ro ro ro ask ro ro ro)
+    [[ "$(_claude_matrix_mount_mode "$m" current claude_md)" == ""   ]] || fail "ask projects to rw for the mount emitter"
+    [[ "$(_claude_matrix_mount_mode "$m" current rules)"     == "ro" ]] || fail "ro projects to ro"
+    _claude_matrix_asks "$m" claude_md || fail "claude_md needs a permission rule"
+    _claude_matrix_asks "$m" rules     && fail "rules needs no permission rule"
+    # A cell the matrix does not carry is an error, never a default: a missing cell
+    # means producer and consumer disagree about the class set (INV-P).
+    ( _claude_matrix_get "$m" current bogus 2>/dev/null ); [[ $? -ne 0 ]] || fail "an unknown cell must die, not default"
     return 0
 }
 
@@ -366,6 +484,7 @@ test_access_resolve_claude_preset_no_derive() {
     local cli_claude_access="repo" cli_cco_access="edit-all" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw ro ro" ]] \
         || fail "preset repo fixes the triple despite cco edit-all, got: $claude_cr $claude_cp $claude_cg $claude_co"
@@ -381,10 +500,11 @@ test_access_resolve_claude_granular_cli() {
     local cli_claude_access="global=rw" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro rw ro" ]] \
         || fail "granular claude derives omitted axes from cco, got: $claude_cr $claude_cp $claude_cg $claude_co"
-    [[ "$claude_access" == "repo=ro,current=ro,global=rw,others=ro" ]] || fail "granular claude label, got: $claude_access"
+    [[ "$claude_access" == "repo=ro,current=ro,global=rw,others=ro,entries.claude_md=ask" ]] || fail "granular claude label, got: $claude_access"
 }
 
 # project.yml scalar claude preset resolves (precedence below CLI, above global).
@@ -396,6 +516,7 @@ test_access_resolve_claude_project_scalar() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_access" == "repo" ]] || fail "project.yml claude: repo, got: $claude_access"
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw ro ro" ]] \
@@ -412,10 +533,11 @@ test_access_resolve_claude_map_form() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro rw ro ro" ]] \
         || fail "project claude map → (ro,rw,ro,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
-    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro" ]] || fail "project claude map label, got: $claude_access"
+    [[ "$claude_access" == "repo=ro,current=rw,global=ro,others=ro,entries.claude_md=ask" ]] || fail "project claude map label, got: $claude_access"
 }
 
 # A partial project.yml claude map derives omitted axes from cco edit-all
@@ -428,6 +550,7 @@ test_access_resolve_claude_map_partial_derives() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw rw rw rw" ]] \
         || fail "partial claude map derives from cco edit-all, got: $claude_cr $claude_cp $claude_cg $claude_co"
@@ -444,6 +567,7 @@ test_access_resolve_global_claude_map() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "ro ro rw ro" ]] \
         || fail "access.yml claude map → (ro,ro,rw,ro), got: $claude_cr $claude_cp $claude_cg $claude_co"
@@ -472,6 +596,7 @@ test_access_resolve_claude_map_precedence() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     _start_resolve_access
     # Project map wins → Cr=rw explicit, Cg derives from cco (ro), NOT the global map's rw.
     [[ "$claude_cr $claude_cp $claude_cg $claude_co" == "rw ro ro ro" ]] \
@@ -487,6 +612,7 @@ test_access_resolve_claude_map_bad_value() {
     local cli_claude_access="" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     local out rc=0
     out=$( _start_resolve_access 2>&1 ) || rc=$?
     [[ $rc -ne 0 ]] || fail "bad claude map value must be rejected, got rc=0"
@@ -503,6 +629,7 @@ test_access_claude_discordance_warns() {
     local cli_claude_access="all" cli_cco_access="read-project" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     local out; out=$( _start_resolve_access 2>&1 )
     [[ "$out" == *"discordance"* || "$out" == *"more broadly"* ]] \
         || fail "explicit claude wider than cco should warn, got: $out"
@@ -516,6 +643,7 @@ test_access_claude_concordant_no_warn() {
     local cli_claude_access="" cli_cco_access="edit-all" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     local out; out=$( _start_resolve_access 2>&1 )
     [[ "$out" != *"discordance"* && "$out" != *"more broadly"* ]] \
         || fail "a derived (concordant) claude must not warn, got: $out"
@@ -529,6 +657,7 @@ test_access_resolve_claude_bad_token() {
     local cli_claude_access="repo=maybe" cli_cco_access="" cli_show_host_paths=""
     local claude_access cco_access show_host_paths cco_g cco_pc cco_po cco_include_member_configs
     local claude_cr claude_cp claude_cg claude_co
+    local claude_emd claude_eru claude_eag claude_esk claude_matrix
     local out rc=0
     out=$( _start_resolve_access 2>&1 ) || rc=$?
     [[ $rc -ne 0 ]] || fail "bad claude value must be rejected, got rc=0"
@@ -716,6 +845,92 @@ test_access_mount_defaults() {
     echo "$c" | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"' || fail "B3 authoring ro by default"
     # A1 <repo>/.cco overlaid :ro (cco_access=read-project default → Pc=ro)
     echo "$c" | grep -qE 'dummy-repo/\.cco:/workspace/dummy-repo/\.cco:ro"' || fail "A1 :ro overlay expected by default"
+}
+
+# ── ADR-0057: the two planes, measured on the emitted compose ────────
+# The trigger case, end to end. A DEFAULT session (claude derives to all-ro trees)
+# must still be able to update the project CLAUDE.md that its own work made stale:
+# the mount opens as a rw child of the :ro tree, and the gate arrives as a rule.
+test_access_mount_claude_md_opens_gated_by_default() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    printf '# project\n' > "$(host_cco_dir "$tmpdir" test-proj)/claude/CLAUDE.md"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local c; c=$(_access_compose)
+    # The tree stays :ro — ADR-0049's default is untouched…
+    echo "$c" | grep -qE '/workspace/\.claude:ro"' || fail "B2 tree must stay :ro (ADR-0049 default unchanged)"
+    # …and claude_md is punched through it as a rw child. `ask` needs the mount rw:
+    # that is the boundary-for-a-gate trade, and it is what the mount plane knows.
+    echo "$c" | grep -qE 'claude/CLAUDE\.md:/workspace/\.claude/CLAUDE\.md"$' \
+        || fail "claude_md=ask must open /workspace/.claude/CLAUDE.md rw (D3 ask⇒rw)"
+    # rules/ must NOT be opened — P5 says the user maintains it, so it stays ro and
+    # is governed by the :ro tree with no child of its own.
+    echo "$c" | grep -qE ':/workspace/\.claude/rules"$' \
+        && fail "rules must stay ro by default (D7) — no rw child"
+    # The second plane: the per-session managed overlay carries the rule.
+    echo "$c" | grep -qE ':/etc/claude-code/managed-settings\.json:ro"' \
+        || fail "the permissions overlay must be bound over the baked managed settings (D9)"
+    return 0
+}
+
+# The generated overlay itself: the rule that is emitted, and the baked content it
+# must carry forward. P1 measured a whole-file SUBSTITUTION, so dropping the baked
+# hooks here would silently disable every cco hook in the session.
+test_access_managed_overlay_content() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    local f="$DRY_RUN_DIR/.cco/managed-settings.json"
+    [[ -f "$f" ]] || fail "the per-session managed settings were not generated"
+    # D8's ONE rule, covering the previously ungoverned <repo>/**/CLAUDE.md too.
+    grep -q 'Edit(//workspace/\*\*/CLAUDE\.md)' "$f" \
+        || fail "the claude_md rule is missing from the overlay"
+    # ⚠ Edit, never Write: a path rule on Write is accepted and NEVER consulted.
+    grep -q 'Write(//workspace' "$f" && fail "a Write() path rule is silently inert (FI-48) — must be Edit()"
+    # The baked content must survive the substitution.
+    grep -q 'session-context.sh' "$f" || fail "the overlay dropped the baked hooks — P1 measured a whole-file substitution"
+    grep -q 'Read(~/.ssh/\*)'   "$f" || fail "the overlay dropped the baked permissions.deny"
+    return 0
+}
+
+# A session that needs no gate must leave the baked managed settings alone: no
+# overlay file, no mount. `none` locks every class, `all` opens them outright.
+test_access_managed_overlay_absent_when_no_gate() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    local preset
+    for preset in none all; do
+        run_cco start "test-proj" --claude-access "$preset" --dry-run --dump
+        [[ -f "$DRY_RUN_DIR/.cco/managed-settings.json" ]] \
+            && fail "claude-access $preset needs no gate — no overlay should be generated"
+        _access_compose | grep -qE '/etc/claude-code/managed-settings\.json' \
+            && fail "claude-access $preset must not bind a permissions overlay"
+    done
+    return 0
+}
+
+# D5, on the mount side: the derived claude_md=ask must NOT open the global store's
+# CLAUDE.md. It has no git backstop, so a prompt there would hand out a write with
+# nothing to review it against — the clamp is fail-closed and it is the DEFAULT path.
+test_access_mount_ask_clamps_on_global_tree() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --dry-run --dump
+    _access_compose | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"' \
+        || fail "the global CLAUDE.md must stay :ro — ask clamps to ro on Cg (D5)"
+    return 0
 }
 
 test_access_mount_claude_none_locks_b2_and_b1() {
