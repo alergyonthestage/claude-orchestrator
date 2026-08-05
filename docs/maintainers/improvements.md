@@ -485,7 +485,9 @@ min-privilege default the preset is built on.
 
 ## FI-18: Decouple CLAUDE.md from rules/agents/skills in claude_access
 
-**Status**: 📝 Note — to analyze (raised by the maintainer 2026-07-15; explicitly post-e2e).
+**Status**: ✅ **Designed — [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)**
+(2026-08-05, accepted; implementation pending). Raised by the maintainer 2026-07-15, re-raised by the
+same trigger on 2026-08-05 — a session blocked from updating a `CLAUDE.md` its own work had made stale.
 
 **Context**: Axis B (`claude_access`, ADR-0049) governs each `.claude` **tree** as a unit: CLAUDE.md,
 `rules/`, `agents/`, and `skills/` share one `ro`/`rw` decision per tree. A finer split may be
@@ -499,7 +501,23 @@ i.e. a narrow always-writable carve-out rather than a new axis. Consider the cos
 a 4-tuple `(Cr,Cp,Cg,Co)`, and multiplying it by resource class risks an unusable surface. Weigh
 against P2 discordance and the concordant-default model before committing.
 
-**Type & tracking**: access-model extension → ADR + changelog. **Effort**: Med.
+**Direction taken** (ADR-0057 settles both candidates and a third the note did not anticipate): the
+per-resource dimension, **not** the floor — the floor's contract is *"what Claude Code must write to
+function"*, derived from the official application-data table, and `CLAUDE.md` is not runtime state.
+The surface cost this note warned about is contained by keeping the two dimensions **flat and composed
+by `max()`** (`entries.{claude_md,rules,agents,skills}`, reaching `Cr`+`Cp` only) instead of a 4×5
+matrix. The third element: a **middle lattice value `ask`** — mount `rw` plus a managed
+`permissions.ask` rule — which resolves the note's tension with P3 outright, because `ask` grants the
+capability to *request*, never to write unilaterally. Default: `claude_md: ask`,
+`rules|agents|skills: ro`.
+
+Also closed by the same ADR, and not visible when this note was written: `<repo>/**/CLAUDE.md` (root
+and nested) was governed by **nothing** — the recursive detection matches directories, and those are
+files — so the same class of file had three regimes, one of them by omission.
+
+**Type & tracking**: access-model extension → ADR + changelog + `cco build`. **Effort**: Med.
+**Preconditions**: measured and passed —
+[`probe-ask-enforcement-plane.md`](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md).
 
 ## FI-19: Host-only suite tests should skip, not fail, under the privilege boundary
 
