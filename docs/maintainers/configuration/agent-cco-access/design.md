@@ -270,6 +270,75 @@ mount's own `readonly:` governs the rest. Opt-out per mount via **`config_access
 The read-only overlays detect `.claude` (and `.cco` with a `project.yml`) **recursively**
 under repos *and* extra_mounts — not root-only.
 
+### 4bis.1 The `ask` value and the resource-class dimension
+
+> **Model** ([ADR-0057](decisions/0057-ask-enforcement-plane-and-resource-classes.md)) — ratified
+> 2026-08-05, **implementation gated on host probes P1–P4**. Closes FI-18. Extends the lattice and
+> the grammar above; leaves §4bis's derivation, floor and extra_mount rules unchanged.
+
+**Two planes, not interchangeable.** The mount is a **boundary** (OS-level: holds under
+`bypassPermissions` and against an arbitrary subprocess, but only over a set enumerated at
+`cco start`). `permissions` is a **gate** (in-session: covers the built-in modifying tools and the
+Bash file commands Claude Code recognizes — **not** `dd`, `truncate` or an interpreter — but a single
+glob covers files that do not exist yet). `ask` needs the mount `rw`, so it always trades a boundary
+for a gate: legitimate only where a versioned backstop exists and the file is not itself enforcement.
+
+**Lattice** `ro < ask < rw`, legal wherever Axis B accepts a mode. **Axis A never accepts `ask`** —
+ADR-0047's setuid enforcement point sits in a different trust domain and has no channel to a dialog
+(ADR-0057 D6; do not reopen).
+
+**Second dimension** — resource classes, under an explicit sub-section (**`entries`**, *not*
+`resources`: that word is the taxonomy's), reaching `{Cr, Cp}` only:
+
+```yaml
+access:
+  claude:
+    repo: ro|ask|rw          # Cr          ─┐ tree dimension (§4bis)
+    current: ro|ask|rw       # Cp           │
+    global: ro|rw            # Cg  two-valued
+    others: ro|rw            # Co  two-valued
+    entries:                                # class dimension (ADR-0057)
+      claude_md: ro|ask|rw   # default ask
+      rules: ro|ask|rw       # default ro
+      agents: ro|ask|rw      # default ro
+      skills: ro|ask|rw      # default ro
+```
+
+Same grammar in every source (CLI: `--claude-access current=ro,entries.claude_md=ask`). Additive —
+no migration. **Resolution is `max(axis(tree), value(class))`**, with the exclusions as *data*, not
+branches: `settings.json` + hooks are outside the class set (they are the enforcement plane itself);
+`Cg`/`Co` stay two-valued (the maintainership criterion cannot fire there, and neither has a git
+backstop). ⚠ **Fail-closed**: a class not in the declared set treats `ask` as `ro` — otherwise a
+tree-level `ask` would give a future entry (`commands/`, FI-29) a `rw` mount with no rule emitted.
+
+**The criterion that decides future cases** — *does the file go stale as a consequence of the work
+this session is doing?* Yes → the agent is the natural maintainer, a prompt is proportionate
+(`CLAUDE.md`). No → the user is, and the deliberate vehicle is a config-editor session
+(`rules`/`agents`/`skills`, default `ro`).
+
+**Surfaces and planes.** The `.cco` trees and `<repo>/.claude/` stay **mount**-authoritative (bounded,
+already bound entry-by-entry). `<repo>/**/CLAUDE.md` — root and nested, previously governed by
+**nothing** — is governed on the **permissions plane only**: one rule, `Edit(//workspace/**/CLAUDE.md)`
+(never `Write(…)`, which is accepted and never consulted), which covers `Cp` too and leaves
+`~/.claude/CLAUDE.md` out because it is outside `/workspace`. Over the repo cco claims a **gate, not a
+boundary** — the repo belongs to the repo.
+
+**Transport + composition.** cco's generated rules are written **per session** and bind-mounted `:ro`
+over the baked `/etc/claude-code/managed-settings.json`. Permission arrays merge across layers and
+lower layers cannot remove managed entries, so **cco never merges its rules with pack- or
+user-authored ones — the layers compose**, and precedence (`deny → ask → allow`, first match) is the
+platform's. This is the answer C2/FI-48 inherits for its composition question.
+
+**Assembly (single responsibility).** One **resolver** produces a **resolved access matrix**
+`(tree × class) → {ro, ask, rw}`, computed once; two **pure emitters** consume it — the mount emitter
+reads only the `ro`/`rw` projection (`ask ⇒ rw`), the permissions emitter only the `ask` cells. No
+consumer re-derives. Enforced by **INV-P** (§5).
+
+**Seeding.** When `entries.claude_md` resolves to `ask`/`rw` and the file is absent, `cco start` seeds
+an empty stub host-side — ADR-0054 D4 otherwise makes a newly created `CLAUDE.md` session-local, i.e.
+silently lost at exit. ⚠ Unlike the `settings.local.json` stub it must **not** be gitignored. The
+`init-workspace` nudge is unaffected (it tests `-s`).
+
 ## 5. Invariants
 
 - **INV-1 — Level A carries only session-fixed information.** The injected block is a
@@ -303,6 +372,15 @@ under repos *and* extra_mounts — not root-only.
   complete is now an **error (exit 1)**, never a false success. Provenance writers
   (`pack install`, …) are not yet on this layer — a fail-fast guard refuses them in-container until
   cycle 2. See ADR-0047 §2/§3 and `e2e-review/fix-design-v2/05-store-write-path.md`.
+- **INV-P — one resolver, two pure emitters, one point of change per plane
+  ([ADR-0057](decisions/0057-ask-enforcement-plane-and-resource-classes.md) D10).** The resolved
+  access matrix `(tree × class) → {ro, ask, rw}` is produced **once**, by the resolver; every consumer
+  reads it and none re-derives it. Consequently: **no code outside the permissions emitter writes a
+  `permissions` key into a settings file cco generates, and no code outside the mount emitter emits a
+  compose volume for a `.claude` path.** Same shape and same enforcement as INV-S — a static CLASS lint
+  in `tests/test_invariants.sh` — because *"the point of change is one"* is a property that decays the
+  moment it is only intended. It is what keeps the two planes from drifting apart: a policy expressed in
+  a mount and contradicted by a rule is indistinguishable, from inside a session, from a bug.
 
 ## 6. Descriptions — provenance
 
