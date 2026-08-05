@@ -4,8 +4,9 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-04** — the block order below was ratified by the maintainer on this date
-> and replaces every prior sequencing note.
+> **Last updated: 2026-08-05** — **A4** was added to Block A on this date, with its design already
+> accepted (ADR-0057). The **block order** below was ratified by the maintainer on **2026-08-04** and
+> replaces every prior sequencing note; A4 does not change it.
 
 ## The planning documents — and why there are three
 
@@ -55,7 +56,7 @@ not size but **which layer an item touches**, because that is where items collid
 
 | Block | Subject | Release | Why here |
 |---|---|---|---|
-| **A** | Quick wins and coherence debts | `0.7.0` | Each item is self-contained; two of them close inconsistencies already shipped |
+| **A** | Quick wins and coherence debts | `0.7.0` | Each item is self-contained; three of them close inconsistencies already shipped |
 | **—** | **Cross-cutting analysis**: resource taxonomy + scope model | *none* | Read-only. Feeds B, C and D; moving it earlier costs no release |
 | **B** | Lifecycle & distribution | `0.8.0` | The upgrade UX, and splitting `cco update`'s conflated responsibilities |
 | **C** | Shared-resource platform (packs & config) | `0.9.0` | **This is what unblocks external projects and packs** |
@@ -84,8 +85,9 @@ Two ordering constraints are load-bearing:
 
 ### Block A — quick wins and coherence debts → `0.7.0`
 
-Minor bump, not a patch: it introduces new verbs. Nothing here needs an analysis phase; A1 and A2 need
-a short design, A3 needs none.
+Minor bump, not a patch: it introduces new verbs and a new access knob. Nothing here needs an analysis
+phase; A1 and A2 need a short design, A3 needs none, and **A4's design is already done and accepted**
+([ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)).
 
 #### A1 — `cco save`: project-config versioning helper
 
@@ -159,6 +161,47 @@ an error would be wrong.
 
 The **three open decisions** in the section below are also A-sized: take them here, or answer them
 inline.
+
+#### A4 — `ask`: the second enforcement plane + Axis-B resource classes ([FI-18](improvements.md))
+
+**Design done and accepted**:
+[ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)
+(2026-08-05). Its four gating measurements ran on the host the same day and **all passed**
+([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). What is left is
+implementation — this entry does **not** restate the model; read the ADR, then `design.md` §4bis.1,
+which is what the implementer builds from.
+
+**What it delivers.** A middle value on Axis B's lattice (`ro < ask < rw`) — mount `rw` plus a managed
+`permissions.ask` rule, so the write is possible but never silent — and a second dimension of the axis,
+`entries.{claude_md,rules,agents,skills}`, reaching `Cr` and `Cp`. Default: `claude_md: ask`, the other
+three `ro`. cco gains a **second enforcement plane** (mount = boundary, permissions = gate) and, with
+it, a graduated configuration: hard for unattended work, gated for interactive work, chosen by the user.
+
+**Why it is in this block.** It closes a coherence debt already in production — `<repo>/**/CLAUDE.md`
+is governed by **nothing** today, so one class of file has three regimes, one by omission. And it is
+the daily friction that opened FI-18 twice: a session refused while updating a `CLAUDE.md` its own work
+had made stale, where the only remedy is restarting the session.
+
+**Why before B2 and D**, on the roadmap's own criterion: A4 rewrites mount generation in
+`lib/cmd-start.sh`, the same file `cco attach` and Block D rewrite. Sequential either way; the smallest
+first.
+
+**Scope of the implementation session.**
+- Extend the resolver to produce the **access matrix** `(tree × class) → {ro, ask, rw}` — one producer,
+  no consumer re-derives (ADR-0057 D10).
+- New **permissions emitter** + the per-session managed-settings overlay (D9).
+- Mount-generation changes for the class dimension, plus the `CLAUDE.md` seeding (D13).
+- **INV-P** static CLASS lint in `tests/test_invariants.sh` — the thing that keeps *"one point of
+  change"* true rather than intended.
+- Schema (`project.yml`, `access.yml`, `--claude-access` dotted key), `cco whoami` reporting both
+  dimensions, user docs, and the **`changelog.yml` entry — owed at implementation, not before**: it is
+  shipped-behaviour documentation and the feature does not exist yet.
+
+⚠ **Acceptance is not suite-green.** This lane is invisible to the hermetic suite by construction
+(RC-17, fourth recurrence): it needs `cco build` plus the six container checks listed in the ADR's
+Verification section. And ⚠ the behaviour change runs in **two directions** — `Cp`'s `CLAUDE.md` opens
+(gated), `<repo>/**/CLAUDE.md` tightens from silent `rw` to prompted. The second is the one users
+notice.
 
 ---
 
