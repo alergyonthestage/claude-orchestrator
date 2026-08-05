@@ -4,9 +4,10 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-05** — **A4** was added to Block A on this date, with its design already
-> accepted (ADR-0057). The **block order** below was ratified by the maintainer on **2026-08-04** and
-> replaces every prior sequencing note; A4 does not change it.
+> **Last updated: 2026-08-05** — **A4** was added to Block A on this date and **implemented** the
+> same day (design accepted as ADR-0057; host acceptance still owed — see its entry). The **block
+> order** below was ratified by the maintainer on **2026-08-04** and replaces every prior sequencing
+> note; A4 does not change it.
 
 ## The planning documents — and why there are three
 
@@ -164,12 +165,32 @@ inline.
 
 #### A4 — `ask`: the second enforcement plane + Axis-B resource classes ([FI-18](improvements.md))
 
-**Design done and accepted**:
-[ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)
-(2026-08-05). Its four gating measurements ran on the host the same day and **all passed**
-([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). What is left is
-implementation — this entry does **not** restate the model; read the ADR, then `design.md` §4bis.1,
-which is what the implementer builds from.
+**Design accepted, IMPLEMENTED, host acceptance PENDING** (2026-08-05).
+[ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md);
+its four gating measurements ran on the host the same day and **all passed**
+([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). This entry does
+**not** restate the model; read the ADR, then `design.md` §4bis.1.
+
+Built on `feat/access/claude-md-axis` in four commits — `b324c0e` (resolver, lattice, `entries`,
+both emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user docs, `changelog.yml`
+#62) · `190f8cd` (golden). Suite **1626/7 of 1633** in-container, the 7 being the known host-only
+set unchanged name for name against a HEAD baseline measured in an isolated worktree (1619/7 of
+1626) — **zero regressions**.
+
+⚠ **It is NOT accepted.** The six container checks in the ADR's Verification are host-side and
+still owed, after `cco build`. Only check 6 (`cco whoami` reports both dimensions) has been
+verified, by simulating the session environment.
+
+🔑 **Do not run checks 1–3 on this project as it stands.** `.cco/project.yml` commits
+`access: {claude: all}` (the FI-25 mask), which makes every tree `rw`; `max()` then absorbs `ask`
+and **no rule is emitted at all**, so those checks would pass while measuring nothing — the failure
+mode this cycle already paid for twice. Use a project without the mask, or force the default shape
+with `--claude-access repo=ro,current=ro,global=ro,others=ro`.
+
+Two implementation decisions the ADR left open, both recorded in `design.md` §4bis.1: the overlay
+**replaces** the baked `managed-settings.json` rather than merging with it (P1 measured a whole-file
+substitution, so it must carry the baked hooks/env/statusLine/deny forward, and it fails closed if
+it cannot); and D13's stub is seeded **only** into the B2 tree, never into a user's repos.
 
 **What it delivers.** A middle value on Axis B's lattice (`ro < ask < rw`) — mount `rw` plus a managed
 `permissions.ask` rule, so the write is possible but never silent — and a second dimension of the axis,
