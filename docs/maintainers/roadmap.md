@@ -17,7 +17,7 @@ different document class, and the roadmap links out to both.
 | **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
 | [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-51`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
 | [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
-| [`handoff.md`](handoff.md) | ephemeral | Session state; deleted before the next one is written, and never linked *to* |
+| `handoff.md` | ephemeral | Session state; deleted before the next one is written. **Deliberately not linked** — an inbound link would dangle the moment it is consumed |
 
 Before 2026-08-04 the issue tracker was named `roadmap-backlog.md`, which made it read as a second
 plan. Git holds the rename.
