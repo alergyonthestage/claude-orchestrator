@@ -2335,3 +2335,59 @@ moves the clause from the rule class that fails to the one that works.
 repo-native · managed). In one sentence they read as the same word.
 
 **Effort**: Med.
+
+---
+
+## FI-52: the `claude_md` permission rule out-reaches the matrix that produced it
+
+**Status**: 🔴 Open — **measured 2026-08-06**, during the A4 pre-flight. Raised against
+[ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md).
+It is a **conflict between two ratified decisions in that ADR**, not an implementation slip: the code
+implements D8 literally. **A4 must not be accepted until this is decided.**
+
+**What happens.** The `claude_md` gate is a single glob, `Edit(//workspace/**/CLAUDE.md)` — D8's
+deliberate choice, because `<repo>/**/CLAUDE.md` is an unbounded set that enumeration cannot win.
+The emitter therefore asks one question, *"does any tree resolve `claude_md` to `ask`?"*, and emits
+that one rule. But the glob spans **all of `/workspace`**, so it also gates trees whose cell resolved
+to `rw` — where D3 explicitly says a prompt is noise (*"a tree already `rw` absorbs `ask`: the user
+has granted authoring"*).
+
+**Measured**, `cco start --claude-access current=rw --dry-run --dump`:
+
+```
+- ".../test-proj/.cco/claude:/workspace/.claude"          ← rw, no :ro — the matrix says rw
+["Edit(//workspace/**/CLAUDE.md)"]                        ← …and the rule gates it anyway
+```
+
+The mount says *write freely*; the rule says *ask*. From inside a session those two are
+indistinguishable from a bug — which is the exact divergence INV-P was written to prevent, and INV-P
+cannot see it because INV-P checks code STRUCTURE (one producer, two pure emitters), not semantic
+agreement between the planes.
+
+**Blast radius — wider than it first looks.** The condition is
+`cell(current, claude_md) == rw` **and** `cell(repo, claude_md) == ask`. Since `Cr` defaults to `ro`
+and never derives up, while `claude_md` defaults to `ask`, the repo cell is `ask` in almost every
+session. So this fires whenever the *project* tree is opened but the repo tree is not — which is
+**every `--cco-access edit-project` session** (Cp derives `rw`), including the `develop → main` merge
+the standing operational notes prescribe, **and every config-editor session**.
+
+⚠ **It makes ADR-0057 acceptance check 5 fail as written** — *"a config-editor session: no prompt on
+any class of its target project"*. Measured: config-editor project mode emits the rule (its `repo`
+tree asks), and its target's config is mounted at `/workspace/<name>-config`, which the glob matches.
+D5's "consequence requiring no code" reasoned about the **matrix**, and the matrix is right; it is the
+**rule** that does not discriminate by tree.
+
+**Options** (none taken — this is a maintainer decision):
+
+1. **Accept and amend.** Amend check 5 and D5's consequence: these sessions do prompt on `CLAUDE.md`.
+   Defensible — `ask` is not a denial, and both session kinds are interactive by definition. Zero
+   code. Cost: friction in exactly the sessions meant for deliberate authoring.
+2. **Per-tree rules.** `current` asks → `Edit(//workspace/.claude/CLAUDE.md)`; `repo` asks → a repo
+   glob. ⚠ The repo set is unbounded by design, which is D8's whole argument, and a one-level glob
+   (`//workspace/*/**/CLAUDE.md`) still catches `/workspace/<name>-config/`. Needs its own design.
+3. **Suppress the rule when `current` is `rw`.** Simplest, and **wrong**: it silently drops the gate
+   over the repo trees, which is the class of file the ADR most wanted governed.
+4. **Keep the glob, surface the divergence.** Emit a start-time notice whenever the rule's reach
+   exceeds the matrix. Cheap and honest, no behaviour change — combines with 1.
+
+**Effort**: Low for 1+4, Med for 2.

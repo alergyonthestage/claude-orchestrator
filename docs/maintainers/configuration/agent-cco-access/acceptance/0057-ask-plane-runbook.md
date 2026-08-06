@@ -183,10 +183,45 @@ is about the *target project's* config tree. Report it separately if you see it.
 
 ---
 
-## 5. Pre-flight results (in-session, no container)
+## 5. Pre-flight results (in-session, 2026-08-06)
 
-Filled in from the dry-run verification of the emitted compose and overlay across four session
-shapes. See the session record.
+Six session shapes were driven through `cco start --dry-run --dump` on a scratch project (unmasked,
+carrying a `.cco/claude/CLAUDE.md`, `rules/`, `agents/`, `skills/` and a repo with its own
+`.claude/CLAUDE.md`), and the emitted compose + generated overlay were read verbatim. This settles
+what cco **decides**; §§2–4 still have to settle what the kernel and Claude Code then **do**.
+
+| Shape | `/workspace/.claude` | its `CLAUDE.md` | its `rules` | `~/.claude/CLAUDE.md` | overlay |
+|---|---|---|---|---|---|
+| **A** default `(ro,ro,ro,ro)` | `:ro` | **rw** | `:ro` | `:ro` | yes |
+| **B** `none` | `:ro` | `:ro` | `:ro` | `:ro` | **no** |
+| **C** `all` | rw | rw | rw | rw | **no** |
+| **E** default + `entries.rules=ask` | `:ro` | **rw** | **rw** | `:ro` | yes |
+| **F** `current=rw` | **rw** | rw | rw | `:ro` | yes ⚠ |
+| **D** config-editor `--project` | rw (built-in tree) | rw | — | `:ro` | yes ⚠ |
+
+Emitted `permissions.ask`, verbatim:
+
+- **A**, **D**, **F** — `["Edit(//workspace/**/CLAUDE.md)"]`
+- **E** — `["Edit(//workspace/**/.claude/rules/**)","Edit(//workspace/**/CLAUDE.md)","Edit(//workspace/.claude/rules/**)"]`
+- **B**, **C** — no overlay generated, no bind emitted; the baked file stands untouched
+
+In every generated overlay the baked content survived the substitution — the `session-context.sh`
+hook and the `Read(~/.ssh/*)` deny are both present — and **no `Write(` path rule** was emitted
+anywhere (that syntax is accepted by Claude Code and never consulted; FI-48 already paid for it).
+
+Also confirmed in shape A: the repo tree behaves the same way — `<repo>/.claude` binds `:ro` with
+`<repo>/.claude/CLAUDE.md` punched through it rw. And in **A** and **B** alike the global tree's
+`CLAUDE.md` stays `:ro`, which is D5's clamp working on the default path.
+
+### 🔴 What the pre-flight found — read before running §§2–4
+
+Shapes **F** and **D** are marked ⚠ because the rule **out-reaches the matrix that produced it**:
+`/workspace/.claude` is mounted `rw`, and the same session emits a glob that gates it. This is
+[FI-52](../../../improvements.md), a conflict between ADR-0057's own D3/D5 and D8 — not an
+implementation slip.
+
+**Consequence for this runbook: check 5 is expected to FAIL as written.** Run it anyway and record
+what you see; do not "fix" it in the session. Checks 1–4 and 6 are unaffected.
 
 ---
 

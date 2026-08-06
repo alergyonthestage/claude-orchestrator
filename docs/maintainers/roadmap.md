@@ -177,9 +177,22 @@ both emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user doc
 set unchanged name for name against a HEAD baseline measured in an isolated worktree (1619/7 of
 1626) — **zero regressions**.
 
-⚠ **It is NOT accepted.** The six container checks in the ADR's Verification are host-side and
-still owed, after `cco build`. Only check 6 (`cco whoami` reports both dimensions) has been
-verified, by simulating the session environment.
+⚠ **It is NOT accepted, and one blocker is already known.** The six container checks in the ADR's
+Verification are host-side and still owed — runbook:
+[`acceptance/0057-ask-plane-runbook.md`](configuration/agent-cco-access/acceptance/0057-ask-plane-runbook.md)
+(hybrid: three host-started sessions, mechanical checks delegated to each session's agent, only the
+permission dialogs manual). A six-shape dry-run pre-flight is recorded in its §5.
+
+🔴 **[FI-52](improvements.md) blocks acceptance.** The `claude_md` gate is one glob spanning all of
+`/workspace` (D8), so it also gates trees whose cell resolved to `rw` — where D3 says a prompt is
+noise. Measured: a `current=rw` session mounts `/workspace/.claude` **rw** and gates it anyway. It
+fires in **every `--cco-access edit-project` session** and every config-editor session, and it makes
+**acceptance check 5 fail as written**. A conflict between ADR-0057's own decisions, not an
+implementation slip — four options are on the table and **the choice is the maintainer's**.
+
+📝 **`cco build` is NOT a prerequisite** (measured): the diff touches no image-baked file, and both
+planes are produced at start time by `./bin/cco` on the host. What survives is that the `cco` on the
+container `PATH` is the image-baked build — hence `/workspace/claude-orchestrator/bin/cco` in-session.
 
 🔑 **Do not run checks 1–3 on this project as it stands.** `.cco/project.yml` commits
 `access: {claude: all}` (the FI-25 mask), which makes every tree `rw`; `max()` then absorbs `ask`
