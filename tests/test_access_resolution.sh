@@ -814,6 +814,26 @@ test_access_cli_flag_reaches_resolution() {
     assert_output_contains "claude=all cco=read-all show_host_paths=false"
 }
 
+# FI-54 regression. The two `[debug]` lines shipped as `[[ … ]] && \` plus a second
+# INDENTED line, which binds to nothing: the sibling ran on every start, for every
+# user, and the leak survived a full acceptance run unnoticed (it is the first line
+# of the maintainer's own transcript). Assert the absence, from the outside.
+test_access_debug_lines_stay_gated_without_cco_debug() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    # No CCO_DEBUG in the environment — the normal path every user takes.
+    unset CCO_DEBUG
+    run_cco start "test-proj" --dry-run
+    assert_output_not_contains "[debug]"
+    # …and the gate still OPENS, or the test would pass on a line that was deleted.
+    export CCO_DEBUG=1
+    run_cco start "test-proj" --dry-run
+    unset CCO_DEBUG
+    assert_output_contains "[debug] matrix:"
+}
+
 test_access_invalid_cli_value_dies() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

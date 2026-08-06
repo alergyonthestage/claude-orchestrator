@@ -457,9 +457,14 @@ _start_resolve_access() {
         || die "Invalid show_host_paths '$shp_raw' (expected: true|false / on|off)."
     show_host_paths="$shp_norm"
 
-    [[ "${CCO_DEBUG:-}" == "1" ]] && \
+    # ⚠ An `if` block, deliberately, not `[[ … ]] && \` with a second indented line:
+    # that shape READS as gated and is not (the continuation binds only the FIRST
+    # command, the sibling runs unconditionally). It shipped exactly that way and
+    # leaked `[debug] matrix:` into every start for a week — FI-54.
+    if [[ "${CCO_DEBUG:-}" == "1" ]]; then
         echo "[debug] access: claude=$claude_access cco=$cco_access show_host_paths=$show_host_paths (G=$cco_g Pc=$cco_pc Po=$cco_po) (Cr=$claude_cr Cp=$claude_cp Cg=$claude_cg Co=$claude_co) (entries: claude_md=$claude_emd rules=$claude_eru agents=$claude_eag skills=$claude_esk)" >&2
         echo "[debug] matrix: $(printf '%s' "$claude_matrix" | tr '\n' ';' | sed 's/ /=/2;s/;/ /g')" >&2
+    fi
     return 0
 }
 
