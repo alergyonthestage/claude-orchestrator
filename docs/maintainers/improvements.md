@@ -2340,7 +2340,9 @@ repo-native · managed). In one sentence they read as the same word.
 
 ## FI-52: the `claude_md` permission rule out-reaches the matrix that produced it
 
-**Status**: 🔴 Open — **measured 2026-08-06**, during the A4 pre-flight. Raised against
+**Status**: 🔴 Open — **predicted from the dry-run pre-flight 2026-08-06, then CONFIRMED against a
+real config-editor session the same day** ([acceptance results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) §3:
+a dialog on every edit inside the target, including its `claude/CLAUDE.md`). Raised against
 [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md).
 It is a **conflict between two ratified decisions in that ADR**, not an implementation slip: the code
 implements D8 literally. **A4 must not be accepted until this is decided.**
@@ -2391,3 +2393,47 @@ D5's "consequence requiring no code" reasoned about the **matrix**, and the matr
    exceeds the matrix. Cheap and honest, no behaviour change — combines with 1.
 
 **Effort**: Low for 1+4, Med for 2.
+
+---
+
+## FI-53: `cco whoami` reports Axis-B class INPUTS where a reader expects effective permissions
+
+**Status**: 🔴 Open — **measured 2026-08-06** during the A4 acceptance run, by watching a session's
+own agent misread it. Raised against the reporting surface added by
+[ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md);
+does not affect enforcement. Record:
+[`acceptance/0057-acceptance-results.md`](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) §4.
+
+**What happened.** In a config-editor session, `cco whoami` printed:
+
+```
+claude entries:   claude_md=ask rules=ro agents=ro skills=ro
+```
+
+The session's agent read `rules=ro`, edited `<target>/.cco/claude/rules/git-workflow.md`, saw the
+write succeed, and reported *"`rules=ro` is not enforced"*. **The write was correct**: D3 says a
+class never reduces below its tree, config-editor derives `Cp=rw`, so
+`cell(current, rules) = max(rw, ro) = rw`. Nothing is broken — the **report** is.
+
+**Why the surface invites it.** The line prints the class **axis inputs**, which is not what governs
+any file; what governs a file is its resolved **cell**. The companion block only lists cells that
+differ *from their tree*, so a class resolving **upward** (`ro` input → `rw` cell, the config-editor
+case) is shown nowhere at all. The one direction a reader most needs to see — "this is writable even
+though I asked for read-only" — is the direction the output omits.
+
+⚠ **Why it is worth fixing rather than documenting.** This is the surface a session uses to answer
+*"what may I write?"*, and a trained reader drew the wrong conclusion from it within minutes, in
+writing, in a security context. The previous cycle already produced a false claim that reached the
+release notes because a plausible reading went unchecked.
+
+**Options**:
+
+1. **Print resolved cells, not axes.** Replace the `claude entries:` line with the full
+   `(tree × class)` matrix, or with the per-tree cells for `repo`/`current`. Most honest, slightly
+   more output.
+2. **Keep the axes line but label it as input**, and widen the companion block to list every cell
+   that differs from its class axis *in either direction* — so an upward resolution appears.
+3. **Both** — the axes are what you would type on `--claude-access`, so they are worth keeping
+   beside the effective values, provided the two are visibly distinguished.
+
+**Effort**: Low. Confined to `lib/cmd-whoami.sh`; the matrix it needs is already reconstructed there.

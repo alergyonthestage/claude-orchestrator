@@ -2,8 +2,10 @@
 
 **Purpose**: run the six post-implementation checks in
 [ADR-0057 § Verification](../decisions/0057-ask-enforcement-plane-and-resource-classes.md).
-**Status when written**: A4 implemented on `feat/access/claude-md-axis` (`b324c0e` … `5eeafdf`),
-suite 1626/7 of 1633 with zero regressions, **acceptance not started**.
+**Status**: ⏹ **RUN 2026-08-06** — results and verdict:
+[`0057-acceptance-results.md`](0057-acceptance-results.md). 3 pass · 1 fail ([FI-52](../../../improvements.md),
+as predicted) · 2 measured nothing because **two commands in this runbook were wrong**; §5 of the
+results carries the corrected ones. Re-run checks 1 and 3 before deciding anything from them.
 
 > **Why a runbook at all.** Suite-green is *not* acceptance for this lane: mount-time and
 > permission-time behaviour are invisible to the hermetic suite by construction (RC-17, fourth
@@ -84,19 +86,24 @@ If `claude=` reads `all`, the mask won this round: stop, and re-read §0.2.
 > Run these three and report each result verbatim, as fact. Do not fix anything.
 >
 > ```bash
-> # 1 — the CLAUDE.md mount must be rw, inside a .claude that is ro
-> grep -E '/workspace/\.claude(/CLAUDE\.md)? ' /proc/self/mountinfo | sed 's/.*rw,/rw,/;s/.*ro,/ro,/' 
-> grep '/workspace/.claude/CLAUDE.md' /proc/self/mountinfo
+> # 1 — the CLAUDE.md mount must be rw, inside a .claude that is ro.
+> #     Field 6 is the PER-MOUNT flag set; every line also ends with the shared
+> #     host mount's own `rw,fakeowner`, so never grep/sed for `rw,` — a greedy
+> #     match reports rw for a ro mount (it did, on 2026-08-06).
+> awk '$5=="/workspace/.claude" || $5=="/workspace/.claude/CLAUDE.md" {print $5, $6}' /proc/self/mountinfo
 >
-> # 3 — the rules tree must refuse at OS level, with NO dialog
-> echo x >> /workspace/.claude/rules/*.md ; echo "exit=$?"
+> # 3 — the rules tree must refuse at OS level, with NO dialog.
+> #     Name ONE file: a glob in a redirect target is an "ambiguous redirect",
+> #     which fails in bash without ever reaching the filesystem.
+> f=$(ls /workspace/.claude/rules/*.md 2>/dev/null | head -1); echo "target: ${f:-<none>}"
+> [ -n "$f" ] && { echo x >> "$f" ; echo "exit=$?"; } || echo "rules tree empty — check measures NOTHING"
 >
 > # 6 — both dimensions reported
 > /workspace/claude-orchestrator/bin/cco whoami
 > ```
 >
-> For check 1 I need the mount **flags**, not just the line: `rw` on
-> `/workspace/.claude/CLAUDE.md` and `ro` on `/workspace/.claude`.
+> For check 1 the expected output is exactly two lines:
+> `/workspace/.claude ro,…` and `/workspace/.claude/CLAUDE.md rw,…`. Report them verbatim.
 > For check 3 report whether a permission dialog appeared **before** the error. It must not: this is
 > the mount plane, and the mount plane never prompts.
 > For check 6 report whether the output carries a `claude entries:` line and a
