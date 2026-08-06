@@ -393,6 +393,15 @@ session's work, and `~/.cco` is versioned only if you run `cco config save`.
 Within the `repo` and `current` trees you can set the authoring content kinds separately.
 They compose with the tree axes by `max()`, so a tree already `rw` absorbs `ask`.
 
+⚠ **One exception, and it is the one you will meet: `CLAUDE.md` prompts even where the tree is
+`rw`.** `rules`, `agents` and `skills` are gated per tree, but `CLAUDE.md` is gated by a single
+pattern covering every `CLAUDE.md` under `/workspace` — the set is unbounded, since files appear
+while the session runs, so it cannot be enumerated per tree. In practice that means a session you
+opened *for* authoring (`--cco-access edit-project`, or `cco start config-editor`) still gets a
+prompt on `CLAUDE.md`, and only on `CLAUDE.md`. cco does not hide this: `cco start` prints a
+`note:` naming the affected trees whenever it happens. To author without the prompt, add
+`entries.claude_md=rw` — which opens every `CLAUDE.md` under `/workspace`, your repos included.
+
 ```yaml
 access:
   claude:

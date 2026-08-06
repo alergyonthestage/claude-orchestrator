@@ -1315,7 +1315,17 @@ entries:
       autonomy is declared, never inferred: use `claude_access: none` (locked, zero
       prompts) or `repo` / `all` (open, zero prompts). Both already exist and are
       unchanged.
-      Requires `cco build`: the mount composition and the per-session permission
-      rules are both start-time. Run `cco whoami` in a session to see the resolved
-      state — it now reports both dimensions, and lists any file whose governance
-      differs from its tree.
+      **`CLAUDE.md` prompts even in a session you opened for authoring.** The gate is
+      one pattern covering every `CLAUDE.md` under `/workspace` — the file set is
+      unbounded (files appear while the session runs), so it cannot be enumerated per
+      tree. The consequence is that `--cco-access edit-project` and config-editor
+      sessions, which grant write access deliberately, still get a prompt on
+      `CLAUDE.md` — and only on `CLAUDE.md`. This is known and accepted rather than
+      hidden: `cco start` prints a `note:` naming the trees it affects whenever it
+      happens. To author without prompts, add `entries.claude_md=rw` to
+      `--claude-access` (that opens every `CLAUDE.md` under `/workspace`, your repos
+      included — which is what an authoring session is for).
+      No rebuild needed: the mount composition and the per-session permission rules
+      are both produced at start time by the CLI, not baked into the image. Run
+      `cco whoami` in a session to see the resolved state — it now reports both
+      dimensions, and lists any file whose governance differs from its tree.
