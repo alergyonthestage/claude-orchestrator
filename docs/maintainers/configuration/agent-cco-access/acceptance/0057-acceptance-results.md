@@ -8,16 +8,21 @@ mechanical checks delegated to each session's own agent, dialogs answered by the
 Re-homed out of `scratchpad/` (gitignored) — that is exactly how three pack-line inputs were nearly
 lost in the previous cycle. The raw transcript is preserved verbatim in §6.
 
+**§7 records the re-run of checks 1 and 3** the same day, with the corrected commands — both pass, so
+the standing verdict is **5 pass · 1 measured-and-amended** (check 5, whose expectation was inverted
+by [ADR-0057 A1](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments) once
+FI-52 was decided). §§1–6 are left as first written: they are the record of the first run.
+
 ## 1. Verdict
 
 | # | Check | Result |
 |---|---|---|
-| 1 | `/workspace/.claude/CLAUDE.md` mounted `rw` inside a `:ro` tree | ⚠️ **HALF MEASURED** — `rw` proven, the parent's `:ro` **not measured** (runbook bug) |
-| 2 | a nested `<repo>/**/CLAUDE.md` prompts; a sibling `.md` does not; a refusal is honoured | ✅ **PASS**, all three |
-| 3 | `<repo>/.cco/claude/rules/*` refused at OS level, no prompt | ❌ **MEASURED NOTHING** (runbook bug) |
+| 1 | `/workspace/.claude/CLAUDE.md` mounted `rw` inside a `:ro` tree | ⚠️ **HALF MEASURED** — `rw` proven, the parent's `:ro` **not measured** (runbook bug) → ✅ **PASS on re-run, §7** |
+| 2 | a nested `<repo>/**/CLAUDE.md` prompts; a sibling `.md` does not; a refusal is honoured | ✅ **PASS**, all three — ⚠ target not named, see §7.3 |
+| 3 | `<repo>/.cco/claude/rules/*` refused at OS level, no prompt | ❌ **MEASURED NOTHING** (runbook bug) → ✅ **PASS on re-run, §7** |
 | 4 | `--claude-access none`: no prompt, no write, every class | ✅ **PASS**, all four |
-| 5 | config-editor: no prompt on any class of its target | ❌ **FAIL** — as [FI-52](../../../improvements.md) predicted |
-| 6 | `cco whoami` reports the matrix, both dimensions | ✅ **PASS** — but see [FI-53](../../../improvements.md) |
+| 5 | config-editor: no prompt on any class of its target | ❌ **FAIL** — as [FI-52](../../../improvements.md) predicted; **expectation since INVERTED**, [ADR-0057 A1](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments) |
+| 6 | `cco whoami` reports the matrix, both dimensions | ✅ **PASS** — but see [FI-53](../../../improvements.md), which check 6 **cannot** close (§7.4) |
 
 **Two checks are not evidence, and the runbook is why.** Both commands were wrong *as written by the
 runbook author*; neither failure says anything about the implementation. They are recorded as
@@ -374,6 +379,246 @@ Due discrepanze da valutare
 
 1. rules=ro non è applicato. whoami dichiara le rules read-only, ma managed-settings.json non ha nessuna regola deny/ask su Edit(//workspace/**/rules/**), e l'Edit è passata. La cella entry-level rules=ro risulta quindi solo dichiarativa nell'output di whoami, non enforced a livello di permessi Claude Code — a differenza di claude_md=ask, che ha la sua regola corrispondente. Nota che l'enforcement descritto in whoami (cco-svc setuid, ADR-0047) copre lo store ~/.cco, non l'albero .claude del progetto: qui il mount è rw e l'unica barriera possibile è la permission rule.
 2. Il pattern copre solo Edit. Edit(//workspace/**/CLAUDE.md) non intercetta Write, MultiEdit, né una scrittura via Bash (tee, >). Non l'ho testato, è una lettura del pattern — ma se l'intento è "ogni scrittura su CLAUDE.md prompta", la regola attuale è aggirabile per costruzione.
+```
+
+</details>
+
+---
+
+## 7. Re-run of checks 1 and 3 — 2026-08-06, same day, corrected commands
+
+Run by the maintainer on the macOS host, session A started exactly as §2 of the runbook prescribes
+(`--claude-access repo=ro,current=ro,global=ro,others=ro`), with the mechanical work delegated to the
+session's agent. **Both checks now measure, and both pass.** Re-homed here out of `scratchpad/`
+(gitignored) for the same reason §6 was.
+
+### 7.1 Check 1 — ✅ PASS, both halves
+
+Field 6 is the per-mount flag set. Verbatim:
+
+```
+MOUNTPOINT=/workspace/.claude             PER-MOUNT-FLAGS=ro,nosuid,nodev,relatime
+MOUNTPOINT=/workspace/.claude/CLAUDE.md   PER-MOUNT-FLAGS=rw,nosuid,nodev,relatime
+```
+
+The `:ro` tree with a `rw` child punched through it — the mount half of ADR-0057, measured. The
+session's agent independently re-derived why the original command lied (`s/.*rw,/rw,/` is greedy and
+matches the *superblock* options that end every line), before being told.
+
+### 7.2 Check 3 — ✅ PASS, five for five, zero dialogs
+
+The corrected form expands the glob in a `for` loop, so the write reaches the syscall:
+
+```
+/bin/bash: line 3: /workspace/.claude/rules/documentation.md: Read-only file system
+/bin/bash: line 3: /workspace/.claude/rules/git-practices.md: Read-only file system
+/bin/bash: line 3: /workspace/.claude/rules/git-workflow.md: Read-only file system
+/bin/bash: line 3: /workspace/.claude/rules/testing.md: Read-only file system
+/bin/bash: line 3: /workspace/.claude/rules/workflow.md: Read-only file system
+```
+
+`EROFS` from the kernel, not from the harness, on every file — and **no permission dialog appeared,
+before or after**. The mount plane does not prompt, which is the half of D8 this check exists to
+prove. Confirmed statically too: every entry is its own `ro` bind.
+
+### 7.3 ⚠ Check 2's target is not in the record — and the runbook named one that does not exist
+
+The runbook's §2.2 says to edit `/workspace/claude-orchestrator/docs/CLAUDE.md`. **That file does not
+exist and never has** (`git log --all -- docs/CLAUDE.md` is empty) — found when the instruction was
+pasted a second time and the session refused it, correctly, because `Edit` does not create files.
+§2 above records *"the dialog appeared on a nested `CLAUDE.md`"* without naming which.
+
+What this does **not** invalidate: the discriminating pair was observed by a human — a dialog on a
+`CLAUDE.md`, none on a sibling `README.md`, and a refusal that left the file unchanged in `git diff`.
+What it costs: **check 2 is not reproducible from this record**, and if the target really was the
+non-existent path, what was measured was a `Write` on a path with no bind — still inside the glob, so
+still the rule firing, but not the case the runbook intended. Name the target when re-running.
+
+### 7.4 Check 6 passes, and **cannot** close [FI-53](../../../improvements.md)
+
+The re-run confirmed both surfaces are present (`claude entries:` and the *Resolved cells that differ
+from their tree* block, naming `repo CLAUDE.md ask` and `current CLAUDE.md ask`). The session's agent
+concluded from this that FI-53 was closed. **It is not**, for a structural reason: FI-53's failure is
+a class that resolves **upward** — config-editor's `rules=ro` under `Cp=rw` gives `max(rw,ro) = rw` —
+and such a cell **equals** its tree, so the "cells that differ from their tree" block can never show
+it, while the `entries:` line still reads `ro`. A default session has no upward-resolving class, so
+this shape is **unreachable** in the check-6 scenario.
+
+### 7.5 One defect the re-run surfaced, outside the six checks
+
+`[debug] matrix: …` is printed by **every** `cco start`, for every user, with no debug flag — the
+gate was written as `[[ … ]] && \` with a second indented line that binds to nothing. It is visible
+in §6's own transcript, on the first line after the `./bin/cco start` command, and went unremarked
+through the entire first run. Recorded as [FI-54](../../../improvements.md), fixed in `3be2466`.
+
+### 7.6 Raw transcript of the re-run, verbatim
+
+As captured by the maintainer, unedited — including the session agent's own reasoning about
+the two traps, which it re-derived before being told, and the `cco whoami` output check 6 was
+read from.
+
+<details>
+<summary>Session A re-run (checks 1, 3, 6) + the check-2 target refusal</summary>
+
+## 0057 runbook v2
+
+## Check 1,3,6 - Session A
+Il runbook dice -> "Expect on stderr, before the session opens — this is itself the first signal", ma la sessione si avvia senza segnalare nulla.
+
+```
+Searched for 2 patterns, listed 1 directory, ran 4 shell commands
+
+● Check 1 — CLAUDE.md rw dentro un .claude ro
+
+  Comando 1, output verbatim:
+
+  rw,fakeowner
+  rw,fakeowner
+
+  Questo comando non misura nulla. È la trappola nota: s/.*rw,/rw,/ è greedy e aggancia l'ultimo rw, della riga, che sono le super options del mount host (fakeowner /run/host_mark/Users rw,fakeowner). Ogni riga di mountinfo finisce così, quindi entrambe le righe stampano rw,fakeowner indipendentemente dai flag reali per-mount. Un ro non sarebbe stato visibile.
+
+  Comando 2, output verbatim:
+
+  300 284 0:46 /alessandro/Projects/CaveResistance/Software/claude-orchestrator/.cco/claude/CLAUDE.md /workspace/.claude/CLAUDE.md rw,nosuid,nodev,relatime - fakeowner /run/host_mark/Users rw,fakeowner
+
+  Hai chiesto i flag, non la riga. Campo 6 (per-mount flags, l'unico che conta), estratto con awk '{print $5, $6}':
+
+  MOUNTPOINT=/workspace/.claude             PER-MOUNT-FLAGS=ro,nosuid,nodev,relatime
+  MOUNTPOINT=/workspace/.claude/CLAUDE.md   PER-MOUNT-FLAGS=rw,nosuid,nodev,relatime
+
+  Esito: PASS. /workspace/.claude è ro, /workspace/.claude/CLAUDE.md è un bind figlio rw. Sorgente: <repo>/.cco/claude/CLAUDE.md.
+
+  Check 3 — l'albero rules rifiuta a livello OS, senza dialog
+
+  Comando verbatim, output verbatim:
+
+  /bin/bash: line 3: /workspace/.claude/rules/*.md: ambiguous redirect
+  exit=1
+
+  Nessun dialog di permesso è apparso — ma questo comando non misura nulla: è l'altra trappola nota. Il glob nel target di una redirezione non viene espanso; bash rifiuta con ambiguous redirect prima di toccare il filesystem. exit=1 qui è bash, non il mount plane. Un albero completamente rw avrebbe dato lo stesso identico output.
+
+  Misura reale (glob espanso dal for, la scrittura arriva davvero alla syscall):
+
+  /bin/bash: line 3: /workspace/.claude/rules/documentation.md: Read-only file system
+  /workspace/.claude/rules/documentation.md exit=1
+  /bin/bash: line 3: /workspace/.claude/rules/git-practices.md: Read-only file system
+  /workspace/.claude/rules/git-practices.md exit=1
+  /bin/bash: line 3: /workspace/.claude/rules/git-workflow.md: Read-only file system
+  /workspace/.claude/rules/git-workflow.md exit=1
+  /bin/bash: line 3: /workspace/.claude/rules/testing.md: Read-only file system
+  /workspace/.claude/rules/testing.md exit=1
+  /bin/bash: line 3: /workspace/.claude/rules/workflow.md: Read-only file system
+  /workspace/.claude/rules/workflow.md exit=1
+
+  Esito: PASS. Tutti e 5 i file rifiutano con EROFS — errore del kernel, non del harness. Nessun dialog di permesso è apparso, né prima né dopo l'errore: il mount plane non prompta. Confermato anche staticamente — ogni file è un bind ro a sé:
+
+  /workspace/.claude/rules/git-workflow.md    ro,nosuid,nodev,relatime
+  /workspace/.claude/rules/testing.md         ro,nosuid,nodev,relatime
+  /workspace/.claude/rules/.gitkeep           ro,nosuid,nodev,relatime
+  /workspace/.claude/rules/documentation.md   ro,nosuid,nodev,relatime
+  /workspace/.claude/rules/git-practices.md   ro,nosuid,nodev,relatime
+  /workspace/.claude/rules/workflow.md        ro,nosuid,nodev,relatime
+
+  Nessun file è stato modificato.
+
+  Check 6 — entrambe le dimensioni riportate
+
+  Output verbatim:
+
+  Session
+    identity:         claude-orchestrator
+    code repos:       claude-orchestrator
+    image built from: detached@8fbf8ab
+
+  Access
+    level:            read-project
+    triple:           G=none Pc=ro Po=none  (read: project, write: none)
+    claude_access:    repo=ro,current=ro,global=ro,others=ro,entries.claude_md=ask
+    claude triple:    Cr=ro Cp=ro Cg=ro Co=ro
+    claude entries:   claude_md=ask rules=ro agents=ro skills=ro
+    show_host_paths:  true
+
+  Config trees (.cco)
+    project config (<repo>/.cco):        ro
+    personal store (~/.cco) + registry:  —
+    llms cache:                          —
+
+  Authoring trees (.claude)
+    repo-native <repo>/.claude (Cr):     ro
+    project <repo>/.cco/claude (Cp):     ro
+    global ~/.cco/.claude (Cg):          ro
+
+  Resolved cells that differ from their tree
+
+Resolved cells that differ from their tree
+  repo     CLAUDE.md    ask
+  current  CLAUDE.md    ask
+  (ask = the mount is writable, every write prompts — ADR-0057)
+
+Enforcement  internal store confined behind the ADR-0047 privilege boundary —
+             store reads/writes are gated by this triple via the setuid cco-svc
+             helper (a raw read of the store fails), not just output-filtered.
+
+Esito: PASS su entrambe le dimensioni.
+
+- Riga claude entries: presente → claude_md=ask rules=ro agents=ro skills=ro.
+- Blocco Resolved cells that differ from their tree presente e nomina CLAUDE.md, su due righe (repo, current), entrambe ask contro un tree block che dichiara ro su tutti e tre gli alberi. Le celle risolte differiscono effettivamente dal loro tree.
+
+Questo chiude FI-53 (che riportava solo gli input d'asse, non le celle): ora ci sono entrambi, claude triple + claude entries come input, e il blocco cells come risoluzione.
+
+Riepilogo
+
+┌─────┬───────┬─────────────────────────────────────────────────┐
+│  #  │ Esito │                      Nota                       │
+├─────┼───────┼─────────────────────────────────────────────────┤
+│ 1   │ PASS  │ il comando fornito misurava nulla (sed greedy   │
+│     │       │ sulle super options); flag reali estratti da $6 │
+├─────┼───────┼─────────────────────────────────────────────────┤
+│     │       │ il comando fornito misurava nulla (ambiguous    │
+│ 3   │ PASS  │ redirect, bash non FS); EROFS reale su tutti e  │
+│     │       │ 5, zero dialog                                  │
+├─────┼───────┼─────────────────────────────────────────────────┤
+│ 6   │ PASS  │ entrambe le dimensioni presenti, celle ask      │
+│     │       │ divergenti dal tree ro                          │
+└─────┴───────┴─────────────────────────────────────────────────┘
+
+Le due trappole che davano falso PASS sono ricomparse entrambe in questa batteria — nella forma esatta già registrata in memoria (A4 ask plane). I comandi come scritti sarebbero passati anche con un .claude interamente rw. Non ho corretto nulla nel sistema.
+```
+
+## Check 4 - session B
+L'ho ri-eseguito per errore, ma ho rilevato un nuovo comportamento, se il file target non esiste:
+```
+echo "note" >> /workspace/claude-orchestrator/docs/CLAUDE.md — using the Edit tool, not Bash
+
+  Listed 2 directories, ran 1 shell command
+
+─────────────────────────── 1 new message ───────────────────────────
+
+Il comando non è eseguibile come scritto. Prima i fatti:
+
+ls: cannot access '/workspace/claude-orchestrator/docs/CLAUDE.md': No such file or directory
+
+docs/ esiste, ma non contiene nessun CLAUDE.md. Due conseguenze:
+
+1. Edit non può farlo. Edit richiede un file esistente (e una Read precedente). Non crea file. Solo Write può, ma è un tool diverso da quello che hai chiesto — e >> in bash avrebbe creato il file, Edit no. La differenza tra i due piani è esattamente ciò che la formulazione mescola.
+2. Anche se esistesse, non misurerebbe l'ask plane. Non c'è nessun bind sotto docs/:
+
+grep 'claude-orchestrator/docs' /proc/self/mountinfo → (vuoto)
+
+docs/CLAUDE.md sarebbe un file ordinario del working tree, sul mount del repo — non una cella claude_md. Le celle reali sono i bind, e sono queste:
+
+/workspace/.claude/CLAUDE.md                                          rw   ← cella "current", ask
+/home/claude/.claude/CLAUDE.md                                        ro
+/workspace/claude-orchestrator/internal/tutorial/.claude/CLAUDE.md    rw
+/workspace/claude-orchestrator/defaults/global/.claude/CLAUDE.md      rw
+/workspace/claude-orchestrator/internal/config-editor/.claude/CLAUDE.md  rw
+/workspace/claude-orchestrator/user-config/global/.claude/CLAUDE.md   rw
+/workspace/claude-orchestrator/templates/project/base/.claude/CLAUDE.md  rw
+  … + 4 sotto user-config/projects/
+
+Il CLAUDE.md del repo root(/workspace/claude-orchestrator/CLAUDE.md) esiste ma non è tra i bind — sta sul mount del repo, come docs/ avrebbe fatto.
+
+Non ho scritto nulla. Dimmi quale bersaglio intendevi:
 ```
 
 </details>
