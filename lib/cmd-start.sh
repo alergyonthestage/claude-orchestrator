@@ -442,6 +442,18 @@ _start_resolve_access() {
         echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
     fi
 
+    # FI-52 divergence notice (accepted 2026-08-06 — option 1+4, ADR-0057 §Amendments).
+    # The `claude_md` gate out-reaches the matrix that produced it, by construction:
+    # one glob, no per-tree discrimination. The divergence is ACCEPTED — what is not
+    # acceptable is that a session cannot tell it from a defect. It was misread once
+    # already, in writing, on a security surface (FI-53's sibling failure). Emitted as
+    # a `note:` and not a `⚠`: nothing is wrong, and the difference matters to any
+    # caller that gates on warnings.
+    local _cmd_overreach; _cmd_overreach=$(_claude_matrix_overreach "$claude_matrix")
+    if [[ -n "$_cmd_overreach" ]]; then
+        echo "note: claude_md=ask emits ONE glob over all of /workspace (ADR-0057 D8), so CLAUDE.md still prompts on trees this session granted rw: ${_cmd_overreach}. Accepted divergence (FI-52), not a defect — add entries.claude_md=rw to --claude-access to author without the prompt." >&2
+    fi
+
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
     # when true, Pc's rw span widens from the hosting repo's <repo>/.cco to ALL
     # member repos' divergent .cco copies. project.yml only (a per-project mount

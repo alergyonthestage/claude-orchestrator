@@ -643,6 +643,32 @@ _claude_matrix_asks() {
     return 1
 }
 
+# _claude_matrix_overreach <matrix> → the in-workspace trees whose `claude_md`
+# resolved `rw` while the class still needs a gate somewhere, comma-separated in
+# canonical tree order; EMPTY when there is no divergence.
+#
+# FI-52, accepted rather than fixed (2026-08-06, option 1+4). D8 governs `claude_md`
+# with ONE glob over all of /workspace — the file set is unbounded, so enumeration
+# cannot win — and a glob has no notion of a tree. It therefore also gates trees D3
+# resolved `rw`, where the ADR itself calls a prompt noise. The mount says *write
+# freely*, the rule says *ask*, and from INSIDE a session those two are
+# indistinguishable from a bug: that is what this exists to say out loud. It changes
+# no behaviour; the caller only prints.
+#
+# `global` is excluded because ~/.claude is outside /workspace, so no glob reaches
+# it — the same reason D8 can leave it untouched.
+_claude_matrix_overreach() {
+    local matrix="$1" tree out=""
+    _claude_matrix_asks "$matrix" claude_md || { printf ''; return 0; }
+    for tree in repo current others; do
+        if [[ "$(_claude_matrix_get "$matrix" "$tree" claude_md)" == "rw" ]]; then
+            out="${out:+$out,}$tree"
+        fi
+    done
+    printf '%s' "$out"
+    return 0
+}
+
 # ── Pure level→scope maps (ADR-0043 symmetric model) ─────────────────
 # The SINGLE source of truth for the read/write scope a `cco_access` level grants,
 # consumed by three sites (INV-E): host mount-generation (cmd-start.sh), the

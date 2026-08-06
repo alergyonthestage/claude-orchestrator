@@ -475,6 +475,41 @@ test_claude_access_matrix() {
     return 0
 }
 
+# FI-52 (accepted, option 1+4): the `claude_md` gate is one glob over /workspace and
+# cannot discriminate by tree, so it also gates trees D3 resolved `rw`. The predicate
+# that SAYS SO must fire exactly on the divergence and stay silent otherwise —
+# a notice that cried wolf on a default session would be worse than none.
+test_claude_access_matrix_overreach() {
+    _access_src
+    local m
+    # DEFAULT session: every tree ro, claude_md lifts to `ask` — the rule reaches only
+    # trees that asked for it. No divergence, no notice.
+    m=$(_claude_matrix ro ro ro ro ask ro ro ro)
+    [[ -z "$(_claude_matrix_overreach "$m")" ]] || fail "a default session must not report over-reach"
+    # `current=rw` (the shape FI-52 was measured on): the current tree absorbs `ask`
+    # and is mounted rw, while `repo` still asks — so the rule is emitted AND it gates
+    # a tree the matrix granted.
+    m=$(_claude_matrix ro rw ro ro ask ro ro ro)
+    [[ "$(_claude_matrix_overreach "$m")" == "current" ]] \
+        || fail "current=rw + repo=ask is the FI-52 divergence, got '$(_claude_matrix_overreach "$m")'"
+    # Canonical tree order, and `others` counted: config-editor --all mounts other
+    # projects' config INSIDE /workspace, so the glob reaches them too.
+    m=$(_claude_matrix rw rw ro rw ask ro ro ro)
+    [[ -z "$(_claude_matrix_overreach "$m")" ]] \
+        || fail "with NO tree left asking, no rule is emitted and nothing can over-reach"
+    m=$(_claude_matrix ro rw ro rw ask ro ro ro)
+    [[ "$(_claude_matrix_overreach "$m")" == "current,others" ]] \
+        || fail "over-reached trees are listed in canonical order, got '$(_claude_matrix_overreach "$m")'"
+    # `global` is NEVER reported: ~/.claude is outside /workspace, so no glob reaches
+    # it — and D5 keeps it two-valued anyway. Cg=rw must not add a name to the list.
+    m=$(_claude_matrix ro ro rw ro ask ro ro ro)
+    [[ -z "$(_claude_matrix_overreach "$m")" ]] || fail "the global tree is out of the glob's reach (D5/D8)"
+    # A class with no `ask` anywhere emits no rule at all — nothing to over-reach.
+    m=$(_claude_matrix ro rw ro ro ro ro ro ro)
+    [[ -z "$(_claude_matrix_overreach "$m")" ]] || fail "no ask cell ⇒ no rule ⇒ no over-reach"
+    return 0
+}
+
 # A claude PRESET fixes the triple regardless of the cco intent (no derivation) —
 # repo=(rw,rw,ro,ro) even under cco edit-all (which would DERIVE to (ro,rw,rw,rw)).
 test_access_resolve_claude_preset_no_derive() {
@@ -832,6 +867,26 @@ test_access_debug_lines_stay_gated_without_cco_debug() {
     run_cco start "test-proj" --dry-run
     unset CCO_DEBUG
     assert_output_contains "[debug] matrix:"
+}
+
+# FI-52 option 4: the accepted divergence must ANNOUNCE itself, and only when it is
+# real. Measured on the emitted session, not on the helper — the notice is the whole
+# deliverable of the option, so it is verified where the user meets it.
+test_access_fi52_overreach_notice() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    # The FI-52 shape: current granted rw, repo still asking.
+    run_cco start "test-proj" --claude-access current=rw --dry-run
+    assert_output_contains "FI-52"
+    assert_output_contains "prompts on trees this session granted rw: current"
+    # A default session has no divergence and must stay quiet.
+    run_cco start "test-proj" --dry-run
+    assert_output_not_contains "FI-52"
+    # So must a session that emits no rule at all.
+    run_cco start "test-proj" --claude-access none --dry-run
+    assert_output_not_contains "FI-52"
 }
 
 test_access_invalid_cli_value_dies() {
