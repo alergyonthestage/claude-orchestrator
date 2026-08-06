@@ -4,10 +4,10 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-05** — **A4** was added to Block A on this date and **implemented** the
-> same day (design accepted as ADR-0057; host acceptance still owed — see its entry). The **block
-> order** below was ratified by the maintainer on **2026-08-04** and replaces every prior sequencing
-> note; A4 does not change it.
+> **Last updated: 2026-08-06** — **A4** was added to Block A on 2026-08-05, implemented the same
+> day, and its **acceptance was run on 2026-08-06: 3 pass · 1 fail · 2 to re-run** (see its entry).
+> It is **blocked on [FI-52](improvements.md)**, a maintainer decision. The **block order** below was
+> ratified on **2026-08-04** and replaces every prior sequencing note; A4 does not change it.
 
 ## The planning documents — and why there are three
 
@@ -17,7 +17,7 @@ different document class, and the roadmap links out to both.
 | File | Class | Holds |
 |---|---|---|
 | **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
-| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-51`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
+| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-53`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
 | [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
 | `handoff.md` | ephemeral | Session state; deleted before the next one is written. **Deliberately not linked** — an inbound link would dangle the moment it is consumed |
 
@@ -43,10 +43,12 @@ narrative, the lessons, and the per-stage records live in
   host run. In-container **1619/7** on the same tree with the mask on, **1616/9 of 1625** unmasked.
   The 9 are 7 host-only tests defeated by the ADR-0047 boundary ([FI-19](improvements.md)) plus 2
   update tests the mask hides.
-  ⚠ **`access: {claude: all}` is committed** in `.cco/project.yml` (self-dev workaround for
-  [FI-25](improvements.md), with its own expiry note), so **every in-container figure from now on is
-  masked** — expect `…/7`, never `…/9`.
-- **Next free ADR number: 0057.** ⚠ **ADR-0038 and ADR-0040 do not exist as documents** — they are
+  ⚠ **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) was COMMENTED OUT on
+  2026-08-06** to run the A4 acceptance, and that edit is **uncommitted** at the time of writing.
+  While it stays off, this project's sessions derive from cco like any other — so `internal/` and
+  `defaults/` `.claude` are no longer writable here, and in-container suite figures become `…/9`
+  rather than the masked `…/7`. Decide whether it goes back on.
+- **Next free ADR number: 0058.** ⚠ **ADR-0038 and ADR-0040 do not exist as documents** — they are
   numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
   for the first time; do not go looking for a file.
 
