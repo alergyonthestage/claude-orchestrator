@@ -2451,3 +2451,205 @@ release notes because a plausible reading went unchecked.
    beside the effective values, provided the two are visibly distinguished.
 
 **Effort**: Low. Confined to `lib/cmd-whoami.sh`; the matrix it needs is already reconstructed there.
+
+---
+
+## FI-54: the second `[debug]` line was never gated — every `cco start` leaked the access matrix
+
+**Status**: ✅ **Fixed 2026-08-06** (`3be2466`), with a two-directional regression test. Introduced by
+`b324c0e` (A4's implementation commit), found while re-reading the acceptance transcript.
+
+**What happened.** The debug output in `_start_resolve_access` was written as:
+
+```bash
+[[ "${CCO_DEBUG:-}" == "1" ]] && \
+    echo "[debug] access: …" >&2
+    echo "[debug] matrix: …" >&2     # ← runs unconditionally
+```
+
+A `\` continuation binds to the **first** command only; the second line is a sibling statement. So
+every `cco start` — every user, no debug flag — printed the resolved access matrix to stderr. `set -e`
+does not catch it: the failing `[[ … ]]` is the *left* operand of an AND-list, which errexit exempts.
+
+⚠ **The lesson is not the fix, it is that nobody saw it.** The leaked line is the **first line** of the
+maintainer's own host transcript in the
+[acceptance record](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) §6, sitting
+directly under the `./bin/cco start` command, and it went unremarked through an entire six-check
+acceptance run. Output that *looks* like framework chatter is not read. The shape now carries a
+comment saying why it is an `if` block; a CLASS lint over `&& \`-plus-indented-sibling is a candidate
+if it recurs.
+
+**Effort**: Done (Low).
+
+---
+
+## FI-55: `cco start` never pauses on its own warnings — the session opens over them
+
+**Status**: 🔴 Open — raised by the maintainer 2026-08-06, from repeated field experience. **Quick
+win, Block A.**
+
+**What happens.** `cco start` emits its warnings (uncommitted `~/.cco`, uncommitted `.cco`,
+framework-reserved `llms/` shadowing, resolution notices…) and then immediately hands the terminal to
+`docker compose run`, which opens the Claude TUI. The warnings scroll away or are cleared before the
+user can read them, let alone act. In practice they are **write-only output**: emitted, never
+consumed. The A4 acceptance run is the proof — a wrong debug line ([FI-54](#fi-54-the-second-debug-line-was-never-gated--every-cco-start-leaked-the-access-matrix))
+sat in that stream for a week and was read by no one.
+
+**Wanted behaviour.** After emitting warnings, and **only if there are any**, stop and ask: start the
+session, or abort. A clean start stays silent and immediate — the prompt is the *exception*, never a
+new step in the happy path. Later this can grow into offering the fix for each warning
+(`cco config save`, commit `.cco`, …), which is why the prompt should carry the warning list, not just
+a yes/no.
+
+**Boundary to re-derive before designing** (per the convention at the top of this file):
+
+- **What counts as a warning.** Today's start path mixes `⚠ warn`, `note:` and `ℹ info`. Only the
+  first should gate — and the FI-52 divergence notice was deliberately emitted as a `note:` for
+  exactly this reason. Enumerate the emitters rather than trusting this list.
+- **Interactivity is not optional to get right.** The prompt MUST gate on `_cco_have_tty`
+  (`lib/utils.sh`) and honour `CCO_NONINTERACTIVE=1`, or the suite, CI, and any output-capturing
+  caller hang on a question whose text the capture swallowed. This is a rule in `CLAUDE.md` and an
+  invariant (`test_invariant_tty_gate_single_spelling`), and the project has already paid for it once.
+- **A non-interactive escape** (`--yes` / env) is part of the design, not an afterthought.
+
+**Effort**: Low-Med. The prompt is small; the honest classification of every start-time message is the
+actual work.
+
+---
+
+## FI-56: `.claude/worktrees` is outside the functional-write floor, and sessions hit it
+
+**Status**: 🔴 Open — reported by the maintainer 2026-08-06 (*"spesso alcune sessioni vogliono aprire
+dei worktrees e si lamentano di `.claude/worktrees` non scrivibile"*). **Quick win, Block A** — the
+remedy's shape already exists; the full worktree design is a separate, larger unit.
+
+**What happens.** The ADR-0055 functional-write floor is `{settings.local.json, workflows/}`. Its
+provenance comment (`lib/cmd-start.sh`, the workflows emitter) states explicitly why `worktrees/` is
+absent: *"the docs place it at the REPOSITORY root, which is inside the repo's own rw mount and needs
+nothing"*. The field says otherwise. The likely mechanism is the **same one the workflows floor was
+created for**: the WORKDIR is `/workspace`, so a "closest existing `.claude/` between cwd and the
+repository root" resolution lands on `/workspace/.claude`, which ADR-0049 §2 makes `:ro` by default.
+
+**This is the third recurrence of one lesson** — *a named list is a lower bound* (INV-B32's script
+directories, the pack-line inputs, now the floor). The floor was derived once, correctly, from the
+official docs; it was never re-derived when Claude Code grew a path.
+
+**Before implementing**: capture the **actual failing path and message** from a live session (the
+report does not carry them), then re-derive the whole floor against the current
+`llms/code-claude/llms-full.txt`, not just this one entry. Fixing only the reported path would repeat
+the mistake that produced it.
+
+**Effort**: Low, if the mechanism is confirmed — `_emit_workflows_overlay` is the shape to copy (a rw
+child overlay from per-project STATE, so a `read-project` session gets a working directory that
+survives the container without writing the committed tree).
+
+---
+
+## FI-57: `.cco` blocks in-session commits and merges — a taxonomy question, not a mount bug
+
+**Status**: 🔴 Open — recurring, raised again by the maintainer 2026-08-06. Sibling of
+[FI-20](#fi-20-git-operations-vs-the-ro-cco-overlay--partial-checkout-footgun); this entry is the
+**general** form. Belongs to the **cross-cutting analysis** (resource taxonomy + scope model), not to
+a point fix.
+
+**What happens.** A merge or commit that touches the committed `<repo>/.cco/` fails in-session,
+because `.cco` is overlaid `:ro` at any read-level `cco_access`. The workaround has been "do it on the
+host", which has silently become a *rule* — and it is now hit often enough to be a workflow tax.
+
+**Why a point fix would be wrong.** The question underneath is **what `.cco` is**: it is not project
+content and not code, it is *session configuration that happens to be versioned with the repo so it
+can be shared*. The access model treats it as a config tree to be protected from the agent; git treats
+it as tracked content the working tree must be able to write. Both are right, which is why this needs
+the taxonomy work rather than a wider mount.
+
+**Second question, same neighbourhood, not yet answered**: `.cco` can **diverge across branches**. Is
+that a feature (per-branch session config) or a footgun (a checkout silently changes what the next
+session mounts)? Whichever it is, it should be a decision, not an emergent property.
+
+**Effort**: Med — analysis first. The fix could be as small as a write floor for git's needs or as
+large as moving `.cco` out of the branch-versioned surface; that is precisely what the analysis is for.
+
+---
+
+## FI-58: 🔴 subagent and teammate deliverables never reach the lead
+
+**Status**: 🔴 **Open — top priority**, reported by the maintainer 2026-08-06 as the single most
+expensive recurring failure. **Needs its own investigation session**; do not guess at a fix.
+
+**What happens.** The lead spawns an agent, the agent does the work and its output is visible in its
+own tmux pane, and the lead reports it *"finished / idle without delivering"*. The lead then
+re-triggers it, gets nothing again, and finally redoes the work **itself** — so a delegated task costs
+three executions and the one that lands is the **worst** of the three: it fills the lead's context,
+which is exactly what delegation existed to avoid.
+
+**Known workaround**: instruct the agent to deliver by writing a file in `/tmp` via Bash. That works —
+which is itself the strongest clue, since it says the agent CAN produce and persist output; it is the
+**return channel** that fails.
+
+**Prior art — do not re-derive.** The same symptom was once caused by `EACCES` on the subagent
+transcripts, fixed by ADR-0055 D5 (the whole `~/.claude/projects` **tree** is mounted, because
+subagents and teammates write under keys other than `-workspace`). **No error is shown now**, which
+means either a different cause or the same one failing silently.
+
+**First measurements** (before any hypothesis): does the subagent's transcript file actually appear
+under the mounted tree, with the lead's expected key? Is any path in that chain still `:ro` or owned by
+another uid? Does the failure reproduce with `cco_access=none` / outside cco at all — i.e. is this
+cco's surface or the harness's? Answer that last one **first**: it decides whose bug it is.
+
+**Effort**: Med for the investigation; unknown for the fix until the channel is identified.
+
+---
+
+## FI-59: `cco new` temp sessions — no tmux, and Claude re-installs on every start
+
+**Status**: 🔴 Open — reported by the maintainer 2026-08-06, two symptoms in one report, possibly one
+cause.
+
+**What happens.** (a) In a session started with `cco new`, tmux appears absent — the maintainer's
+split-pane binding does nothing (it works in project sessions). (b) Three consecutive temp sessions
+each **re-installed Claude Code into the cache**, where ADR-0039's whole design is a persistent CACHE
+mount that installs once and auto-updates in place.
+
+**Likely shared root**: the temp-session path composes a different mount/env set than
+`_start_generate_compose` does for a named project. If the CACHE install dir is keyed by project
+identity, a nameless session gets a fresh key every time — which would explain (b) exactly, and (a) if
+the tmux config travels the same way.
+
+**Verify before designing**: run `cco new --dry-run --dump` and diff the emitted compose against a
+named project's. The answer is probably visible there without starting anything.
+
+**Effort**: Low-Med, once the diff is read.
+
+---
+
+## FI-60: Claude Code auto-update reports "failed" in some sessions
+
+**Status**: 🔴 Open — reported by the maintainer 2026-08-06, intermittent, **not yet captured**.
+
+**What happens.** Some sessions show the Claude Code auto-update as `failed`. ADR-0039 has the
+entrypoint install Claude natively into a persistent CACHE mount that then updates itself in place, so
+a failure points at that mount (permissions, a stale launcher, or a concurrent writer between
+sessions).
+
+⚠ **Related prior incident** — a *stale launcher* in the shared cache install dir once made
+`cco start` fatal. Same neighbourhood; check it first.
+
+**Needed**: the verbatim message and the session shape that produced it. Without those this cannot be
+distinguished from an upstream network failure.
+
+**Effort**: Low to diagnose once captured.
+
+---
+
+## FI-61: bypass-permissions mode disappeared mid-session, once
+
+**Status**: 📝 **Watch** — one occurrence, reported by the maintainer 2026-08-06, cause unknown, no
+reproduction.
+
+Recorded so that a **second** occurrence is a pattern rather than a rediscovery. If it recurs, capture
+the session shape and whether a per-session managed-settings overlay was in play — A4 now writes one
+(ADR-0057 D9), which makes `/etc/claude-code/managed-settings.json` a per-session artefact where it
+used to be a baked constant. That is a change in exactly the surface that decides permission mode, so
+it is the first thing to rule in or out.
+
+**Effort**: —
