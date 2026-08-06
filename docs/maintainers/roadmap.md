@@ -177,18 +177,24 @@ both emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user doc
 set unchanged name for name against a HEAD baseline measured in an isolated worktree (1619/7 of
 1626) — **zero regressions**.
 
-⚠ **It is NOT accepted, and one blocker is already known.** The six container checks in the ADR's
-Verification are host-side and still owed — runbook:
-[`acceptance/0057-ask-plane-runbook.md`](configuration/agent-cco-access/acceptance/0057-ask-plane-runbook.md)
-(hybrid: three host-started sessions, mechanical checks delegated to each session's agent, only the
-permission dialogs manual). A six-shape dry-run pre-flight is recorded in its §5.
+⏹ **Acceptance RUN 2026-08-06** — [results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md),
+[runbook](configuration/agent-cco-access/acceptance/0057-ask-plane-runbook.md). **3 pass · 1 fail ·
+2 measured nothing.**
 
-🔴 **[FI-52](improvements.md) blocks acceptance.** The `claude_md` gate is one glob spanning all of
-`/workspace` (D8), so it also gates trees whose cell resolved to `rw` — where D3 says a prompt is
-noise. Measured: a `current=rw` session mounts `/workspace/.claude` **rw** and gates it anyway. It
-fires in **every `--cco-access edit-project` session** and every config-editor session, and it makes
-**acceptance check 5 fail as written**. A conflict between ADR-0057's own decisions, not an
-implementation slip — four options are on the table and **the choice is the maintainer's**.
+- ✅ **2, 4, 6.** The trigger case is closed: a dialog on a nested `CLAUDE.md`, a refusal honoured,
+  no dialog on a sibling. `none` is genuinely locked (no rule, both mounts `:ro`, `EROFS`, no
+  dialog). `whoami` reports both dimensions.
+- ❌ **5 fails** — 🔴 **[FI-52](improvements.md) blocks acceptance**, now *measured* rather than
+  predicted. The `claude_md` gate is one glob spanning all of `/workspace` (D8), so it also gates
+  trees whose cell resolved to `rw`, where D3 says a prompt is noise. It fires in **every
+  `--cco-access edit-project` session** and every config-editor session. A conflict between
+  ADR-0057's own decisions, not an implementation slip — four options, **the choice is the
+  maintainer's**.
+- ⚠ **1 and 3 measured nothing** — two runbook commands were wrong (a greedy `sed` over
+  `mountinfo`, and a glob in a redirect target). Fixed in place; **re-run them**.
+- 📝 **[FI-53](improvements.md)** — reporting only, no enforcement impact: `whoami` prints the class
+  axis *inputs* where a reader expects effective cells, and a session agent misread it within
+  minutes.
 
 📝 **`cco build` is NOT a prerequisite** (measured): the diff touches no image-baked file, and both
 planes are produced at start time by `./bin/cco` on the host. What survives is that the `cco` on the
