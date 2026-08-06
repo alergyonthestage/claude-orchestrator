@@ -4,10 +4,13 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-06** — **A4** was added to Block A on 2026-08-05, implemented the same
-> day, and its **acceptance was run on 2026-08-06: 3 pass · 1 fail · 2 to re-run** (see its entry).
-> It is **blocked on [FI-52](improvements.md)**, a maintainer decision. The **block order** below was
-> ratified on **2026-08-04** and replaces every prior sequencing note; A4 does not change it.
+> **Last updated: 2026-08-06** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> and **accepted on 2026-08-06 after a re-run: 5 pass · 1 measured-and-amended**.
+> [FI-52](improvements.md) is **decided** (options 1+4) and no longer blocks. Eight items entered the
+> tracker the same day (`FI-54 … FI-61`), two of them new Block A quick wins and one — **FI-58**,
+> subagent deliverables never reaching the lead — **pulled ahead of the queue**. The **block order**
+> below was ratified on **2026-08-04** and replaces every prior sequencing note; none of this changes
+> it.
 
 ## The planning documents — and why there are three
 
@@ -17,7 +20,7 @@ different document class, and the roadmap links out to both.
 | File | Class | Holds |
 |---|---|---|
 | **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
-| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-53`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
+| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-61`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
 | [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
 | `handoff.md` | ephemeral | Session state; deleted before the next one is written. **Deliberately not linked** — an inbound link would dangle the moment it is consumed |
 
@@ -43,11 +46,13 @@ narrative, the lessons, and the per-stage records live in
   host run. In-container **1619/7** on the same tree with the mask on, **1616/9 of 1625** unmasked.
   The 9 are 7 host-only tests defeated by the ADR-0047 boundary ([FI-19](improvements.md)) plus 2
   update tests the mask hides.
-  ⚠ **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) was COMMENTED OUT on
-  2026-08-06** to run the A4 acceptance, and that edit is **uncommitted** at the time of writing.
-  While it stays off, this project's sessions derive from cco like any other — so `internal/` and
-  `defaults/` `.claude` are no longer writable here, and in-container suite figures become `…/9`
-  rather than the masked `…/7`. Decide whether it goes back on.
+  📝 **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) is ON** — commented out on
+  2026-08-06 to run the A4 acceptance, then **deliberately restored** once it was done, so that
+  `defaults/` and `templates/` stay editable in self-dev sessions until [FI-25](improvements.md) gives
+  them a narrower grant. The working tree is clean; masked in-container figures are the `…/7` ones.
+  ⚠ **Consequence for any future A4 measurement in this project**: the mask makes every tree `rw`, so
+  `max()` absorbs `ask` and no rule is emitted — pin the shape with an explicit `--claude-access`
+  instead, exactly as the runbook does.
 - **Next free ADR number: 0058.** ⚠ **ADR-0038 and ADR-0040 do not exist as documents** — they are
   numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
   for the first time; do not go looking for a file.
@@ -85,6 +90,25 @@ Two ordering constraints are load-bearing:
   would settle the boundary by implementation.
 
 ---
+
+### 🔴 Ahead of the queue — the delegation channel ([FI-58](improvements.md))
+
+**Not a block item: an investigation session, before or alongside Block A.** Priority set by the
+maintainer 2026-08-06, on cost.
+
+The lead spawns an agent, the agent does the work and its output is visible in its own tmux pane, and
+the lead reports it *finished without delivering*. It re-triggers, gets nothing again, and finally
+**redoes the work itself** — so a delegated task costs three executions and the surviving one is the
+**worst** of the three, because it fills the lead's context, which is what delegation existed to
+avoid. Delivery through a `/tmp` file written with Bash **does** work, which says the agent can
+produce and persist output: it is the **return channel** that fails.
+
+⚠ **Answer one question before any hypothesis: is this cco's surface at all?** The same symptom was
+once ours — `EACCES` on subagent transcripts, closed by ADR-0055 D5, which is why the *whole*
+`~/.claude/projects` tree is mounted (subagents and teammates write under keys other than
+`-workspace`). There is **no error on screen now**, so it is either a different cause or the same one
+failing silently. Reproduce outside cco first; that decides whose bug it is, and everything else
+follows from the answer.
 
 ### Block A — quick wins and coherence debts → `0.7.0`
 
@@ -167,7 +191,7 @@ inline.
 
 #### A4 — `ask`: the second enforcement plane + Axis-B resource classes ([FI-18](improvements.md))
 
-**Design accepted, IMPLEMENTED, host acceptance PENDING** (2026-08-05).
+**Design accepted, IMPLEMENTED, host acceptance PASSED** (2026-08-05 → accepted 2026-08-06).
 [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md);
 its four gating measurements ran on the host the same day and **all passed**
 ([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). This entry does
@@ -179,24 +203,28 @@ both emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user doc
 set unchanged name for name against a HEAD baseline measured in an isolated worktree (1619/7 of
 1626) — **zero regressions**.
 
-⏹ **Acceptance RUN 2026-08-06** — [results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md),
-[runbook](configuration/agent-cco-access/acceptance/0057-ask-plane-runbook.md). **3 pass · 1 fail ·
-2 measured nothing.**
+✅ **ACCEPTED 2026-08-06**, after a same-day re-run of the two checks that had measured nothing —
+[results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) (§7 is the re-run),
+[runbook](configuration/agent-cco-access/acceptance/0057-ask-plane-runbook.md). **5 pass · 1
+measured-and-amended.**
 
-- ✅ **2, 4, 6.** The trigger case is closed: a dialog on a nested `CLAUDE.md`, a refusal honoured,
-  no dialog on a sibling. `none` is genuinely locked (no rule, both mounts `:ro`, `EROFS`, no
-  dialog). `whoami` reports both dimensions.
-- ❌ **5 fails** — 🔴 **[FI-52](improvements.md) blocks acceptance**, now *measured* rather than
-  predicted. The `claude_md` gate is one glob spanning all of `/workspace` (D8), so it also gates
-  trees whose cell resolved to `rw`, where D3 says a prompt is noise. It fires in **every
-  `--cco-access edit-project` session** and every config-editor session. A conflict between
-  ADR-0057's own decisions, not an implementation slip — four options, **the choice is the
-  maintainer's**.
-- ⚠ **1 and 3 measured nothing** — two runbook commands were wrong (a greedy `sed` over
-  `mountinfo`, and a glob in a redirect target). Fixed in place; **re-run them**.
-- 📝 **[FI-53](improvements.md)** — reporting only, no enforcement impact: `whoami` prints the class
-  axis *inputs* where a reader expects effective cells, and a session agent misread it within
-  minutes.
+- ✅ **1, 2, 3, 4, 6.** The trigger case is closed: a dialog on a nested `CLAUDE.md`, a refusal
+  honoured, no dialog on a sibling. The mount half is proven both ways — `/workspace/.claude` `:ro`
+  with its `CLAUDE.md` punched through `rw`, and the `rules` tree refusing with `EROFS` on five files
+  for five, no dialog. `none` is genuinely locked. `whoami` reports both dimensions.
+- 🔄 **5 — measured, then amended.** [FI-52](improvements.md) is **decided: options 1+4**
+  ([ADR-0057 A1](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments)).
+  D8's single glob out-reaches the matrix that produced it, by construction; the divergence is
+  **accepted** and `cco start` now **announces it** (`note: … FI-52 …`, naming the over-reached
+  trees). Check 5's expectation is inverted, not dropped: `CLAUDE.md` prompts there, no other class
+  does. Option 2 (per-tree rules) stays open and waits for Block D, which may move
+  `/workspace/<name>-config`.
+- 📝 **[FI-53](improvements.md) stays open** — and check 6 **cannot** close it: a class resolving
+  *upward* equals its tree, so the "cells that differ from their tree" block can never show it. The
+  session agent concluded otherwise; the record now says why that is wrong.
+- 📝 Two defects came out of the run itself, not the checks: [FI-54](improvements.md) (✅ fixed —
+  `[debug]` leaked into every `cco start` and nobody read it) and the runbook's **third** wrong
+  instruction (an `Access:` line that only a `--dry-run` prints).
 
 📝 **`cco build` is NOT a prerequisite** (measured): the diff touches no image-baked file, and both
 planes are produced at start time by `./bin/cco` on the host. What survives is that the `cco` on the
@@ -245,6 +273,43 @@ Verification section. And ⚠ the behaviour change runs in **two directions** �
 (gated), `<repo>/**/CLAUDE.md` tightens from silent `rw` to prompted. The second is the one users
 notice.
 
+**What A4 still owes**: nothing on the enforcement plane. The branch is ready to merge into `develop`
+(host-only — the merge writes the working tree and `.cco` is `:ro` at the default level, so it needs
+`--cco-access edit-project`). [FI-53](improvements.md) rides the next docs/reporting pass.
+
+#### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
+
+**The whole warning surface of `cco start` is currently write-only.** The warnings print, then
+`docker compose run` takes the terminal and the TUI opens over them — the user never gets the chance
+to read them, let alone act. This is not a hypothesis: [FI-54](improvements.md) sat in that stream,
+on the **first line** after the start command, through a complete six-check acceptance run, read by
+nobody.
+
+**Behaviour**: after emitting warnings, and only if there are any, stop and ask — start, or abort.
+A clean start stays silent and immediate. The prompt should carry the warning list, because the
+natural next step (offering `cco config save`, committing `.cco`, …) grows out of it.
+
+⚠ **The two things this design must get right**, both already paid for once: the prompt gates on
+`_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the suite and every output-capturing caller
+hang on a question whose text the capture swallowed — `test_invariant_tty_gate_single_spelling`); and
+**only `⚠ warn` gates**, never `note:`/`ℹ` — A4's own FI-52 divergence notice was deliberately emitted
+as a `note:` for exactly this reason. Classifying every start-time message honestly is the real work;
+the prompt is small.
+
+#### A6 — `.claude/worktrees` belongs in the functional-write floor ([FI-56](improvements.md))
+
+Sessions that open a worktree hit a non-writable `.claude/worktrees`. The floor's own provenance
+comment says why it was excluded — *"the docs place it at the repository root, which is inside the
+repo's own rw mount"* — and the field says otherwise. The likely mechanism is **the one the workflows
+floor exists for**: from WORKDIR `/workspace`, the "closest existing `.claude/`" resolution lands on
+`/workspace/.claude`, which is `:ro` by default.
+
+Third recurrence of *a named list is a lower bound*. So: capture the failing path from a live session
+first (the report does not carry it), then **re-derive the whole floor** against the current
+`llms/code-claude` docs — not just this entry. The remedy's shape already exists
+(`_emit_workflows_overlay`). This is the quick win; the full **worktree design** (Sprint 10, *Git
+worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
+
 ---
 
 ### Cross-cutting analysis — resource taxonomy & the configuration-scope model
@@ -260,6 +325,15 @@ about to decide the same thing, and deciding it three times guarantees divergenc
   vehicle on record is a new **`config` resource kind**, pending exactly this taxonomy.
 - **The configuration-scope model**: what governs a session when several scopes carry a file of the
   same name, and whether the session can *say* which one is in force.
+- **What `<repo>/.cco` actually is** ([FI-57](improvements.md), added 2026-08-06). It is not project
+  content and not code: it is *session configuration that happens to be versioned with the repo so it
+  can be shared*. The access model therefore protects it from the agent (`:ro` at any read level),
+  while git needs the working tree to write it — so **a commit or merge that touches `.cco` fails
+  in-session**, often enough that "do it on the host" has silently become a rule. Both readings are
+  correct, which is why this is taxonomy work and not a wider mount. Second question in the same
+  neighbourhood, currently unanswered: `.cco` can **diverge across branches** — feature, or footgun
+  where a checkout silently changes what the next session mounts? Either way it should be a decision.
+  Sibling: [FI-20](improvements.md), the same collision seen as a single symptom.
 - ⚠ **Fix the two senses of "scope" in the first paragraph** — the recursive *scope level* (task ·
   feature · module · app) and the *configuration scope* (global · project · repo-native · managed).
   In one sentence they look like the same word and are not. The input document flags this explicitly.
@@ -359,6 +433,20 @@ image build as first-run side effects (`:104-112`). The living-docs sweep alread
 own contradiction; what is owed is the coherence pass across README, the user guides (installation,
 project-setup, configuration-management), the tutorial, and the maintainer docs — **shipped-behavior
 docs, so they track what works today, not a target model.**
+
+#### B4 — the temp-session and self-update lane ([FI-59](improvements.md), [FI-60](improvements.md))
+
+Two field reports from 2026-08-06, both on the install/lifecycle substrate this block owns:
+
+- **`cco new` temp sessions** appear to have no tmux, and each one **re-installs Claude Code into the
+  cache** — three consecutive sessions, three installs — where ADR-0039's whole design is a persistent
+  CACHE mount that installs once and updates in place. Probable shared root: the temp path composes a
+  different mount/env set than a named project's, and a nameless session gets a fresh cache key each
+  time. **Read `cco new --dry-run --dump` against a named project's compose before designing** — the
+  answer is likely visible there without starting anything.
+- **Claude's auto-update reports `failed`** in some sessions, intermittently, not yet captured. Same
+  substrate; ⚠ a *stale launcher* in that shared cache dir once made `cco start` fatal, so check that
+  neighbourhood first. Needs the verbatim message before it can be told apart from a network failure.
 
 ---
 
@@ -541,6 +629,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | #10b — statusline | Show session usage/limit percentage instead of (or beside) the dollar cost; fix stale ctx% after `/compact`; configurable format. Low effort, fits any release |
 | FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
 | **Developer-mode residue** | ✅ **Mostly shipped**: `cco --dev-sandbox` / `--dev-sandbox-seed` isolate STATE/DATA/CACHE and seed them one-shot from the real buckets (`docs/users/reference/cli.md` §3.34). What remains is ergonomics — running the local `bin/` build against an npm-installed cco without typing the path |
+| [FI-61](improvements.md) — bypass-permissions mode vanished mid-session, once | 📝 **Watch, not work.** One occurrence, no reproduction, cause unknown. Recorded so a second one is a pattern rather than a rediscovery. If it recurs: A4 now writes a **per-session** `managed-settings.json` overlay (ADR-0057 D9) where there used to be a baked constant — that is the surface deciding permission mode, so rule it in or out first |
 | Name/id validation hardening · `cco config protect` · `cco project internalize` (Case-C) · `cco clean` redesign · the deferred doc splits | Post-v1 backlog, unchanged. Detail in [roadmap-history.md](roadmap-history.md) |
 
 ## Open decisions for the maintainer
@@ -557,6 +646,10 @@ None blocking. Each is cheap to answer and expensive to discover later.
    corruption — but it is exactly the mistake the old README invited. A guard is a code change.
 3. **`cco pack internalize` is documented twice** (`cli.md` §3.23 unified, §3.27 dedicated). The
    divergence is fixed; the duplication is not. Merging sections in a shipped reference is editorial.
+4. **Does the worktree design (Sprint 10) move up?** Added 2026-08-06. Its priority is 5, set before
+   sessions started hitting the wall on their own ([FI-56](improvements.md)) and before this project
+   adopted *worktree per agent* as its rule for parallel work. A6 removes the immediate symptom, which
+   is exactly why the question should be answered deliberately rather than by the next incident.
 
 ## Long-term planned work
 
@@ -569,7 +662,7 @@ Full descriptions in [roadmap-history.md → Planned Sprints](roadmap-history.md
 | Sprint 6C — Network hardening | 2/3 | Med–High | Squid sidecar + `internal: true` network, SNI domain filtering (Phases A/B shipped, C pending). Required pre-open-source |
 | Sprint 8 — E2E integration tests | 3 | Med | `bin/test-e2e` verifying real container behaviour (mounts, socket, auth, entrypoint). ⚠ Every acceptance round of cycle 1 was blocked on exactly this gap |
 | Sprint 9 — Linux OAuth | 4 | Med | OAuth on Linux without Keychain. ⚠ Same platform as Block D's Linux write path — consider pairing them |
-| Sprint 10 — Git worktree isolation | 5 | Med | Opt-in per-session worktrees on `cco/<project>` branches |
+| Sprint 10 — Git worktree isolation | 5 ⚠ **demand rising** | Med | Opt-in per-session worktrees on `cco/<project>` branches. ⚠ Sessions are **already trying** to open worktrees and failing ([FI-56](improvements.md), now A6) — and this project's own git rule makes a worktree per agent the default for parallel work. Priority 5 predates that; **re-prioritizing it is an open decision** (below). A6 unblocks the symptom, not the feature |
 | #9 — Pack inheritance / composition | 5 | Med | `extends:` in `pack.yml`. ⚠ Re-evaluate **after** Block C: the taxonomy may subsume it |
 | Sprint 12 — Project RAG | Exploratory | High | Built-in opt-in RAG MCP, auto-generated config at `cco start` |
 
