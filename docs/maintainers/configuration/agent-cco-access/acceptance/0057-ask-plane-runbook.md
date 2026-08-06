@@ -2,10 +2,13 @@
 
 **Purpose**: run the six post-implementation checks in
 [ADR-0057 § Verification](../decisions/0057-ask-enforcement-plane-and-resource-classes.md).
-**Status**: ⏹ **RUN 2026-08-06** — results and verdict:
-[`0057-acceptance-results.md`](0057-acceptance-results.md). 3 pass · 1 fail ([FI-52](../../../improvements.md),
-as predicted) · 2 measured nothing because **two commands in this runbook were wrong**; §5 of the
-results carries the corrected ones. Re-run checks 1 and 3 before deciding anything from them.
+**Status**: ⏹ **RUN + RE-RUN 2026-08-06** — results and verdict:
+[`0057-acceptance-results.md`](0057-acceptance-results.md). **5 pass · 1 measured-and-amended.**
+Checks 1 and 3 measured nothing on the first pass because **two commands in this runbook were wrong**;
+both are fixed below, and the re-run ([results §7](0057-acceptance-results.md)) passes both. Check 5
+failed **as written** and its expectation was then **inverted** by
+[ADR-0057 Amendment A1](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments)
+([FI-52](../../../improvements.md) decided, options 1+4) — see §4.
 
 > **Why a runbook at all.** Suite-green is *not* acceptance for this lane: mount-time and
 > permission-time behaviour are invisible to the hermetic suite by construction (RC-17, fourth
@@ -73,13 +76,21 @@ cd /Users/alessandro/Projects/CaveResistance/Software/claude-orchestrator
     --claude-access repo=ro,current=ro,global=ro,others=ro
 ```
 
-Expect on stderr, before the session opens — this is itself the first signal:
+⚠ **A live start prints no access summary** — the `Access:` line belongs to the **dry-run** summary
+(`_start_show_summary`, `lib/cmd-start.sh`), and an earlier draft of this runbook told you to expect
+it on a real start. It never appears there. So pin the shape one of these two ways instead:
 
-```
-Access:  claude=repo=ro,current=ro,global=ro,others=ro,entries.claude_md=ask cco=read-project host-paths=true
+```bash
+# BEFORE the session — the dry-run does print it:
+./bin/cco start claude-orchestrator --claude-access repo=ro,current=ro,global=ro,others=ro --dry-run \
+  | grep 'Access:'
+# …or INSIDE the session, which is check 6 anyway:
+/workspace/claude-orchestrator/bin/cco whoami
 ```
 
-If `claude=` reads `all`, the mask won this round: stop, and re-read §0.2.
+Either must show `claude=repo=ro,current=ro,global=ro,others=ro,entries.claude_md=ask`. If it reads
+`all`, the mask won this round: stop, and re-read §0.2. **Do not skip this** — it is the only guard
+against the whole battery passing while proving nothing.
 
 ### 2.1 Paste this to the session's agent (checks 1, 3, 6)
 
@@ -180,9 +191,23 @@ Paste to the session's agent:
 > Then edit the target project's `CLAUDE.md` **and** one of its `rules/*.md`, through the Edit tool,
 > and report whether either prompted.
 
-**Check 5 passes** when neither prompts. config-editor derives `Cp=rw` for its target, so by D3's
-`max()` every class resolves `rw` there and `ask` never appears — its whole purpose is deliberate
-authoring, and a prompt on every file would be pure friction.
+🔄 **Check 5 was AMENDED on 2026-08-06**
+([ADR-0057 A1](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments), FI-52
+decided 1+4). It now passes when:
+
+- **`CLAUDE.md` DOES prompt**, including inside the target's own config tree — D8's single glob spans
+  all of `/workspace` and cannot discriminate by tree. This is the accepted divergence, not a defect;
+- **no other class prompts** (`rules`, `agents`, `skills` resolve `rw` there by D3's `max()`, and the
+  per-tree rules for those classes are emitted per tree, so they are absent);
+- **`cco start` says so**: stderr carries `note: claude_md=ask emits ONE glob … FI-52 …` naming the
+  over-reached trees. A silent divergence is the failure this check now exists to catch.
+
+*Original expectation, for the record:* "neither prompts — config-editor derives `Cp=rw` for its
+target, so by D3's `max()` every class resolves `rw` there and `ask` never appears." That reasoning
+was about the **matrix**, and the matrix is right; the **rule** is what does not discriminate.
+
+A session that wants zero prompts while authoring passes
+`--claude-access …,entries.claude_md=rw` — no rule is emitted at all.
 
 ⚠ A dialog *may* legitimately appear for a `CLAUDE.md` inside a **mounted code repo** (the `repo`
 tree, which config-editor mounts to read code, not to author config). That is not check 5 — check 5
@@ -229,6 +254,10 @@ implementation slip.
 
 **Consequence for this runbook: check 5 is expected to FAIL as written.** Run it anyway and record
 what you see; do not "fix" it in the session. Checks 1–4 and 6 are unaffected.
+
+> 🔄 **Resolved 2026-08-06.** It did fail, exactly here. FI-52 was then decided (options 1+4) and
+> **check 5's expectation inverted** — see §4. Shapes **F** and **D** above stay ⚠ as the record of
+> what the pre-flight predicted; the divergence they name is now announced by `cco start` itself.
 
 ---
 

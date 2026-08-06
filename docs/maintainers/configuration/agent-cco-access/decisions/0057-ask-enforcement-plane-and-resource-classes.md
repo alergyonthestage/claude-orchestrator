@@ -412,7 +412,46 @@ Post-implementation acceptance, after `cco build`, in a **default** session:
 3. An edit to `<repo>/.cco/claude/rules/*` is refused at OS level (`:ro`), with no prompt.
 4. A `--claude-access none` session: no prompt, no write, on every class.
 5. A config-editor session: no prompt on any class of its target project.
+   ⚠ **Amended 2026-08-06 — see [Amendments](#amendments).** Measured **false**, and the measurement
+   was accepted rather than fixed: these sessions **do** prompt on `CLAUDE.md`.
 6. The `cco whoami` output reports the resolved matrix, both dimensions.
+
+## Amendments
+
+### A1 — 2026-08-06: the `claude_md` rule out-reaches its matrix ([FI-52](../../../improvements.md))
+
+Raised by the dry-run pre-flight and **confirmed against a real config-editor session** the same day
+([acceptance results](../acceptance/0057-acceptance-results.md) §3). It is a conflict **between two
+decisions of this ADR**, not an implementation slip — the code implements D8 literally.
+
+**The conflict.** D8 governs `claude_md` with one glob, `Edit(//workspace/**/CLAUDE.md)`, because the
+file set is unbounded and enumeration cannot win. A glob has no notion of a tree, so it also gates
+trees D3 resolved to `rw` — where D3 says in as many words that a prompt is noise. Since `Cr` defaults
+to `ro` and never derives up while `claude_md` defaults to `ask`, the `repo` cell asks in nearly every
+session, so the rule is emitted — and therefore reaches the `current` tree — in **every**
+`--cco-access edit-project` session and **every** config-editor session.
+
+**Decision — options 1 + 4** (of the four recorded in FI-52), taken by the maintainer 2026-08-06:
+
+- **Accept.** D3 and D8 both stand **as written**; neither is rewritten, and the mount plane is
+  untouched. What is amended is the *expectation*: D5's closing sentence — *"`ask` never appears in a
+  config-editor session"* — reasoned about the **matrix**, and the matrix is right; it is the **rule**
+  that does not discriminate. Verification check 5 is inverted accordingly.
+- **Surface it.** `cco start` now emits a `note:` naming the trees the rule reaches beyond the matrix
+  (`_claude_matrix_overreach`, `lib/access-scope.sh`). Zero behaviour change. The reason is the failure
+  this cost: from inside a session, *rule out-reaches matrix* and *bug* are indistinguishable, and a
+  trained reader drew the wrong conclusion from exactly that, in writing, on a security surface.
+
+**Rejected here, not forever.** Per-tree rules (option 2) remain the only real fix, and they need
+their own design: the repo set is unbounded (D8's own argument) and a one-level glob still catches
+`/workspace/<name>-config/`, which is precisely where the friction lands. Block D may move that mount,
+so the design waits for it. Suppressing the rule when `current` is `rw` (option 3) was rejected
+outright: it drops the gate over the repo trees, the class of file this ADR most wanted governed.
+
+**The friction has a one-flag exit that needs no code**: `--claude-access …,entries.claude_md=rw` (or
+`access.claude.entries.claude_md` in `project.yml`) resolves every tree to `rw`, so no rule is emitted
+and nothing prompts. Stated honestly: that opens *every* `CLAUDE.md` under `/workspace`, repo trees
+included — a deliberate per-session grant, which is what an authoring session is.
 
 ## Forward annotations
 

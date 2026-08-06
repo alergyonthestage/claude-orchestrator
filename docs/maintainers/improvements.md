@@ -2340,12 +2340,15 @@ repo-native · managed). In one sentence they read as the same word.
 
 ## FI-52: the `claude_md` permission rule out-reaches the matrix that produced it
 
-**Status**: 🔴 Open — **predicted from the dry-run pre-flight 2026-08-06, then CONFIRMED against a
-real config-editor session the same day** ([acceptance results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) §3:
+**Status**: ✅ **Decided 2026-08-06 — options 1 + 4** (accept and amend, plus a start-time notice).
+Recorded as [ADR-0057 Amendment A1](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments);
+notice shipped in `66a446c` (`_claude_matrix_overreach`). **A4 is unblocked.**
+Predicted from the dry-run pre-flight 2026-08-06, then CONFIRMED against a real config-editor session
+the same day ([acceptance results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) §3:
 a dialog on every edit inside the target, including its `claude/CLAUDE.md`). Raised against
 [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md).
 It is a **conflict between two ratified decisions in that ADR**, not an implementation slip: the code
-implements D8 literally. **A4 must not be accepted until this is decided.**
+implements D8 literally.
 
 **What happens.** The `claude_md` gate is a single glob, `Edit(//workspace/**/CLAUDE.md)` — D8's
 deliberate choice, because `<repo>/**/CLAUDE.md` is an unbounded set that enumeration cannot win.
@@ -2393,6 +2396,17 @@ D5's "consequence requiring no code" reasoned about the **matrix**, and the matr
    exceeds the matrix. Cheap and honest, no behaviour change — combines with 1.
 
 **Effort**: Low for 1+4, Med for 2.
+
+**Decision (2026-08-06) — 1 + 4.** Three reasons, in order of force: (a) the friction already has a
+one-flag exit that needs no code — `--claude-access …,entries.claude_md=rw` resolves every tree to
+`rw`, so no rule is emitted (it opens *every* `CLAUDE.md` under `/workspace`, which is what an
+authoring session is asking for); (b) option 2 cannot be both cheap and correct today — a one-level
+glob still catches `/workspace/<name>-config/`, exactly where the friction lands, and **Block D may
+move that mount**, so designing now means designing against a layout that will change; (c) option 4
+buys the only thing that actually cost something during acceptance — a session could not tell this
+divergence from a defect, and one reader did not. Option 2 stays open; the notice is what will tell us
+whether the friction is real. **Verification check 5 is inverted, not dropped** — these sessions are
+expected to prompt, and the acceptance record says so.
 
 ---
 
