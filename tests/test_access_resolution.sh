@@ -1053,6 +1053,42 @@ test_access_entries_do_not_widen_out_of_reach_trees() {
         || fail "entries.claude_md=rw must not open ~/.cco/.claude/CLAUDE.md — the class dimension reaches {repo,current} only (D2)"
     return 0
 }
+
+# REGRESSION — the permissions emitter FAILS CLOSED, and the CALLER is what makes
+# that true. The emitter runs inside a `$( )`, so its `die` exits only that subshell:
+# with the caller testing the rc as a plain boolean, a refusal was indistinguishable
+# from "no gate needed", and `cco start` went on to generate a compose whose
+# CLAUDE.md mounts were already projected rw with NO rule bound — the silent rw the
+# emitter's own comment says it refuses to ship. Measured through the CLI, because
+# the defect lived in the call shape and not in the emitter.
+test_access_managed_overlay_refuses_start_when_it_cannot_generate() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    # A hermetic framework copy, then remove the one input the overlay cannot be
+    # built without. The overlay REPLACES the baked file, so generating one without
+    # it would silently drop cco's hooks and deny rules.
+    sandbox_framework
+    rm -f "$CCO_FRAMEWORK_ROOT/defaults/managed/managed-settings.json"
+
+    local rc=0
+    run_cco start "test-proj" --dry-run --dump || rc=$?
+    [[ $rc -ne 0 ]] \
+        || fail "a session that needs a gate but cannot generate one must refuse to start, got rc=0"
+    assert_output_contains "baked managed settings"
+    # The compose must not survive as a gate-less artefact: either it was never
+    # completed, or it carries no rw CLAUDE.md child. Assert the property that
+    # matters — no writable CLAUDE.md without the rule that gates it.
+    local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
+    if [[ -f "$compose" ]]; then
+        grep -qE 'CLAUDE\.md"$' "$compose" \
+            && fail "the refused start still emitted a rw CLAUDE.md bind with no permissions overlay — the silent rw D3's corollary exists to prevent"
+    fi
+    return 0
+}
+
 test_access_mount_claude_none_locks_b2_and_b1() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

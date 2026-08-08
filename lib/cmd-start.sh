@@ -648,8 +648,14 @@ _emit_managed_settings_overlay() {
         # No gate needed: leave the baked managed settings alone and drop any stale
         # overlay from a previous start, so a session that narrowed its access does
         # not keep yesterday's rules.
+        #
+        # ⚠ Exit code 3, NOT 1. This function is called inside a `$( )`, so a `die`
+        # below exits only that SUBSHELL — the caller cannot tell "nothing to emit"
+        # from "refused to emit" if both come back as 1, and would silently continue
+        # with the mount already projected to rw. 3 is the one code that means
+        # *no gate needed*; anything else is a refusal the caller must propagate.
         rm -f "$out" 2>/dev/null || true
-        return 1
+        return 3
     fi
 
     # ⚠ Written on dry-run TOO — unlike the STATE seeding of the functional-write
@@ -2426,11 +2432,21 @@ YAML
         # baked managed settings, carrying the `ask` rules the matrix asked for.
         # Emitted only when some cell actually resolves to `ask`, so a locked or a
         # fully-open session keeps the baked file untouched.
-        local _ms_line
-        if _ms_line=$(_emit_managed_settings_overlay "$claude_matrix" "$managed_settings_file" \
-                        "$DEFAULTS_DIR/managed/managed-settings.json"); then
+        #
+        # ⚠ The rc is inspected, never just tested. The emitter runs in a `$( )`, so
+        # its FAIL-CLOSED `die` exits that subshell only: a plain `if` would swallow
+        # the refusal and generate a compose whose mounts are already rw with no gate
+        # bound — the silent rw the emitter exists to refuse. rc 3 is the only
+        # "nothing to emit"; every other non-zero is that refusal, already reported
+        # by the emitter, and must take the whole start down with it.
+        local _ms_line _ms_rc=0
+        _ms_line=$(_emit_managed_settings_overlay "$claude_matrix" "$managed_settings_file" \
+                     "$DEFAULTS_DIR/managed/managed-settings.json") || _ms_rc=$?
+        if [[ "$_ms_rc" -eq 0 ]]; then
             echo "      # Per-session managed settings: the permissions plane (ADR-0057 D9)"
             printf '%s\n' "$_ms_line"
+        elif [[ "$_ms_rc" -ne 3 ]]; then
+            _cco_exit "$_ms_rc"
         fi
 
         # Repository mounts. Unresolved references were already dropped upstream
