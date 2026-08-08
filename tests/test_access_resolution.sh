@@ -1008,6 +1008,51 @@ test_access_mount_ask_clamps_on_global_tree() {
     return 0
 }
 
+# REGRESSION — the class dimension REACHES `{Cr, Cp}` only (ADR-0057 D2, stated in
+# the grammar block itself and repeated in the user docs: "within the `repo` and
+# `current` trees"). A class may REFINE a tree it reaches; it must never WIDEN one
+# it does not.
+#
+# The shipped code applied max() across all four trees and clamped only `ask`, so a
+# class value of `rw` lifted `global`/`others` above their tree axis. Two consequences,
+# both measured on the emitted compose because that is where the user meets them:
+#
+#   · preset `repo` — fixed by ADR-0049 §3 at `(rw,rw,ro,ro)`, i.e. "author the LOCAL
+#     trees" — mounted the whole of `~/.cco/.claude` **rw**, because D11 declares its
+#     `entries` all `rw`. A documented preset silently granted the personal store.
+#   · `entries.claude_md=rw` — the one-flag exit ADR-0057's FI-52 amendment and the
+#     changelog both advertise as opening "every CLAUDE.md under /workspace" — also
+#     opened `~/.cco/.claude/CLAUDE.md`, which is not under /workspace and which D5
+#     excludes precisely because it has no git backstop.
+#
+# `ask` alone never revealed it: `ask` on a two-valued tree clamped back to `ro`, so
+# the DEFAULT path looked correct while every `rw` class value escalated.
+test_access_entries_do_not_widen_out_of_reach_trees() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+
+    # 1. Preset `repo`: Cg=ro, so every global authoring entry stays :ro.
+    run_cco start "test-proj" --claude-access repo --dry-run --dump
+    local c entry; c=$(_access_compose)
+    for entry in "CLAUDE\.md" "rules" "agents" "skills"; do
+        echo "$c" | grep -qE "/home/claude/\.claude/${entry}:ro\"" \
+            || fail "preset repo fixes Cg=ro (ADR-0049 §3) — ~/.cco/.claude/${entry//\\/} must stay :ro, got: $(echo "$c" | grep -E "/home/claude/\.claude/${entry}")"
+    done
+    # …and the LOCAL trees it does grant are still rw, or the assertion above would
+    # pass on a preset that granted nothing at all.
+    echo "$c" | grep -qE ':/workspace/\.claude"$' \
+        || fail "preset repo must still mount the project tree rw (Cp=rw)"
+
+    # 2. The FI-52 one-flag exit on an otherwise DEFAULT session: `rw` on the class
+    #    must not reach the global tree either.
+    run_cco start "test-proj" --claude-access "entries.claude_md=rw" --dry-run --dump
+    _access_compose | grep -qE '/home/claude/\.claude/CLAUDE\.md:ro"' \
+        || fail "entries.claude_md=rw must not open ~/.cco/.claude/CLAUDE.md — the class dimension reaches {repo,current} only (D2)"
+    return 0
+}
 test_access_mount_claude_none_locks_b2_and_b1() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"

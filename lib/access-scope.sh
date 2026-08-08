@@ -541,11 +541,18 @@ _claude_discordant() {
 # mount and contradicted by a rule is indistinguishable, from inside a session,
 # from a bug.
 #
-# The cell rule is `effective(class, tree) = max(axis(tree), value(class))` with the
-# two exclusions as DATA rather than branches:
-#   · `Cg`/`Co` are two-valued (D5) — `ask` clamps DOWN to `ro` there. Fail-closed,
-#     and it is the DEFAULT path, not an edge case: the derived `claude_md: ask`
-#     must not open `~/.cco/.claude/CLAUDE.md`, which has no git backstop.
+# The cell rule is `effective(class, tree) = max(axis(tree), value(class))` applied
+# ONLY where the class dimension reaches, with the two exclusions as DATA rather
+# than branches:
+#   · The class dimension's REACH is `{Cr, Cp}` (D2, stated in the grammar block
+#     itself: *"reach: {Cr, Cp} only"*). On `global`/`others` a class value is inert
+#     — the cell IS the tree axis. That is the whole of D5: those two trees are
+#     two-valued because neither can go stale as a consequence of this session's
+#     work and neither has a git backstop. Applying max() there would let the
+#     class dimension GRANT what the tree axis denied — preset `repo`, whose
+#     `entries` are all `rw` by D11, would silently mount `~/.cco/.claude` rw
+#     while ADR-0049 §3 fixes its `Cg` at `ro`. Fail-closed: a class may refine a
+#     tree it reaches, never widen one it does not.
 #   · `settings.json` and hooks are absent from _claude_classes (D4), so they never
 #     produce a cell at all and take the unclassified treatment below.
 #
@@ -554,9 +561,11 @@ _claude_discordant() {
 # tree-level `ask` would hand a future class (`commands/`, FI-29) a `rw` mount with
 # no rule emitted — a SILENT rw.
 
-# Whether a tree accepts `ask` at all. `repo`/`current` do; `global`/`others` are
-# two-valued (D5). Data, consulted by the cell rule — not a branch inside it.
-_claude_tree_allows_ask() {
+# Whether the class dimension REACHES a tree at all (ADR-0057 D2). `repo`/`current`
+# yes; `global`/`others` no — which is also why they are the two-valued ones that
+# refuse `ask` at parse time (D5). Data, consulted by the cell rule — not a branch
+# inside it.
+_claude_tree_in_class_reach() {
     case "$1" in repo|current) return 0 ;; *) return 1 ;; esac
 }
 
@@ -568,8 +577,15 @@ _claude_cell() {
     # bug would have been invisible until the second caller.
     local tree="$1" axis="$2" cls="$3" out
     out="$axis"
-    [[ "$(_claude_axis_rank "$cls")" -gt "$(_claude_axis_rank "$axis")" ]] && out="$cls"
-    if [[ "$out" == "ask" ]] && ! _claude_tree_allows_ask "$tree"; then out="ro"; fi
+    if _claude_tree_in_class_reach "$tree" \
+       && [[ "$(_claude_axis_rank "$cls")" -gt "$(_claude_axis_rank "$axis")" ]]; then
+        out="$cls"
+    fi
+    # Belt-and-braces: an out-of-reach tree can never hold `ask` (the parser refuses
+    # it on global/others, the cco collapse only ever yields ro/rw, and no preset
+    # sets it), but if one ever did it must read as `ro` — never as a gate cco has
+    # no plane to enforce there.
+    if [[ "$out" == "ask" ]] && ! _claude_tree_in_class_reach "$tree"; then out="ro"; fi
     printf '%s' "$out"
 }
 
