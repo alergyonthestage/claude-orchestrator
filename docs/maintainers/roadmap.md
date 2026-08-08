@@ -4,13 +4,15 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-06** — **A4** was added to Block A on 2026-08-05, implemented the same day,
-> and **accepted on 2026-08-06 after a re-run: 5 pass · 1 measured-and-amended**.
-> [FI-52](improvements.md) is **decided** (options 1+4) and no longer blocks. Eight items entered the
-> tracker the same day (`FI-54 … FI-61`), two of them new Block A quick wins and one — **FI-58**,
-> subagent deliverables never reaching the lead — **pulled ahead of the queue**. The **block order**
-> below was ratified on **2026-08-04** and replaces every prior sequencing note; none of this changes
-> it.
+> **Last updated: 2026-08-08** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
+> **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
+> the security surface, both in shapes the acceptance run structurally could not reach.
+> [FI-52](improvements.md) is **decided** (options 1+4) and no longer blocks. Thirteen items entered
+> the tracker across the two days (`FI-54 … FI-66`): two are new Block A quick wins, five are the
+> review residue (A7), and one — **FI-58**, subagent deliverables never reaching the lead — is
+> **pulled ahead of the queue**. The **block order** below was ratified on **2026-08-04** and replaces
+> every prior sequencing note; none of this changes it.
 
 ## The planning documents — and why there are three
 
@@ -20,7 +22,7 @@ different document class, and the roadmap links out to both.
 | File | Class | Holds |
 |---|---|---|
 | **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
-| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-61`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
+| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-66`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
 | [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
 | `handoff.md` | ephemeral | Session state; deleted before the next one is written. **Deliberately not linked** — an inbound link would dangle the moment it is consumed |
 
@@ -197,11 +199,14 @@ its four gating measurements ran on the host the same day and **all passed**
 ([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). This entry does
 **not** restate the model; read the ADR, then `design.md` §4bis.1.
 
-Built on `feat/access/claude-md-axis` in four commits — `b324c0e` (resolver, lattice, `entries`,
-both emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user docs, `changelog.yml`
-#62) · `190f8cd` (golden). Suite **1626/7 of 1633** in-container, the 7 being the known host-only
-set unchanged name for name against a HEAD baseline measured in an isolated worktree (1619/7 of
-1626) — **zero regressions**.
+Built on `feat/access/claude-md-axis`. Implementation: `b324c0e` (resolver, lattice, `entries`, both
+emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user docs, `changelog.yml` #62) ·
+`190f8cd` (golden). Post-acceptance: `3be2466` (FI-54) · `66a446c` (the FI-52 notice). Post-review:
+`dd06757` (entries reach) · `d6a49de` (fail-closed propagation).
+
+Suite **1631/7 of 1638** in-container with the FI-25 mask on — the 7 verified **name for name** as
+the known host-only set (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, [FI-19](improvements.md)),
+against the pre-A4 baseline of 1626/7 of 1633. **Zero regressions**, +5 tests.
 
 ✅ **ACCEPTED 2026-08-06**, after a same-day re-run of the two checks that had measured nothing —
 [results](configuration/agent-cco-access/acceptance/0057-acceptance-results.md) (§7 is the re-run),
@@ -273,9 +278,55 @@ Verification section. And ⚠ the behaviour change runs in **two directions** �
 (gated), `<repo>/**/CLAUDE.md` tightens from silent `rw` to prompted. The second is the one users
 notice.
 
+✅ **Implementation review passed 2026-08-08** —
+[report](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md).
+**Two objective defects found and fixed in place**, both on the security surface, both realignments
+to what ADR-0057 had already decided — neither was a design change, so neither needed a gate:
+
+- **The `entries` dimension escaped its declared reach.** D2 states *"reach: {Cr, Cp} only"*; the cell
+  rule applied `max()` to all four trees and clamped only the token `ask`, so a class value of `rw`
+  lifted `global`/`others` **above** their tree axis. Measured: `--claude-access repo` — whose triple
+  ADR-0049 §3 fixes at `(rw,rw,ro,ro)` — mounted the whole of `~/.cco/.claude` **rw**, and the
+  `entries.claude_md=rw` exit advertised as opening *"every CLAUDE.md under /workspace"* also opened
+  `~/.cco/.claude/CLAUDE.md`, which is not. ⚠ **Why the acceptance run could not see it**: `ask` on a
+  two-valued tree clamps back to `ro`, so the default path looked right while every `rw` class value
+  escalated — and the three sessions run were default, `none` and config-editor. **No `repo`/`all`
+  session was ever measured**, which is exactly the shape the defect lived in.
+- **The permissions emitter was not fail-closed, despite documenting itself as such.** It runs inside
+  `$( )`, so its `die` exited only that subshell; the caller tested the rc as a boolean and could not
+  tell a refusal from *"no gate needed"* — and went on emitting `CLAUDE.md` binds already projected
+  `rw` with **no rule bound**. That is the silent `rw` the emitter exists to refuse.
+
 **What A4 still owes**: nothing on the enforcement plane. The branch is ready to merge into `develop`
 (host-only — the merge writes the working tree and `.cco` is `:ro` at the default level, so it needs
-`--cco-access edit-project`). [FI-53](improvements.md) rides the next docs/reporting pass.
+`--cco-access edit-project`). [FI-53](improvements.md) rides the next docs/reporting pass; the review's
+residue is A7.
+
+#### A7 — the A4 review residue ([FI-62](improvements.md) … [FI-66](improvements.md))
+
+Five items the review left for a **decision** rather than a patch. Grouped here because they share an
+origin, **not** because they must ship together — each is independent, and deferring any of them costs
+nothing. Placement is a default, not a ruling.
+
+- 🔴 **[FI-62](improvements.md)** — `_claude_matrix_get`'s *"fail loudly"* `die` is **fail-open** at
+  every mount call site: it exits the substitution, the expansion is empty, and empty renders as `rw`.
+  Latent (the producer emits every row), but pointing the wrong way. ⚠ **This is the second
+  `die`-inside-`$( )` in one review, and the first was live** (`d6a49de`) — so the real question is
+  whether cco wants a **stated convention** for a `die` that must cross a command substitution, and
+  whether it can be linted. That is the design work; the ~10 call sites are not.
+- 🔴 **[FI-63](improvements.md)** — INV-P's *published* second clause (*"no compose volume for a
+  `.claude` path outside the mount emitter"*) is neither true (`lib/packs.sh:178-210`) nor checked.
+  Reconcile text and lint in whichever direction; an invariant believed but unenforced is worse than
+  one never claimed.
+- 🔴 **[FI-64](improvements.md)** — `--dry-run --dump` under-reports the mount set when the project
+  has no `CLAUDE.md` yet. Small, but it is the *artefact differs from what runs* hazard — and A4's own
+  pre-flight reasoned about six session shapes from that artefact.
+- 🔴 **[FI-65](improvements.md)** — `bin/test` does not neutralise `CCO_CLAUDE_ENTRIES` / `_TRIPLE`,
+  so a self-dev run can measure the session it runs inside. Nothing depends on it today, which is what
+  was true of `CCO_STORE_TOTALS` before the incident INV-DESC exists for.
+- 🔴 **[FI-66](improvements.md)** — ADR-0044 calls the tutorial preset *"no write risk"*; D7's class
+  default now applies to it. Net effect is arguably safer, but the published guarantee is literally
+  false. Reword (forward annotation) or pin `claude: none`. **Listed in the open decisions below.**
 
 #### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
 
@@ -646,7 +697,11 @@ None blocking. Each is cheap to answer and expensive to discover later.
    corruption — but it is exactly the mistake the old README invited. A guard is a code change.
 3. **`cco pack internalize` is documented twice** (`cli.md` §3.23 unified, §3.27 dedicated). The
    divergence is fixed; the duplication is not. Merging sections in a shipped reference is editorial.
-4. **Does the worktree design (Sprint 10) move up?** Added 2026-08-06. Its priority is 5, set before
+4. **The tutorial preset's "no write risk" claim** ([FI-66](improvements.md), added 2026-08-08).
+   ADR-0044 §2 says it; ADR-0057 D7's class default now makes it literally false, in a direction that
+   is arguably *safer* (its own `CLAUDE.md` opens behind a prompt; every `<repo>/**/CLAUDE.md`
+   tightens). Reword the claim, or pin the preset at `claude: none` if it was meant literally.
+5. **Does the worktree design (Sprint 10) move up?** Added 2026-08-06. Its priority is 5, set before
    sessions started hitting the wall on their own ([FI-56](improvements.md)) and before this project
    adopted *worktree per agent* as its rule for parallel work. A6 removes the immediate symptom, which
    is exactly why the question should be answered deliberately rather than by the next incident.
