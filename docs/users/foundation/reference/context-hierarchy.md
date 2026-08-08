@@ -417,7 +417,9 @@ explicitly). Author them on the host, or start the session with a `claude_access
 grants project authoring. Skills specifically keep that default — the class
 `entries.skills` is `ro` (ADR-0057), because a skill encodes *your* intent rather than
 something the session's own work makes stale. `CLAUDE.md` is the one entry of that tree
-that does **not** follow it: it is `ask` by default, so it is writable behind a prompt. **Note**: for skills, User > Project — user-level skills take
+that does **not** follow it: it is `ask` by default, so it is writable behind a prompt.
+
+**Note**: for skills, User > Project — user-level skills take
 precedence over project-level skills with the same name. Packs can add new skills but
 cannot override existing global ones. See [scope-design.md §3.5](../../../maintainers/configuration/scope-hierarchy/design/design-scope-hierarchy.md) for details.
 

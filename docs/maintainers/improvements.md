@@ -2452,6 +2452,18 @@ release notes because a plausible reading went unchecked.
 
 **Effort**: Low. Confined to `lib/cmd-whoami.sh`; the matrix it needs is already reconstructed there.
 
+📝 **Do it with a test, because there is none** (added 2026-08-08 from the
+[implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)).
+The `claude entries:` line and the whole *Resolved cells that differ from their tree* block are
+exercised **only** by the host acceptance run — `test_operator_whoami_renders_claude_triple` still
+asserts the tree line alone. So the one surface a reader already misread has no automated coverage at
+all: pin `CCO_CLAUDE_ENTRIES` and assert the cells while fixing the report.
+
+⚠ **And the acceptance run cannot close this**, structurally: a class resolving **upward** produces a
+cell that *equals* its tree, so the "differs from its tree" block can never show it. Check 6 passed
+and FI-53 is still open — the two facts are consistent
+([results §7.4](configuration/agent-cco-access/acceptance/0057-acceptance-results.md)).
+
 ---
 
 ## FI-54: the second `[debug]` line was never gated — every `cco start` leaked the access matrix
@@ -2653,3 +2665,115 @@ used to be a baked constant. That is a change in exactly the surface that decide
 it is the first thing to rule in or out.
 
 **Effort**: —
+
+---
+
+## FI-62: `_claude_matrix_get`'s "fail loudly" is fail-OPEN at every mount call site
+
+**Status**: 🔴 Open — **latent, not live**. Found by the
+[A4 implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)
+(2026-08-08). Left unfixed deliberately: closing it well means choosing a propagation
+convention across ~10 call sites, which is a design decision, not a patch.
+
+**What happens.** `_claude_matrix_get` `die`s on a missing cell, and its comment explains why —
+*"a missing cell means the producer and the consumer disagree about the class set, which is
+precisely what INV-P exists to prevent; failing loudly beats defaulting"*. But every mount consumer
+reads it through `$(_claude_matrix_mount_mode …)`. The `die` exits the **substitution**, the
+expansion yields the empty string, `_claude_matrix_mount_mode`'s `*)` arm returns `''` — and
+`_compose_vol` renders `''` as **`rw`**. The one guard written to prefer a loud failure over a
+default silently produces the **most permissive** mode.
+
+**Not reachable today**: the producer emits all 20 rows unconditionally, so no lookup can miss. This
+is defence-in-depth pointing the wrong way, not a live hole.
+
+⚠ **Same shape as the fail-closed defect fixed in `d6a49de`** — a `die` inside `$( )` that the
+caller cannot see. That one *was* live. Two instances of one mechanism is a class, not a
+coincidence: the design question is whether cco needs a **stated convention** for "a `die` that
+must cross a command substitution", and whether it can be linted.
+
+**Effort**: Med — the fix is small per site; the convention is the work.
+
+---
+
+## FI-63: INV-P's published second clause is neither true nor enforced
+
+**Status**: 🔴 Open — found by the
+[A4 implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)
+(2026-08-08). Two defects in one invariant; the half that *is* enforced is genuinely well built.
+
+1. **The clause is false as written.** ADR-0057 D10 and `design.md` §5 state *"no code outside the
+   mount emitter emits a compose volume for a `.claude` path"*. The lint has two arms — `REDERIVE`
+   (raw axes) and `PERM` (a `permissions` key) — and **neither checks compose volumes**.
+   `lib/packs.sh:178-210` already emits four `_compose_vol … /workspace/.claude/…` lines. So the
+   invariant as *published* overstates what *holds*. Either the text narrows to the two arms that
+   exist, or a third arm is written with `packs.sh` as a declared exclusion — but the two must agree,
+   because an invariant believed but not enforced is worse than one never claimed.
+2. **The `local` exemption is broader than its rationale.** Any line starting with `local` is exempt
+   on the grounds that *"a declaration names the axes, it does not read them"* — but
+   `local m=$(_derive "$claude_cp")` is a declaration **and** a read, and slips through. Narrow it to
+   `local` lines with no `$(` / backtick, or with no `=` at all.
+
+**Effort**: Low for (2); Low-Med for (1), depending on which way it is reconciled — and that choice
+is a decision, not a fix.
+
+---
+
+## FI-64: `cco start --dry-run --dump` under-reports the mount set
+
+**Status**: 🔴 Open — found by the
+[A4 implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)
+(2026-08-08).
+
+`_seed_claude_md_stub` is skipped on dry-run — correctly, since it writes into the user's committed
+tree — but the class overlays that follow test `[[ -e … ]]`. So a project **without** a
+`<repo>/.cco/claude/CLAUDE.md` gets a `--dump` compose carrying **no** `CLAUDE.md` bind, while the
+real start would seed the stub and bind it.
+
+⚠ **Why this matters more than its size.** `--dump` exists so a human can inspect the artefacts a
+start *would* produce — and A4's own pre-flight used exactly that to reason about six session shapes.
+An artefact that differs from what runs is the *"green check that measured nothing"* failure with a
+different mask on. Options: emit the bind the seeding would have produced (with a marker), or state
+the divergence in the dump output — silence is the one unacceptable answer.
+
+**Effort**: Low.
+
+---
+
+## FI-65: `bin/test` does not neutralise the A4 session env vars
+
+**Status**: 🔴 Open — found by the
+[A4 implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)
+(2026-08-08). **Pre-existing in shape** (`CCO_CLAUDE_TRIPLE` has the same gap); A4 adds
+`CCO_CLAUDE_ENTRIES`.
+
+Once A4 ships, a **self-dev** `bin/test` run inherits the real session's values from the ambient
+environment, so the suite can measure the session it runs inside rather than the fixture it built.
+INV-DESC does not cover these — it guards *descriptor* keys, and these are compose env vars.
+
+Nothing depends on it today, which is exactly what was true of `CCO_STORE_TOTALS` before the incident
+that INV-DESC was written for. Recorded now, cheap to close later.
+
+**Effort**: Low.
+
+---
+
+## FI-66: the tutorial preset quietly gained a write path
+
+**Status**: 🔴 Open — a **decision**, not a defect. Found by the
+[A4 implementation review](configuration/agent-cco-access/reviews/2026-08-08-a4-ask-plane-implementation-review.md)
+(2026-08-08).
+
+[ADR-0044](configuration/agent-cco-access/decisions/0044-internal-builtin-presets-and-config-editor-scope.md)
+§2 describes the tutorial built-in as a read-only teacher with **"no write risk"**. It derives all-`ro`
+trees and therefore now takes ADR-0057 D7's class default, so `entries.claude_md=ask` applies to it
+like any other session.
+
+Net effect is small and runs in **two directions**: the tutorial's own `.claude/CLAUDE.md` opens
+behind a prompt, while every `<repo>/**/CLAUDE.md` **tightens** from silently writable to prompted.
+So the preset is arguably *safer* than before — but the phrase "no write risk" is now literally false.
+
+**Decide which**: reword the ADR's claim to the accurate one (history, so a forward annotation), or
+pin the preset explicitly at `claude: none` if the wording was meant literally. Either is cheap; the
+current state — a shipped guarantee that no longer holds — is the only one that is not.
+
+**Effort**: Low.
