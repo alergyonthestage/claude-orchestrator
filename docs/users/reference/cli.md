@@ -437,6 +437,13 @@ plane, which is what lets cco state a guarantee it could not otherwise make:
 > rule instead: a prompt when the class is `ask`, a refusal when it is `ro`. A permission rule
 > stops the ordinary path and **does not stop a determined subprocess** — a shell redirect or an
 > interpreter writes through it. Treat it as a guard rail on that surface, not a lock.
+>
+> **One combination gets neither**, and it is worth knowing rather than discovering: the rule is a
+> single glob covering both governed trees, and it cannot tell them apart. So a session that opens
+> one of them for writing *while* setting `entries.claude_md=ro` (for example
+> `--claude-access current=rw,entries.claude_md=ro`) emits **no rule at all**, and
+> `<repo>/**/CLAUDE.md` stays writable. That is deliberate: the alternative is a refusal that would
+> also revoke the write you just asked for. Per-tree rules would settle it and are not built yet.
 
 **⚠ Two things to know before this bites you.**
 
