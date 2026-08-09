@@ -33,15 +33,17 @@
 > behind: the `project.yml` reference and the `~/.cco/access.yml` scaffold (neither knew about `ask`
 > or `entries`), the repo `CLAUDE.md` and the CLI-surface matrix (two-valued Axis-B lattice),
 > `cco start --help` (still *"`none` (locked)"* after A2 renamed it *refused*), `design.md` §4bis's
-> header, and a forward annotation on the acceptance record's check 4. Two things it did **not**
-> settle: 🔴 `cli.md`'s guarantee block reads *"a refusal when it is `ro`"*, while A2's predicate
-> denies only when **every** in-reach tree resolves `ro` — the mixed cell is ungoverned and
-> unpublished, which is the FI-67 failure mode one level down. **REVIEW NEEDED** — the wording of a
-> published guarantee is the maintainer's call: name the ALL predicate, state the mixed cell as an
-> explicit non-guarantee, or close the cell with per-tree rules (A1's residue, Block D). And
-> ⚠ **`handoff.md` is stale** — written 2026-08-06, before the FI-52 decision,
-> both reviews and the merge, and it is the last document still carrying *"`none` is genuinely
-> locked"*. Run `/handoff` before the next session picks it up.
+> header, and a forward annotation on the acceptance record's check 4. It raised three items:
+> ✅ `cli.md`'s guarantee block read *"a refusal when it is `ro`"* while A2's predicate denies only
+> when **every** in-reach tree resolves `ro` — the FI-67 failure mode one level down, in text written
+> the same day. **Fixed** (`32f15c8`): the block now names the combination that gets neither rule and
+> why, leaving the *code* gap where it already was, as A1's residue for Block D.
+> ✅ `handoff.md` was stale — rewritten by this `/handoff`.
+> 📄 [FI-71](improvements.md) — `design-config-editor.md` still describes an access model **replaced
+> twice** (ADR-0048, ADR-0049 §8) and overstates the built-in's privilege. Filed, scheduled at the top
+> of *Not in the sequence*, and left to the `documenter`: the doc predates two ADRs, so the three
+> flagged lines are a lower bound.
+> Full record: [post-merge docs review](configuration/agent-cco-access/reviews/2026-08-09-post-merge-docs-review.md).
 
 ## The planning documents — and why there are three
 
@@ -72,8 +74,10 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ⚠ **`develop` is 36 commits ahead of `origin/develop` and unpushed** (A4 + the FI-67 fix,
-  merged 2026-08-09) — push from the host, `--follow-tags` when a tag is involved.
+  `0.6.0`. ⚠ **`develop` is 40 commits ahead of `origin/develop` and unpushed** (A4, the FI-67 fix,
+  and the docs review — merged 2026-08-09) — push from the host, `--follow-tags` when a tag is
+  involved. Two merged branches still exist on the remote and can be deleted with the same push:
+  `feat/access/claude-md-axis` and `fix/access/fi67-none-locks-repo-claude-md`.
 - **Test baseline**: in-container **1633 passed / 7 failed of 1640**, measured on `develop` at
   `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
