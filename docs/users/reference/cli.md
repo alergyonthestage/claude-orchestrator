@@ -428,18 +428,26 @@ plane, which is what lets cco state a guarantee it could not otherwise make:
 
 > **A session cannot alter its own mechanical enforcement.** `settings.json` and hooks stay
 > `:ro` at OS level — not bypassable by a subprocess, and independent of permission mode.
-> Prose governance (`CLAUDE.md`, `rules/`, `agents/`, `skills/`) is modifiable only through an
-> explicit in-session human approval, and every such modification lands in a versioned tree.
+> Prose governance (`CLAUDE.md`, `rules/`, `agents/`, `skills/`) inside the `.claude` **trees**
+> gets the same OS-level treatment, and every modification of it lands in a versioned tree.
+>
+> **The one surface where this is a gate and not a boundary** is `<repo>/**/CLAUDE.md` — every
+> `CLAUDE.md` sitting in your repos outside a `.claude` directory. That set is unbounded (files
+> appear while the session runs), so no mount can cover it and cco governs it with a permission
+> rule instead: a prompt when the class is `ask`, a refusal when it is `ro`. A permission rule
+> stops the ordinary path and **does not stop a determined subprocess** — a shell redirect or an
+> interpreter writes through it. Treat it as a guard rail on that surface, not a lock.
 
 **⚠ Two things to know before this bites you.**
 
 - **`<repo>/**/CLAUDE.md` tightens.** Every `CLAUDE.md` inside your repos — root and nested —
-  was governed by *nothing* until now, and was silently writable like any other file. It now
-  prompts. This is the change you will actually notice.
+  was governed by *nothing* until now, and was silently writable like any other file. At the
+  default it now **prompts**; under `claude_access: none` it is **refused**. This is the change
+  you will actually notice.
 - **A prompt never times out.** An unanswered dialog blocks; the session simply waits. cco
   cannot detect that nobody is watching — a session runs a TUI on a pty either way — so
   autonomy must be **declared**, never inferred. For unattended runs set `claude_access: none`
-  (locked, zero prompts) or `repo` / `all` (open, zero prompts).
+  (refused, zero prompts) or `repo` / `all` (open, zero prompts).
 
 **Where to set them** (precedence, highest first):
 

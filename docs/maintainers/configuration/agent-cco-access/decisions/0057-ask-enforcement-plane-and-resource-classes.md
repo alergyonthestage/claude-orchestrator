@@ -453,6 +453,50 @@ outright: it drops the gate over the repo trees, the class of file this ADR most
 and nothing prompts. Stated honestly: that opens *every* `CLAUDE.md` under `/workspace`, repo trees
 included — a deliberate per-session grant, which is what an authoring session is.
 
+### A2 — 2026-08-09: the permissions plane emitted for `ask` only, so `none` did not lock the repo `CLAUDE.md` ([FI-67](../../../improvements.md))
+
+Raised by the [pre-merge gate review](../reviews/2026-08-09-a4-pre-merge-gate-review.md) and measured on
+the emitted compose. Unlike A1 this is **not** a conflict between two decisions: D8 is right, and the
+code implemented **one of the lattice's three values**. `_claude_matrix_asks` was the emitter's only
+input, so a `claude_md` cell resolving `ro` produced no rule at all — and `<repo>/**/CLAUDE.md`, which
+D8 assigns to this plane precisely because no mount can reach an unbounded set, stayed writable under
+the level published as *locked*. **Not a regression**: that surface was writable before A4 too. What
+A4 added was three living documents saying it was not.
+
+**Decision — emit the deny half.** When every tree in the class's reach resolves `claude_md` to `ro`,
+the same glob is emitted as `deny` instead of `ask`. D8 is unchanged; what is amended is the *coverage*
+of the emitter it prescribes.
+
+⚠ **The predicate requires ALL, not ANY, and that asymmetry with the `ask` half is deliberate.** `ask`
+may fire on any tree because a gate over a tree that did not need one is only noise. A `deny` cannot:
+the rule is **one glob over both in-reach trees** (A1's accepted over-reach) and the platform's
+precedence is `deny → ask → allow`, so an ANY predicate would emit a deny in the mixed cell —
+`entries.claude_md=ro` with `Cp=rw` resolves `repo=ro`, `current=rw` — and **revoke a write the user
+explicitly granted**. Denying what was granted is a worse failure than the gap this closes. The mixed
+cell therefore stays ungoverned: it is A1's residue, and it waits on the same per-tree rules.
+
+**Grounded on a measurement, not on P6's table.** P6 asserts that `deny` holds under
+`bypassPermissions`; that row was a reading of the documentation, and only the `ask` half had ever been
+measured (D9's P1/P3, 2026-08-05). Measured 2026-08-09 in a live session confirmed by `ps` to run
+`claude --dangerously-skip-permissions` (v2.1.226): a `Read` under a managed-denied glob is refused by
+the permission layer, while the same read outside it returns *file does not exist* — **a different
+error, which is what makes it a measurement rather than an assumption**. This closes
+[FI-10](../../../improvements.md), open since 2026-06-30, and agrees with the official documentation
+(*"Deny rules and explicit ask rules apply in every mode, including `bypassPermissions`"*).
+
+**What is NOT claimed.** On this surface cco holds a **gate**, not a boundary — P6 unchanged. A rule
+stops the ordinary path; a redirect or an interpreter writes through it. The three published statements
+were therefore corrected in the same change rather than left to be satisfied by the deny: `cli.md`'s
+guarantee block now separates the trees (OS-level) from `<repo>/**/CLAUDE.md` (rule-level, named as a
+guard rail), `"locked"` becomes `"refused"` in `cli.md` and the base template, and `changelog.yml` #62
+is **extended by #63** rather than rewritten. Emitting the deny without that correction would have
+replaced a false claim with a subtler one.
+
+**Rejected: enumerate and bind `:ro`.** A real boundary would need every `<repo>/**/CLAUDE.md` bound
+individually at start. D8 already rejected it and the argument is unchanged — the set grows during the
+session, so the boundary would be a snapshot whose partiality is invisible: *looks enforced, is not*.
+That is strictly worse than a gate that is honestly labelled.
+
 ## Forward annotations
 
 - **ADR-0049** — §1 lattice `ro < rw` → `ro < ask < rw`; §3 grammar gains the `entries` sub-section;

@@ -68,7 +68,11 @@ description: "{{DESCRIPTION}}"
 #
 # ⚠ An unanswered prompt does NOT time out — the session waits. cco cannot detect
 # that nobody is watching, so autonomy must be DECLARED, never inferred: use
-# `claude: none` (locked, zero prompts) or `repo` / `all` (open, zero prompts).
+# `claude: none` (refused, zero prompts) or `repo` / `all` (open, zero prompts).
+#
+# What `none` enforces, and how: the `.claude` TREES are :ro at OS level, while
+# `<repo>/**/CLAUDE.md` — an unbounded set no mount can cover — is refused by a
+# permission rule. A rule stops the ordinary path, not a determined subprocess.
 
 # ── Repositories ─────────────────────────────────────────────────────
 # Each repo is referenced by a logical name + an optional machine-agnostic

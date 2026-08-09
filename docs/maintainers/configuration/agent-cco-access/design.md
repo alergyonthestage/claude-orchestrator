@@ -290,6 +290,21 @@ Bash file commands Claude Code recognizes — **not** `dd`, `truncate` or an int
 glob covers files that do not exist yet). `ask` needs the mount `rw`, so it always trades a boundary
 for a gate: legitimate only where a versioned backstop exists and the file is not itself enforcement.
 
+**The permissions plane emits for two lattice values, not one** (ADR-0057 A2). `ask` emits an ask rule
+on any tree that needs a gate; `ro` emits a **deny** rule, but only when **every** in-reach tree
+resolves the class to `ro`. The asymmetry is required, not stylistic: the rule is one glob spanning
+both in-reach trees (the over-reach A1 accepted) and precedence is `deny → ask → allow`, so an
+any-tree deny would revoke a write granted on the other tree. The mixed cell
+(`entries.claude_md=ro` with `Cp=rw`) is therefore left ungoverned — A1's residue, pending per-tree
+rules. `_claude_matrix_asks` and `_claude_matrix_locks` are the two projections the emitter consumes,
+and neither re-derives an axis (INV-P).
+
+⚠ **Where `<repo>/**/CLAUDE.md` is concerned, `ro` is a gate and must be published as one.** The set is
+unbounded, so no mount can cover it and the deny is the whole enforcement. That is why the user-facing
+wording says *refused* rather than *locked*, and states plainly that a determined subprocess writes
+through it. Enforcing more than the docs promise is fine; promising more than the plane enforces is
+the defect A2 closed.
+
 **Lattice** `ro < ask < rw`, legal wherever Axis B accepts a mode. **Axis A never accepts `ask`** —
 ADR-0047's setuid enforcement point sits in a different trust domain and has no channel to a dialog
 (ADR-0057 D6; do not reopen).

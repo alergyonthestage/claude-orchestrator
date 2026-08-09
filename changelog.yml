@@ -1329,3 +1329,31 @@ entries:
       are both produced at start time by the CLI, not baked into the image. Run
       `cco whoami` in a session to see the resolved state — it now reports both
       dimensions, and lists any file whose governance differs from its tree.
+
+  - id: 63
+    date: "2026-08-09"
+    type: additive
+    title: "`claude_access: none` now refuses `<repo>/**/CLAUDE.md`, instead of only claiming to"
+    description: >
+      Entry 62 said every `CLAUDE.md` under `/workspace` is governed, and that
+      `claude_access: none` is locked. Both were true of the `.claude` **trees** and
+      of the default `ask` value — and neither was true, together, of the one surface
+      that matters most: a `CLAUDE.md` sitting in your repo outside a `.claude`
+      directory. Under `none` that file was still silently writable.
+      It now emits a refusal. The two halves of the same decision were split: the
+      `ask` value emitted a prompt rule, the `ro` value emitted nothing at all, so the
+      strictest level enforced less than the default one did.
+      **What to expect.** Under `claude_access: none` an attempt to edit any
+      `CLAUDE.md` under `/workspace` is refused outright — no prompt, which is what
+      `none` promises. Every other level is unchanged: the default still prompts,
+      `repo` and `all` still write silently. If you deliberately want a session that
+      edits `CLAUDE.md` without prompts, that is `--claude-access
+      …,entries.claude_md=rw`, exactly as before.
+      **Read this honestly.** On the `.claude` trees cco enforces with a read-only
+      mount, which a subprocess cannot get around. On `<repo>/**/CLAUDE.md` it cannot:
+      that file set is unbounded — files appear while the session runs — so no mount
+      can cover it and the enforcement is a permission rule. A rule stops the ordinary
+      path and not a determined one; a shell redirect or an interpreter writes through
+      it. It is a guard rail on that surface, not a lock, and the reference
+      documentation now says so where it used to promise more.
+      No rebuild needed: the rules are produced at start time by the CLI.
