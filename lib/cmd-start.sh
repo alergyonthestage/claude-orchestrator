@@ -612,11 +612,12 @@ _seed_claude_md_stub() {
 # covers every modifying tool.
 #
 # Args: <matrix> <out_file> <baked_defaults>
-# Emits the compose volume line on stdout when a rule was generated; returns 1
-# (emitting nothing) when the session needs no gate at all.
+# Emits the compose volume line on stdout when a rule was generated; returns 3
+# (emitting nothing) when the session needs no gate at all. Any OTHER non-zero is a
+# fail-closed refusal the caller must propagate — see the ⚠ on the `return 3` below.
 _emit_managed_settings_overlay() {
     local matrix="$1" out="$2" baked="$3"
-    local rules="" cls entry tree
+    local rules="" denies="" cls entry tree
 
     # claude_md — D8's ONE rule, deliberately broader than the trees it came from.
     # `<repo>/**/CLAUDE.md` (root and nested) was governed by NOTHING before this:
@@ -627,6 +628,18 @@ _emit_managed_settings_overlay() {
     # and leaves ~/.claude/CLAUDE.md out, because that path is outside /workspace.
     if _claude_matrix_asks "$matrix" claude_md; then
         rules="$rules"$'\n'"Edit(//workspace/**/CLAUDE.md)"
+    fi
+    # …and the DENY half of the same decision (Amendment A2, FI-67). D8 assigns this
+    # surface to the permissions plane; the emitter used to implement one lattice
+    # value of the three, so a class resolving `ro` produced nothing and the level
+    # named `none` left every <repo>/**/CLAUDE.md silently writable while three
+    # living documents said it was locked. `ro` here cannot be a mount: the set is
+    # unbounded (D8's own argument), so the plane that governs it is the only plane
+    # available, and a gate is what it can honestly deliver — P6, stated as such
+    # wherever this is published. Measured 2026-08-09: a managed deny IS enforced
+    # under --dangerously-skip-permissions (FI-10, closed by that measurement).
+    if _claude_matrix_locks "$matrix" claude_md; then
+        denies="$denies"$'\n'"Edit(//workspace/**/CLAUDE.md)"
     fi
     # rules / agents / skills stay MOUNT-authoritative (bounded and already bound
     # entry by entry); `ask` adds the gate on top, per tree.
@@ -644,7 +657,8 @@ _emit_managed_settings_overlay() {
     done
 
     rules="${rules#$'\n'}"
-    if [[ -z "$rules" ]]; then
+    denies="${denies#$'\n'}"
+    if [[ -z "$rules" && -z "$denies" ]]; then
         # No gate needed: leave the baked managed settings alone and drop any stale
         # overlay from a previous start, so a session that narrowed its access does
         # not keep yesterday's rules.
@@ -669,15 +683,31 @@ _emit_managed_settings_overlay() {
     # a silent rw, the exact failure D3's corollary exists to prevent. Refusing to
     # start is the only honest outcome.
     command -v jq >/dev/null 2>&1 \
-        || die "cco needs jq to emit the permission rules for claude_access 'ask' (ADR-0057 D9). Without them the mount would be writable with no prompt — refusing to start. Install jq, or set the affected classes to ro/rw."
+        || die "cco needs jq to emit the permission rules for claude_access (the 'ask' gates and the 'ro' deny of ADR-0057 D9/A2). Without them the mount would be writable with no prompt — refusing to start. Install jq, or set the affected classes to rw."
     [[ -f "$baked" ]] \
         || die "Cannot read the baked managed settings at $baked — the per-session overlay REPLACES that file, so generating one without it would silently drop cco's hooks and deny rules."
     mkdir -p "$(dirname "$out")" 2>/dev/null || true
-    local rules_json
-    rules_json=$(printf '%s\n' "$rules" | jq -R . | jq -s .) \
-        || die "Cannot encode the permission rules for the managed overlay."
-    jq --argjson add "$rules_json" \
-       '.permissions = ((.permissions // {}) | .ask = (((.ask // []) + $add) | unique))' \
+    # ⚠ Each array is encoded only when its string is non-empty. `printf '%s\n' ""`
+    # emits ONE empty line, which `jq -R . | jq -s .` turns into `[""]` — an empty
+    # rule, which is not nothing: an empty deny entry in a permissions array is a
+    # shape no reader expects. `[]` is the honest encoding of "this plane emitted
+    # none", and it merges away cleanly.
+    local rules_json='[]' denies_json='[]'
+    if [[ -n "$rules" ]]; then
+        rules_json=$(printf '%s\n' "$rules" | jq -R . | jq -s .) \
+            || die "Cannot encode the permission rules for the managed overlay."
+    fi
+    if [[ -n "$denies" ]]; then
+        denies_json=$(printf '%s\n' "$denies" | jq -R . | jq -s .) \
+            || die "Cannot encode the deny rules for the managed overlay."
+    fi
+    # The baked file already carries a permissions.deny (Read(~/.ssh/*) and
+    # Read(~/.claude.json)); `+ | unique` extends it and never replaces it, the same
+    # way the ask half has always composed. D9's layering doctrine is unchanged.
+    jq --argjson add "$rules_json" --argjson den "$denies_json" \
+       '.permissions = ((.permissions // {})
+           | .ask  = (((.ask  // []) + $add) | unique)
+           | .deny = (((.deny // []) + $den) | unique))' \
        "$baked" > "$out.tmp" \
         && mv "$out.tmp" "$out" \
         || die "Cannot generate the per-session managed settings at $out."

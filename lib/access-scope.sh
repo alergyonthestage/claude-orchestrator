@@ -659,6 +659,35 @@ _claude_matrix_asks() {
     return 1
 }
 
+# _claude_matrix_locks <matrix> <class> → 0 when EVERY tree in the class's reach
+# resolves <class> to `ro`. The deny half of D8, added by Amendment A2 (FI-67).
+#
+# ⚠ NOT the mirror of _claude_matrix_asks, and the asymmetry is load-bearing.
+# `asks` may ask ANY because a gate over a tree that did not need one is noise;
+# `deny` must require ALL because the rule is ONE glob spanning both in-reach trees
+# (the over-reach A1 accepted) and the platform's precedence is deny → ask → allow.
+# An ANY predicate would emit a deny in the mixed cell — `entries.claude_md=ro` with
+# `Cp=rw` resolves repo=ro, current=rw — and that deny would swallow
+# /workspace/.claude/CLAUDE.md, the tree the user explicitly opened. Denying what
+# was granted is a worse failure than the gap A2 closes.
+#
+# The mixed cell therefore stays UNGOVERNED, deliberately: one glob cannot
+# discriminate two trees, which is FI-52's residue and waits on the same per-tree
+# rules (ADR-0057 A1, "rejected here, not forever" — Block D may move the mount).
+#
+# Returns 1 when the class has no in-reach cell at all, so a matrix that somehow
+# carries none emits no rule rather than a vacuous deny over the whole workspace.
+_claude_matrix_locks() {
+    local matrix="$1" cls="$2" t c m seen=1
+    while read -r t c m; do
+        [[ "$c" == "$cls" ]] || continue
+        _claude_tree_in_class_reach "$t" || continue
+        [[ "$m" == "ro" ]] || return 1
+        seen=0
+    done <<< "$matrix"
+    return $seen
+}
+
 # _claude_matrix_overreach <matrix> → the in-workspace trees whose `claude_md`
 # resolved `rw` while the class still needs a gate somewhere, comma-separated in
 # canonical tree order; EMPTY when there is no divergence.

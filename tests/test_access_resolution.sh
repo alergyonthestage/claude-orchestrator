@@ -974,22 +974,89 @@ test_access_managed_overlay_content() {
     return 0
 }
 
-# A session that needs no gate must leave the baked managed settings alone: no
-# overlay file, no mount. `none` locks every class, `all` opens them outright.
+# A session that needs no rule at all must leave the baked managed settings alone:
+# no overlay file, no mount. `all` opens every class outright, so nothing to emit.
+#
+# ⚠ `none` USED to be asserted here and was moved out by Amendment A2 (FI-67), not
+# relaxed: it now emits a deny, so "no overlay" became the wrong contract for it.
+# See test_access_none_denies_repo_claude_md, which asserts the new one.
 test_access_managed_overlay_absent_when_no_gate() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     mkdir -p "$CCO_DUMMY_REPO/.cco"
-    local preset
-    for preset in none all; do
-        run_cco start "test-proj" --claude-access "$preset" --dry-run --dump
-        [[ -f "$DRY_RUN_DIR/.cco/managed-settings.json" ]] \
-            && fail "claude-access $preset needs no gate — no overlay should be generated"
-        _access_compose | grep -qE '/etc/claude-code/managed-settings\.json' \
-            && fail "claude-access $preset must not bind a permissions overlay"
-    done
+    run_cco start "test-proj" --claude-access all --dry-run --dump
+    [[ -f "$DRY_RUN_DIR/.cco/managed-settings.json" ]] \
+        && fail "claude-access all needs no rule — no overlay should be generated"
+    _access_compose | grep -qE '/etc/claude-code/managed-settings\.json' \
+        && fail "claude-access all must not bind a permissions overlay"
+    return 0
+}
+
+# ADR-0057 Amendment A2 (FI-67) — the deny half of D8.
+#
+# `claude_access: none` is published as "locked". Before A2 the permissions emitter
+# implemented ONE of the lattice's three values: a class resolving `ro` produced
+# nothing, so `<repo>/**/CLAUDE.md` stayed silently writable under the level whose
+# whole promise is that it is not. The mount plane cannot cover it — the set is
+# unbounded (D8) — so this rule is the only enforcement there is.
+test_access_none_denies_repo_claude_md() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" --claude-access none --dry-run --dump
+    local f="$DRY_RUN_DIR/.cco/managed-settings.json"
+    [[ -f "$f" ]] || fail "claude-access none must now generate an overlay carrying the deny (A2)"
+    # The rule lands in deny, and NOT in ask — a prompt under `none` would contradict
+    # the level's "zero prompts" half just as loudly as the missing lock did.
+    jq -e '.permissions.deny | index("Edit(//workspace/**/CLAUDE.md)")' "$f" >/dev/null \
+        || fail "the claude_md deny is missing from the overlay under none"
+    jq -e '.permissions.ask // [] | index("Edit(//workspace/**/CLAUDE.md)")' "$f" >/dev/null \
+        && fail "under none the rule must be a deny, never an ask (zero prompts)"
+    # Same substitution guarantee the ask half has: the baked deny must survive.
+    jq -e '.permissions.deny | index("Read(~/.ssh/*)")' "$f" >/dev/null \
+        || fail "the overlay replaced the baked permissions.deny instead of extending it"
+    _access_compose | grep -qE ':/etc/claude-code/managed-settings\.json:ro"' \
+        || fail "the overlay must be bound over the baked managed settings under none"
+    return 0
+}
+
+# The discriminating half, and the reason _claude_matrix_locks requires ALL rather
+# than ANY. `entries.claude_md=ro` with `current=rw` resolves repo=ro and
+# current=rw — one glob, two trees, opposite intents. Precedence is deny → ask →
+# allow, so an ANY predicate would emit a deny that swallows
+# /workspace/.claude/CLAUDE.md, the tree the user just opened in writing.
+#
+# Without this test the ANY spelling passes everything above.
+test_access_deny_absent_in_mixed_cell() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
+    mkdir -p "$CCO_DUMMY_REPO/.cco"
+    run_cco start "test-proj" \
+        --claude-access "repo=ro,current=rw,global=ro,others=ro,entries.claude_md=ro" \
+        --dry-run --dump
+    local f="$DRY_RUN_DIR/.cco/managed-settings.json"
+    if [[ -f "$f" ]]; then
+        jq -e '.permissions.deny | index("Edit(//workspace/**/CLAUDE.md)")' "$f" >/dev/null \
+            && fail "a deny in the mixed cell would revoke the rw the user granted on current"
+    fi
+    # Positive control: the mount plane still honours current=rw, or this test would
+    # pass on a session that granted nothing at all and proved nothing.
+    #
+    # ⚠ The control is the TREE, not a rw child of it. A child bind exists only to
+    # punch a rw hole through a `:ro` tree (the `ask` case); under Cp=rw the tree is
+    # already rw and no child is emitted. Asserting the child here is what a first
+    # draft of this test did, and it failed against correct code.
+    local c; c=$(_access_compose)
+    echo "$c" | grep -qE '/workspace/\.claude"' \
+        || fail "current=rw must mount /workspace/.claude rw — control failed"
+    echo "$c" | grep -qE '/workspace/\.claude:ro"' \
+        && fail "current=rw must not leave /workspace/.claude :ro — control failed"
     return 0
 }
 
