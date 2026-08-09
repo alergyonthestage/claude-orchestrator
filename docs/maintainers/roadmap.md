@@ -4,7 +4,7 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-08** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-08-09** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -13,6 +13,17 @@
 > review residue (A7), and one — **FI-58**, subagent deliverables never reaching the lead — is
 > **pulled ahead of the queue**. The **block order** below was ratified on **2026-08-04** and replaces
 > every prior sequencing note; none of this changes it.
+>
+> **2026-08-09** — a **pre-merge gate review** of the whole A4 branch found no new objective defect and
+> fixed nothing in place, but raised one **REVIEW NEEDED**: [FI-67](improvements.md), where
+> `claude_access: none` does not lock `<repo>/**/CLAUDE.md` while three living documents say it does.
+> The code is faithful to ADR-0057 D8 — the gap is in the decision, so it is the maintainer's to close,
+> and it is a **user-facing guarantee**, which puts it before the `0.7.0` release rather than after.
+> Three field reports the same day became **A8** ([FI-68](improvements.md) … [FI-70](improvements.md)),
+> in Block A: the onboarding prompts and the mount-declaration surface. ⚠ One of the three
+> (**FI-68**) arrived with its premise **inverted** — the read-only default it asks for is already
+> shipped; only the flag surface is wrong. The entry says so, because acting on the report as written
+> would invert a security default.
 
 ## The planning documents — and why there are three
 
@@ -117,6 +128,7 @@ follows from the answer.
 Minor bump, not a patch: it introduces new verbs and a new access knob. Nothing here needs an analysis
 phase; A1 and A2 need a short design, A3 needs none, and **A4's design is already done and accepted**
 ([ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)).
+A5 and A8 share one short design over the same interactive surface — see A8.
 
 #### A1 — `cco save`: project-config versioning helper
 
@@ -360,6 +372,34 @@ first (the report does not carry it), then **re-derive the whole floor** against
 `llms/code-claude` docs — not just this entry. The remedy's shape already exists
 (`_emit_workflows_overlay`). This is the quick win; the full **worktree design** (Sprint 10, *Git
 worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
+
+#### A8 — the onboarding prompts and the mount-declaration surface ([FI-68](improvements.md) … [FI-70](improvements.md))
+
+**Three field reports from 2026-08-09, all on the surface a user meets *first*** — the prompts that
+resolve an unregistered path, and the command that declares a mount. None is deep, none blocks
+anything, and all three cost a user their first impression of the tool.
+
+| | Defect | Site |
+|---|---|---|
+| [FI-68](improvements.md) | `--readonly` is a **no-op** (the default is already read-only), and **no flag declares a writable mount** | `lib/cmd-project-add.sh:162,235` |
+| [FI-69](improvements.md) | option `(c)` **never asks where to clone** — and `(p)` cannot answer for it, since it demands an existing path | `lib/local-paths.sh:126-132,150` |
+| [FI-70](improvements.md) | the reuse prompt prints `[1-n]`, a **range** among literal keys; typing back `1-1` is rejected | `lib/local-paths.sh:438,445` |
+
+⚠ **FI-68 arrived inverted, and the correction is the load-bearing part.** The report read *"the
+default is rw"*; the code defaults `readonly` to **`true`** (`lib/local-paths.sh:312`), as documented
+and as the secure-defaults policy requires. **The default is not in scope** — what is wrong is only
+the *surface*: a flag that cannot change an outcome, and no way to express the permissive case at all.
+An implementer who takes the report at face value would invert a shipped security default.
+
+**Sequence it with [A5](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd).** FI-69 and
+FI-70 live in `lib/local-paths.sh`'s interactive prompts, under the same `_cco_have_tty` /
+`CCO_NONINTERACTIVE=1` constraint A5 must satisfy — and A5 is *adding* a prompt to the same start-time
+flow. Done together the TTY contract is derived once; done apart it is derived twice, and the second
+derivation is the one that hangs the suite.
+
+**One decision for the maintainer, at design time not now** ([FI-68](improvements.md)): add
+`--writable`, or fix the help text and leave writable mounts to `project.yml`. It grants a
+user-perceivable capability from a one-line command, so it is a gate, not an implementation choice.
 
 ---
 

@@ -2844,3 +2844,96 @@ that one is *rule out-reaches matrix*, this one is *matrix out-reaches rule* —
 other way round.
 
 **Effort**: Low for (2); Low-Med for (1) — the emitter change is small, the wording is the work.
+
+---
+
+## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount
+
+**Status**: 🔴 Open — a **decision**, not a defect in the default. Reported by the maintainer
+2026-08-09 (field observation), **re-derived from the code and inverted**: the report read *"the
+default is rw and `--readonly` is the explicit flag"*, and the code says the opposite.
+
+**What the code does.** `_effective_extra_mounts` resolves the mount mode as
+`ro=$(_parse_bool "$ro_raw" "true")` (`lib/local-paths.sh:312`) — an **absent** `readonly:` key
+yields `true`. That is the documented contract
+([project-yaml.md](../users/configuration/reference/project-yaml.md) field table:
+`extra_mounts[].readonly`, default `true`, *"secure default; set `false` explicitly for writable
+mounts"*) and the secure-defaults policy the same file states for every security-relevant field. So
+**the default the report asks for is already the shipped one**, at the runtime layer that decides the
+bind.
+
+**Where the surface misleads.** `cco project add mount` writes the key only when the flag is given —
+`[[ -n "$ro" ]] && fields+=("readonly=$ro")` (`lib/cmd-project-add.sh:235`), with `--readonly` setting
+`ro="true"` (`:162`). Two consequences:
+
+- `--readonly` **cannot change any outcome**: with or without it the mount ends up read-only. It reads
+  as the opt-in to a restriction that is already unconditional, which is exactly what led the field
+  report to infer an rw default.
+- There is **no `--writable`** (nor any spelling of it — the flag does not exist anywhere in `lib/` or
+  `bin/`). A writable extra mount can only be declared by hand-editing `project.yml` to
+  `readonly: false`. The CLI can express the secure case twice and the permissive case not at all.
+
+**The decision this carries** — left open deliberately, because it adds a user-perceivable capability:
+
+1. **Add `--writable`** (writes `readonly=false`) and keep `--readonly` as an explicit affirmation of
+   the default rather than a no-op. Symmetric, and makes the flag pair teach the default.
+2. **Documentation only** — correct the `cco project add mount` help so it states that mounts are
+   read-only by default and that a writable mount is declared in `project.yml`. No new capability, no
+   new way to grant write access from a one-line command.
+
+⚠ Whichever is chosen, the **`readonly: true` default itself is not in question** and must not be
+touched: it is the secure default, documented, and relied on by the ADR-0049 §7 reasoning that an
+extra_mount is reference material rather than a config repo.
+
+**Effort**: Low.
+
+---
+
+## FI-69: the clone prompt never asks where to clone
+
+**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+
+Option `(c)` of the unresolved-path prompt clones to a destination the user is never shown a chance to
+change: `local clone_target="${suggested:-$HOME/Projects/$name}"`, immediately followed by `mkdir -p`
+and `git clone` (`lib/local-paths.sh:126-132`). The prompt line advertises it — *"(c) Clone to
+…"* (`:91`) — but as a statement, not a question.
+
+Two details make it tighter than the report:
+
+- **For `extra_mounts` the fallback is always the one taken.** `suggested` is computed *only* for
+  `repos`, as a sibling of the first index entry (`lib/local-paths.sh:489-494`); the `extra_mounts`
+  branch leaves it empty. So a mount is hard-wired to `~/Projects/<name>`, a path with no relation to
+  where the user keeps mounts. For repos the suggestion is at least derived — but equally unofferable.
+- **Option `(p)` is not a workaround.** It requires the path to exist already: `_path_exists`
+  fails → `warn` → `return 1` (`:150-153`). So `(p)` cannot name a destination *for a clone*, and no
+  path through the prompt clones to a location the user chose.
+
+**Direction** (to re-derive at design time): `(c)` should offer the computed default and accept an
+override, in the same keystroke shape as the rest of the prompt. ⚠ Anything added here gates on
+`_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` — the constraint A5 carries for the same file.
+
+**Effort**: Low.
+
+---
+
+## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts
+
+**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+
+The reuse-or-homonym prompt (ADR-0051 D4) prints its options as
+`[1-${#cands[@]}] reuse that path` (`lib/local-paths.sh:438`). With a single candidate that renders
+literally `[1-1]`, and the parser accepts only a bare integer — `*[!0-9]*|'')` rejects anything with a
+`-` in it (`:445`), then a range check rejects out-of-bounds (`:450`). A user who types back the token
+the prompt showed them gets *"Invalid choice '1-1'"*.
+
+`[1-n]` is a **range notation** rendered where every sibling option is a **literal key** to type
+(`[d]`, `[q]`), so the one option whose label is not literal is also the only one that can be typed
+wrong. The single-candidate case — by far the common one, and the only one observed in the field —
+degenerates to a range of one, where the notation is pure noise.
+
+**Direction**: render the accepted tokens, not their range. Worth taking the whole prompt while it is
+open rather than patching the format string: it is the same interactive surface as
+[FI-69](#fi-69-the-clone-prompt-never-asks-where-to-clone), one file apart from A5's TTY work, and the
+cheapest moment to make the three consistent is when all three are in hand.
+
+**Effort**: Low.
