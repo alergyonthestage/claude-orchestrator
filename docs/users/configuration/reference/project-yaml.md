@@ -43,7 +43,7 @@ packs:
                           #   <repo>/.cco/packs/, or an already-installed
                           #   ~/.cco/packs/my-client-knowledge/pack.yml
 
-# ── Session access (optional; ADR-0036 / ADR-0046 / ADR-0049) ────────
+# ── Session access (optional; ADR-0036 / ADR-0046 / ADR-0049 / ADR-0057) ──
 # Per-project defaults for how much of your config a session can read/edit.
 # Overridden by the CLI flags, overrides ~/.cco/access.yml. Omit `cco` to keep
 # the default read-project; omit `claude` and it DERIVES from the resolved `cco`
@@ -69,14 +69,24 @@ access:
                           #   derives from `cco` above. At the default read-project
                           #   (G=none,Pc=ro,Po=none) the derived triple is
                           #   (ro,ro,ro,ro) — label `none`.
-  # `claude` also accepts a granular MAP over four authoring trees, each ro|rw
-  # (ADR-0049 §3/§9). Omitted axes derive from the `cco` triple; `repo` is
-  # always `ro` unless set explicitly:
+  # `claude` also accepts a granular MAP over four authoring trees (ADR-0049
+  # §3/§9). Omitted axes derive from the `cco` triple; `repo` is always `ro`
+  # unless set explicitly. Lattice ro < ask < rw — `ask` = mounted writable,
+  # every modification prompts first (ADR-0057 D1); `global`/`others` are
+  # two-valued and REFUSE `ask` (D5):
   #   claude:
   #     repo: ro                       # Cr — the repo's own <repo>/.claude
   #     current: rw                    # Cp — this project's <repo>/.cco/claude
-  #     global: ro                     # Cg — ~/.cco/.claude
-  #     others: ro                     # Co — other projects' .claude trees
+  #     global: ro                     # Cg — ~/.cco/.claude          (ro|rw)
+  #     others: ro                     # Co — other projects' .claude (ro|rw)
+  #     entries:                       # content classes INSIDE Cr and Cp,
+  #       claude_md: ask               #   composed with the tree axis by max()
+  #       rules: ro                    #   (ADR-0057 D2/D7 — these are the
+  #       agents: ro                   #   defaults; claude_md is `ask` because
+  #       skills: ro                   #   the session's own work makes it stale)
+  # ⚠ claude_md is enforced by ONE permission rule over every CLAUDE.md under
+  # /workspace (the set is unbounded, so it cannot be scoped per tree): it
+  # prompts even in an authoring session, and it is a gate, not a boundary.
 
   show_host_paths: true   # host↔container path map in the session (default)
 
@@ -172,11 +182,15 @@ browser:
 | `packs[].ref` | ❌ | string | — | Git ref (branch/tag) coordinate, paired with `url` |
 | `packs[].resource` | ❌ | string | — | Path of the pack **inside** a multi-pack sharing repo (e.g. `packs/acme-conventions`); omit for a single-pack repo |
 | `llms` | ❌ | list | `[]` | LLMs.txt framework docs to include (see LLMs.txt section below) |
-| `access.claude` | ❌ | enum \| map | *derived from `access.cco`* | Session `.claude` **authoring** access. **There is no fixed default** (ADR-0049 §2): each axis derives from the resolved `cco` triple — at the default `cco: read-project` the derived triple is `(ro,ro,ro,ro)`, label `none`. **Scalar (preset)**: `none` \| `repo` \| `all`, or the granular `repo=…,current=…,global=…,others=…`. **Map (granular)**: `repo` / `current` / `global` / `others`, each `ro` \| `rw`; omitted axes derive from `cco`. See [Session access](../../reference/cli.md#session-access-capability-model) |
-| `access.claude.repo` | ❌ | enum | `ro` | (map form) `Cr` — the repo's own `<repo>/.claude`. Never derived up: `ro` unless set explicitly |
-| `access.claude.current` | ❌ | enum | derived from `access.cco.current` | (map form) `Cp` — this project's `<repo>/.cco/claude` |
-| `access.claude.global` | ❌ | enum | derived from `access.cco.global` | (map form) `Cg` — `~/.cco/.claude` |
-| `access.claude.others` | ❌ | enum | derived from `access.cco.others` | (map form) `Co` — other projects' `.claude` trees |
+| `access.claude` | ❌ | enum \| map | *derived from `access.cco`* | Session `.claude` **authoring** access. **There is no fixed default** (ADR-0049 §2): each axis derives from the resolved `cco` triple — at the default `cco: read-project` the derived triple is `(ro,ro,ro,ro)` with `entries.claude_md: ask`. **Scalar (preset)**: `none` \| `repo` \| `all`, or the granular `repo=…,current=…,global=…,others=…,entries.<class>=…`. **Map (granular)**: the four tree axes `repo` / `current` / `global` / `others` plus an `entries` sub-map of content classes (ADR-0057 D2); omitted axes derive from `cco`. **Lattice `ro < ask < rw`** — `ask` means *mounted writable, but every modification prompts you first*. See [Session access](../../reference/cli.md#session-access-capability-model) |
+| `access.claude.repo` | ❌ | enum | `ro` | (map form) `Cr` — the repo's own `<repo>/.claude`. `ro` \| `ask` \| `rw`. Never derived up: `ro` unless set explicitly |
+| `access.claude.current` | ❌ | enum | derived from `access.cco.current` | (map form) `Cp` — this project's `<repo>/.cco/claude`. `ro` \| `ask` \| `rw` |
+| `access.claude.global` | ❌ | enum | derived from `access.cco.global` | (map form) `Cg` — `~/.cco/.claude`. **Two-valued** `ro` \| `rw`: `ask` is refused (ADR-0057 D5) |
+| `access.claude.others` | ❌ | enum | derived from `access.cco.others` | (map form) `Co` — other projects' `.claude` trees. **Two-valued** `ro` \| `rw`: `ask` is refused (ADR-0057 D5) |
+| `access.claude.entries.claude_md` | ❌ | enum | `ask` | Content class **within** the `repo` and `current` trees, composed with the tree axis by `max()` (so a tree already `rw` absorbs `ask`). `ro` \| `ask` \| `rw`. ⚠ Enforced by **one permission rule over every `CLAUDE.md` under `/workspace`** — the set is unbounded, so it cannot be scoped per tree: it prompts even in a session opened for authoring (ADR-0057 A1), and at `ro` on every in-reach tree it emits a **refusal** (A2). A permission rule is a **gate, not a boundary** — see the guarantee block in [Session access](../../reference/cli.md#session-access-capability-model) |
+| `access.claude.entries.rules` | ❌ | enum | `ro` | Content class for `rules/` inside the `repo` / `current` trees, `ro` \| `ask` \| `rw` (mount-enforced per tree) |
+| `access.claude.entries.agents` | ❌ | enum | `ro` | Content class for `agents/` inside the `repo` / `current` trees, `ro` \| `ask` \| `rw` (mount-enforced per tree) |
+| `access.claude.entries.skills` | ❌ | enum | `ro` | Content class for `skills/` inside the `repo` / `current` trees, `ro` \| `ask` \| `rw` (mount-enforced per tree) |
 | `access.cco` | ❌ | enum \| map | `read-project` | Session `.cco`/framework config access. **Scalar (preset)**: `none` \| `read-project` \| `read-global` \| `read-all` \| `edit-project` \| `edit-global` \| `edit-all` (bare `read` = deprecated alias for `read-all`). **Map (granular, ADR-0046)**: `global` / `current` / `others`, each `none` \| `ro` \| `rw`; presets are sugar for the symmetric triples. See [Session access](../../reference/cli.md#session-access-capability-model) (ADR-0036/0042/0046). |
 | `access.cco.include_member_configs` | ❌ | bool | `false` | (map form only) Widen the `current` (`Pc`) write span from the hosting repo's `<repo>/.cco` to **all** member repos' `.cco` copies in a multi-repo project |
 | `access.show_host_paths` | ❌ | bool | `true` | Include the host↔container path map in the session |

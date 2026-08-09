@@ -224,15 +224,17 @@ pass derive from.
 
 ## 4bis. Axis B — the `.claude` authoring model (`claude_access`)
 
-> **Model** ([ADR-0049](decisions/0049-claude-access-concordant-model.md), WS-B) — **implemented**
-> (5 commits `96b08ae`→`2f0cd19`, awaiting `cco build` + e2e v2). Supersedes the `none|repo|all`
+> **Model** ([ADR-0049](decisions/0049-claude-access-concordant-model.md), WS-B) — **implemented and
+> shipped in `v0.6.0`** (5 commits `96b08ae`→`2f0cd19`). Supersedes the `none|repo|all`
 > enum of ADR-0036 §D2 (→ preset sugar), reverses ADR-0027 §P17 (project `.claude` default
 > read-only), and absorbs ADR-0048 §4 (config-editor claude-follows-`G`) into the general rule
 > below.
 
 `claude_access` (Axis B) governs the three `.claude` **authoring** trees. It is modelled —
 symmetrically with `cco_access` (Axis A, §4 / ADR-0046) — as a **per-tree axis triple** on
-the lattice **`ro < rw`** (no `none`: Claude Code must *read* its own config):
+the lattice **`ro < rw`** (no `none`: Claude Code must *read* its own config) — **widened to
+`ro < ask < rw` on `Cr`/`Cp` by ADR-0057, with a second (class) dimension: read §4bis.1
+before relying on the table below**:
 
 | Axis | Tree | Reach | Mirrors cco | Default |
 |---|---|---|---|---|
@@ -273,12 +275,14 @@ under repos *and* extra_mounts — not root-only.
 ### 4bis.1 The `ask` value and the resource-class dimension
 
 > **Model** ([ADR-0057](decisions/0057-ask-enforcement-plane-and-resource-classes.md)) — ratified
-> 2026-08-05, host probes P1–P4 passed, **implemented** (`b324c0e` + `24ec2fb`, awaiting
-> `cco build` + the six container checks in the ADR's Verification). Closes FI-18. Extends the
-> lattice and the grammar above; leaves §4bis's derivation, floor and extra_mount rules unchanged.
+> 2026-08-05, host probes P1–P4 passed, **implemented, accepted (2026-08-06), reviewed twice and
+> merged to `develop` (2026-08-09)**; amended by **A1** (FI-52, the glob's accepted over-reach) and
+> **A2** (FI-67, the deny half — below). `cco build` is **not** a prerequisite: both planes are
+> produced at start time by the host CLI. Closes FI-18. Extends the lattice and the grammar above;
+> leaves §4bis's derivation, floor and extra_mount rules unchanged.
 >
 > **Where it lives**: the resolver and the matrix in `lib/access-scope.sh`
-> (`_claude_matrix` and its `_mount_mode`/`_asks` projections); the two emitters in
+> (`_claude_matrix` and its `_mount_mode`/`_asks`/`_locks` projections); the two emitters in
 > `lib/cmd-start.sh` (`_emit_class_overlays` + `_emit_claude_view` for mounts,
 > `_emit_managed_settings_overlay` for permissions); the seeding in `_seed_claude_md_stub`;
 > INV-P's lint in `tests/test_invariants.sh`.

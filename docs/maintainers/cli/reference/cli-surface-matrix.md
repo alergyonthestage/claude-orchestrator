@@ -83,14 +83,18 @@ that reads/writes at ≥ its required scope. So each verb is stated as **"availa
 **Exit-code convention** (D8): `0` success or graceful degrade · `2` refused by policy
 (host-only, or needs a wider scope) · `1` error (unknown verb, parse/resolve failure).
 
-**`claude_access` — the `(Cr,Cp,Cg,Co)` model** ([ADR-0049](../../configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md))
+**`claude_access` — the `(Cr,Cp,Cg,Co)` model** ([ADR-0049](../../configuration/agent-cco-access/decisions/0049-claude-access-concordant-model.md)
++ [ADR-0057](../../configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md))
 is an **orthogonal** axis governing the `.claude` **authoring** trees (repo-native Cr,
-project Cp, global Cg, other-projects Co) on the `ro<rw` lattice — **not** cco verbs. It
+project Cp, global Cg, other-projects Co) on the `ro<ask<rw` lattice (`ask` on Cr/Cp only;
+Cg/Co stay two-valued) — **not** cco verbs. It
 mirrors the cco `(G,Pc,Po)` triple; the `none|repo|all` enum is preset sugar. **Unset it
 DERIVES from `cco_access`** (Cg=G, Cp=Pc, Co=Po, Cr always `ro`), so the default authoring
-surface is never wider than config access — a normal session's `.claude` is **read-only by
-default** (reverses ADR-0027 P17). `access.claude` (CLI / project.yml / access.yml) accepts a
-scalar preset or a `{repo,current,global,others}` map, symmetric with `access.cco`. An
+surface is never wider than config access — a normal session's `.claude` trees are
+**read-only by default** (reverses ADR-0027 P17), with `CLAUDE.md` the one exception: the
+class `entries.claude_md` defaults to `ask` (writable behind a prompt, ADR-0057 D7).
+`access.claude` (CLI / project.yml / access.yml) accepts a scalar preset or a
+`{repo,current,global,others}` map plus an `entries` class map, symmetric with `access.cco`. An
 explicit `claude` wider than the cco-concordant default is honored with a note (never
 refused). `settings.json` + a `settings.local.json` rw child overlay stay writable regardless
 (functional-write floor). It does not appear in the verb rows below; see §5.

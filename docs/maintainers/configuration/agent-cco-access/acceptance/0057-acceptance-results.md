@@ -13,6 +13,15 @@ the standing verdict is **5 pass · 1 measured-and-amended** (check 5, whose exp
 by [ADR-0057 A1](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments) once
 FI-52 was decided). §§1–6 are left as first written: they are the record of the first run.
 
+> ⚠ **Forward annotation, 2026-08-09 — what check 4 actually covered.** §2's *"`none` is genuinely
+> locked"* holds for the two `.claude` **trees** the check probed, and for those only. The surface D8
+> assigns to the *permissions* plane — `<repo>/**/CLAUDE.md`, outside any `.claude` directory — was
+> never in the probe, and under `none` it stayed writable: the emitter implemented the `ask` value and
+> not the `ro` one ([FI-67](../../../improvements.md)). Closed the same day by
+> [ADR-0057 A2](../decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments), which
+> emits the deny half of D8 and corrects the three claims that had over-promised. The measurements
+> below stand exactly as recorded; the general claim they were read as supporting does not.
+
 ## 1. Verdict
 
 | # | Check | Result |

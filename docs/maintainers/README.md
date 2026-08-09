@@ -36,6 +36,7 @@ determines the document's lifecycle (see the project rule
 | Leaf | Lifecycle |
 |------|-----------|
 | `analysis/`, `adr/` (also `decisions/`) | **Append-only history.** Decision and investigation records. Never rewritten in place — when superseded, the original is kept and forward-annotated with a pointer to the refining record. They preserve *why*. |
+| `reviews/` | **Append-only history.** Review reports (implementation · docs · refactoring): findings, fixes, plans. Same rule as `decisions/` — annotate forward, never rewrite. |
 | `design/`, `guides/` | **Living docs.** Always rewritten to reflect the current/target truth; their history lives in git. They describe *how the system is / will be*. |
 
 ## Decision records (ADRs)
@@ -70,7 +71,7 @@ classes, not competing plans — the roadmap links out to each.
 
 - [roadmap.md](roadmap.md) — **living SSOT** for planned work, priorities and
   status. Start here.
-- [improvements.md](improvements.md) — the **issue tracker** (`FI-1 … FI-51`),
+- [improvements.md](improvements.md) — the **issue tracker** (`FI-1 … FI-70`),
   each item with its own analysis. It is the detail the roadmap cites, not a
   second plan. *(Named `roadmap-backlog.md` before 2026-08-04.)*
 - [roadmap-history.md](roadmap-history.md) — **historical**: closed cycles,

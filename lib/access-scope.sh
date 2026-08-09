@@ -233,11 +233,14 @@ _cco_triple_write_satisfies() {
     return 1
 }
 
-# ── The (Cr, Cp, Cg, Co) claude_access authoring triple (ADR-0049) ────
+# ── The (Cr, Cp, Cg, Co) claude_access authoring triple (ADR-0049/0057) ──
 # Axis B (claude_access) governs the three `.claude` AUTHORING trees, modelled —
 # symmetrically with the cco (G,Pc,Po) triple above — as FOUR per-tree axes on the
-# lattice `ro < rw` (there is NO `none`/invisible value: Claude Code must READ its
-# own config to function). The canonical order is "Cr Cp Cg Co":
+# lattice `ro < ask < rw` (ADR-0057 D1 widened ADR-0049's `ro < rw`; there is still
+# NO `none`/invisible value: Claude Code must READ its own config to function).
+# `ask` is accepted on Cr/Cp only — Cg/Co stay TWO-VALUED and refuse it (D5), and a
+# second dimension, the `entries` classes, composes with these axes by max() (D2/D3
+# — see _claude_matrix below). The canonical order is "Cr Cp Cg Co":
 #   Cr — B1 <repo>/.claude   (repo-native)           — the EXTRA axis, no cco
 #        counterpart, default `ro` ALWAYS (a session should not rewrite the config
 #        that governs its own behaviour unless explicitly permitted). This is why
@@ -248,8 +251,10 @@ _cco_triple_write_satisfies() {
 # When unspecified each of Cp/Cg/Co DERIVES from the resolved cco triple (§2), so
 # the default claude_access is never MORE permissive than the cco intent (P1). The
 # enum none|repo|all lives on as PRESET SUGAR (§3) — fixed triples that do NOT
-# derive. Presets/granular map share the SAME grammar as cco. Unlike Axis A there
-# are NO invariant floors (INV-2/3/4) — every {ro,rw}^4 combination is legal.
+# derive (and since D11 each preset fixes the `entries` dimension too). Presets and
+# the granular map share the SAME grammar as cco. Unlike Axis A there are NO
+# invariant floors (INV-2/3/4) — every combination the per-axis lattice admits is
+# legal (`{ro,ask,rw}` on Cr/Cp, `{ro,rw}` on Cg/Co).
 
 # A cco axis value (none|ro|rw) collapsed onto the claude lattice: rw→rw, else ro
 # (a not-writable tree is still READABLE, so cco `none` maps to `ro`, §2).

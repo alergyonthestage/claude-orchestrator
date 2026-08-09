@@ -16,14 +16,32 @@
 >
 > **2026-08-09** — a **pre-merge gate review** of the whole A4 branch found no new objective defect and
 > fixed nothing in place, but raised one **REVIEW NEEDED**: [FI-67](improvements.md), where
-> `claude_access: none` does not lock `<repo>/**/CLAUDE.md` while three living documents say it does.
-> The code is faithful to ADR-0057 D8 — the gap is in the decision, so it is the maintainer's to close,
-> and it is a **user-facing guarantee**, which puts it before the `0.7.0` release rather than after.
+> `claude_access: none` did **not** lock `<repo>/**/CLAUDE.md` while three living documents said it did.
+> ✅ **Closed the same day** as
+> [ADR-0057 A2](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments)
+> — options 1+2 together: `none` now emits the **deny** half of D8, **and** the three claims were
+> reworded, because on that surface cco holds a **gate**, not a boundary. The measurement A2 rests on
+> also closed [FI-10](improvements.md), open since 2026-06-30. **A4 and the FI-67 fix are merged into
+> `develop`** (`3ca4cfa`) — see *Where the project stands* for the push that is still owed.
 > Three field reports the same day became **A8** ([FI-68](improvements.md) … [FI-70](improvements.md)),
 > in Block A: the onboarding prompts and the mount-declaration surface. ⚠ One of the three
 > (**FI-68**) arrived with its premise **inverted** — the read-only default it asks for is already
 > shipped; only the flag surface is wrong. The entry says so, because acting on the report as written
 > would invert a security default.
+>
+> **2026-08-09, `/review-docs`** — the post-merge docs pass realigned the surfaces A4/A2 had left
+> behind: the `project.yml` reference and the `~/.cco/access.yml` scaffold (neither knew about `ask`
+> or `entries`), the repo `CLAUDE.md` and the CLI-surface matrix (two-valued Axis-B lattice),
+> `cco start --help` (still *"`none` (locked)"* after A2 renamed it *refused*), `design.md` §4bis's
+> header, and a forward annotation on the acceptance record's check 4. Two things it did **not**
+> settle: 🔴 `cli.md`'s guarantee block reads *"a refusal when it is `ro`"*, while A2's predicate
+> denies only when **every** in-reach tree resolves `ro` — the mixed cell is ungoverned and
+> unpublished, which is the FI-67 failure mode one level down. **REVIEW NEEDED** — the wording of a
+> published guarantee is the maintainer's call: name the ALL predicate, state the mixed cell as an
+> explicit non-guarantee, or close the cell with per-tree rules (A1's residue, Block D). And
+> ⚠ **`handoff.md` is stale** — written 2026-08-06, before the FI-52 decision,
+> both reviews and the merge, and it is the last document still carrying *"`none` is genuinely
+> locked"*. Run `/handoff` before the next session picks it up.
 
 ## The planning documents — and why there are three
 
@@ -33,7 +51,7 @@ different document class, and the roadmap links out to both.
 | File | Class | Holds |
 |---|---|---|
 | **`roadmap.md`** (this file) | living | The only roadmap: current state, the ordered plan, open decisions |
-| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-66`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
+| [`improvements.md`](improvements.md) | living notes + closed records | The issue tracker, `FI-1 … FI-70`, each with its own analysis. **Not a roadmap** — it is the detail the roadmap cites |
 | [`roadmap-history.md`](roadmap-history.md) | historical | Immutable chronology: closed cycles, completed sprints, the resolved-bug log |
 | `handoff.md` | ephemeral | Session state; deleted before the next one is written. **Deliberately not linked** — an inbound link would dangle the moment it is consumed |
 
@@ -54,11 +72,15 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`; `develop` is level with `origin/develop`.
-- **Test baseline**: macOS host (bash 3.2) **1626 passed / 0 failed** — the cycle's first complete
-  host run. In-container **1619/7** on the same tree with the mask on, **1616/9 of 1625** unmasked.
-  The 9 are 7 host-only tests defeated by the ADR-0047 boundary ([FI-19](improvements.md)) plus 2
-  update tests the mask hides.
+  `0.6.0`. ⚠ **`develop` is 36 commits ahead of `origin/develop` and unpushed** (A4 + the FI-67 fix,
+  merged 2026-08-09) — push from the host, `--follow-tags` when a tag is involved.
+- **Test baseline**: in-container **1633 passed / 7 failed of 1640**, measured on `develop` at
+  `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
+  (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
+  [FI-19](improvements.md)). +2 against A4's `1631/7 of 1638`: the FI-67 regression pair. The last
+  macOS host run (bash 3.2) was **1626 / 0** on the `v0.6.0` tree — **owed again** before the `0.7.0`
+  release, since nothing has re-measured 3.2 since. Unmasked the count is `…/9` (the 7 plus 2 update
+  tests the mask hides).
   📝 **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) is ON** — commented out on
   2026-08-06 to run the A4 acceptance, then **deliberately restored** once it was done, so that
   `defaults/` and `templates/` stay editable in self-dev sessions until [FI-25](improvements.md) gives
@@ -205,7 +227,8 @@ inline.
 
 #### A4 — `ask`: the second enforcement plane + Axis-B resource classes ([FI-18](improvements.md))
 
-**Design accepted, IMPLEMENTED, host acceptance PASSED** (2026-08-05 → accepted 2026-08-06).
+**Design accepted, IMPLEMENTED, host acceptance PASSED, reviewed twice, MERGED into `develop`**
+(2026-08-05 → accepted 2026-08-06 → merged 2026-08-09).
 [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md);
 its four gating measurements ran on the host the same day and **all passed**
 ([record](configuration/agent-cco-access/analysis/probe-ask-enforcement-plane.md)). This entry does
@@ -214,7 +237,9 @@ its four gating measurements ran on the host the same day and **all passed**
 Built on `feat/access/claude-md-axis`. Implementation: `b324c0e` (resolver, lattice, `entries`, both
 emitters, seeding) · `24ec2fb` (INV-P) · `be2cc9e` (schema, CLI, user docs, `changelog.yml` #62) ·
 `190f8cd` (golden). Post-acceptance: `3be2466` (FI-54) · `66a446c` (the FI-52 notice). Post-review:
-`dd06757` (entries reach) · `d6a49de` (fail-closed propagation).
+`dd06757` (entries reach) · `d6a49de` (fail-closed propagation). Post-merge-gate, on
+`fix/access/fi67-none-locks-repo-claude-md`: `b12709c` (A2 — the deny half of D8) · `e4bbfbb`
+(A2 — the wording the deny alone would have left subtly false, plus `changelog.yml` #63).
 
 Suite **1631/7 of 1638** in-container with the FI-25 mask on — the 7 verified **name for name** as
 the known host-only set (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, [FI-19](improvements.md)),
@@ -313,10 +338,9 @@ to what ADR-0057 had already decided — neither was a design change, so neither
   tell a refusal from *"no gate needed"* — and went on emitting `CLAUDE.md` binds already projected
   `rw` with **no rule bound**. That is the silent `rw` the emitter exists to refuse.
 
-**What A4 still owes**: nothing on the enforcement plane. The branch is ready to merge into `develop`
-(host-only — the merge writes the working tree and `.cco` is `:ro` at the default level, so it needs
-`--cco-access edit-project`). [FI-53](improvements.md) rides the next docs/reporting pass; the review's
-residue is A7.
+**What A4 still owes**: nothing on the enforcement plane. ✅ **Merged into `develop` on 2026-08-09**,
+together with the FI-67 fix (tip `3ca4cfa`); what is left is the **push**, which is host-side.
+[FI-53](improvements.md) rides the next docs/reporting pass; the review's residue is A7.
 
 #### A7 — the A4 review residue ([FI-62](improvements.md) … [FI-66](improvements.md))
 

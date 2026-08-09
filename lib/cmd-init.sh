@@ -152,18 +152,27 @@ _write_access_scaffold() {
 #   current: ro            # Pc — this project's config (never none while enabled)
 #   others: none           # Po — other projects' config (Po <= Pc)
 
-# ── .claude authoring access (claude_access, ADR-0049) ───────────────
+# ── .claude authoring access (claude_access, ADR-0049 + ADR-0057) ────
 # By DEFAULT claude_access DERIVES from cco (never more permissive): a read-only
-# cco session keeps .claude read-only too. Set this only to author .claude.
+# cco session keeps its .claude trees read-only too — with ONE exception, CLAUDE.md,
+# which is `ask`: writable, but every modification prompts you first. Set this only
+# to author .claude.
 # Scalar preset:
-# claude: none             # none (all .claude read-only) | repo (author repo-native
-#                          #   + this project's .claude) | all (author every tree)
-# …or a granular map — four axes on the lattice ro < rw (omitted axes derive from cco):
+# claude: none             # none (all .claude read-only, and CLAUDE.md refused) |
+#                          #   repo (author repo-native + this project's .claude) |
+#                          #   all (author every tree)
+# …or a granular map — four tree axes on the lattice ro < ask < rw, plus the content
+# classes inside the repo/current trees (omitted axes derive from cco):
 # claude:
 #   repo: ro               # Cr — <repo>/.claude repo-native (default ro)
 #   current: ro            # Cp — <repo>/.cco/claude       (default = cco current)
-#   global: ro             # Cg — ~/.cco/.claude           (default = cco global)
-#   others: ro             # Co — other projects' .claude  (default = cco others)
+#   global: ro             # Cg — ~/.cco/.claude           (ro|rw — `ask` refused)
+#   others: ro             # Co — other projects' .claude  (ro|rw — `ask` refused)
+#   entries:               # content classes, max()-composed with the tree axis
+#     claude_md: ask       #   ⚠ ONE permission rule over every CLAUDE.md under
+#     rules: ro            #   /workspace — it prompts even in a session you opened
+#     agents: ro           #   for authoring, and it is a gate, not a boundary
+#     skills: ro           #   (rules/agents/skills stay mount-enforced per tree)
 
 # ── Host path map (show_host_paths) ──────────────────────────────────
 # show_host_paths: true    # show the host<->container path map (default: true)

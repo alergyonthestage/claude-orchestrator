@@ -2950,7 +2950,7 @@ Options:
                        .claude is read-only by default EXCEPT CLAUDE.md, which is
                        `ask`: writable, but every write prompts (ADR-0057).
                        ⚠ a prompt never times out — for unattended runs declare
-                       `none` (locked) or `repo`/`all` (open)
+                       `none` (refused, zero prompts) or `repo`/`all` (open)
   --cco-access <l>     .cco/framework access: none | read-project (default) |
                        read-global | read-all | edit-project | edit-global |
                        edit-all, or granular global=,current=,others= (each
