@@ -228,7 +228,11 @@ measured-and-amended.**
 - ✅ **1, 2, 3, 4, 6.** The trigger case is closed: a dialog on a nested `CLAUDE.md`, a refusal
   honoured, no dialog on a sibling. The mount half is proven both ways — `/workspace/.claude` `:ro`
   with its `CLAUDE.md` punched through `rw`, and the `rules` tree refusing with `EROFS` on five files
-  for five, no dialog. `none` is genuinely locked. `whoami` reports both dimensions.
+  for five, no dialog. `whoami` reports both dimensions. ⚠ **Check 4's *"`none` is genuinely
+  locked"* held only for the `.claude` trees it probed** — `<repo>/**/CLAUDE.md` was outside it and
+  stayed writable ([FI-67](improvements.md), closed by
+  [ADR-0057 A2](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments)).
+  `none` now emits a deny there; on that surface it is a **gate**, not a boundary.
 - 🔄 **5 — measured, then amended.** [FI-52](improvements.md) is **decided: options 1+4**
   ([ADR-0057 A1](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments)).
   D8's single glob out-reaches the matrix that produced it, by construction; the divergence is

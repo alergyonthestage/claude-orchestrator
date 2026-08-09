@@ -248,8 +248,29 @@ run engine update + migrations, one command). Keep them together with that refac
 
 ## FI-10: Is managed `permissions.deny` enforced under `--dangerously-skip-permissions`?
 
-**Status**: Open (raised 2026-06-30 during the `settings.json` decomposition for npm packaging —
-ADR-0037 D10). Security investigation; does **not** block packaging.
+**Status**: ✅ **ANSWERED — YES, enforced** (measured 2026-08-09, while deciding
+[FI-67](#fi-67-claude_access-none-does-not-lock-repoclaudemd--the-plane-that-governs-it-emits-nothing-for-ro)).
+Raised 2026-06-30 during the `settings.json` decomposition for npm packaging (ADR-0037 D10).
+
+**The measurement.** In a live session confirmed by `ps` to run `claude --dangerously-skip-permissions`
+(v2.1.226), a `Read` of a path under the managed-denied glob `Read(~/.ssh/*)` was refused —
+*"File is in a directory that is denied by your permission settings"* — while a read of a
+**non-existent path outside** the glob returned *"File does not exist"*. 🔑 **The two errors differ,
+which is what makes it a measurement**: the rule was consulted and blocked the call before the
+filesystem was reached, rather than the path simply being absent. Both probes used non-existent paths,
+so neither outcome could disclose anything.
+
+Agrees with the official documentation, which states it outright: *"Deny rules and explicit ask rules
+apply in every mode, including `bypassPermissions`. Allow rules have no effect in that mode because
+everything else is already approved."*
+
+**Consequence**: no action on the baked `deny` — it is a real backstop, not decoration. Neither
+`allowManagedPermissionRulesOnly` nor `disableBypassPermissionsMode` is needed, so the zero-friction
+model stands. ⚠ **This does not upgrade a rule into a boundary**: `deny` covers the built-in modifying
+tools and the Bash file commands Claude Code recognizes, never `dd`/`truncate`/an interpreter (P6).
+Docker remains the boundary. ADR-0057 A2 depends on this result and cites it.
+
+*Original analysis below, unchanged.*
 
 **Context**: cco always launches `claude --dangerously-skip-permissions` (`config/entrypoint.sh:261,267`),
 which bypasses the permission-prompt gate. The framework relies on managed `permissions.deny`
@@ -2792,10 +2813,20 @@ current state — a shipped guarantee that no longer holds — is the only one t
 
 ## FI-67: `claude_access: none` does not lock `<repo>/**/CLAUDE.md` — the plane that governs it emits nothing for `ro`
 
-**Status**: 🔴 Open — a **decision**, not a defect in the code. Found by the
+**Status**: ✅ **Decided and closed 2026-08-09 — options 1 + 2 (both)**, recorded as
+[ADR-0057 Amendment A2](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md#amendments).
+`none` now emits `deny(Edit(//workspace/**/CLAUDE.md))`, **and** the three claims were corrected in the
+same change — because the deny alone would have replaced a false statement with a subtler one: on this
+surface cco holds a gate, never a boundary. 🔑 The predicate requires **ALL** in-reach trees to resolve
+`ro`, not ANY: one glob spans both trees and precedence is `deny → ask → allow`, so an ANY spelling
+would revoke a write granted on the other tree. The mixed cell stays ungoverned, as A1's residue.
+🔑 Grounded on a measurement that also closed **[FI-10](#fi-10-is-managed-permissionsdeny-enforced-under---dangerously-skip-permissions)**
+after six weeks: a managed deny **is** enforced under `--dangerously-skip-permissions`.
+
+Found by the
 [A4 pre-merge gate review](configuration/agent-cco-access/reviews/2026-08-09-a4-pre-merge-gate-review.md)
 (2026-08-09). **Not a regression**: this surface was writable in every session before A4 too. What is
-new is that three living documents now say it is not.
+new is that three living documents now say it is not. *Original analysis below, unchanged.*
 
 **The mechanism.** ADR-0057 D8 governs `<repo>/**/CLAUDE.md` on the **permissions plane only** — the
 set is unbounded, so the mount plane cannot enumerate it. But the permissions emitter only ever emits
