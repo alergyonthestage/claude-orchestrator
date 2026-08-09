@@ -40,9 +40,10 @@ loses nothing.
 - Then **Block A** → `0.7.0`: A1, A2, A3, A5, A6, A7, A8 (A4 is done). A5 and A8 share one short
   design over the same interactive surface — see the A8 entry.
 
-**3. Housekeeping, small and safe**: `scratchpad/backlog.md` and `scratchpad/backlog-2.md` are both
-fully absorbed into the tracker (v1 → FI-56…FI-61, v2 → FI-68…FI-70 and A8) and can be deleted. They
-were left in place only because the maintainer asked to delete them personally.
+**3. Nothing to clean up.** `scratchpad/backlog.md` and `scratchpad/backlog-2.md` were absorbed into
+the tracker this session (v1 → FI-56…FI-61, v2 → FI-68…FI-70 and A8) and have been deleted.
+`scratchpad/` is gitignored, so nothing about it appears in `git status` — do not read an empty status
+as evidence that scratch work was committed.
 
 ## Tasks
 
@@ -60,7 +61,6 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
 - [ ] **[FI-71](improvements.md)** — config-editor design doc drift; a `documenter` task, out of sequence
 - [ ] **macOS host suite (bash 3.2)** — last run was `1626 / 0` on the `v0.6.0` tree; **owed again**
       before the `0.7.0` release, since nothing has re-measured 3.2 on `develop`
-- [ ] **Delete `scratchpad/backlog.md` and `scratchpad/backlog-2.md`** — fully absorbed
 
 ## Context
 
