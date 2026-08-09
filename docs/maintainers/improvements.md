@@ -2968,3 +2968,37 @@ open rather than patching the format string: it is the same interactive surface 
 cheapest moment to make the three consistent is when all three are in hand.
 
 **Effort**: Low.
+
+---
+
+## FI-71: the config-editor design doc describes an access model that was replaced twice
+
+**Status**: 🔴 Open — found by the
+[post-merge docs review](configuration/agent-cco-access/reviews/2026-08-09-post-merge-docs-review.md)
+(2026-08-09). **Pre-dates that review**: the drift was introduced by ADR-0048 and never swept.
+
+`internal-projects/config-editor/design/design-config-editor.md` (table §30, prose §43, diagram §192)
+still says the built-in resolves `claude_access=all` + `cco_access=edit-all`. Three decisions have
+overtaken it:
+
+- **ADR-0048 (WS-A)** replaced that with **min-privilege by mode** — project mode `(ro,rw,none)`, bare
+  global mode `(rw,none,none)`; `edit-all` is now only the explicit `--all` route.
+- **ADR-0049 §8** removed the bespoke *"`claude_access` follows `G`"* floor: Axis B now **derives**
+  from the resolved cco triple, so the doc's independent `all` is not merely stale, it is a model
+  that no longer exists.
+- **ADR-0057 / FI-52** adds that the session also takes a `CLAUDE.md` prompt, which A1 accepted and
+  `cco start` announces.
+
+**Why it is not a documentation nit.** This is a **living** doc on a **security surface**, and it
+overstates the built-in's privilege in the direction that matters: a reader planning work against it
+would assume the authoring session can write every project's config and every `.claude` tree. The
+places that *are* current (`cli.md`, the managed `cco-config-interaction.md` rule, ADR-0048/0049) all
+disagree with it, so the wrong copy is the one a maintainer reaches through the config-editor's own
+design tree.
+
+**Direction**: rewrite the three sites against ADR-0048 + ADR-0049 §8 + ADR-0057, and re-derive the
+diagram from `_config_editor_default_cco` rather than from the prose. ⚠ Re-derive the **whole** model
+while there, not the three flagged lines — the doc predates two ADRs, so a named list is a lower bound
+(this project's third recurrence of that lesson). Belongs to the `documenter`, not to an inline fix.
+
+**Effort**: Medium — the rewrite is small, the re-derivation is the work.
