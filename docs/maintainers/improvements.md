@@ -2712,9 +2712,19 @@ must cross a command substitution", and whether it can be linted.
    on the grounds that *"a declaration names the axes, it does not read them"* — but
    `local m=$(_derive "$claude_cp")` is a declaration **and** a read, and slips through. Narrow it to
    `local` lines with no `$(` / backtick, or with no `=` at all.
+3. **The `REDERIVE` arm is blind to the dimension ADR-0057 added.** Added by the
+   [pre-merge gate review](configuration/agent-cco-access/reviews/2026-08-09-a4-pre-merge-gate-review.md)
+   (2026-08-09). Its pattern is `claude_c[rpgo]` — the four **tree** axes only. The four **class**
+   axes (`claude_emd` / `claude_eru` / `claude_eag` / `claude_esk`) are raw Axis-B inputs by exactly
+   the same argument, and a re-derivation from them outside the resolver goes uncaught. The live tree
+   is clean either way, so this is coverage, not a hole. ⚠ Closing it is two edits, not one: widening
+   the pattern immediately flags `CCO_CLAUDE_ENTRIES=` at `lib/cmd-start.sh` — legitimate transport,
+   which needs the same declared exemption `CCO_CLAUDE_TRIPLE` already has. Left alone here because
+   it lands in the same reconciliation as (1): *what the lint guards* and *what §5 publishes* must be
+   decided together.
 
-**Effort**: Low for (2); Low-Med for (1), depending on which way it is reconciled — and that choice
-is a decision, not a fix.
+**Effort**: Low for (2) and (3); Low-Med for (1), depending on which way it is reconciled — and that
+choice is a decision, not a fix.
 
 ---
 
@@ -2777,3 +2787,60 @@ pin the preset explicitly at `claude: none` if the wording was meant literally. 
 current state — a shipped guarantee that no longer holds — is the only one that is not.
 
 **Effort**: Low.
+
+---
+
+## FI-67: `claude_access: none` does not lock `<repo>/**/CLAUDE.md` — the plane that governs it emits nothing for `ro`
+
+**Status**: 🔴 Open — a **decision**, not a defect in the code. Found by the
+[A4 pre-merge gate review](configuration/agent-cco-access/reviews/2026-08-09-a4-pre-merge-gate-review.md)
+(2026-08-09). **Not a regression**: this surface was writable in every session before A4 too. What is
+new is that three living documents now say it is not.
+
+**The mechanism.** ADR-0057 D8 governs `<repo>/**/CLAUDE.md` on the **permissions plane only** — the
+set is unbounded, so the mount plane cannot enumerate it. But the permissions emitter only ever emits
+**`ask`** rules: `_claude_matrix_asks` is its single input, and a cell resolving `ro` produces
+nothing. The mount plane cannot help either, because the repo itself is bound `rw` and `.claude` is
+the only sub-tree overlaid `:ro`. So for that one surface `ro` is **unenforceable as implemented**:
+
+| `claude_access` | `<repo>/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` and `<repo>/**/CLAUDE.md` |
+|---|---|---|
+| default (`claude_md=ask`) | `rw` mount + prompt | **prompt** ✅ the ADR's trigger case |
+| `none` | `:ro` at OS level ✅ | **silently writable** ⚠ |
+| `repo` / `all` | `rw` | silently writable — *deliberate grant*, fine |
+| `entries.claude_md=ro` | `:ro` | **silently writable** ⚠ |
+
+Measured on the emitted compose (`--dry-run --dump`, a project with `CLAUDE.md` at the repo root and
+at `sub/`): under `--claude-access none` no overlay file is generated, no `managed-settings.json` bind
+appears, and `/workspace/dummy-repo` carries no `:ro`.
+
+**Why it matters — three published statements are false in that shape**, and one of them is a
+security guarantee that D4 deliberately *narrowed* so it would be "written true the first time":
+
+- `docs/users/reference/cli.md`: *"Prose governance (`CLAUDE.md`, `rules/`, `agents/`, `skills/`) is
+  modifiable only through an explicit in-session human approval."*
+- `docs/users/reference/cli.md` + `templates/project/base/project.yml` + `changelog.yml` #62:
+  *"`claude_access: none` (locked, zero prompts)"* — and *"Every `CLAUDE.md` inside your repos — root
+  and nested — … **It now prompts**"*, stated unconditionally.
+- The acceptance record, the roadmap and the handoff all carry *"`none` is genuinely locked"*
+  (check 4). ⚠ **Check 4 measured only `/workspace/.claude/CLAUDE.md`** — the one tree where the
+  mount plane *does* reach. The repo-native surface D8 exists for was never in the probe, so the
+  check could not have caught this. The acceptance record is history; the claim it supports is not.
+
+**Options** (each is a decision, none is a patch):
+
+1. **Emit a `deny` rule** when `claude_md` resolves `ro` on an in-workspace tree —
+   `deny(Edit(//workspace/**/CLAUDE.md))`. Symmetric with the `ask` emission, one line in the same
+   emitter. ⚠ It is a **gate, not a boundary** (P6): `dd`/`truncate`/an interpreter still pass, so it
+   would close the ordinary path and not the adversarial one — which must be said where it is
+   published, or it repeats the very failure D4 was narrowed to avoid.
+2. **Reword the three claims** to what holds: the guarantee is about the `.claude` trees, and
+   `<repo>/**/CLAUDE.md` is governed *only* when the class resolves `ask`. Cheapest, and honest.
+3. **Both** — (1) plus a sentence stating (2)'s residue.
+
+Doing nothing is the only unacceptable answer, because the gap is currently *claimed closed*. Note
+the affinity with [FI-52](#fi-52-the-claude_md-permission-rule-out-reaches-the-matrix-that-produced-it):
+that one is *rule out-reaches matrix*, this one is *matrix out-reaches rule* — the same seam, the
+other way round.
+
+**Effort**: Low for (2); Low-Med for (1) — the emitter change is small, the wording is the work.
