@@ -162,9 +162,21 @@ D2 set + the normalizer), all **four** producers routed, `INV-AGN`, `cco whoami`
 at `/etc/cco/agents-report`, user docs + `changelog.yml` #64. Suite **1653/7 of 1660** in-container
 (mask on), the 7 verified name for name as the known host-only set; +20 tests, zero regressions. The
 19 new tests were shown to **discriminate**: with the projection neutralised, 8 of them fail.
-🔴 **Not yet verified**: ADR-0058's checks 1–5 need a real session (`cco start` is host-only), so the
-delivery half is **unmeasured** — the projection contract is what the suite proves. No `cco build`
-required: everything here is produced at start time by `./bin/cco`.
+✅ **VERIFIED IN A LIVE SESSION 2026-08-13 — checks 1–3 PASS**
+([results](integration/agent-teams/reviews/0058-delivery-probe-results.md)). A restricted pack role
+delivered (`ToolSearch` → `SendMessage` → `success:true` → `<teammate-message>` at the lead); the
+unrestricted agent still delivered; and the **negative control fell in the same session** — a
+platform built-in with an exhaustive `tools:` allowlist, which cco does not touch, made **zero tool
+calls** and reached the lead as an **idle notification with no content**. That is FI-58 reproduced in
+vivo beside its fix, with nothing else varying.
+🔑 **D2's `ToolSearch` clause is now measured, not argued**: the restricted role had to search for
+`SendMessage` before it could call it. Guaranteeing the channel alone would have granted a tool the
+agent cannot find.
+📝 **Check 4 is only half done** (the *pack* producer; the global one is shadowed by the pack and
+cannot be addressed by name), and **checks 6–7 (D10/D11) were not run live** — the suite covers them.
+📝 **Operational fact**: the lead's inbox drains when the lead's **turn ends**, not while it runs. A
+mid-turn transcript read shows "delivered to inbox" and "nothing received" at once, and both are
+true — this was nearly filed as a second defect.
 
 **What it needs now**: implementation, and **there is no content-level quick win** — see
 [A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments). The first
