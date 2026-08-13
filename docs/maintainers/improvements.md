@@ -2604,13 +2604,31 @@ large as moving `.cco` out of the branch-versioned surface; that is precisely wh
 
 ---
 
-## FI-58: 🔴 teammate deliverables never reach the lead — **diagnosed**
+## FI-58: teammate deliverables never reach the lead ✅ fixed and verified live
 
-**Status**: 🔴 **Investigated and understood 2026-08-13; fix not yet implemented.** Reported by the
-maintainer 2026-08-06 as the single most expensive recurring failure.
+**Status**: ✅ **FIXED 2026-08-13** — ADR-0058 **D4/D5 + D6** implemented, verified in a live session
+(checks 1–3 pass), merged into `develop`. Reported by the maintainer 2026-08-06 as the single most
+expensive recurring failure; diagnosed the same day it was fixed.
 📄 [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) ·
-📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Accepted
-(design)**, D1…D11; implementation not started.
+📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Accepted**,
+D1…D11 + amendments A1/A2/A3 ·
+🧪 [delivery probe results](integration/agent-teams/reviews/0058-delivery-probe-results.md)
+
+**What shipped**: a start-time normalizer (`lib/agents.sh`) that mounts a definition missing any
+coordination tool from a **normalized copy** — the committed file is never edited — routed through
+**all four** agent-mount producers and guarded by `INV-AGN`. Three cases stay deliberately unfixed
+and are named in a `⚠ warn` + `cco whoami`: a writable agents tree (D10), an unparsable definition
+(D11), an explicit `disallowedTools:` exclusion (A3).
+
+**Still open on this line** (not blockers, tracked here so they are not lost):
+- The **global** producer was never measured end-to-end — `analyst`/`reviewer` exist in both trees
+  and the pack shadows the global one, so a probe cannot address it by name. Its mount half is
+  verified; its delivery half is not.
+- **D10/D11 were not exercised live** — the suite covers them, but a suite cannot show a teammate
+  failing to deliver.
+- **D3, D7, D8-as-amended** are unbuilt: cco's own two definitions in the subtractive form, the teams
+  knob, and the fallback instruction in the `SubagentStart` hook (a **baked** file — it drags a
+  `cco build` into whatever unit takes it).
 
 **Root cause.** cco enables agent teams at the **managed** layer
 (`defaults/managed/managed-settings.json:5`), which turns the `Agent` tool into a **teammate

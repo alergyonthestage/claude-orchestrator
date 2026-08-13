@@ -74,8 +74,10 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ✅ **The A4 push is done** — `develop` is **level with `origin/develop`** at `e6ea2e7`
-  (A4, the FI-67 fix and the docs review, merged 2026-08-09, pushed from the host on 2026-08-13).
+  `0.6.0`. ⚠ **`develop` is 14 commits ahead of `origin/develop`** (the FI-58 merge `979a0e4` and its
+  history) — **owed a push from the host**, along with deleting the two merged remote branches
+  `origin/feat/delegation/return-channel` and `origin/feat/access/claude-md-axis`.
+  ✅ The earlier A4 push is done — `develop` was level at `e6ea2e7` before this merge.
   Both merged branches are gone locally; `origin/feat/access/claude-md-axis` **still exists on the
   remote** and can be deleted from the host (`git push origin --delete feat/access/claude-md-axis`).
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
@@ -83,10 +85,9 @@ narrative, the lessons, and the per-stage records live in
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
   ⚠ **Push with `--follow-tags`** when a tag is involved — a bare `git push` leaves the tag behind
   and `release.yml` never fires.
-- **Test baseline**: in-container **1653 passed / 7 failed of 1660**, measured on
-  `feat/delegation/return-channel` (2026-08-13, mask on) — +20 over the `develop` baseline below,
-  all from the FI-58 unit. Previously **1633 passed / 7 failed of 1640** on `develop` at
-  `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
+- **Test baseline**: in-container **1654 passed / 7 failed of 1661**, measured on `develop` after the
+  FI-58 merge (2026-08-13, mask on) — +21 over the previous baseline, all from that unit. Previously
+  **1633 passed / 7 failed of 1640** on `develop` at `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
   [FI-19](improvements.md)). +2 against A4's `1631/7 of 1638`: the FI-67 regression pair. The last
   macOS host run (bash 3.2) was **1626 / 0** on the `v0.6.0` tree — **owed again** before the `0.7.0`
@@ -139,7 +140,13 @@ Two ordering constraints are load-bearing:
 
 ---
 
-### 🔴 Ahead of the queue — the delegation channel ([FI-58](improvements.md))
+### ✅ Closed — the delegation channel ([FI-58](improvements.md))
+
+**DONE 2026-08-13**: implemented, verified in a live session, and **merged into `develop`**
+(`979a0e4`, a `--no-ff` merge of 13 commits; the feature branch is deleted locally and
+`origin/feat/delegation/return-channel` still needs deleting from the host). Suite **1654/7 of
+1661** (mask on), the 7 the known host-only set. The detail below is kept because the *unfinished*
+parts of ADR-0058 are listed in it — D3, D7 and D8-as-amended are unbuilt.
 
 **Investigation DONE 2026-08-13 — the fix is now a Block-sized unit.** Priority set by the
 maintainer 2026-08-06, on cost.
