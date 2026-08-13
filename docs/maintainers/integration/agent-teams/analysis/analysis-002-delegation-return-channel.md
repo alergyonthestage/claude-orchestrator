@@ -245,6 +245,10 @@ deliver". Option 3 survives only in the form *"write the report to a file with `
 
 ## 11. Open questions for the design
 
+> **Forward annotation, 2026-08-13**: questions 1 and 2 were ruled the same day —
+> [ADR-0058 D10 and D11](../decisions/0058-teammate-coordination-tools.md). The text below is kept
+> as it was written, as the record of what was open at analysis time.
+
 1. **The `entries.agents=rw` cell.** When the user asked for a writable agents tree, projecting a
    normalized copy at the same path means they edit an overlay rather than their file. Same shape
    as A4's mixed cell (ADR-0057 §D8).

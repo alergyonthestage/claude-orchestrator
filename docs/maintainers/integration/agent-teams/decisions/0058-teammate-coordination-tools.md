@@ -1,7 +1,7 @@
 # ADR 0058 — Guaranteed coordination tools for teammates
 
-**Status**: **Proposed** — 2026-08-13. Direction approved by the maintainer; the numbered decisions
-below and the two questions in *Open for the maintainer* still need a ruling before implementation.
+**Status**: **Accepted (design)** — 2026-08-13. Direction approved the same day; **D10 and D11 ruled
+by the maintainer** on the two questions this ADR opened. Implementation not started.
 Closes **[FI-58](../../../improvements.md)**.
 
 **Evidence**: [analysis-002 — the delegation return
@@ -184,19 +184,44 @@ result is believed:
    measuring the fix and not the weather;
 4. a **pack** agent and a **global** agent both pass — D5's two producers, separately;
 5. with teams off (once D7's knob exists), the coordination set is **absent** — proves the condition
-   is coupled, not constant.
+   is coupled, not constant;
+6. **D10** — under `entries.agents=rw` **no** normalized copy is projected, the file the agent reads
+   is byte-identical to the user's, and the warning is emitted;
+7. **D11** — a deliberately malformed definition **starts** the session, is passed through unchanged,
+   and is **named** in the warning.
+
+⚠ Check 6 must compare the file **the agent actually reads** against the user's, not the mount mode
+— the FI-25 mask makes every tree `rw` in this project, so a mode-based assertion here would pass
+while measuring nothing.
 
 ⚠ Checks 1–5 are invisible to the hermetic suite by construction — they need a real session. This is
 the same lane as ADR-0057's acceptance; budget for it as container checks, not as suite-green.
 
-## Open for the maintainer
+## D10 — the `entries.agents=rw` cell is warned, never rewritten
 
-1. **The `entries.agents=rw` cell.** When the user has asked for a writable agents tree, a
-   normalized projection means they edit an overlay rather than their file. Same shape as A4's mixed
-   cell. Proposal: normalize only where the tree is mounted `ro`, and in the `rw` cell fall back to
-   D6's warning alone — there the user is actively authoring, so a warning is actionable and a
-   silent rewrite would be worse.
-2. **Unparseable definitions: refuse or pass through?** Refusing blocks a session on a malformed
-   user file; passing through re-opens the silent failure the ADR exists to close. Proposal: pass
-   through **with a `⚠ warn` naming the file**, on the grounds that cco must not make a session
-   unstartable because of a comment in someone's markdown.
+**Normalization applies only where the agents tree is mounted `ro`.** Where the user has asked for a
+writable tree (`entries.agents=rw`, ADR-0057), cco does **not** project a normalized copy: it emits
+D6's warning and leaves the file alone.
+
+The reason is the asymmetry of the two cells, not a preference. Under `ro` the user is a *consumer*
+of the definition and a projection is invisible and harmless. Under `rw` the user is **authoring**
+it — so a warning is actionable (they can fix it in the file they are already editing), and a
+projection would be actively harmful: they would edit an overlay, or read content that is not their
+file, which is the *artefact differs from what runs* hazard in its worst form.
+
+⚠ This leaves the `rw` cell **deliberately ungoverned**, exactly as ADR-0057 D8 leaves its mixed
+cell. It is a known, published gap — not an oversight to be closed in passing. If Block D changes
+the mount topology, revisit it there.
+
+## D11 — an unparseable definition passes through, with a warning
+
+If the normalizer cannot parse a definition, it **passes the file through unchanged and emits a
+`⚠ warn` naming it** — it does not refuse the session.
+
+cco must not make a session unstartable because of a stray character in someone's markdown. The
+cost is real and is accepted: that one agent keeps the silent-failure behaviour this ADR exists to
+close, which is why the warning must name the *file*, not just the condition.
+
+📝 D11 is the one place where this ADR's guarantee does not hold, and D6's visibility is the entire
+remedy. That makes D6 load-bearing twice over — once for D10, once here — and settles that it ships
+with D4, not after it.

@@ -141,8 +141,8 @@ Two ordering constraints are load-bearing:
 **Investigation DONE 2026-08-13 — the fix is now a Block-sized unit.** Priority set by the
 maintainer 2026-08-06, on cost.
 📄 [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) ·
-📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Proposed**,
-two questions open for the maintainer.
+📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Accepted
+(design) 2026-08-13**, D1…D11. Design gate passed; implementation not started.
 
 **The gating question is answered: it IS cco's surface**, and not the one anyone expected. cco
 enables agent teams at the **managed** layer, which turns the `Agent` tool into a teammate spawner
@@ -154,8 +154,7 @@ two Claude Code versions: not intermittent, total, and tracking the *agent type*
 `EACCES`, transcripts persist, socket listening, inboxes drained: the transport is healthy. And
 **no prompt-level remedy works** — a probe ordered to call `SendMessage` tried and could not.
 
-**What it needs now**: a ruling on ADR-0058's two open questions (the `entries.agents=rw` cell;
-refuse-vs-pass-through on an unparseable definition), then D3 (content-only, free) and D4/D5 (the
+**What it needs now**: implementation. D3 (content-only, free) and D4/D5 (the
 normalizer + a lint over **both** agent-mount producers — `lib/cmd-start.sh:2220` and
 `lib/packs.sh:192`, the second being [FI-63](improvements.md)'s clause). **D6 sequences with A5**:
 a warning emitted before `cco start` pauses on warnings is a warning nobody reads.

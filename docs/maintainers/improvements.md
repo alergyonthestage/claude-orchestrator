@@ -2609,7 +2609,8 @@ large as moving `.cco` out of the branch-versioned surface; that is precisely wh
 **Status**: 🔴 **Investigated and understood 2026-08-13; fix not yet implemented.** Reported by the
 maintainer 2026-08-06 as the single most expensive recurring failure.
 📄 [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) ·
-📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) (Proposed).
+📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Accepted
+(design)**, D1…D11; implementation not started.
 
 **Root cause.** cco enables agent teams at the **managed** layer
 (`defaults/managed/managed-settings.json:5`), which turns the `Agent` tool into a **teammate
