@@ -2518,8 +2518,10 @@ if it recurs.
 
 ## FI-55: `cco start` never pauses on its own warnings — the session opens over them
 
-**Status**: 🔴 Open — raised by the maintainer 2026-08-06, from repeated field experience. **Quick
-win, Block A.**
+**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md)
+(Accepted, D1…D15) + [design](cli/design/design-warning-gate-and-onboarding-prompts.md). Not
+implemented. Raised by the maintainer 2026-08-06, from repeated field experience. **Quick win,
+Block A**, designed jointly with [A8](#fi-68-cco-project-add-mount---readonly-is-a-no-op-and-no-flag-declares-a-writable-mount).
 
 **What happens.** `cco start` emits its warnings (uncommitted `~/.cco`, uncommitted `.cco`,
 framework-reserved `llms/` shadowing, resolution notices…) and then immediately hands the terminal to
@@ -2917,9 +2919,18 @@ other way round.
 
 ## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount
 
-**Status**: 🔴 Open — a **decision**, not a defect in the default. Reported by the maintainer
-2026-08-09 (field observation), **re-derived from the code and inverted**: the report read *"the
-default is rw and `--readonly` is the explicit flag"*, and the code says the opposite.
+**Status**: 🟡 **Decided + designed 2026-08-13** — the maintainer ruled **option 1** (`--writable`
+added, `--readonly` kept as an explicit affirmation):
+[ADR-0059 D12](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d12--cco-project-add-mount-gains---writable---readonly-stays-and-states-the-default-maintainer-2026-08-13),
+[design §5.1](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented.
+Was a **decision**, not a defect in the default. Reported by the maintainer 2026-08-09 (field
+observation), **re-derived from the code and inverted**: the report read *"the default is rw and
+`--readonly` is the explicit flag"*, and the code says the opposite.
+
+📌 The maintainer's own correction, 2026-08-13, is the clearest statement of the defect and is
+recorded verbatim because it is narrower than the original report: *the CLI with no flag writes only
+the mount's name, without `readonly: true` — which is the default anyway; the real problem is that
+`--readonly` is useless because it is already the default, and no flag sets `rw` from the CLI.*
 
 **What the code does.** `_effective_extra_mounts` resolves the mount mode as
 `ro=$(_parse_bool "$ro_raw" "true")` (`lib/local-paths.sh:312`) — an **absent** `readonly:` key
@@ -2959,7 +2970,9 @@ extra_mount is reference material rather than a config repo.
 
 ## FI-69: the clone prompt never asks where to clone
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059 D13](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d13--the-clone-prompt-offers-its-destination-and-accepts-an-override),
+[design §5.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented. Reported by
+the maintainer 2026-08-09, confirmed in the code.
 
 Option `(c)` of the unresolved-path prompt clones to a destination the user is never shown a chance to
 change: `local clone_target="${suggested:-$HOME/Projects/$name}"`, immediately followed by `mkdir -p`
@@ -2986,7 +2999,9 @@ override, in the same keystroke shape as the rest of the prompt. ⚠ Anything ad
 
 ## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059 D14](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d14--the-reuse-prompt-enumerates-the-tokens-it-accepts),
+[design §5.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented. Reported by
+the maintainer 2026-08-09, confirmed in the code.
 
 The reuse-or-homonym prompt (ADR-0051 D4) prints its options as
 `[1-${#cands[@]}] reuse that path` (`lib/local-paths.sh:438`). With a single candidate that renders
