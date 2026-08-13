@@ -2643,8 +2643,12 @@ recurs.
 teammate even when `tools` restricts other tools"* — **measured false** on 2.1.220 and 2.1.226.
 Worth reporting; the fix must not assume it.
 
-**Effort**: investigation **done**; fix is D3 (free, content-only) + D4/D5 (a normalizer at
-`cco start`, with a lint over both agent-mount producers) + D6 (sequenced with A5).
+⚠ **The six failing roles are USER content** — `core-dev-framework` is authored outside cco, which
+ships only `defaults/global/.claude/agents/{analyst,reviewer}.md`. Any remedy that edits them is
+the approach the ADR rejects ([A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)).
+
+**Effort**: investigation **done**; the fix is D4/D5 (a normalizer at `cco start` with a lint over
+**both** agent-mount producers) + D6 (sequenced with A5). **No content-level quick win exists.**
 
 ---
 

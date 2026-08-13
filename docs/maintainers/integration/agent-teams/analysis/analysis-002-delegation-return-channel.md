@@ -93,8 +93,14 @@ correctly, if unhelpfully, reports to the user as *"finished without delivering"
 
 ## 5. The defect
 
-**`SendMessage` is not in the toolset of any cco role agent**, because every one of them declares a
-restrictive `tools:` allowlist and none of those lists contains it:
+**`SendMessage` is not in the toolset of any of the role agents in play**, because every one of them
+declares a restrictive `tools:` allowlist and none of those lists contains it:
+
+> **Forward annotation, 2026-08-13**: read the *Source* column strictly — it is load-bearing. Of the
+> definitions below, cco **authors only** the two under `defaults/global/`. The six pack roles are
+> **user content** (`core-dev-framework` is authored outside cco). See
+> [ADR-0058 A1](../decisions/0058-teammate-coordination-tools.md#amendments): the remedy may never
+> assume cco can edit them.
 
 | Definition | Source | `tools:` |
 |---|---|---|

@@ -225,3 +225,42 @@ close, which is why the warning must name the *file*, not just the condition.
 📝 D11 is the one place where this ADR's guarantee does not hold, and D6's visibility is the entire
 remedy. That makes D6 load-bearing twice over — once for D10, once here — and settles that it ships
 with D4, not after it.
+
+---
+
+## Amendments
+
+### A1 — D3 and D8 misidentified what cco authors (2026-08-13, same day)
+
+**The error.** D3 listed *"the `core-dev-framework` pack agents"* among the definitions cco writes,
+and the Context section says *"every agent definition cco ships — the six pack roles and the two
+global ones"*. **Both are false.** cco ships exactly **two** agent definitions —
+`defaults/global/.claude/agents/{analyst,reviewer}.md`. `core-dev-framework` is authored **outside
+cco** and installed into the personal store like any other pack; it appears in this repository only
+as a *reference* in `.cco/project.yml`. **The six roles that fail in practice are user content.**
+
+**Why this is not bookkeeping.** The misattribution made D3 look like a *fix* — "rewrite the
+definitions and the roles work today" — when it can only ever be a *convention*. Acting on it would
+have meant editing a user's pack to work around a cco defect: exactly the remedy **P2** rejects,
+putting the guarantee back into content cco does not control, and shifting the cost onto the person
+the ADR exists to protect. It also implied a content-level quick win that **does not exist**.
+
+**D3 restated.** Its scope is exactly what cco authors: the two shipped definitions and the agent
+templates cco generates from. It is a **convention and a documentation item** — the form cco
+recommends to pack and project authors — and it is **never part of the guarantee**. It unblocks
+nothing on its own. Only D4/D5 do.
+
+**D8 carried the same error** and is corrected further: the fallback instruction cannot live "in the
+role definitions", which are user content. It belongs in the one channel cco owns into **every**
+subagent regardless of authorship — the `SubagentStart` hook's `additionalContext`
+(`config/hooks/subagent-context.sh`, already baked into managed settings and already carrying
+`CCO_SUBAGENT_CONTEXT`). That home is strictly better than the original: it reaches agents cco never
+wrote, needs no cooperation from their author, and is the only remedy that still applies in **D11**'s
+pass-through case, where normalization has been declined.
+
+**Consequence for the plan.** There is no content-level first step. The first implementable unit is
+**D4/D5 with D6**.
+
+📝 The general rule this ADR now states explicitly, because it was violated in its own first draft:
+**cco's authorship surface is `defaults/`, `templates/` and `internal/`. Packs, project trees and
+the global store are user content — cco reads and projects them, and never edits them.**

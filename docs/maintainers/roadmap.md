@@ -154,10 +154,12 @@ two Claude Code versions: not intermittent, total, and tracking the *agent type*
 `EACCES`, transcripts persist, socket listening, inboxes drained: the transport is healthy. And
 **no prompt-level remedy works** — a probe ordered to call `SendMessage` tried and could not.
 
-**What it needs now**: implementation. D3 (content-only, free) and D4/D5 (the
-normalizer + a lint over **both** agent-mount producers — `lib/cmd-start.sh:2220` and
-`lib/packs.sh:192`, the second being [FI-63](improvements.md)'s clause). **D6 sequences with A5**:
-a warning emitted before `cco start` pauses on warnings is a warning nobody reads.
+**What it needs now**: implementation, and **there is no content-level quick win** — see
+[A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments). The first
+unit is **D4/D5 + D6**: the normalizer, a lint over **both** agent-mount producers
+(`lib/cmd-start.sh:2220` and `lib/packs.sh:192`, the second being [FI-63](improvements.md)'s
+clause), and the warning. **D6 sequences with A5**: a warning emitted before `cco start` pauses on
+warnings is a warning nobody reads.
 
 ### Block A — quick wins and coherence debts → `0.7.0`
 
