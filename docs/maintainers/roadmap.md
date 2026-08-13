@@ -170,6 +170,15 @@ carry the same information and are readable throughout. A5 changes the stream, n
 nothing here is rewritten when it lands — but the message must be classified honestly as a `⚠ warn`
 **now**, or A5 will not gate on it later.
 
+**Unit scope, fixed 2026-08-13**: **D4/D5 + D6 only**. D3 (cco's own two definitions in the
+subtractive form) and D8-as-amended (the fallback instruction in the `SubagentStart` hook) are
+separate later units — D8 in particular touches a **baked** file (`config/hooks/subagent-context.sh`),
+which would add a `cco build` to this unit's acceptance lane. As scoped, the unit is verified by a
+plain `cco start` from the host: everything it changes is produced at start time by `./bin/cco`.
+📌 **[A3](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)** rules
+the case the design left open: a member of the set named in `disallowedTools:` is **honoured**, the
+agent is named in D6's warning, and `disallowedTools:` is never rewritten.
+
 ⚠ **The producer list is a lower bound** — the same shape that has already cost this project four
 times. An agent definition reaches a session through **four** paths today, not two: the global tree
 (`~/.cco/.claude/agents`, whole-directory mount, `lib/cmd-start.sh:2220`), pack agents (per-file

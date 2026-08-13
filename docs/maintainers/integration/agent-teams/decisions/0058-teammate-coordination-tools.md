@@ -299,3 +299,29 @@ and one of its three announcements is merely late.
 `note:` — A5 gates on exactly that distinction, so a message misclassified now stays invisible after
 A5 lands. D10's `rw` cell and D11's pass-through keep the warning as their entire remedy; that it is
 briefly hard to read is not a licence to skip it.
+
+### A3 — an explicit `disallowedTools` exclusion is honoured, never overridden (2026-08-13, maintainer)
+
+**The case D4 did not cover.** A definition may name a member of the D2 set in `disallowedTools:`
+instead of merely omitting it from `tools:` — the shipped definitions already carry both keys
+(`tools: Read, Grep, …` **and** `disallowedTools: Write, Edit`), so the two-key shape is the normal
+one, not a corner.
+
+**The decision.** **The normalizer adds to `tools:` and never touches `disallowedTools:`.** Where a
+member of the set is explicitly excluded, that agent keeps the pre-fix behaviour and is **named in
+D6's warning**, exactly as D11's unparseable case is.
+
+**Why.** Omission and exclusion are not the same act. An omitted tool is a **side effect** of the
+allowlist form — the user never decided anything about `SendMessage`, which is the whole premise of
+this ADR (P2: *a guarantee the user must remember is not a guarantee*). A named exclusion **is** a
+decision, taken in the file the user owns (P3). Overriding it would put cco in the position of
+silently reversing a line someone wrote on purpose — *the artefact differs from what runs*
+([FI-64](../../../improvements.md)) in its sharpest form, on the one line where the user was explicit.
+Refusing the session was also rejected, for D11's reason: cco does not become unstartable over the
+contents of someone's markdown.
+
+📝 **Consequence, stated plainly**: the guarantee is *"cco never leaves the channel missing by
+accident"*, not *"the channel always exists"*. The second is not achievable without overriding user
+intent. This is the third place where D6's visibility is the entire remedy — with D10's `rw` cell and
+D11 — and the reason the warning must name the **file** and the **member**, so the reader can tell an
+exclusion they chose from an omission they never noticed.
