@@ -1,7 +1,9 @@
 # ADR 0058 — Guaranteed coordination tools for teammates
 
 **Status**: **Accepted (design)** — 2026-08-13. Direction approved the same day; **D10 and D11 ruled
-by the maintainer** on the two questions this ADR opened. Implementation not started.
+by the maintainer** on the two questions this ADR opened, and the sequencing question D6 raised is
+ruled in **[A2](#a2--d6-ships-with-d4d5-ahead-of-a5-2026-08-13-maintainer)**. Implementation not
+started.
 Closes **[FI-58](../../../improvements.md)**.
 
 **Evidence**: [analysis-002 — the delegation return
@@ -127,6 +129,8 @@ message is a `⚠ warn`, not a `note:`.
 warning stream is write-only today — the TUI opens over it and nobody reads it, which
 [FI-54](../../../improvements.md) already demonstrated by sitting unread through a full acceptance
 run. A warning emitted before A5 lands is a warning that does not exist.
+📌 **Ruled by [A2](#a2--d6-ships-with-d4d5-ahead-of-a5-2026-08-13-maintainer)**: D6 ships with D4/D5
+**ahead of** A5, emitted-but-unread for one release. The obligation to emit it is unchanged.
 
 `cco whoami` reports the guarantee as part of the session's state, alongside the two A4 dimensions.
 
@@ -264,3 +268,34 @@ pass-through case, where normalization has been declined.
 📝 The general rule this ADR now states explicitly, because it was violated in its own first draft:
 **cco's authorship surface is `defaults/`, `templates/` and `internal/`. Packs, project trees and
 the global store are user content — cco reads and projects them, and never edits them.**
+
+### A2 — D6 ships with D4/D5, ahead of A5 (2026-08-13, maintainer)
+
+**The question.** D6 and D11 make the warning load-bearing twice, and D6 itself warns that `cco
+start`'s warning stream is write-only until [A5](../../../roadmap.md)
+([FI-55](../../../improvements.md)) lands. That left the first implementation unit undecided: pull A5
+in, or ship D6 knowingly degraded.
+
+**The decision.** **Ship D4/D5 + D6 now, without A5.** The warning is emitted as designed even while
+the stream nobody reads is still the only place it lands. A5 stays a Block-A quick win and is
+expected in the **same `0.7.0` release**, which closes the gap by itself — no follow-up work is
+created here, and D6 needs no rewrite when it does: A5 changes the *stream*, never the message.
+
+**What is accepted, precisely.** Between this unit shipping and A5 shipping, the start-time `⚠ warn`
+is emitted-but-unread. That window is bounded by one release. **The degradation is partial, not
+total** — D6's other two surfaces are readable the whole time and do not depend on A5:
+
+- `cco whoami` reports the guarantee as part of the session's state — readable *in* the session,
+  which is exactly where the affected user is;
+- `--dry-run --dump` shows the normalized set, which is what keeps *"the artefact differs from what
+  runs"* honest for anyone inspecting the compose.
+
+**Why not the other way round.** Sequencing A5 first would hold the delegation fix — a **total**,
+measured failure (0 deliverables of 17) — behind an ergonomics improvement to a stream. The
+asymmetry decides it: without D4/D5 the work is silently thrown away; without A5 the remedy works
+and one of its three announcements is merely late.
+
+⚠ **This does not weaken D6.** Emitting the warning is still mandatory, still a `⚠ warn` and never a
+`note:` — A5 gates on exactly that distinction, so a message misclassified now stays invisible after
+A5 lands. D10's `rw` cell and D11's pass-through keep the warning as their entire remedy; that it is
+briefly hard to read is not a licence to skip it.

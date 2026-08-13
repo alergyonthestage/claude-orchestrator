@@ -97,7 +97,8 @@ narrative, the lessons, and the per-stage records live in
   ⚠ **Consequence for any future A4 measurement in this project**: the mask makes every tree `rw`, so
   `max()` absorbs `ask` and no rule is emitted — pin the shape with an explicit `--claude-access`
   instead, exactly as the runbook does.
-- **Next free ADR number: 0059** (0058 = teammate coordination tools, Proposed). ⚠ **ADR-0038 and
+- **Next free ADR number: 0059** (0058 = teammate coordination tools, **Accepted (design)** with
+  D1…D11 + amendments A1 and A2). ⚠ **ADR-0038 and
   ADR-0040 do not exist as documents** — they are
   numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
   for the first time; do not go looking for a file.
@@ -156,10 +157,29 @@ two Claude Code versions: not intermittent, total, and tracking the *agent type*
 
 **What it needs now**: implementation, and **there is no content-level quick win** — see
 [A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments). The first
-unit is **D4/D5 + D6**: the normalizer, a lint over **both** agent-mount producers
-(`lib/cmd-start.sh:2220` and `lib/packs.sh:192`, the second being [FI-63](improvements.md)'s
-clause), and the warning. **D6 sequences with A5**: a warning emitted before `cco start` pauses on
-warnings is a warning nobody reads.
+unit is **D4/D5 + D6**: the normalizer, a lint over **every** producer of an agent mount
+(`lib/cmd-start.sh:2220` and `lib/packs.sh:192` are the two the ADR names — [FI-63](improvements.md)'s
+clause — and they are a **lower bound**, see below), and the warning.
+
+✅ **The sequencing question is answered (2026-08-13, maintainer):
+[ADR-0058 A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)** —
+**D4/D5 + D6 ship now, without A5**. The `⚠ warn` is emitted as designed even though the start-time
+stream stays write-only until A5, which is a Block-A quick win expected in the **same `0.7.0`
+release**. The degradation is partial and bounded by one release: `cco whoami` and `--dry-run --dump`
+carry the same information and are readable throughout. A5 changes the stream, not the message, so
+nothing here is rewritten when it lands — but the message must be classified honestly as a `⚠ warn`
+**now**, or A5 will not gate on it later.
+
+⚠ **The producer list is a lower bound** — the same shape that has already cost this project four
+times. An agent definition reaches a session through **four** paths today, not two: the global tree
+(`~/.cco/.claude/agents`, whole-directory mount, `lib/cmd-start.sh:2220`), pack agents (per-file
+mounts, `lib/packs.sh:199`), the **committed project tree** (`<repo>/.cco/claude/agents/`, bound
+entry-by-entry through `_emit_claude_view` or whole through the no-injection arm at
+`lib/cmd-start.sh:2286`), and the **repo-native trees** (`<repo>/**/.claude/agents`, recursive, at
+`lib/cmd-start.sh:2511`). The last two are empty in this repo and populated in an adopting one, which
+is precisely how they stay invisible to a fix that enumerates producers. **So D5's lint keys on the
+mount TARGET** (`*/.claude/agents/*`), not on a list of call sites: a fifth producer is then covered
+the day it is written.
 
 ### Block A — quick wins and coherence debts → `0.7.0`
 
@@ -395,6 +415,14 @@ nobody.
 **Behaviour**: after emitting warnings, and only if there are any, stop and ask — start, or abort.
 A clean start stays silent and immediate. The prompt should carry the warning list, because the
 natural next step (offering `cco config save`, committing `.cco`, …) grows out of it.
+
+📌 **Coupled to [FI-58](#-ahead-of-the-queue--the-delegation-channel-fi-58improvementsmd), and the
+coupling is one-way.** ADR-0058 D6's warning ships **before** this
+([A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)), so from the
+moment D4/D5 land there is a real `⚠ warn` in the start stream that nobody can read — A5 is what
+makes it arrive. That does not make A5 a blocker for FI-58, and it does not change A5's design; it
+raises its priority **inside** Block A, and it adds one classification to get right (the normalizer's
+warning is a `⚠ warn`, never a `note:`).
 
 ⚠ **The two things this design must get right**, both already paid for once: the prompt gates on
 `_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the suite and every output-capturing caller
