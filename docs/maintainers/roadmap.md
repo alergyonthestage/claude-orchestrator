@@ -83,7 +83,9 @@ narrative, the lessons, and the per-stage records live in
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
   ⚠ **Push with `--follow-tags`** when a tag is involved — a bare `git push` leaves the tag behind
   and `release.yml` never fires.
-- **Test baseline**: in-container **1633 passed / 7 failed of 1640**, measured on `develop` at
+- **Test baseline**: in-container **1653 passed / 7 failed of 1660**, measured on
+  `feat/delegation/return-channel` (2026-08-13, mask on) — +20 over the `develop` baseline below,
+  all from the FI-58 unit. Previously **1633 passed / 7 failed of 1640** on `develop` at
   `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
   [FI-19](improvements.md)). +2 against A4's `1631/7 of 1638`: the FI-67 regression pair. The last
@@ -154,6 +156,15 @@ two Claude Code versions: not intermittent, total, and tracking the *agent type*
 ⚠ Two things a fix session must not re-derive. **ADR-0055 D5 is excluded by measurement** — no
 `EACCES`, transcripts persist, socket listening, inboxes drained: the transport is healthy. And
 **no prompt-level remedy works** — a probe ordered to call `SendMessage` tried and could not.
+
+✅ **D4/D5 + D6 IMPLEMENTED 2026-08-13** on `feat/delegation/return-channel` — `lib/agents.sh` (the
+D2 set + the normalizer), all **four** producers routed, `INV-AGN`, `cco whoami`, the report mounted
+at `/etc/cco/agents-report`, user docs + `changelog.yml` #64. Suite **1653/7 of 1660** in-container
+(mask on), the 7 verified name for name as the known host-only set; +20 tests, zero regressions. The
+19 new tests were shown to **discriminate**: with the projection neutralised, 8 of them fail.
+🔴 **Not yet verified**: ADR-0058's checks 1–5 need a real session (`cco start` is host-only), so the
+delivery half is **unmeasured** — the projection contract is what the suite proves. No `cco build`
+required: everything here is produced at start time by `./bin/cco`.
 
 **What it needs now**: implementation, and **there is no content-level quick win** — see
 [A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments). The first
