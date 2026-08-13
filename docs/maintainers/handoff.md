@@ -17,19 +17,14 @@ The next decision is a **priority choice**, not an approval: which of the queued
 
 ## How to resume
 
-**1. Push, from the host** — this is the only owed action that cannot be done in a session (network
-verb, host-only). `develop` is **40 commits ahead** of `origin/develop`:
+**1. ✅ Done (2026-08-13).** The push ran from the host: `develop` is level with `origin/develop` at
+`e6ea2e7`, `origin/fix/access/fi67-none-locks-repo-claude-md` is deleted, and both local branches were
+deleted in-session. **One host-only leftover**:
 
 ```
 cd /Users/alessandro/Projects/CaveResistance/Software/claude-orchestrator
-git push origin develop
 git push origin --delete feat/access/claude-md-axis
-git push origin --delete fix/access/fi67-none-locks-repo-claude-md
-git branch -d feat/access/claude-md-axis fix/access/fi67-none-locks-repo-claude-md
 ```
-
-Both local branches are fully merged into `develop` (fast-forward, tree-identical), so deleting them
-loses nothing.
 
 **2. Then pick the next unit.** In the order the roadmap gives:
 
@@ -49,7 +44,7 @@ as evidence that scratch work was committed.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] **Push `develop` + delete the two merged remote branches** — host-only (see above)
+- [x] **Push `develop`** — done 2026-08-13; one remote branch left to delete, host-only (see above)
 - [ ] 🔴 **[FI-58](improvements.md)** — delegation channel; investigation session, ahead of the queue
 - [ ] **[A1](roadmap.md)** — `cco save`, project-config versioning helper (needs a short design)
 - [ ] **[A2](roadmap.md)** — per-project custom Docker image ([FI-49](improvements.md); short design)

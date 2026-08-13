@@ -74,10 +74,15 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ⚠ **`develop` is 40 commits ahead of `origin/develop` and unpushed** (A4, the FI-67 fix,
-  and the docs review — merged 2026-08-09) — push from the host, `--follow-tags` when a tag is
-  involved. Two merged branches still exist on the remote and can be deleted with the same push:
-  `feat/access/claude-md-axis` and `fix/access/fi67-none-locks-repo-claude-md`.
+  `0.6.0`. ✅ **The A4 push is done** — `develop` is **level with `origin/develop`** at `e6ea2e7`
+  (A4, the FI-67 fix and the docs review, merged 2026-08-09, pushed from the host on 2026-08-13).
+  Both merged branches are gone locally; `origin/feat/access/claude-md-axis` **still exists on the
+  remote** and can be deleted from the host (`git push origin --delete feat/access/claude-md-axis`).
+  📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
+  of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
+  `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
+  ⚠ **Push with `--follow-tags`** when a tag is involved — a bare `git push` leaves the tag behind
+  and `release.yml` never fires.
 - **Test baseline**: in-container **1633 passed / 7 failed of 1640**, measured on `develop` at
   `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
