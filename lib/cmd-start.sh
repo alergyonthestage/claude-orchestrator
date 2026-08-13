@@ -2,7 +2,10 @@
 # lib/cmd-start.sh — Start project session command
 #
 # Provides: _setup_internal_tutorial(), cmd_start()
-# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, session-context.sh, packs.sh, paths.sh
+# Dependencies: colors.sh, utils.sh, yaml.sh, secrets.sh, session-context.sh, packs.sh, paths.sh,
+#   agents.sh (the coordination normalizer, ADR-0058 — the mount emitters route
+#   every agent source through _agent_src, so a context that sources this module
+#   without it emits mounts with an EMPTY source, not merely unnormalized ones)
 # Globals: IMAGE_NAME, REPO_ROOT (projects via the STATE index, P5). The internal
 # tutorial/config-editor runtime lives in machine-local STATE via
 # _cco_internal_runtime_dir() — NOT under the framework tree, which may be
@@ -970,7 +973,11 @@ _emit_claude_view() {
                     _claude_view_stub "$view" "$base/$fb" "$f" \
                         || die "Cannot create the .claude mountpoint view at $view (entry '$base/$fb')."
                 fi
-                _compose_vol "$f" "/workspace/.claude/$base/$fb" "$entry_mode"
+                # ADR-0058 D5: a per-entry bind of agents/ (the shape a pack-adopting
+                # project always takes) is an agent-mount producer like any other.
+                # _agent_src is a no-op for every other namespace.
+                _compose_vol "$(_agent_src "$f" "/workspace/.claude/$base/$fb" "$entry_mode")" \
+                    "/workspace/.claude/$base/$fb" "$entry_mode"
             done
         else
             [[ "$inj_targets" == *$'\n'"/workspace/.claude/$base"$'\n'* ]] && continue
@@ -1941,6 +1948,16 @@ _start_generate_compose() {
     else secret_mask="$session_cache_dir/.secret-mask"; fi
     mkdir -p "$(dirname "$secret_mask")"; : > "$secret_mask"
 
+    # Coordination-tool normalizer work dir (ADR-0058 D4). Holds the normalized
+    # agent copies and the report D6 reads. Dry-run puts it under the dump dir for
+    # the same reason the secret mask does: `--dry-run --dump` must show the
+    # normalized set, or the inspection surface lies about what would run.
+    local agents_work
+    if $dry_run; then agents_work="$output_dir/.cco/agents"
+    else agents_work="$session_cache_dir/agents"; fi
+    _agents_norm_init "$agents_work" \
+        || warn "Agent teams: cannot prepare ${agents_work} — agent definitions are mounted as-is, so a restricted teammate may be unable to deliver (ADR-0058)."
+
     # Trusted session descriptor host path (ADR-0047 R2). Kept OUT of the managed
     # overlay dir (which is bulk-mounted :ro at /workspace/.managed) so it surfaces
     # ONLY at /etc/cco/session-access. Written in the operator env block below (it
@@ -2217,7 +2234,12 @@ YAML
         _compose_vol "${global_claude}/settings.json" "/home/claude/.claude/settings.json"
         _compose_vol "${global_claude}/CLAUDE.md" "/home/claude/.claude/CLAUDE.md" "$(_claude_matrix_mount_mode "$claude_matrix" global claude_md)"
         _compose_vol "${global_claude}/rules" "/home/claude/.claude/rules" "$(_claude_matrix_mount_mode "$claude_matrix" global rules)"
-        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "$(_claude_matrix_mount_mode "$claude_matrix" global agents)"
+        local _g_agents_mode; _g_agents_mode=$(_claude_matrix_mount_mode "$claude_matrix" global agents)
+        _compose_vol "${global_claude}/agents" "/home/claude/.claude/agents" "$_g_agents_mode"
+        # ADR-0058 D4/D5: the tree is bound whole, so the normalized copies arrive
+        # as child binds over it. Under Cg=rw nothing is projected (D10) — the
+        # overlay pass warns instead.
+        _emit_agent_dir_overlays "${global_claude}/agents" "/home/claude/.claude/agents" "$_g_agents_mode"
         _compose_vol "${global_claude}/skills" "/home/claude/.claude/skills" "$(_claude_matrix_mount_mode "$claude_matrix" global skills)"
         # Project config B2 (/workspace/.claude). Mode from claude Cp (_b2_mode: rw
         # when Cp=rw, ro otherwise — ADR-0049 reverses P17, so a normal read-project
@@ -2286,6 +2308,12 @@ YAML
             _compose_vol "${claude_src}" "/workspace/.claude" "${_b2_mode}"
             _emit_class_overlays "$claude_matrix" "current" "$claude_src" "/workspace/.claude" "$_b2_mode"
         fi
+        # ADR-0058 D4/D5, the committed project tree — the producer the ADR does not
+        # name, and the one an adopting project populates. Emitted for BOTH arms: the
+        # view binds agents/ per entry only when something was injected into that
+        # namespace, and a target already mounted is skipped inside the overlay pass.
+        _emit_agent_dir_overlays "${claude_src}/agents" "/workspace/.claude/agents" \
+            "$(_claude_matrix_mount_mode "$claude_matrix" current agents)"
         # Functional-write floor (ADR-0049 §5, re-derived by ADR-0055 D2): when B2 is
         # :ro, Claude Code's project-scope runtime state stays writable through rw
         # child overlays from per-project STATE. Their mountpoints live in the view
@@ -2418,6 +2446,17 @@ YAML
                 _compose_vol "$session_descriptor" "/etc/cco/session-access" "ro"
         fi
 
+        # Coordination-normalizer report (ADR-0058 D6), :ro at a fixed path so
+        # `cco whoami` can name the agents that were widened and — the part that
+        # matters — the ones that still cannot deliver. A mount, not an env var:
+        # the environment block is emitted BEFORE the agent mounts exist, so an env
+        # var would carry the state of a report that had not been written yet.
+        # This surface is readable from inside the session throughout, which is what
+        # ADR-0058 A2 relies on while the start-time warning stream is still
+        # write-only (until A5 / FI-55).
+        [[ -f "${agents_work}/report" ]] && \
+            _compose_vol "${agents_work}/report" "/etc/cco/agents-report" "ro"
+
         # (ADR-0042) No generated session-info overlay is mounted anymore. The
         # former workspace.yml :ro overlay is retired — Level A context is injected
         # via the CCO_SESSION_CONTEXT env var (see the environment block above).
@@ -2517,6 +2556,13 @@ YAML
                     # create a mountpoint by writing into the user's repo.
                     _emit_class_overlays "$claude_matrix" "repo" \
                         "${repo_path}/${_cl_rel}" "/workspace/${repo_name}/${_cl_rel}" "ro"
+                    # ADR-0058 D4/D5, the repo-native tree — the fourth producer, and
+                    # the one Claude Code reads for any teammate whose cwd is inside
+                    # the repo. Recursive like its parent: a nested <repo>/**/.claude
+                    # carries agents just as the root one does.
+                    _emit_agent_dir_overlays "${repo_path}/${_cl_rel}/agents" \
+                        "/workspace/${repo_name}/${_cl_rel}/agents" \
+                        "$(_claude_matrix_mount_mode "$claude_matrix" repo agents)"
                     # Functional-write floor only at the repo-root tree (where a
                     # session started in the repo would write settings.local.json).
                     [[ "$_cl_rel" == ".claude" ]] && \
@@ -3101,6 +3147,11 @@ EOF
 
     _start_generate_compose
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] generate_compose done" >&2
+
+    # ADR-0058 D6 — announce what the normalizer changed, and name every definition
+    # it could NOT fix. Emitted for a dry-run too: the inspection surface and the
+    # real start must describe the same session.
+    _agents_report_flush
 
     if $dry_run; then
         _start_show_summary

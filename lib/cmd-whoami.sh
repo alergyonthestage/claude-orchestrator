@@ -176,6 +176,39 @@ EOF
         printf '  (ask = the mount is writable, every write prompts — ADR-0057)\n'
         echo ""
     fi
+    # ── Agent teams: the coordination guarantee (ADR-0058 D6/D9) ─────────
+    # Teams are enabled at the managed layer, so a teammate's deliverable travels
+    # only through SendMessage. cco therefore GRANTS the coordination set to every
+    # restricted agent it mounts — a real capability (cross-session messaging), so
+    # it is declared here rather than left as a side effect (D9).
+    #
+    # ⚠ The uncovered list is the load-bearing half. Three cases keep the pre-fix
+    # behaviour by design (a writable tree — D10, an unparsable definition — D11,
+    # an explicit disallowedTools denial — A3), and a teammate using one of those
+    # finishes its work and loses it. Until A5 lands this is the only place the
+    # user can READ that, so it is never abbreviated away.
+    echo ""
+    printf '%bAgent teams%b\n' "$BOLD" "$NC"
+    printf '  guaranteed to restricted agents: %s\n' "$(_cco_coordination_tools_csv | sed 's/,/, /g')"
+    if [[ -r /etc/cco/agents-report ]]; then
+        local _aline _ak _at _as _ad _anorm="" _abad="" _an=0 _ab=0
+        while IFS= read -r _aline; do
+            [[ -z "$_aline" ]] && continue
+            _peel_tab "$_aline" _ak _at _as _ad
+            case "$_ak" in
+                normalized) _an=$((_an + 1)); _anorm="${_anorm:+$_anorm, }$(basename "$_as")" ;;
+                rw-skipped) _ab=$((_ab + 1)); _abad="${_abad:+$_abad; }$(basename "$_as") [tree writable]" ;;
+                excluded)   _ab=$((_ab + 1)); _abad="${_abad:+$_abad; }$(basename "$_as") [disallowedTools]" ;;
+                unparsable) _ab=$((_ab + 1)); _abad="${_abad:+$_abad; }$(basename "$_as") [$_ad]" ;;
+            esac
+        done < /etc/cco/agents-report
+        printf '  widened for this session (%s):    %s\n' "$_an" "${_anorm:-—}"
+        printf '  NO return channel (%s):           %s\n' "$_ab" "${_abad:-—}"
+    else
+        printf '  per-agent status:                — (session predates ADR-0058)\n'
+    fi
+    echo ""
+
     # Enforcement note (ADR-0047): the internal store (STATE index, DATA
     # registries, CACHE internals) is confined behind a mode-0700 cco-svc root the
     # agent cannot traverse; store-touching verbs are re-executed through a setuid

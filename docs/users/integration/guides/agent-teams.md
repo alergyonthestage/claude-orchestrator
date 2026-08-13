@@ -331,3 +331,92 @@ in a settings file Claude Code reads:
 Precedence *within Claude Code's setting*: project settings > global settings (its normal
 settings resolution). The CLI flag is not part of that chain — it governs the container
 launch, not Claude Code.
+
+---
+
+## 6. Delegation: the coordination tools cco guarantees
+
+### 6.1 Why this exists
+
+With agent teams enabled, a teammate is a **separate process**. Its work does not
+come back as the return value of a tool call — it travels through `SendMessage`,
+and nothing else. If the agent definition declares a `tools:` allowlist that does
+not list `SendMessage`, the teammate does its work, shows it in its pane, and
+**throws it away**. The lead sees only *"the agent went idle"*.
+
+That failure is silent and easy to misattribute, so cco closes it: since cco
+enables agent teams for every session, cco makes them work.
+
+### 6.2 What cco does at `cco start`
+
+Every agent definition about to be mounted is read. One that declares a `tools:`
+allowlist missing any coordination tool is mounted from a **normalized copy**
+carrying it:
+
+| Tool | Why it is guaranteed |
+|---|---|
+| `SendMessage` | the return channel itself |
+| `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet` | a teammate that cannot mark a task complete blocks everything that depends on it |
+| `ToolSearch` | `SendMessage` is a *deferred* tool in current builds — granting the name without the discovery path grants a tool the agent cannot find |
+
+**Your file is never modified.** The copy exists only for the session; the
+definition you committed stays exactly as you wrote it. This applies to every
+agent cco mounts, wherever it comes from — your project, a pack, your personal
+store, or a repo's own `.claude/agents/`.
+
+```mermaid
+flowchart TD
+  A["agent definition<br/>about to be mounted"] --> B{"declares a<br/>tools: allowlist?"}
+  B -- "no — inherits everything" --> P["mounted as-is"]
+  B -- yes --> C{"tree mounted<br/>writable?"}
+  C -- "yes — you are authoring it" --> W["mounted as-is + warning"]
+  C -- no --> D{"frontmatter<br/>parses?"}
+  D -- no --> W
+  D -- yes --> E{"member listed in<br/>disallowedTools?"}
+  E -- "yes — your explicit decision" --> W
+  E -- no --> N["mounted from a<br/>normalized copy + notice"]
+```
+
+### 6.3 The three cases cco does not fix
+
+cco never reverses a decision you made. In these cases the definition is mounted
+**unchanged** and named in a warning at start:
+
+- **The agents tree is writable** (`--claude-access …,entries.agents=rw`). You are
+  authoring that file; a projection would have you edit an overlay, or read
+  content that is not your file. Fix it where you are already working.
+- **The frontmatter does not parse**, or `tools:` is written as a block list
+  (`tools:` followed by `- Read` lines) rather than the inline
+  `tools: Read, Grep` form. cco does not guess at a shape it might corrupt, and it
+  never refuses to start a session over the contents of a markdown file.
+- **A coordination tool is named in `disallowedTools:`.** That is a decision, not
+  an omission — and Claude Code removes a tool listed in both fields anyway, so
+  adding it back would not even work.
+
+An agent in one of these three states **cannot deliver**: a teammate using it will
+finish its work and lose it. Check which ones, from inside the session:
+
+```bash
+cco whoami        # → Agent teams: widened … / NO return channel …
+```
+
+### 6.4 Writing definitions that need none of this
+
+Prefer the subtractive form — say what the agent must *not* do, and let it inherit
+everything else:
+
+```yaml
+---
+name: analyst
+description: Read-only analysis specialist
+disallowedTools: Write, Edit      # instead of an exhaustive tools: allowlist
+---
+```
+
+Under that form every coordination tool is present by construction, and a tool
+added by a future Claude Code release does not silently break your definition.
+
+> **Known limitation, stated plainly.** The start-time warning is printed just
+> before the session's UI opens over it, so it is easy to miss today. `cco whoami`
+> carries the same information and is readable at any time; a coming release makes
+> `cco start` pause on its own warnings.

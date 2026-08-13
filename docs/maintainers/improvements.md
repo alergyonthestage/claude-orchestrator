@@ -2604,32 +2604,51 @@ large as moving `.cco` out of the branch-versioned surface; that is precisely wh
 
 ---
 
-## FI-58: 🔴 subagent and teammate deliverables never reach the lead
+## FI-58: 🔴 teammate deliverables never reach the lead — **diagnosed**
 
-**Status**: 🔴 **Open — top priority**, reported by the maintainer 2026-08-06 as the single most
-expensive recurring failure. **Needs its own investigation session**; do not guess at a fix.
+**Status**: 🔴 **Investigated and understood 2026-08-13; fix not yet implemented.** Reported by the
+maintainer 2026-08-06 as the single most expensive recurring failure.
+📄 [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) ·
+📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Accepted
+(design)**, D1…D11; implementation not started.
 
-**What happens.** The lead spawns an agent, the agent does the work and its output is visible in its
-own tmux pane, and the lead reports it *"finished / idle without delivering"*. The lead then
-re-triggers it, gets nothing again, and finally redoes the work **itself** — so a delegated task costs
-three executions and the one that lands is the **worst** of the three: it fills the lead's context,
-which is exactly what delegation existed to avoid.
+**Root cause.** cco enables agent teams at the **managed** layer
+(`defaults/managed/managed-settings.json:5`), which turns the `Agent` tool into a **teammate
+spawner**: a separate process whose deliverable reaches the lead **only** via `SendMessage`. Ending
+a turn sends an idle notification carrying no content. And **`SendMessage` is absent from every cco
+role agent's `tools:` allowlist** — the six pack roles and the two global ones — so the return
+channel does not exist for any of them.
 
-**Known workaround**: instruct the agent to deliver by writing a file in `/tmp` via Bash. That works —
-which is itself the strongest clue, since it says the agent CAN produce and persist output; it is the
-**return channel** that fails.
+**It is not intermittent.** Measured **0 deliverables out of 17 teammates**, across two Claude Code
+versions. What varies is the *agent type*: an unrestricted agent (`general-purpose`, `Explore`,
+`Plan`) inherits all tools and always delivered; a restricted role never could. Sessions "worked"
+when the deliverable happened to be **files on disk** and only the report was lost.
 
-**Prior art — do not re-derive.** The same symptom was once caused by `EACCES` on the subagent
-transcripts, fixed by ADR-0055 D5 (the whole `~/.claude/projects` **tree** is mounted, because
-subagents and teammates write under keys other than `-workspace`). **No error is shown now**, which
-means either a different cause or the same one failing silently.
+⚠ **The known workaround is not a clue about the channel — it is the only surviving path.** A probe
+agent *ordered* to call `SendMessage` tried and could not: **no prompt-level remedy works on a
+restricted agent.** Delivery via a `Bash`-written file survives only because `Bash` is in every
+allowlist.
 
-**First measurements** (before any hypothesis): does the subagent's transcript file actually appear
-under the mounted tree, with the lead's expected key? Is any path in that chain still `:ro` or owned by
-another uid? Does the failure reproduce with `cco_access=none` / outside cco at all — i.e. is this
-cco's surface or the harness's? Answer that last one **first**: it decides whose bug it is.
+**Prior art, measured and EXCLUDED**: not ADR-0055 D5. No `EACCES` anywhere; transcripts persist
+correctly under the teammate's own cwd key; the lead's messaging socket is bound and listening; team
+config and inboxes are written and drained. **The transport is healthy.**
 
-**Effort**: Med for the investigation; unknown for the fix until the channel is identified.
+**Collateral, tracked here**: `run_in_background: false` is silently ignored under teams (no
+synchronous run available); the team stays pinned to the session that created it
+(`session-<old-id>` after a `/clear`), which contradicts the documented *"one team per session"* and
+is the surface to rule in or out first if [FI-61](#fi-61-bypass-permissions-mode-disappeared-mid-session-once)
+recurs.
+
+**Upstream**: the agent-teams documentation claims coordination tools are *"always available to a
+teammate even when `tools` restricts other tools"* — **measured false** on 2.1.220 and 2.1.226.
+Worth reporting; the fix must not assume it.
+
+⚠ **The six failing roles are USER content** — `core-dev-framework` is authored outside cco, which
+ships only `defaults/global/.claude/agents/{analyst,reviewer}.md`. Any remedy that edits them is
+the approach the ADR rejects ([A1](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)).
+
+**Effort**: investigation **done**; the fix is D4/D5 (a normalizer at `cco start` with a lint over
+**both** agent-mount producers) + D6 (sequenced with A5). **No content-level quick win exists.**
 
 ---
 

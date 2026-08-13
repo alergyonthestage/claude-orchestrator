@@ -190,13 +190,17 @@ _generate_pack_mounts() {
         fi
 
         # Agents: individual file mounts (Claude Code reads flat *.md in agents/)
+        # The source goes through the coordination normalizer (ADR-0058 D4/D5).
+        # This is the producer the six failing roles come from — the one that sits
+        # OUTSIDE the mount emitter, which is why D5 is a decision of its own and
+        # why the INV-AGN lint keys on the mount TARGET rather than a list of sites.
         local _agents
         _agents=$(yml_get_pack_agents "$_pyml")
         if [[ -n "$_agents" ]]; then
             while IFS= read -r _af; do
                 [[ -z "$_af" ]] && continue
-                local _asrc="$_proot/agents/${_af}"
-                [[ -f "$_asrc" ]] && _compose_vol "${_asrc}" "/workspace/.claude/agents/${_af}" "ro"
+                local _asrc="$_proot/agents/${_af}" _atgt="/workspace/.claude/agents/${_af}"
+                [[ -f "$_asrc" ]] && _compose_vol "$(_agent_src "$_asrc" "$_atgt" "ro")" "$_atgt" "ro"
             done <<< "$_agents"
         fi
 

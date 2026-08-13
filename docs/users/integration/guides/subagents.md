@@ -191,6 +191,14 @@ This becomes the agent's instructions.
 | `permissionMode` | ❌ | `default`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, or `plan`. Default: inherits from the session |
 | `maxTurns` | ❌ | Max agentic turns before stopping |
 
+> ⚠ **`tools:` and delegation.** Listing `tools:` makes the list exhaustive, and a
+> teammate delivers its work only through `SendMessage` — so a definition with a
+> `tools:` line and no `SendMessage` loses everything it produces. cco adds the
+> coordination tools back at `cco start`, without touching your file, and tells you
+> when it does; three cases it deliberately leaves to you are listed in
+> [agent-teams.md §6](agent-teams.md#6-delegation-the-coordination-tools-cco-guarantees).
+> The form that needs none of this is `disallowedTools:` over an inherited toolset.
+
 Claude Code supports further fields — `skills`, `mcpServers`, `hooks`, `background`,
 `effort`, `isolation`, `color`, `initialPrompt`. They work here exactly as upstream; see
 the [official subagent reference](https://code.claude.com/docs/en/sub-agents) (or the

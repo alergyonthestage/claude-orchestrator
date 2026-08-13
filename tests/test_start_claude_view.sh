@@ -15,6 +15,10 @@
 _cv_test_env() {
     source "$REPO_ROOT/lib/colors.sh"
     source "$REPO_ROOT/lib/utils.sh"
+    # cmd-start.sh routes every agent mount source through _agent_src (ADR-0058
+    # D5). Sourced here for the same reason utils.sh is: this replicates bin/cco's
+    # module load, and without it the view emits mounts with an empty source.
+    source "$REPO_ROOT/lib/agents.sh"
     source "$REPO_ROOT/lib/cmd-start.sh"
 }
 

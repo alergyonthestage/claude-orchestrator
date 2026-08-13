@@ -2002,3 +2002,95 @@ test_invariant_no_heredoc_inside_command_substitution() {
         || { fail "INV-B32 over-reaches: a legitimate shape (the \$(_fn) indirection, the rule in a comment, an arithmetic shift, a heredoc opened after the substitution closed, or a tests/ argument-position fixture) was flagged:"$'\n'"$overreach"; return 1; }
     return 0
 }
+
+# ── INV-AGN the agent-mount CLASS guard (ADR-0058 D5) ────────────────
+# EVERY producer of an agent mount routes its source through the coordination
+# normalizer. Normalizing at one producer ships a fix that misses the very agents
+# that motivated it — the six roles that measured 0 deliverables come from the
+# PACK producer, which sits outside the mount emitter.
+#
+# WHY IT IS A LINT. The producer list is a LOWER BOUND, and this project has paid
+# for that shape five times now. An agent definition reaches a session through the
+# global tree, a pack, the committed project tree and every repo-native
+# <repo>/**/.claude — the last two are empty in this repo and populated in an
+# adopting one, so a producer added later would be invisible here exactly when it
+# matters. The guarantee decays the moment it is only intended.
+#
+# TWO ARMS:
+#   [FILE] a per-file agent mount whose source did not go through _agent_src. That
+#     is a definition mounted RAW: if it declares a tools: allowlist, the teammate
+#     using it silently loses its deliverable.
+#   [TREE] a whole-directory agent mount emitted by a function that never calls
+#     _emit_agent_dir_overlays. A directory bind gives the individual definitions
+#     no mount line, so without the overlay pass they are all raw.
+#
+# ⚠ DECLARED LIMIT, not a silent cap: a static lint only sees LITERAL targets. A
+# producer whose target is fully dynamic (`"$ctgt/$base"`) is invisible to it —
+# _emit_claude_view is exactly that shape and is allowlisted below, because its
+# caller emits the overlay pass for both of its branches. The arms above are the
+# floor, not the proof; the container checks are the proof.
+_invagn_lint_prog() {
+    cat <<'AWK'
+BEGIN { fn="(toplevel)"; dirmount=0; hasoverlay=0 }
+function flush() {
+  if (dirmount && !hasoverlay && fn != "_emit_claude_view") print FILENAME "|" fn "|TREE"
+  dirmount=0; hasoverlay=0
+}
+/^[A-Za-z_][A-Za-z0-9_]*\(\)[ \t]*\{?[ \t]*$/ { flush(); fn=$0; sub(/\(\).*/,"",fn); next }
+{
+  line=$0
+  sub(/[ \t]#.*$/, "", line)
+  if (line ~ /_emit_agent_dir_overlays/) hasoverlay=1
+  if (line ~ /_compose_vol/ && line ~ /\.claude\/agents\//) {
+    if (line !~ /_agent_src/) print FILENAME "|" fn "|FILE"
+  }
+  if (line ~ /_compose_vol/ && line ~ /\.claude\/agents"/) dirmount=1
+}
+END { flush() }
+AWK
+}
+
+_invagn_lint_violations() {
+    local libdir="$1" f b prog hf fn arm
+    prog=$(_invagn_lint_prog)
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        # EXCLUDED: agents.sh DEFINES the normalizer — it is the one place that
+        # legitimately emits an agent mount from a path of its own choosing.
+        [[ "$b" == "agents.sh" ]] && continue
+        while IFS='|' read -r hf fn arm; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$fn" "$arm"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_agent_mounts_go_through_the_normalizer() {
+    local v; v=$(_invagn_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || { fail "INV-AGN: an agent definition is mounted without the coordination normalizer [FILE], or a whole-directory agent tree is emitted with no overlay pass [TREE]. A teammate using that definition finishes its work and loses it — silently (ADR-0058 D5):"$'\n'"$v"; return 1; }
+
+    # 2. Discrimination — a static invariant cannot fail on a reverted tree, so it
+    #    must prove it catches the real shapes.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf '\n_invagn_probe_file() {\n    _compose_vol "$src" "/workspace/.claude/agents/x.md" "ro"\n}\n' > "$tmp/probe.sh"
+    printf '\n_invagn_probe_tree() {\n    _compose_vol "$d" "/home/claude/.claude/agents" "ro"\n}\n' > "$tmp/probe2.sh"
+    local planted; planted=$(_invagn_lint_violations "$tmp")
+    [[ "$planted" == *"probe.sh|_invagn_probe_file|FILE"* ]] \
+        || { fail "INV-AGN does NOT discriminate: a planted raw per-file agent mount went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+    [[ "$planted" == *"probe2.sh|_invagn_probe_tree|TREE"* ]] \
+        || { fail "INV-AGN does NOT discriminate: a planted directory agent mount with no overlay pass went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 3. Over-reach: the legitimate shapes must stay silent, or the lint pushes its
+    #    own exceptions into the code it protects.
+    rm -f "$tmp"/*.sh
+    {
+        printf '_invagn_legit_file() {\n    _compose_vol "$(_agent_src "$s" "$t" "ro")" "/workspace/.claude/agents/x.md" "ro"\n}\n'
+        printf '_invagn_legit_tree() {\n    _compose_vol "$d" "/home/claude/.claude/agents" "$m"\n    _emit_agent_dir_overlays "$d" "/home/claude/.claude/agents" "$m"\n}\n'
+        printf '_invagn_legit_other() {\n    _compose_vol "$s" "/workspace/.claude/rules/x.md" "ro"\n}\n'
+        printf '_invagn_legit_comment() {\n    local x=1   # a rule file, not .claude/agents/x.md\n}\n'
+    } > "$tmp/legit.sh"
+    local overreach; overreach=$(_invagn_lint_violations "$tmp")
+    [[ -z "$overreach" ]] \
+        || { fail "INV-AGN over-reaches: a declared-legitimate shape (a normalized per-file mount, a directory mount WITH its overlay pass, a non-agent mount, or prose in a comment) was flagged:"$'\n'"$overreach"; return 1; }
+    return 0
+}

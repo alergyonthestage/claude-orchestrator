@@ -1357,3 +1357,35 @@ entries:
       it. It is a guard rail on that surface, not a lock, and the reference
       documentation now says so where it used to promise more.
       No rebuild needed: the rules are produced at start time by the CLI.
+
+  - id: 64
+    date: "2026-08-13"
+    type: additive
+    title: "Delegating to a restricted agent now delivers — cco guarantees the coordination tools"
+    description: >
+      **The defect.** cco enables agent teams for every session, which makes a
+      teammate a separate process whose work reaches you only through
+      `SendMessage`. Every agent definition that declares a `tools:` allowlist
+      without it — the normal shape for a role agent — therefore did its work,
+      showed it in its pane, and threw it away. Measured: 0 deliverables out of 17
+      teammates, across two Claude Code versions. You saw "the agent went idle",
+      never "a tool is missing", so the failure was easy to blame on cco or on the
+      agent rather than on a missing line.
+      **What changes.** At `cco start`, an agent definition missing any
+      coordination tool (`SendMessage`, `TaskCreate`/`TaskUpdate`/`TaskList`/`TaskGet`,
+      `ToolSearch`) is mounted from a normalized copy that carries it. This covers
+      every agent cco mounts — your project's, a pack's, your personal store's, and
+      a repo's own `.claude/agents/` — and **your files are never modified**: the
+      copy exists only for the session.
+      **What cco does NOT do.** It never reverses a decision you made. A definition
+      is left exactly as written, and named in a warning, when the agents tree is
+      mounted writable (you are authoring it), when its frontmatter does not parse
+      or writes `tools:` as a block list, or when a coordination tool is named in
+      `disallowedTools:`. An agent in one of those states still cannot deliver.
+      **How to see it.** `cco whoami` reports which definitions were widened and —
+      the part that matters — which ones have no return channel. The start-time
+      warning is easy to miss until a coming release makes `cco start` pause on its
+      own warnings; `cco whoami` is readable at any time.
+      **The form that needs none of this**: `disallowedTools:` over an inherited
+      toolset, instead of an exhaustive `tools:` allowlist.
+      No rebuild needed: the projection is produced at start time by the CLI.
