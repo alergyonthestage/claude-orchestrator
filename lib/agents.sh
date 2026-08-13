@@ -217,8 +217,13 @@ _agent_write_normalized() {
 # Usage: _compose_vol "$(_agent_src "$src" "$tgt" "$mode")" "$tgt" "$mode"
 _agent_src() {
     local src="$1" tgt="$2" mode="${3:-}"
+    # A definition is a `*.md` file in an agents/ directory — that is what Claude
+    # Code loads, so anything else is not an agent and must not be scanned. Without
+    # this a `.gitkeep` (which every scaffolded agents/ dir carries) is reported as
+    # an unparsable definition: noise in the ONE channel D6 depends on, and after A5
+    # a session that pauses on a placeholder file.
     case "$tgt" in
-        */.claude/agents/*) ;;
+        */.claude/agents/*.md) ;;
         *) printf '%s' "$src"; return 0 ;;
     esac
     if ! _agents_norm_ready; then printf '%s' "$src"; return 0; fi

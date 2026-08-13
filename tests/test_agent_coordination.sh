@@ -315,3 +315,23 @@ test_agn_uninitialized_normalizer_still_mounts_the_definition() {
         || fail "an uninitialized normalizer must degrade to the original file, never to an empty path"
     return 0
 }
+
+# ── Scope: an agents/ directory holds more than definitions ──────────
+
+# Regression, seen in the first live session: every scaffolded agents/ dir carries
+# a .gitkeep, and the committed-tree producer binds each entry individually — so
+# the placeholder was scanned, failed to parse, and was reported as a definition
+# with no return channel. Noise in the one channel D6 depends on; after A5, a
+# session that pauses on a placeholder.
+test_agn_non_markdown_entry_is_not_a_definition() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _agn_env; _agn_fixture "$tmpdir"
+    : > "$AGN_SRC/.gitkeep"
+
+    local out; out=$(_agent_src "$AGN_SRC/.gitkeep" "/workspace/.claude/agents/.gitkeep" "ro")
+    [[ "$out" == "$AGN_SRC/.gitkeep" ]] || fail "a non-definition file was rerouted through the normalizer"
+    local msg; msg=$(_agents_report_flush 2>&1)
+    echo "$msg" | grep -q "gitkeep" \
+        && fail "a placeholder file was reported as an agent definition:"$'\n'"$msg"
+    return 0
+}
