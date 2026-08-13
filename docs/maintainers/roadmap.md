@@ -97,7 +97,8 @@ narrative, the lessons, and the per-stage records live in
   ⚠ **Consequence for any future A4 measurement in this project**: the mask makes every tree `rw`, so
   `max()` absorbs `ask` and no rule is emitted — pin the shape with an explicit `--claude-access`
   instead, exactly as the runbook does.
-- **Next free ADR number: 0058.** ⚠ **ADR-0038 and ADR-0040 do not exist as documents** — they are
+- **Next free ADR number: 0059** (0058 = teammate coordination tools, Proposed). ⚠ **ADR-0038 and
+  ADR-0040 do not exist as documents** — they are
   numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
   for the first time; do not go looking for a file.
 
@@ -137,22 +138,27 @@ Two ordering constraints are load-bearing:
 
 ### 🔴 Ahead of the queue — the delegation channel ([FI-58](improvements.md))
 
-**Not a block item: an investigation session, before or alongside Block A.** Priority set by the
+**Investigation DONE 2026-08-13 — the fix is now a Block-sized unit.** Priority set by the
 maintainer 2026-08-06, on cost.
+📄 [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) ·
+📌 [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — **Proposed**,
+two questions open for the maintainer.
 
-The lead spawns an agent, the agent does the work and its output is visible in its own tmux pane, and
-the lead reports it *finished without delivering*. It re-triggers, gets nothing again, and finally
-**redoes the work itself** — so a delegated task costs three executions and the surviving one is the
-**worst** of the three, because it fills the lead's context, which is what delegation existed to
-avoid. Delivery through a `/tmp` file written with Bash **does** work, which says the agent can
-produce and persist output: it is the **return channel** that fails.
+**The gating question is answered: it IS cco's surface**, and not the one anyone expected. cco
+enables agent teams at the **managed** layer, which turns the `Agent` tool into a teammate spawner
+whose deliverable travels **only** through `SendMessage` — and `SendMessage` is absent from the
+`tools:` allowlist of every cco role agent. Measured **0 deliverables out of 17 teammates** across
+two Claude Code versions: not intermittent, total, and tracking the *agent type*.
 
-⚠ **Answer one question before any hypothesis: is this cco's surface at all?** The same symptom was
-once ours — `EACCES` on subagent transcripts, closed by ADR-0055 D5, which is why the *whole*
-`~/.claude/projects` tree is mounted (subagents and teammates write under keys other than
-`-workspace`). There is **no error on screen now**, so it is either a different cause or the same one
-failing silently. Reproduce outside cco first; that decides whose bug it is, and everything else
-follows from the answer.
+⚠ Two things a fix session must not re-derive. **ADR-0055 D5 is excluded by measurement** — no
+`EACCES`, transcripts persist, socket listening, inboxes drained: the transport is healthy. And
+**no prompt-level remedy works** — a probe ordered to call `SendMessage` tried and could not.
+
+**What it needs now**: a ruling on ADR-0058's two open questions (the `entries.agents=rw` cell;
+refuse-vs-pass-through on an unparseable definition), then D3 (content-only, free) and D4/D5 (the
+normalizer + a lint over **both** agent-mount producers — `lib/cmd-start.sh:2220` and
+`lib/packs.sh:192`, the second being [FI-63](improvements.md)'s clause). **D6 sequences with A5**:
+a warning emitted before `cco start` pauses on warnings is a warning nobody reads.
 
 ### Block A — quick wins and coherence debts → `0.7.0`
 
