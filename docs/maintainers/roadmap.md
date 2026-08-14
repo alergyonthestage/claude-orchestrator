@@ -74,12 +74,11 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ⚠ **`develop` is 14 commits ahead of `origin/develop`** (the FI-58 merge `979a0e4` and its
-  history) — **owed a push from the host**, along with deleting the two merged remote branches
-  `origin/feat/delegation/return-channel` and `origin/feat/access/claude-md-axis`.
-  ✅ The earlier A4 push is done — `develop` was level at `e6ea2e7` before this merge.
-  Both merged branches are gone locally; `origin/feat/access/claude-md-axis` **still exists on the
-  remote** and can be deleted from the host (`git push origin --delete feat/access/claude-md-axis`).
+  `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
+  history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
+  `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
+  ⚠ **`feat/cli/start-warning-gate` is 1 commit ahead and unpushed** — the A5/A8 design phase
+  (ADR-0059 + its design doc). It is the branch the implementation continues on.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
   of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
@@ -100,8 +99,9 @@ narrative, the lessons, and the per-stage records live in
   ⚠ **Consequence for any future A4 measurement in this project**: the mask makes every tree `rw`, so
   `max()` absorbs `ask` and no rule is emitted — pin the shape with an explicit `--claude-access`
   instead, exactly as the runbook does.
-- **Next free ADR number: 0059** (0058 = teammate coordination tools, **Accepted (design)** with
-  D1…D11 + amendments A1 and A2). ⚠ **ADR-0038 and
+- **Next free ADR number: 0060** (0059 = message classification + the start warning gate,
+  **Accepted (design)** with D1…D15; 0058 = teammate coordination tools, **implemented** for D4/D5+D6,
+  D1…D11 + amendments A1–A3). ⚠ **ADR-0038 and
   ADR-0040 do not exist as documents** — they are
   numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
   for the first time; do not go looking for a file.
@@ -225,7 +225,10 @@ the day it is written.
 Minor bump, not a patch: it introduces new verbs and a new access knob. Nothing here needs an analysis
 phase; A1 and A2 need a short design, A3 needs none, and **A4's design is already done and accepted**
 ([ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)).
-A5 and A8 share one short design over the same interactive surface — see A8.
+✅ **A5 and A8's shared design is done and accepted** (2026-08-13,
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1…D15 +
+[design](cli/design/design-warning-gate-and-onboarding-prompts.md)) — it decomposes into **three
+ordered units, U1 → U2 → U3**, listed under A5. **This is the next work in the block.**
 
 #### A1 — `cco save`: project-config versioning helper
 
@@ -445,6 +448,12 @@ nothing. Placement is a default, not a ruling.
 
 #### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
 
+🟡 **Design ACCEPTED 2026-08-13 — implementation is the next work in Block A.**
+📌 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (D1…D15) ·
+📄 [design](cli/design/design-warning-gate-and-onboarding-prompts.md) — carries the mechanism, the
+full message-classification table and the 13-test plan. **Read the design, not this entry**, before
+opening an editor; what follows is status and order only.
+
 **The whole warning surface of `cco start` is currently write-only.** The warnings print, then
 `docker compose run` takes the terminal and the TUI opens over them — the user never gets the chance
 to read them, let alone act. This is not a hypothesis: [FI-54](improvements.md) sat in that stream,
@@ -463,12 +472,37 @@ makes it arrive. That does not make A5 a blocker for FI-58, and it does not chan
 raises its priority **inside** Block A, and it adds one classification to get right (the normalizer's
 warning is a `⚠ warn`, never a `note:`).
 
-⚠ **The two things this design must get right**, both already paid for once: the prompt gates on
-`_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the suite and every output-capturing caller
-hang on a question whose text the capture swallowed — `test_invariant_tty_gate_single_spelling`); and
-**only `⚠ warn` gates**, never `note:`/`ℹ` — A4's own FI-52 divergence notice was deliberately emitted
-as a `note:` for exactly this reason. Classifying every start-time message honestly is the real work;
-the prompt is small.
+⚠ **The two things this design had to get right**, both already paid for once, are settled in
+ADR-0059 D11 and D1/D2: the prompt gates on `_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the
+suite and every output-capturing caller hang on a question whose text the capture swallowed —
+`test_invariant_tty_gate_single_spelling`); and **only `⚠ warn` gates**, never `note:`/`ℹ`.
+Classifying every start-time message honestly was the real work, and the audit is done: **3 sites
+change level, 3 blocks merge, 1 double `⚠` badge is stripped** — everything else was already honest.
+
+##### The three units — the ordered plan for A5 + A8
+
+Ordered by dependency. **U1 → U2 is load-bearing**: the gate must not ship while a message that
+should *not* gate still can. **U1 → U3 is a file conflict**, not a preference: both edit
+`lib/local-paths.sh:445,450`, so doing U3 first means doing it twice.
+
+| # | Unit | Item | Scope | Self-verified by |
+|---|---|---|---|---|
+| **U1** | capture + taxonomy | A5 | `note()` in `lib/colors.sh`; the file-backed warn buffer (D5/D6); the reclassifications of design §3.3; the `INV-WG1`/`INV-WG2` lints | T1–T3, T7, T9, T11 — **no user-visible change yet** |
+| **U2** | the gate | A5 | the prompt in `_start_launch` (D7) + the same in `cco new` (D9) | T4–T6, T8, T10 + the **live check** below |
+| **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 |
+
+⭐ **T3 is the test the design exists for**: a `warn` emitted from inside `$( )` must reach the buffer.
+It is what discriminates the file-backed buffer from the shell-array one that would look correct
+everywhere except on the interactive surface A8 is fixing. Drive it through `_prompt_for_path`, not a
+synthetic subshell.
+
+✅ **The live check for U2 is already waiting**: a session whose agent definitions keep no return
+channel must stop and show [ADR-0058 A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)'s
+warning — the message that shipped deliberately unread, one release early, for exactly this moment.
+
+📝 **No unit touches a baked file**, so **no `cco build`** enters the acceptance lane; everything is
+verified by a plain `cco start` from the host. `cco start` is host-only in a session, so an
+in-container lane can exercise the capture and the lints but not the prompt end to end.
 
 #### A6 — `.claude/worktrees` belongs in the functional-write floor ([FI-56](improvements.md))
 
@@ -485,6 +519,10 @@ first (the report does not carry it), then **re-derive the whole floor** against
 worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
 
 #### A8 — the onboarding prompts and the mount-declaration surface ([FI-68](improvements.md) … [FI-70](improvements.md))
+
+🟡 **Design ACCEPTED 2026-08-13, jointly with A5** — same ADR, same design doc, and the whole of A8
+is **unit U3** in [A5's table](#the-three-units--the-ordered-plan-for-a5--a8). It runs **after** U1:
+U1 and U3 both edit `lib/local-paths.sh:445,450`.
 
 **Three field reports from 2026-08-09, all on the surface a user meets *first*** — the prompts that
 resolve an unregistered path, and the command that declares a mount. None is deep, none blocks
@@ -508,9 +546,20 @@ FI-70 live in `lib/local-paths.sh`'s interactive prompts, under the same `_cco_h
 flow. Done together the TTY contract is derived once; done apart it is derived twice, and the second
 derivation is the one that hangs the suite.
 
-**One decision for the maintainer, at design time not now** ([FI-68](improvements.md)): add
-`--writable`, or fix the help text and leave writable mounts to `project.yml`. It grants a
-user-perceivable capability from a one-line command, so it is a gate, not an implementation choice.
+✅ **The decision is taken (2026-08-13, maintainer): add `--writable`, and keep `--readonly`** as an
+explicit affirmation that keeps writing `readonly: true`
+([ADR-0059 D12](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d12--cco-project-add-mount-gains---writable---readonly-stays-and-states-the-default-maintainer-2026-08-13)).
+The two are mutually exclusive; the `readonly: true` **default is untouched**. This closes an
+asymmetry rather than inventing a capability — `--mount <src>:rw` has expressed exactly this since
+ADR-0027 D2, so cco had two spellings of one concept and one of them could not say half of it.
+
+📌 The maintainer's own restatement is narrower than the original report and is the one to build
+from: *the CLI with no flag writes only the mount's name, without `readonly: true` — which is the
+default anyway; the real problem is that `--readonly` is useless because it is already the default,
+and no flag sets `rw` from the CLI.*
+
+`--writable` is an **additive** change → `changelog.yml` entry + a line in
+[`cli.md`](../users/reference/cli.md), per `.claude/rules/update-system.md`.
 
 ---
 
