@@ -290,3 +290,239 @@ test_warn_still_works_when_the_buffer_is_unwritable() {
     assert_equals "0" "$(_cco_warn_capture_count)" "an unwritable buffer counts 0 rather than failing"
     unset _CCO_WARN_LOG
 }
+
+# ═══════════════════════════════════════════════════════════════════════
+# U2 — the gate (ADR-0059 D7…D11). Test-plan coverage: T4, T5, T6, T8, T10.
+#
+# ⚠ WHAT THIS FILE CANNOT REACH, stated rather than implied. The prompt's last
+# three lines (`read -r reply < /dev/tty` and the case that reads it) need a
+# controlling terminal, and `cco start` / `cco new` are host-only verbs that end in
+# `docker compose run`. So the gate is covered in two honest halves:
+#   · the RENDERER — pure, no read, no terminal — is exercised directly, the same
+#     split `_resolve_reuse_menu` / `_resolve_disambiguate` already use;
+#   · PLACEMENT (D7/D8/D9) is asserted statically on the call order, because
+#     "after secrets, before the marker" IS the decision, and a run under
+#     CCO_NONINTERACTIVE cannot discriminate a misplaced gate from a correct one
+#     (neither prompts). Each static probe carries a check that it found what it
+#     was looking for — an order assertion over two line numbers that are both
+#     zero passes for free.
+# The end-to-end abort and the ADR-0058 A2 live check are HOST acceptance steps.
+# ═══════════════════════════════════════════════════════════════════════
+
+# Echo <function>'s body from <file>, numbered from 1 within the function.
+_wg_fn_body() {
+    awk -v want="^$2\\\\(\\\\)" '$0 ~ want { inside=1 } inside { print } inside && /^}/ { exit }' "$1"
+}
+
+# Echo the 1-based index of the first line of <body> matching <pattern>, or 0.
+# COMMENT LINES ARE SKIPPED — this repo explains its mechanisms in prose right next
+# to them, and `_start_launch`'s own comment names `docker compose run` several
+# lines before the call, which made a correct order read as a violation.
+_wg_line_of() {
+    printf '%s\n' "$1" | awk -v pat="$2" '
+        { l=$0; sub(/^[ \t]+/, "", l); if (l ~ /^#/) next }
+        $0 ~ pat { print NR; found=1; exit }
+        END { if (!found) print 0 }'
+}
+
+# ── The renderer — the half with content in it ───────────────────────
+
+test_warn_gate_renders_nothing_on_a_clean_run() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    local out rc=0
+    out=$(_cco_warn_gate_render) || rc=$?
+    assert_equals "1" "$rc" "no warnings ⇒ the renderer reports nothing to show"
+    assert_empty "$out" "a clean start must stay silent — a gate that fires unconditionally reads as 'working'"
+    _cco_warn_capture_end
+}
+
+test_warn_gate_renders_every_warning_once_in_order() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    {
+        warn "Pack 'core-dev-framework' not resolved — run 'cco resolve'."
+        warn "Agent teams: 1 agent definition(s) keep NO return channel."
+        warn "Pack 'core-dev-framework' not resolved — run 'cco resolve'."   # second producer
+    } 2>/dev/null
+
+    local out rc=0
+    out=$(_cco_warn_gate_render) || rc=$?
+    assert_equals "0" "$rc" "warnings present ⇒ the renderer has something to show"
+
+    # The header counts DISTINCT warnings — the number the user is about to read.
+    case "$out" in
+        *"2 warnings for this session:"*) : ;;
+        *) fail "the header must count the deduplicated warnings, got:"$'\n'"$out"; return 1 ;;
+    esac
+
+    # One line per warning, each exactly once. Matched on the message text, not on
+    # "⚠ <text>": the badge carries its colour reset between the glyph and the
+    # message, so an adjacency pattern silently matches nothing and passes.
+    assert_equals "1" "$(printf '%s\n' "$out" | grep -c "Pack 'core-dev-framework' not resolved" | tr -d ' ')" \
+        "the duplicate must be listed once, not twice"
+    assert_equals "1" "$(printf '%s\n' "$out" | grep -c "Agent teams: 1 agent" | tr -d ' ')" \
+        "the second, distinct warning must be listed"
+    case "$out" in
+        *"Pack 'core-dev-framework'"*"Agent teams"*) : ;;
+        *) fail "the list must follow emission order, got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_warn_gate_header_agrees_with_a_single_warning() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    warn "the only thing wrong with this session" 2>/dev/null
+    local out; out=$(_cco_warn_gate_render)
+    case "$out" in
+        *"1 warning for this session:"*) : ;;
+        *) fail "one warning must not be announced as '1 warnings', got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+# ── T4 — no controlling terminal ⇒ no prompt, the launch proceeds ────
+# Discriminates against: the suite-hanging prompt. A question whose text a
+# capturing caller swallowed still blocks on /dev/tty — silent and unattributable.
+
+test_warn_gate_is_silent_and_proceeds_without_a_tty() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    warn "a condition worth gating on" 2>/dev/null
+
+    # bin/test exports CCO_NONINTERACTIVE=1, which is precisely "behave as if no
+    # terminal existed" — the same branch CI and Docker take.
+    local out rc=0
+    out=$(_cco_warn_gate 2>&1) || rc=$?
+    assert_equals "0" "$rc" "no terminal ⇒ the launch proceeds exactly as today"
+    assert_empty "$out" "no terminal ⇒ not one byte of prompt (a captured run must not change)"
+
+    # Prove the oracle discriminates: the silence above is the TTY gate, not an
+    # empty buffer. The renderer — the same data the prompt would print — is full.
+    local menu; menu=$(_cco_warn_gate_render)
+    case "$menu" in
+        *"a condition worth gating on"*) : ;;
+        *) fail "the buffer was empty, so T4 proved nothing about the tty gate"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+# ── T8 — a malformed secrets.env line reaches the buffer ─────────────
+# Discriminates against: a gate placed before secrets loading (D7). This is the
+# dynamic half — the message must be capturable at all; the placement probe below
+# proves the gate sits downstream of the call that emits it.
+
+test_secrets_warning_is_captured() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    source "$REPO_ROOT/lib/secrets.sh"
+
+    printf 'GOOD=value\nthis line has no equals sign\n' > "$tmpdir/secrets.env"
+    local run_env=()
+    _cco_warn_capture_begin
+    load_secrets_file run_env "$tmpdir/secrets.env" 2>/dev/null
+
+    assert_equals "1" "$(_cco_warn_capture_count)" "the malformed line must be captured"
+    case "$(_cco_warn_capture_list)" in
+        *"secrets.env:2: skipping malformed line"*) : ;;
+        *) fail "expected the malformed-line warning in the buffer, got: $(_cco_warn_capture_list)"; return 1 ;;
+    esac
+    # The good line still loaded — the warning is about line 2 only.
+    assert_equals "2" "${#run_env[@]}" "the well-formed secret must still be loaded"
+    _cco_warn_capture_end
+}
+
+# ── T5 + T8 (placement) — after secrets, before the marker ───────────
+# Discriminates against: a gate placed after `_cco_running_mark` (an abort would
+# leave a registry entry with no container to reap) or before secrets are loaded
+# (it would miss the warnings emitted last of all).
+
+test_warn_gate_sits_after_secrets_and_before_the_marker() {
+    local body; body=$(_wg_fn_body "$REPO_ROOT/lib/cmd-start.sh" "_start_launch")
+    local secrets gate mark run
+    secrets=$(_wg_line_of "$body" "load_secrets_file")
+    gate=$(_wg_line_of "$body" "_cco_warn_gate")
+    mark=$(_wg_line_of "$body" "_cco_running_mark")
+    run=$(_wg_line_of "$body" "docker compose")
+
+    # The probe must have found all four, or every order assertion below passes for
+    # free on a body of zeroes.
+    [[ "$secrets" -gt 0 && "$gate" -gt 0 && "$mark" -gt 0 && "$run" -gt 0 ]] \
+        || { fail "the placement probe did not find its four anchors in _start_launch (secrets=$secrets gate=$gate mark=$mark run=$run) — it would have passed vacuously"; return 1; }
+
+    [[ "$secrets" -lt "$gate" ]] \
+        || { fail "D7: the gate must run AFTER load_secrets_file — secrets warn last of all (lib/secrets.sh), so an earlier gate silently misses them"; return 1; }
+    [[ "$gate" -lt "$mark" ]] \
+        || { fail "D7: the gate must run BEFORE _cco_running_mark — an abort must leave no running-registry entry to reap"; return 1; }
+    [[ "$mark" -lt "$run" ]] \
+        || { fail "the marker must still precede the container run"; return 1; }
+}
+
+# ── T6 — --dry-run does not gate (D8) ────────────────────────────────
+# Discriminates against: a gate in `cmd_start` instead of `_start_launch`, which
+# would prompt on the inspection path too. A run under CCO_NONINTERACTIVE cannot
+# tell the two apart (neither prompts), so this is asserted where the difference
+# actually lives — the call sites.
+
+test_warn_gate_is_reached_only_through_the_two_launch_paths() {
+    # Exactly two call sites in the whole library, and both are launches.
+    local sites; sites=$(grep -rn '^[^#]*_cco_warn_gate\b' "$REPO_ROOT"/lib/*.sh \
+        | grep -v 'lib/utils.sh' | sed "s|.*/lib/|lib/|" | cut -d: -f1 | sort -u)
+    assert_equals "lib/cmd-new.sh
+lib/cmd-start.sh" "$sites" "the gate must be called from the two launch paths and nowhere else (a call in cmd_start itself would gate --dry-run too — D8)"
+
+    # And in cmd-start.sh it is inside _start_launch, not in cmd_start's own body.
+    local cs; cs=$(_wg_fn_body "$REPO_ROOT/lib/cmd-start.sh" "cmd_start")
+    assert_empty "$(printf '%s\n' "$cs" | grep -n '^[^#]*_cco_warn_gate\b' || true)" \
+        "D8: cmd_start must not gate — the dry-run branch returns from there"
+
+    # Discrimination: the extractor really did read cmd_start's body.
+    case "$cs" in
+        *"_start_launch"*) : ;;
+        *) fail "the cmd_start probe extracted nothing recognisable — it would have passed vacuously"; return 1 ;;
+    esac
+
+    # The dry-run branch returns before the launch, which is what makes D8 true.
+    local dr lau
+    dr=$(_wg_line_of "$cs" 'if \$dry_run; then')
+    lau=$(_wg_line_of "$cs" '_start_launch')
+    [[ "$dr" -gt 0 && "$lau" -gt 0 && "$dr" -lt "$lau" ]] \
+        || { fail "the dry-run branch must return before _start_launch (dry_run=$dr launch=$lau)"; return 1; }
+}
+
+# ── T10 — `cco new` gates identically (D9) ───────────────────────────
+# Discriminates against: a fix applied to one launch path of two — the exact shape
+# this repo has paid for repeatedly, and the reason D9 pulled `cco new` in.
+
+test_cco_new_gates_through_the_same_implementation() {
+    # ONE implementation. A second definition would drift from the first in a way
+    # that is invisible from either side.
+    local defs; defs=$(grep -rn '^_cco_warn_gate()' "$REPO_ROOT"/lib/*.sh | wc -l | tr -d ' ')
+    assert_equals "1" "$defs" "_cco_warn_gate must be defined exactly once — two copies is how the twin verb keeps the defect"
+
+    local body; body=$(_wg_fn_body "$REPO_ROOT/lib/cmd-new.sh" "cmd_new")
+    local begin gate run
+    begin=$(_wg_line_of "$body" "_cco_warn_capture_begin")
+    gate=$(_wg_line_of "$body" "_cco_warn_gate")
+    run=$(_wg_line_of "$body" "docker compose")
+    [[ "$begin" -gt 0 && "$gate" -gt 0 && "$run" -gt 0 ]] \
+        || { fail "cco new must arm the capture and gate before it launches (begin=$begin gate=$gate run=$run)"; return 1; }
+    [[ "$begin" -lt "$gate" && "$gate" -lt "$run" ]] \
+        || { fail "D9: cco new must arm, then gate, then run (begin=$begin gate=$gate run=$run)"; return 1; }
+
+    # ⚠ cco new installs its own EXIT trap, which REPLACES bin/cco's sentinel trap —
+    # so the buffer cannot rely on a trap of its own and must be swept by that one.
+    case "$body" in
+        *"rm -rf"*"_cco_warn_capture_end"*) : ;;
+        *) fail "cco new's EXIT trap must also sweep the warn buffer (ADR-0059 D9) — it replaces the sentinel trap armed in bin/cco"; return 1 ;;
+    esac
+}
