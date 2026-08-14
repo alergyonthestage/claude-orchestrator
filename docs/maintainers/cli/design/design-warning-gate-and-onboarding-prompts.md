@@ -1,8 +1,10 @@
 # The start-time warning gate and the onboarding prompts
 
-> Version: 1.0.0
-> Status: **Design — awaiting the implementation gate.** Records the mechanism, the full
+> Version: 1.1.0
+> Status: **Accepted — U1 implemented, U2 and U3 outstanding.** Records the mechanism, the full
 > message-classification table and the test plan for roadmap items **A5** and **A8**.
+> U1 (the taxonomy + the capture buffer + the two lints) landed with the classification table applied
+> in full; §6.1 records the one correction the implementation forced on the test plan.
 > Decisions: [ADR-0059](../decisions/0059-message-classification-and-the-start-warning-gate.md).
 > Closes [FI-55](../../improvements.md), [FI-68](../../improvements.md),
 > [FI-69](../../improvements.md), [FI-70](../../improvements.md).
@@ -50,8 +52,8 @@ this lands.
 ### 3.1 What exists today
 
 `lib/colors.sh` defines four emitters — `info` (`ℹ`), `ok` (`✓`), `warn` (`⚠`), `error` (`✗`) — plus
-`die`/`refuse`/`_cco_exit`. A fifth level, `note:`, exists **only as an idiom**: four bare
-`echo "note: …" >&2` sites with no function behind them
+`die`/`refuse`/`_cco_exit`. A fifth level, `note:`, exists **only as an idiom**: five bare
+`echo`/`printf` `"note: …" >&2` sites with no function behind them
 (`lib/cmd-start.sh:393,445,457`, `lib/access-scope.sh:1161,1187`).
 
 ADR-0059 D3 makes `note()` a real emitter. Without it, D2's non-gating level has no spelling in code
@@ -137,9 +139,18 @@ and GNU agree on (`lib/sync-meta.sh:117` is the precedent). Never STATE/DATA/CAC
 any code outside `lib/store.sh` from mutating *or predicating* a confined path, and a warning buffer
 does not justify a `store-op` crossing.
 
-**Cleanup.** Explicit `_cco_warn_capture_end` on every exit path of the two verbs. Not an `EXIT` trap
-alone: `cco new` installs its own at `lib/cmd-new.sh:75`, which replaces `bin/cco:14`'s sentinel trap
-(D9). A file left by a hard kill is inert, pid-named, and swept by `cco clean --tmp`.
+**Cleanup.** Explicit `_cco_warn_capture_end` on every exit path of the two verbs — **U2's
+responsibility**, since U2 owns the `begin`/`end` call sites (D7/D9); U1 ships the API and calls it
+from nowhere. Not an `EXIT` trap alone: `cco new` installs its own at `lib/cmd-new.sh:75`, which
+replaces `bin/cco:14`'s sentinel trap (D9).
+
+⚠ **Correction (U1).** An earlier revision of this section claimed a leftover file is "pid-named, and
+swept by `cco clean --tmp`". Neither half is true: the name is an `mktemp` suffix, and `cco clean
+--tmp` removes `<project>/.cco/.tmp/` dry-run directories — it has never looked at `$TMPDIR`. What is
+true is that a file left behind by a hard kill is **inert**: an unread list of strings in the system
+temp directory, reclaimed by the OS on the usual schedule. Whether `cco clean` should also sweep
+`$TMPDIR/cco-warn.*` is a user-visible change to that verb, so it is left as an open question rather
+than folded in silently.
 
 ### 4.3 Placement
 
@@ -231,7 +242,7 @@ test below names what it would fail against.
 |---|---|---|
 | T1 | a clean start emits **no** prompt and no extra output | a gate that fires unconditionally (would read as "working") |
 | T2 | a seeded `warn` produces the prompt, listing that exact text | a buffer that is never read |
-| T3 | **a `warn` emitted from inside `$( )`** reaches the buffer | ⭐ **the array implementation** — the one test D5 exists for. Drive it through `_prompt_for_path`, not a synthetic subshell |
+| T3 | **a `warn` emitted from inside `$( )`** reaches the buffer | ⭐ **the array implementation** — the one test D5 exists for. Drive it through a real call path, never a synthetic subshell (see the driver note below) |
 | T4 | `CCO_NONINTERACTIVE=1` → no prompt, launch proceeds, exit 0 | a suite-hanging prompt (`test_invariant_tty_gate_single_spelling`'s failure mode) |
 | T5 | abort → exit 0, **no container and no running-registry marker** | a gate placed after `_cco_running_mark` |
 | T6 | `--dry-run` with warnings → summary, no prompt (D8) | a gate in `cmd_start` instead of `_start_launch` |
@@ -246,9 +257,31 @@ test below names what it would fail against.
 Plus the **live check** the gate exists for: a session whose agents carry no return channel must stop
 and show ADR-0058 A2's warning (roadmap A5, *"the first message A5 should be tested against"*).
 
-## 7. Proposed units *(for the Plan gate — not approved here)*
+### 6.1 T3's driver — corrected during U1, decision unchanged
 
-1. **U1 — capture + taxonomy**: `note()`, the buffer, the reclassifications of §3.3, the two lints.
+This document named `_prompt_for_path` as T3's driver. **It cannot be one**, and the reason is D4 in
+this same design: D4 reclassifies *every* message inside `_prompt_for_path` and `_resolve_disambiguate`
+to prompt-local, so after U1 neither function emits a `warn` at all. The two decisions interact, and
+the interaction was only visible once both were applied to the code.
+
+**D5 is untouched** — the property under test, and its rationale, are exactly as written: production
+`warn`s still run inside command substitution, and an array buffer would still lose them. Only the
+driver moves, to another site the audit already classified:
+
+```
+_effective_extra_mounts        lib/local-paths.sh:312   ro=$(_parse_bool "$ro_raw" "true")
+  └── _parse_bool              lib/yaml.sh:118          warn "Invalid boolean value …"   ← §3.3: unchanged, gates
+```
+
+A `readonly:` the user typed wrong is a real session condition, on the real `cco start` path, warned
+from inside a real `$( )`. `tests/test_warn_capture.sh` drives that path and carries a second
+assertion proving the shape *is* a subshell — without it a pass would prove only that the fixture ran.
+**Measured**: against a shell-array buffer this test fails (`count 0, expected 1`) while every other
+test in the file still passes, which is what makes it the discriminating one.
+
+## 7. The units *(approved at the Plan gate, 2026-08-13 — the roadmap carries their status)*
+
+1. ✅ **U1 — capture + taxonomy**: `note()`, the buffer, the reclassifications of §3.3, the two lints.
    Self-verifying via T1–T3, T7, T9, T11. No user-visible prompt yet.
 2. **U2 — the gate**: the prompt in `_start_launch` + `cco new`. T4–T6, T8, T10 + the live check.
 3. **U3 — A8's three fixes**: `--writable` (+ changelog + user docs), the clone destination, the

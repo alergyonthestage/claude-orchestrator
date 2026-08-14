@@ -391,8 +391,10 @@ _resolve_browser_port() {
         done
         if [[ "$taken" == "false" ]]; then
             if [[ "$port" != "$preferred" ]]; then
-                warn "Browser: CDP port ${preferred} is claimed by another session."
-                warn "         Using port ${port} instead."
+                # ONE condition, ONE warn (ADR-0059 D2) — the port being taken and
+                # the port used instead are the same fact, and the start-time gate
+                # lists warnings as separate entries.
+                warn "Browser: CDP port ${preferred} is claimed by another session — using port ${port} instead."
                 info "         Run: cco chrome start --project ${current_project}"
             fi
             echo "$port"
@@ -512,7 +514,7 @@ When `--dry-run` is active, emit a summary line including the effective port:
 
 If the port was auto-assigned:
 ```
-⚠ Browser: CDP port 9222 is claimed by another session. Using 9223 instead.
+⚠ Browser: CDP port 9222 is claimed by another session — using 9223 instead.
 ℹ Browser: host mode (CDP proxy localhost:9223 → host:9223)
 ```
 
