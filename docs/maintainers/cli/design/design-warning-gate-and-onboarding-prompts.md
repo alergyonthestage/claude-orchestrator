@@ -1,10 +1,11 @@
 # The start-time warning gate and the onboarding prompts
 
-> Version: 1.1.0
-> Status: **Accepted — U1 implemented, U2 and U3 outstanding.** Records the mechanism, the full
-> message-classification table and the test plan for roadmap items **A5** and **A8**.
-> U1 (the taxonomy + the capture buffer + the two lints) landed with the classification table applied
-> in full; §6.1 records the one correction the implementation forced on the test plan.
+> Version: 1.2.0
+> Status: **Accepted — A5 is implemented (U1 + U2); U3 (A8) outstanding.** Records the mechanism, the
+> full message-classification table and the test plan for roadmap items **A5** and **A8**.
+> The taxonomy, the capture buffer, the two lints and the gate itself have landed. §6.1 records the
+> one correction the implementation forced on the test plan; §6.2 records what the hermetic suite
+> cannot reach and therefore what host acceptance still owes.
 > Decisions: [ADR-0059](../decisions/0059-message-classification-and-the-start-warning-gate.md).
 > Closes [FI-55](../../improvements.md), [FI-68](../../improvements.md),
 > [FI-69](../../improvements.md), [FI-70](../../improvements.md).
@@ -279,11 +280,40 @@ assertion proving the shape *is* a subshell — without it a pass would prove on
 **Measured**: against a shell-array buffer this test fails (`count 0, expected 1`) while every other
 test in the file still passes, which is what makes it the discriminating one.
 
+### 6.2 What the hermetic suite cannot reach — and what that costs
+
+Stated rather than implied, because a test plan that does not name its own edge reads as complete.
+
+| Reachable in the suite | Not reachable | Why |
+|---|---|---|
+| the renderer (count, dedup, order, singular/plural) | the `read` and the case that consumes it | needs a controlling terminal |
+| the no-tty branch of the gate (T4) | an end-to-end abort (T5's *runtime* half) | `cco start` ends in `docker compose run` |
+| the placement of the gate (T5/T6/T8/T10, static) | the ADR-0058 A2 **live check** | `cco start` is host-only in a session |
+
+**Placement is asserted statically, and that is not a shortcut**: "after secrets, before the marker"
+*is* the decision, and a run under `CCO_NONINTERACTIVE=1` cannot discriminate a misplaced gate from a
+correct one — neither prompts. All three static oracles were **measured against the wrong
+implementation they name** (gate after `_cco_running_mark`; gate in `cmd_start` instead of
+`_start_launch`; `cco new` without a gate): each fails its own test and only its own test.
+
+**Owed on the host**, and not substitutable from inside a session:
+
+1. `cco start` on a project whose agent definitions keep no return channel → the gate must stop and
+   show [ADR-0058 A2](../../integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)'s
+   warning. This is the message that shipped deliberately unread, one release early, for this moment.
+2. Answer `a` → no container, and `cco list` shows **no** running marker for that project.
+3. `cco start --dry-run` on the same project → the summary, and **no** prompt.
+
+*(The prompt itself was driven end to end through a pty during U1/U2 development: three warnings
+render as two deduplicated entries under `⚠ 2 warnings for this session:`, `a` returns 1, bare Enter
+returns 0. That exercises the code, not the integration — the three checks above are the integration.)*
+
 ## 7. The units *(approved at the Plan gate, 2026-08-13 — the roadmap carries their status)*
 
 1. ✅ **U1 — capture + taxonomy**: `note()`, the buffer, the reclassifications of §3.3, the two lints.
    Self-verifying via T1–T3, T7, T9, T11. No user-visible prompt yet.
-2. **U2 — the gate**: the prompt in `_start_launch` + `cco new`. T4–T6, T8, T10 + the live check.
+2. ✅ **U2 — the gate**: the prompt in `_start_launch` + `cco new`. T4–T6, T8, T10 + the live check
+   (the live check is **owed on the host** — see §6.2).
 3. **U3 — A8's three fixes**: `--writable` (+ changelog + user docs), the clone destination, the
    reuse tokens. T12–T13.
 

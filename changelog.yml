@@ -1389,3 +1389,32 @@ entries:
       **The form that needs none of this**: `disallowedTools:` over an inherited
       toolset, instead of an exhaustive `tools:` allowlist.
       No rebuild needed: the projection is produced at start time by the CLI.
+
+  - id: 65
+    date: "2026-08-14"
+    type: additive
+    title: "cco start now pauses on its own warnings instead of losing them"
+    description: >
+      **The defect.** `cco start` printed its warnings and then handed the terminal
+      to `docker compose run`. The Claude Code TUI opened over them and the
+      scrollback was gone, so the entire warning surface of the command was
+      write-only — including the one that says a teammate will finish its work and
+      lose it. This was measured, not supposed: a real warning sat on the first line
+      after the start command through a complete acceptance run, read by nobody.
+      **What changes.** If a start emitted one or more warnings, `cco start` (and
+      `cco new`) now stops immediately before the container runs, lists them, and
+      asks whether to continue. Bare Enter starts; `a` aborts, and an abort leaves
+      no container and no session marker behind. A clean start stays silent and
+      immediate — nothing changes for a session that had nothing to say.
+      **Why every warning, with no curated list.** The rule is a property of the
+      level, so a warning written years from now stops the launch on the day it is
+      written. The corollary is the part that matters when reading cco's output: a
+      message that should not stop your launch is no longer written as a warning.
+      Four levels now exist — `⚠` (a condition of this session, gates), `note:` (an
+      accepted divergence, nothing is wrong), `ℹ`/`✓` (what the command did), and
+      plain feedback inside a prompt you are already answering.
+      **Unattended runs are unaffected.** With no controlling terminal — CI, a
+      script, a captured run, or `CCO_NONINTERACTIVE=1` — there is no prompt and the
+      launch proceeds exactly as before. `cco start --dry-run` does not prompt
+      either: nothing takes the terminal there, so the warnings are already readable.
+      No rebuild needed: the gate runs host-side in the CLI.

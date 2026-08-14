@@ -77,9 +77,9 @@ narrative, the lessons, and the per-stage records live in
   `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
   history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
   `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
-  ⚠ **`feat/cli/start-warning-gate` is 7 commits ahead and unpushed** — the A5/A8 design phase
-  (ADR-0059 + its design doc, 3 commits) and **U1's implementation** (4 commits, 2026-08-14). It is
-  the branch U2 continues on. Push it from the host before anything else.
+  ⚠ **`feat/cli/start-warning-gate` is 10 commits ahead and unpushed** — the A5/A8 design phase
+  (ADR-0059 + its design doc, 3 commits) and **A5's implementation, U1 + U2** (7 commits,
+  2026-08-14). It is the branch U3 continues on. Push it from the host before anything else.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
   of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
@@ -229,8 +229,8 @@ phase; A1 and A2 need a short design, A3 needs none, and **A4's design is alread
 ✅ **A5 and A8's shared design is done and accepted** (2026-08-13,
 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1…D15 +
 [design](cli/design/design-warning-gate-and-onboarding-prompts.md)) — it decomposes into **three
-ordered units, U1 → U2 → U3**, listed under A5. **U1 landed 2026-08-14; U2 is the next work in the
-block.**
+ordered units, U1 → U2 → U3**, listed under A5. **U1 and U2 landed 2026-08-14, closing A5; U3 (all of
+A8) is the next work in the block.**
 
 #### A1 — `cco save`: project-config versioning helper
 
@@ -450,7 +450,7 @@ nothing. Placement is a default, not a ruling.
 
 #### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
 
-🟡 **In implementation — U1 done 2026-08-14, U2 is the next work in Block A.**
+✅ **DONE 2026-08-14 (U1 + U2).** Three host acceptance checks are owed — design §6.2.
 📌 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (D1…D15) ·
 📄 [design](cli/design/design-warning-gate-and-onboarding-prompts.md) — carries the mechanism, the
 full message-classification table and the 13-test plan. **Read the design, not this entry**, before
@@ -490,23 +490,27 @@ should *not* gate still can. **U1 → U3 is a file conflict**, not a preference:
 | # | Unit | Item | Scope | Self-verified by | Status |
 |---|---|---|---|---|---|
 | **U1** | capture + taxonomy | A5 | `note()` in `lib/colors.sh`; the file-backed warn buffer (D5/D6); the reclassifications of design §3.3; the `INV-WG1`/`INV-WG2` lints | T1–T3, T7, T9, T11 — **no user-visible change yet** | ✅ **done** 2026-08-14 |
-| **U2** | the gate | A5 | the prompt in `_start_launch` (D7) + the same in `cco new` (D9) | T4–T6, T8, T10 + the **live check** below | ▶ next |
-| **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 | pending |
+| **U2** | the gate | A5 | the prompt in `_start_launch` (D7) + the same in `cco new` (D9) | T4–T6, T8, T10 + the **live check** below | ✅ **done** 2026-08-14 — live check owed on the host |
+| **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 | ▶ next |
 
-✅ **U1 shipped.** The whole §3.3 table is applied (3 sites changed level, 3 blocks merged, 1 double
-badge stripped), `note()` is a real emitter with the five bare `note:` echoes converted, and
-`tests/test_warn_capture.sh` (12 tests) + `INV-WG` cover it. U1 **arms the capture from nowhere** —
-`_cco_warn_capture_begin`/`_end` have no call site yet, because their placement *is* D7/D9, which is
-U2's scope. Two things U2 inherits:
+✅ **A5 is shipped — U1 and U2 both landed 2026-08-14.** The whole §3.3 table is applied (3 sites
+changed level, 3 blocks merged, 1 double badge stripped), `note()` is a real emitter, the gate stops
+`cco start` **and** `cco new` before the container runs, and `tests/test_warn_capture.sh` (20 tests) +
+`INV-WG` cover it. Suite **1675 / 7 of 1682** — the 7 are the known host-only set, unchanged.
+[changelog.yml #65](../../changelog.yml) + [`cli.md` §3.2](../users/reference/cli.md) carry the
+user-facing half.
 
 - 📌 **T3's driver moved, D5 did not** — see [design §6.1](cli/design/design-warning-gate-and-onboarding-prompts.md).
   D4 removes every `warn` from `_prompt_for_path`, so the test drives `$(_parse_bool …)` instead;
   measured to fail against a shell-array buffer while the rest of the file passes.
-- 📝 **One living-doc sentence goes false the day U2 lands**:
-  [decentralized-config design.md](configuration/decentralized-config/design.md) calls the passive
-  unresolved badge *"awareness, never a block (P14)"*. Under D1 it gates. Deliberately **not** rewritten
-  ahead of the code (`documentation-lifecycle.md`: never document behavior the shipped code does not
-  expose) — U2's documentation step owns it.
+- 🔴 **Three host acceptance checks are OWED** before `0.7.0` — [design §6.2](cli/design/design-warning-gate-and-onboarding-prompts.md)
+  lists them verbatim. `cco start` is host-only in a session, so the ADR-0058 A2 **live check** could
+  not be run from here. The prompt itself *was* driven end to end through a pty (3 warnings → 2
+  deduplicated entries, `a` → abort, Enter → start); that exercises the code, not the integration.
+- 📝 **One undecided residue in the prompt, flagged not guessed**: an **unrecognised** answer starts
+  the session (only `a`/`A` aborts). D10 decided bare Enter and `[S/a]`, not what a stray `n` does;
+  starting is D10's own reasoning applied consistently — *confiscating a session the user asked for is
+  the worse error* — but if a re-prompt loop is wanted, it is a one-line change and a UX call.
 
 ⭐ **T3 is the test the design exists for**: a `warn` emitted from inside `$( )` must reach the buffer.
 It is what discriminates the file-backed buffer from the shell-array one that would look correct

@@ -255,6 +255,19 @@ come from the machine-local index (`<state>/cco/index`); if any repo/mount is un
 coordinate carries a `url`), or **[s]kip** — it never launches with a silent empty mount.
 `cco start` always prints which `<repo>/.cco` source it used.
 
+**The warning gate**: if a start emitted one or more `⚠` warnings, `cco start` stops
+immediately before the container runs, lists them, and asks — **bare Enter starts, `a`
+aborts**. An abort leaves no container and no session marker. A clean start stays silent and
+immediate. The rule is deliberately unconditional (there is no list of "important"
+warnings), so the corollary is what to read cco's output by: **a message that should not stop
+your launch is not written as a warning.** Four levels: `⚠` a condition of *this session* ·
+`note:` an accepted divergence, nothing is wrong · `ℹ`/`✓` what the command did · plain text
+inside a prompt you are already answering.
+
+With **no controlling terminal** — CI, a script, a captured run, `CCO_NONINTERACTIVE=1` —
+there is no prompt and the launch proceeds unchanged. **`--dry-run` does not prompt** either:
+nothing takes the terminal there, so the warnings stay on screen. `cco new` gates identically.
+
 **Reserved names: `tutorial`, `config-editor`**
 
 `cco start tutorial` launches the built-in interactive tutorial directly from
