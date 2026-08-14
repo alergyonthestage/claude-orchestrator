@@ -2882,6 +2882,22 @@ _start_launch() {
     # Load project-specific secrets (override global values — Docker uses last -e for duplicates)
     load_secrets_file run_env "$project_dir/secrets.env"
 
+    # ── The warning gate (ADR-0059 D7) ───────────────────────────────
+    # HERE, and not at the end of cmd_start: `load_secrets_file` warns about a
+    # malformed line AFTER every other step of the command (lib/secrets.sh:102), so
+    # a gate placed any earlier would silently miss exactly the class of problem a
+    # user most wants to hear about before working inside the session. And BEFORE
+    # the running-registry marker: an abort must leave no entry to reap.
+    if ! _cco_warn_gate; then
+        _cco_warn_capture_end
+        info "Aborted — no session started."
+        return 0
+    fi
+    # The buffer has done its job; the launch below blocks for the whole session and
+    # nothing reads it again. Ending here also keeps _CCO_WARN_LOG — an exported
+    # host path — out of the container's environment.
+    _cco_warn_capture_end
+
     info "Starting session for project '${project_name}'..."
 
     # Session running registry (ADR-0045). `docker compose run` blocks for the whole
@@ -3065,6 +3081,11 @@ EOF
     local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
     local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)
 
+    # ADR-0059 D1 — start capturing warnings before the first step that can emit one
+    # (_start_load_config, the yaml parser and the pack/agent normalizers all do).
+    # AFTER argument parsing, so `--help` and a rejected flag leave no buffer behind.
+    _cco_warn_capture_begin
+
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
 
@@ -3155,10 +3176,17 @@ EOF
 
     if $dry_run; then
         _start_show_summary
+        # D8 — a dry-run does NOT gate. Nothing takes the terminal, so the warnings
+        # are already readable on screen, which is the entire objective; a prompt
+        # here would make the inspection path more interactive than the real one.
+        _cco_warn_capture_end
         return 0
     fi
 
-    _start_launch
+    local _launch_rc=0
+    _start_launch || _launch_rc=$?
+    _cco_warn_capture_end
+    return "$_launch_rc"
 }
 
 # ── Browser support helpers ──────────────────────────────────────────

@@ -50,6 +50,12 @@ EOF
 
     [[ ${#repos[@]} -eq 0 ]] && die "At least one --repo is required."
 
+    # ADR-0059 D9 — `cco new` gates too. It has its own launch path and takes the
+    # terminal identically, and it is the verb that mounts ad-hoc repos, so it is
+    # MORE exposed to path-resolution warnings, not less. Armed after argument
+    # parsing so `--help` and a rejected flag leave no buffer behind.
+    _cco_warn_capture_begin
+
     # Resolve --mount specs eagerly (ADR-0027 D2) so a bad source fails before
     # any compose is generated. Each becomes abs_src<TAB>target<TAB>ro.
     local user_mount_lines=()
@@ -72,7 +78,11 @@ EOF
     # claude-state is the ~/.claude/projects tree (ADR-0055 D5), so the memory
     # dir sits under the -workspace key rather than at the bucket root.
     mkdir -p "$tmp_dir/claude-state/-workspace/memory" "$tmp_dir/.claude" || die "Failed to create temp directory: $tmp_dir"
-    trap 'rm -rf "'"$tmp_dir"'"' EXIT
+    # ⚠ This trap REPLACES the sentinel trap bin/cco:14 arms — which is exactly why
+    # the warn buffer cannot rely on an EXIT trap of its own (ADR-0059 D9). It is
+    # swept here instead, alongside the temp dir, so a `die` between this line and
+    # the gate leaves nothing behind either.
+    trap 'rm -rf "'"$tmp_dir"'"; _cco_warn_capture_end' EXIT
 
     # Global config lives in the CONFIG bucket (~/.cco/.claude, flat — ADR-0028;
     # design §2.3). cco new is an ephemeral session: its transcripts/memory stay
@@ -200,6 +210,17 @@ YAML
 
     # Load global secrets
     load_global_secrets run_env
+
+    # The gate (ADR-0059 D7/D9) — same placement rule as `cco start`: after secrets,
+    # before anything takes the terminal. `_cco_warn_gate` is the shared
+    # implementation (lib/utils.sh); a second copy here is how the twin verb would
+    # keep the defect after the fix shipped.
+    if ! _cco_warn_gate; then
+        _cco_warn_capture_end
+        info "Aborted — no session started."
+        return 0
+    fi
+    _cco_warn_capture_end
 
     info "Starting temporary session '${session_name}'..."
     docker compose -f "$compose_file" run --rm --service-ports "${run_env[@]+"${run_env[@]}"}" claude

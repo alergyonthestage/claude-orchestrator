@@ -3,7 +3,9 @@
 #
 # Provides: expand_path(), _path_exists(), _peel_tab(), check_docker(),
 #           check_image(), check_global(), _check_reserved_project_name(),
-#           _sed_i(), _sed_i_or_append(), _substitute()
+#           _sed_i(), _sed_i_or_append(), _substitute(), _cco_have_tty(),
+#           _cco_warn_gate_render() + _cco_warn_gate() (the start-time warning
+#           gate — ADR-0059)
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME
 
@@ -63,6 +65,75 @@ _path_exists() {
 _cco_have_tty() {
     [[ -n "${CCO_NONINTERACTIVE:-}" ]] && return 1
     (exec < /dev/tty) 2>/dev/null
+}
+
+# ── The start-time warning gate (ADR-0059 D1/D10/D11) ────────────────
+#
+# `cco start` emits warnings and then hands the terminal to `docker compose run`;
+# the Claude Code TUI opens over them and the scrollback is gone, so the entire
+# warning surface of the command was WRITE-ONLY. That is measured, not supposed:
+# FI-54 sat in that stream, on the first line after the start command, through a
+# complete six-check acceptance run, read by nobody.
+#
+# So: if this run emitted one or more `warn`s, stop and ask. A clean run stays
+# silent and immediate — a gate that fires unconditionally would teach users to
+# answer it without reading, which is the same failure by a different route.
+#
+# ONE implementation for BOTH launch paths (`cco start` and `cco new`, D9). Two
+# copies is how the twin verb keeps the defect after the fix ships.
+#
+# It lives HERE, beside `_cco_have_tty`, because that predicate is the whole of
+# D11 and the repo enforces a single spelling of it
+# (`test_invariant_tty_gate_single_spelling`). No terminal — CI, Docker, a caller
+# capturing the output, `CCO_NONINTERACTIVE=1` — means no prompt and a launch that
+# proceeds exactly as before: a question whose text a capture swallowed still
+# blocks on /dev/tty, and that is a silent unattributable hang.
+#
+# D10: bare Enter STARTS (`[S/a]`); only `a`/`A` aborts. Confiscating a session the
+# user explicitly asked for, on a stray keystroke, is the worse of the two errors —
+# which is also why an unrecognised answer starts rather than re-asking.
+#
+# Render the gate's message to STDOUT: the count line, then one badged line per
+# captured warning, deduplicated and in emission order. PURE — no read, no prompt,
+# no terminal — so the part with content in it is unit-testable, the same split
+# `_resolve_reuse_menu` / `_resolve_disambiguate` already use for the reuse prompt.
+# Exit: 0 = something to render (emitted), 1 = no warnings, nothing emitted.
+#
+# ⚠ The badge lines are deliberately raw `echo`s and NOT `warn` calls: `warn`
+# appends to the buffer, so rendering the list through it would grow the list it is
+# rendering. This is the declared-legitimate side of the INV-WG2 limit — a report
+# line, not a second producer.
+_cco_warn_gate_render() {
+    local n; n=$(_cco_warn_capture_count)
+    [[ "$n" -gt 0 ]] || return 1
+    local label="warnings"; [[ "$n" -eq 1 ]] && label="warning"
+    echo ""
+    echo -e "${YELLOW}⚠${NC} ${n} ${label} for this session:"
+    echo ""
+    local _m
+    while IFS= read -r _m; do
+        [[ -z "$_m" ]] && continue
+        echo -e "  ${YELLOW}⚠${NC} ${_m}"
+    done < <(_cco_warn_capture_list)
+    echo ""
+    return 0
+}
+
+# Exit: 0 = proceed with the launch, 1 = the user aborted.
+_cco_warn_gate() {
+    local menu; menu=$(_cco_warn_gate_render) || return 0
+    # D11 — the tty check sits AFTER the render check so a clean run costs nothing,
+    # and BEFORE any output so a headless run stays byte-identical to today's.
+    _cco_have_tty || return 0
+
+    printf '%s\n' "$menu" >&2
+    local reply
+    printf "  Start the session anyway? [S/a]: " >&2
+    read -r reply < /dev/tty
+    case "$reply" in
+        [Aa]) echo "" >&2; return 1 ;;
+        *)    return 0 ;;
+    esac
 }
 
 # Emit one docker-compose short-syntax bind-mount line, YAML-DOUBLE-QUOTED so a
