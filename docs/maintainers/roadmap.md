@@ -877,6 +877,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | [FI-37](improvements.md) — no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`) | Usability, no data loss. ADR-0055 gave the *project* tree a functional-write floor; the repo tree deliberately did not get one, because a repo's native `.claude/` is cross-cutting config shared with everyone who clones it. The fix is a mechanism choice, not a patch |
 | [FI-38](improvements.md) — workflows STATE overlay hygiene | Two policy choices, not bugs: a stub outlives the entry that justified it, and a collision with a later-committed workflow is resolved silently. ⚠ The emitting function runs inside `$( )` and its stdout **is** compose YAML — any notice must go to stderr or be emitted by the caller |
 | [FI-39](improvements.md) — Claude Code memory state cco does not persist | **One ADR covering both halves; do not split it.** (a) per-agent `memory:` is declared on eight agents and evaporates — measured: of four declared scopes only the lead's works, and six pack agents produced **zero bytes** in weeks. (b) `autoMemoryDirectory` — a simplification. ⚠ **Weigh it together with cross-PC state sync, never before**: role memory becomes an object to sync, with its own ownership/conflict/confidentiality questions, and deciding it first means deciding it without its most binding requirement. ⚠ And the fix **cannot be "make `.claude` writable"** — that would buy a low-priority feature by selling the security guarantee named in C2 |
+| **Report the upstream documentation defect** (agent teams) | `llms-full.txt:543` states that *"Team coordination tools such as `SendMessage` and the task management tools are always available to a teammate even when `tools` restricts other tools"*. **Measured false** on 2.1.220, 2.1.226 and again on 2026-08-13 — it is the sentence that made FI-58 invisible for weeks, and ADR-0058 exists because it is wrong. Evidence: [analysis-002 §12](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md). ⚠ **Needs a control run on a stock installation first** — every measurement so far was taken inside cco, so the report must rule cco's own managed layer out before it is filed. Recorded here 2026-08-13 because it had only ever lived in an ephemeral handoff |
 | **State sync (cross-PC / cross-team)** | The largest deferred item; needs its own design. Boundary to preserve: git stays the one engine for vault sync and resource sharing; a daemon would own only what git carries badly (append-heavy, machine-local STATE) |
 | #10b — statusline | Show session usage/limit percentage instead of (or beside) the dollar cost; fix stale ctx% after `/compact`; configurable format. Low effort, fits any release |
 | FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
@@ -906,6 +907,14 @@ None blocking. Each is cheap to answer and expensive to discover later.
    sessions started hitting the wall on their own ([FI-56](improvements.md)) and before this project
    adopted *worktree per agent* as its rule for parallel work. A6 removes the immediate symptom, which
    is exactly why the question should be answered deliberately rather than by the next incident.
+6. **Ratify or retire the `acceptance/` docs leaf.** Added 2026-08-13 (until then it had only ever
+   lived in an ephemeral handoff). The pack's canonical set is `analysis/ design/ decisions/
+   reviews/`; the access domain invented a sixth, `acceptance/`, and it exists in **exactly one**
+   domain (`configuration/agent-cco-access/`). The FI-58 probe record was deliberately filed under
+   `integration/agent-teams/reviews/` rather than spread the contested leaf into a second domain —
+   which would have settled this question by accident. Ratify it into the taxonomy, or fold it into
+   `reviews/`. ⚠ Moving the existing files breaks inbound links from ADRs and `improvements.md`, so a
+   decision to fold must schedule the link sweep with it.
 
 ## Long-term planned work
 
