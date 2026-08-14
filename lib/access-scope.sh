@@ -1158,8 +1158,7 @@ _env_flush_hidden_notice() {
                 "$(( ${_ENV_HID_project:-0} + ${_ENV_HID_path:-0} ))" \
                 "$(( ${_ENV_HID_pack:-0} + ${_ENV_HID_llms:-0} \
                    + ${_ENV_HID_template:-0} + ${_ENV_HID_remote:-0} ))")
-            printf 'note: %s hidden by access scope (cco_access=%s) — %s or run cco on your host.\n' \
-                "$msg" "$(_env_access)" "$widen" >&2
+            note "$msg hidden by access scope (cco_access=$(_env_access)) — $widen or run cco on your host."
         fi
         _ENV_HIDDEN_ANY=0
         for kind in $_ENV_HID_KINDS; do printf -v "_ENV_HID_${kind}" '%d' 0; done
@@ -1184,8 +1183,7 @@ _env_flush_hidden_notice() {
             umsg="${umsg}${umsg:+, }${c} ${label}"
         done
         if [[ -n "$umsg" ]]; then
-            printf 'note: %s not mounted in this session — they exist on this machine but are not bound into this container; run cco on your host to act on them.\n' \
-                "$umsg" >&2
+            note "$umsg not mounted in this session — they exist on this machine but are not bound into this container; run cco on your host to act on them."
         fi
         _ENV_UNMOUNTED_ANY=0
         for kind in $_ENV_UNM_KINDS; do printf -v "_ENV_UNM_${kind}" '%d' 0; done

@@ -390,7 +390,7 @@ _start_resolve_access() {
     # F4 inert-edit-project case: (none,rw,none) becomes (ro,rw,none) — the project-mode
     # default — so ~/.cco stays readable (never writable unless G=rw).
     if [[ "$_preset" == "config-editor" && "$(_cco_axis_rank "$cco_g")" -lt 1 ]]; then
-        echo "note: config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)." >&2
+        note "config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)."
         cco_g="ro"
     fi
     cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
@@ -442,7 +442,7 @@ _start_resolve_access() {
     # explicit preset/override wider than cco does. Cr never warns (no cco counterpart).
     if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po" \
                           "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk"; then
-        echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
+        note "claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note."
     fi
 
     # FI-52 divergence notice (accepted 2026-08-06 — option 1+4, ADR-0057 §Amendments).
@@ -454,7 +454,7 @@ _start_resolve_access() {
     # caller that gates on warnings.
     local _cmd_overreach; _cmd_overreach=$(_claude_matrix_overreach "$claude_matrix")
     if [[ -n "$_cmd_overreach" ]]; then
-        echo "note: claude_md=ask emits ONE glob over all of /workspace (ADR-0057 D8), so CLAUDE.md still prompts on trees this session granted rw: ${_cmd_overreach}. Accepted divergence (FI-52), not a defect — add entries.claude_md=rw to --claude-access to author without the prompt." >&2
+        note "claude_md=ask emits ONE glob over all of /workspace (ADR-0057 D8), so CLAUDE.md still prompts on trees this session granted rw: ${_cmd_overreach}. Accepted divergence (FI-52), not a defect — add entries.claude_md=rw to --claude-access to author without the prompt."
     fi
 
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
@@ -1692,11 +1692,11 @@ _start_check_health() {
         die "Resolve conflict markers before starting. Run 'cco update --sync' or edit the files manually."
     fi
 
-    # Warn about managed skills that shadow user-level copies
+    # Warn about managed skills that shadow user-level copies.
+    # ONE condition, ONE warn (ADR-0059 D2): the three-line form listed the same
+    # shadowing three times in the gate's list, where a reader counts entries.
     if [[ -d "$config_dir/.claude/skills/init-workspace" ]]; then
-        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace)."
-        warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
-        warn "You can safely remove the user copy: rm -rf ~/.cco/.claude/skills/init-workspace"
+        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace) — it is now managed (enterprise-level) and the managed copy takes precedence. Remove the user copy with: rm -rf ~/.cco/.claude/skills/init-workspace"
     fi
 }
 
@@ -3131,7 +3131,7 @@ EOF
     if ! $is_internal; then
         info "started ${project_name} from $(basename "$source_repo") [source: ${source_kind}]"
         [[ "${unresolved_refs:-0}" -gt 0 ]] && \
-            warn "⚠ ${project_name}: ${unresolved_refs} reference(s) unresolved — run 'cco resolve'"
+            warn "${project_name}: ${unresolved_refs} reference(s) unresolved — run 'cco resolve'"
     fi
 
     # H1: config reminders fire AFTER member resolution, never against an empty
@@ -3220,8 +3220,9 @@ _resolve_browser_port() {
         done
         if [[ "$taken" == "false" ]]; then
             if [[ "$port" != "$preferred" ]]; then
-                warn "Browser: CDP port ${preferred} is claimed by another session."
-                warn "         Using port ${port} instead."
+                # ONE condition, ONE warn (ADR-0059 D2) — the port being taken and
+                # the port being used instead are the same fact.
+                warn "Browser: CDP port ${preferred} is claimed by another session — using port ${port} instead."
                 info "         Run: cco chrome start --project ${current_project}"
             fi
             echo "$port"

@@ -68,6 +68,16 @@ _local_paths_get() {
 # ── Interactive prompt ───────────────────────────────────────────────
 
 # Prompt user for a local path (TTY only).
+#
+# ⚠ Every message this function and _resolve_disambiguate print is PROMPT-LOCAL
+# (ADR-0059 D4): a plain `echo … >&2`, never a `warn`. It is a reclassification and
+# not a demotion — what makes "Invalid choice 'x'" non-gating is that it has already
+# been read, by construction, by a user who was looking at the prompt when it
+# appeared and typically corrected the input on the spot. Under D1 every `warn`
+# gates the launch, so a corrected typo would hold the session hostage at the end of
+# the run. Anything genuinely wrong with the SESSION still warns from the caller
+# (_resolve_entry_index below does exactly that when the index write fails).
+#
 # Usage: _prompt_for_path <name> <url> <suggested_path> <label>
 # Output (stdout): resolved path
 # Exit codes: 0=resolved, 1=skip, 2=abort
@@ -106,7 +116,7 @@ _prompt_for_path() {
     case "$reply" in
         [Cc])
             if [[ -z "$url" ]]; then
-                warn "No URL available for clone"
+                echo "  No URL available for clone" >&2
                 # Fall through to path prompt
                 printf "  Path for '%s': " "$name" >&2
                 read -r reply < /dev/tty
@@ -117,7 +127,7 @@ _prompt_for_path() {
                 expanded=$(_resolve_to_abs "$reply")
                 # Use _path_exists (not `-d`) — extra_mounts may be files
                 if ! _path_exists "$expanded"; then
-                    warn "Path '$expanded' does not exist"
+                    echo "  Path '$expanded' does not exist" >&2
                     return 1
                 fi
                 echo "$expanded"
@@ -148,7 +158,7 @@ _prompt_for_path() {
             expanded=$(_resolve_to_abs "$reply")
             # Use _path_exists (not `-d`) — extra_mounts may be files
             if ! _path_exists "$expanded"; then
-                warn "Path '$expanded' does not exist"
+                echo "  Path '$expanded' does not exist" >&2
                 return 1
             fi
             echo "$expanded"
@@ -161,7 +171,7 @@ _prompt_for_path() {
             return 2
             ;;
         *)
-            warn "Invalid choice '$reply'"
+            echo "  Invalid choice '$reply'" >&2
             return 1
             ;;
     esac
@@ -442,12 +452,12 @@ _resolve_disambiguate() {
     case "$reply" in
         [Dd]) return 1 ;;
         [Qq]) return 2 ;;
-        *[!0-9]*|'') warn "Invalid choice '$reply' — specify a different path"; return 1 ;;
+        *[!0-9]*|'') echo "  Invalid choice '$reply' — specify a different path" >&2; return 1 ;;
         *)
             if [[ "$reply" -ge 1 && "$reply" -le ${#cands[@]} ]]; then
                 printf '%s\n' "${cands[$((reply - 1))]}"; return 0
             fi
-            warn "Choice '$reply' out of range — specify a different path"; return 1 ;;
+            echo "  Choice '$reply' out of range — specify a different path" >&2; return 1 ;;
     esac
 }
 

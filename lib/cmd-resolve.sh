@@ -838,7 +838,11 @@ EOF
                     || die "Could not bind '$name' -> $abs (unscoped). Check the index bucket's permissions and free space."
                 ok "path set: $name -> $abs (unscoped — not inside a project)"
             fi
-            _path_exists "$abs" || warn "note: '$abs' does not exist on this machine yet"
+            # ADR-0059 D3: the one message that used to spell both levels at once.
+            # Pinning a path before it is cloned is a legitimate, deliberate act —
+            # under D1 a `warn` here would gate a launch on a text announcing it is
+            # not worth gating.
+            _path_exists "$abs" || note "'$abs' does not exist on this machine yet"
             _pbase=$(basename "$abs")
             # Use `if`, not `[[ … ]] && info`: as the case's LAST statement the
             # latter leaks a false condition (path not yet on disk — a legitimate
