@@ -451,36 +451,25 @@ nothing. Placement is a default, not a ruling.
 
 #### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
 
-✅ **DONE 2026-08-14 (U1 + U2).** Three host acceptance checks are owed — design §6.2.
-📌 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (D1…D15) ·
-📄 [design](cli/design/design-warning-gate-and-onboarding-prompts.md) — carries the mechanism, the
-full message-classification table and the 13-test plan. **Read the design, not this entry**, before
-opening an editor; what follows is status and order only.
+✅ **DONE — U1 + U2 (2026-08-14) and U4 (2026-08-18); host acceptance PASSED.** One item is still
+owed on this entry before the cycle merges: **D19**, below.
+📌 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) — **D1…D15 plus
+[Amendment A1](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
+(D16…D19)** ·
+📄 [design](cli/design/design-warning-gate-and-onboarding-prompts.md) — the mechanism, the
+classification table, the test plan, and §6.2/§6.3 (what the suite cannot reach, and what the live
+run found). **Read those, not this entry**: what follows is status and order only.
 
-**The whole warning surface of `cco start` is currently write-only.** The warnings print, then
-`docker compose run` takes the terminal and the TUI opens over them — the user never gets the chance
-to read them, let alone act. This is not a hypothesis: [FI-54](improvements.md) sat in that stream,
-on the **first line** after the start command, through a complete six-check acceptance run, read by
-nobody.
+**What shipped.** `cco start` and `cco new` stop before the container runs when the run emitted any
+`⚠ warn`, list them grouped by area, and ask. Bare Enter starts, `a` aborts and leaves no container
+and no session marker. A clean start is silent. No terminal — CI, a pipe, `CCO_NONINTERACTIVE=1` —
+means no prompt and a launch unchanged from before.
 
-**Behaviour**: after emitting warnings, and only if there are any, stop and ask — start, or abort.
-A clean start stays silent and immediate. The prompt should carry the warning list, because the
-natural next step (offering `cco config save`, committing `.cco`, …) grows out of it.
-
-📌 **Coupled to [FI-58](#-ahead-of-the-queue--the-delegation-channel-fi-58improvementsmd), and the
-coupling is one-way.** ADR-0058 D6's warning ships **before** this
-([A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)), so from the
-moment D4/D5 land there is a real `⚠ warn` in the start stream that nobody can read — A5 is what
-makes it arrive. That does not make A5 a blocker for FI-58, and it does not change A5's design; it
-raises its priority **inside** Block A, and it adds one classification to get right (the normalizer's
-warning is a `⚠ warn`, never a `note:`).
-
-⚠ **The two things this design had to get right**, both already paid for once, are settled in
-ADR-0059 D11 and D1/D2: the prompt gates on `_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the
-suite and every output-capturing caller hang on a question whose text the capture swallowed —
-`test_invariant_tty_gate_single_spelling`); and **only `⚠ warn` gates**, never `note:`/`ℹ`.
-Classifying every start-time message honestly was the real work, and the audit is done: **3 sites
-change level, 3 blocks merge, 1 double `⚠` badge is stripped** — everything else was already honest.
+📌 **Its coupling to [FI-58](#-ahead-of-the-queue--the-delegation-channel-fi-58improvementsmd) is
+discharged.** ADR-0058 D6's warning shipped one release early, deliberately unread; the host run of
+2026-08-18 read it at the gate. §A2 then split that pair: *widened* is a `note` (cco fixed it), *no
+return channel* stays the `⚠ warn` the gate exists for —
+[ADR-0058 A3](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments).
 
 ##### The three units — the ordered plan for A5 + A8
 
@@ -495,10 +484,9 @@ should *not* gate still can. **U1 → U3 is a file conflict**, not a preference:
 | **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 | ▶ next |
 | **U4** | the output model | A5 | aggregation at the loop producers (D16), grouping by derived area (D17), one print per warning (D18), the `widened` demotion (§A2) | 25 tests in `test_warn_capture.sh` + the producer tests | ✅ **done** 2026-08-18 |
 
-✅ **A5 is shipped — U1 and U2 both landed 2026-08-14.** The whole §3.3 table is applied (3 sites
-changed level, 3 blocks merged, 1 double badge stripped), `note()` is a real emitter, the gate stops
-`cco start` **and** `cco new` before the container runs, and `tests/test_warn_capture.sh` (20 tests) +
-`INV-WG` cover it. Suite **1675 / 7 of 1682** — the 7 are the known host-only set, unchanged.
+✅ **A5 is shipped.** The §3.3 table is applied in full, `note()` is a real emitter, the gate runs on
+both launch paths, and `tests/test_warn_capture.sh` (25 tests) + `INV-WG1`/`INV-WG2` cover it. Suite
+**1683 / 7 of 1690** — the 7 are the known host-only set, unchanged.
 [changelog.yml #65](../../changelog.yml) + [`cli.md` §3.2](../users/reference/cli.md) carry the
 user-facing half.
 
@@ -558,8 +546,9 @@ worktree isolation*) stays a separate, larger unit and is now pulled by real dem
 #### A8 — the onboarding prompts and the mount-declaration surface ([FI-68](improvements.md) … [FI-70](improvements.md))
 
 🟡 **Design ACCEPTED 2026-08-13, jointly with A5** — same ADR, same design doc, and the whole of A8
-is **unit U3** in [A5's table](#the-three-units--the-ordered-plan-for-a5--a8). It runs **after** U1:
-U1 and U3 both edit `lib/local-paths.sh:445,450`.
+is **unit U3** in [A5's table](#the-three-units--the-ordered-plan-for-a5--a8). ✅ Its ordering
+dependency is **discharged**: U3 had to follow U1 because both edit `lib/local-paths.sh:445,450`, and
+U1 landed 2026-08-14. **U3 is unblocked and is the next unit in Block A.**
 
 **Three field reports from 2026-08-09, all on the surface a user meets *first*** — the prompts that
 resolve an unregistered path, and the command that declares a mount. None is deep, none blocks
@@ -577,11 +566,11 @@ and as the secure-defaults policy requires. **The default is not in scope** — 
 the *surface*: a flag that cannot change an outcome, and no way to express the permissive case at all.
 An implementer who takes the report at face value would invert a shipped security default.
 
-**Sequence it with [A5](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd).** FI-69 and
-FI-70 live in `lib/local-paths.sh`'s interactive prompts, under the same `_cco_have_tty` /
-`CCO_NONINTERACTIVE=1` constraint A5 must satisfy — and A5 is *adding* a prompt to the same start-time
-flow. Done together the TTY contract is derived once; done apart it is derived twice, and the second
-derivation is the one that hangs the suite.
+✅ **The shared TTY contract is already derived, once.** FI-69 and FI-70 live in
+`lib/local-paths.sh`'s interactive prompts, under the same `_cco_have_tty` / `CCO_NONINTERACTIVE=1`
+constraint — which [A5](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd) settled
+when it added the gate's prompt to the same flow (ADR-0059 D11). U3 **reuses** it and must not derive
+a second one: the second derivation is the one that hangs the suite.
 
 ✅ **The decision is taken (2026-08-13, maintainer): add `--writable`, and keep `--readonly`** as an
 explicit affirmation that keeps writing `readonly: true`
