@@ -78,8 +78,9 @@ narrative, the lessons, and the per-stage records live in
   history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
   `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
   ⚠ **`feat/cli/start-warning-gate` is UNPUSHED and NOT MERGED** — the A5/A8 design phase, **A5's
-  implementation** (U1 + U2, 2026-08-14) and **U4**, the post-acceptance UX rework (2026-08-18). It
-  is the branch U3 continues on. Push it from the host before anything else.
+  implementation** (U1 + U2, 2026-08-14), **U4**, the post-acceptance UX rework, and **U3 = all of A8**
+  (both 2026-08-18). Every unit of the A5+A8 plan is now on it; **D19 is the one thing still owed
+  before it merges**. Push it from the host before anything else.
   📝 No commit count is recorded here on purpose: a line that states one is invalidated by the very
   commit that states it. Measure with `git rev-list --count develop..feat/cli/start-warning-gate`.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
@@ -231,8 +232,9 @@ phase; A1 and A2 need a short design, A3 needs none, and **A4's design is alread
 ✅ **A5 and A8's shared design is done and accepted** (2026-08-13,
 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1…D15 +
 [design](cli/design/design-warning-gate-and-onboarding-prompts.md)) — it decomposes into **three
-ordered units, U1 → U2 → U3**, listed under A5. **U1 and U2 landed 2026-08-14, closing A5; U3 (all of
-A8) is the next work in the block.**
+ordered units, U1 → U2 → U3**, listed under A5. ✅ **All of them have landed — U1 + U2 on 2026-08-14
+(closing A5), U4 and U3 (= all of A8) on 2026-08-18. What the pair still owes before it merges is
+[D19](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd), the full reclassification.**
 
 #### A1 — `cco save`: project-config versioning helper
 
@@ -452,8 +454,9 @@ nothing. Placement is a default, not a ruling.
 
 #### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
 
-✅ **DONE — U1 + U2 (2026-08-14) and U4 (2026-08-18); host acceptance PASSED.** One item is still
-owed on this entry before the cycle merges: **D19**, below.
+✅ **DONE — U1 + U2 (2026-08-14) and U4 (2026-08-18); host acceptance PASSED.** With
+[A8](#a8--the-onboarding-prompts-and-the-mount-declaration-surface-fi-68improvementsmd--fi-70improvementsmd)
+(U3) shipped the same day, **D19 below is the only thing the A5+A8 pair still owes before it merges**.
 📌 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) — **D1…D15 plus
 [Amendment A1](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
 (D16…D19)** ·
@@ -482,12 +485,13 @@ should *not* gate still can. **U1 → U3 is a file conflict**, not a preference:
 |---|---|---|---|---|---|
 | **U1** | capture + taxonomy | A5 | `note()` in `lib/colors.sh`; the file-backed warn buffer (D5/D6); the reclassifications of design §3.3; the `INV-WG1`/`INV-WG2` lints | T1–T3, T7, T9, T11 — **no user-visible change yet** | ✅ **done** 2026-08-14 |
 | **U2** | the gate | A5 | the prompt in `_start_launch` (D7) + the same in `cco new` (D9) | T4–T6, T8, T10 + the **live check** below | ✅ **done** 2026-08-14 — live check owed on the host |
-| **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 | ▶ next |
+| **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 (12 tests) | ✅ **done** 2026-08-18 |
 | **U4** | the output model | A5 | aggregation at the loop producers (D16), grouping by derived area (D17), one print per warning (D18), the `widened` demotion (§A2) | 25 tests in `test_warn_capture.sh` + the producer tests | ✅ **done** 2026-08-18 |
 
 ✅ **A5 is shipped.** The §3.3 table is applied in full, `note()` is a real emitter, the gate runs on
 both launch paths, and `tests/test_warn_capture.sh` (25 tests) + `INV-WG1`/`INV-WG2` cover it. Suite
-**1683 / 7 of 1690** — the 7 are the known host-only set, unchanged.
+**1695 / 7 of 1702** with U3 on top (1683 / 7 of 1690 at A5's own close) — the 7 are the known
+host-only set, verified name for name and unchanged.
 [changelog.yml #65](../../changelog.yml) + [`cli.md` §3.2](../users/reference/cli.md) carry the
 user-facing half.
 
@@ -546,10 +550,18 @@ worktree isolation*) stays a separate, larger unit and is now pulled by real dem
 
 #### A8 — the onboarding prompts and the mount-declaration surface ([FI-68](improvements.md) … [FI-70](improvements.md))
 
-🟡 **Design ACCEPTED 2026-08-13, jointly with A5** — same ADR, same design doc, and the whole of A8
-is **unit U3** in [A5's table](#the-three-units--the-ordered-plan-for-a5--a8). ✅ Its ordering
-dependency is **discharged**: U3 had to follow U1 because both edit `lib/local-paths.sh:445,450`, and
-U1 landed 2026-08-14. **U3 is unblocked and is the next unit in Block A.**
+✅ **DONE 2026-08-18 — the whole of A8 shipped as unit U3** (`d9c3065` `--writable` · `c5ae3a8` the
+two prompts · `b671ada` + `490553a` T12/T13 · `7063966` `changelog.yml` #66 + user docs). Design
+accepted 2026-08-13 jointly with A5 — same ADR, same design doc,
+[A5's table](#the-three-units--the-ordered-plan-for-a5--a8) carries the unit.
+
+**All three field reports are closed, and none of the three needed a decision this entry had not
+already taken.** What the build added is in [design §6.4](cli/design/design-warning-gate-and-onboarding-prompts.md):
+the prompts' `read` half is no longer untested — T13's driver runs the shipped function body with
+only the `read -r reply < /dev/tty` line replaced, and it refuses any body it could not patch (an
+unpatched one would hang rather than fail). Every one of the 12 oracles was measured against the
+pre-fix tree; the one that mattered reports FI-70 in its own words: *"the token the prompt printed
+('1-1') must be accepted when typed back"*.
 
 **Three field reports from 2026-08-09, all on the surface a user meets *first*** — the prompts that
 resolve an unregistered path, and the command that declares a mount. None is deep, none blocks

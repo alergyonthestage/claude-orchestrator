@@ -252,6 +252,10 @@ text rather than requiring every message to adopt it.
 
 ## 5. A8 — the three surface fixes
 
+✅ **Built 2026-08-18 (U3).** All three are in `lib/cmd-project-add.sh` and `lib/local-paths.sh`;
+T12 (5 tests) and T13 (7 tests) cover them, and **every oracle was measured against the pre-fix
+tree**. What the fixes themselves are is below, unchanged; what changed during the build is §6.4.
+
 ### 5.1 FI-68 — `--writable` (ADR-0059 D12)
 
 `lib/cmd-project-add.sh`:
@@ -339,9 +343,13 @@ Stated rather than implied, because a test plan that does not name its own edge 
 
 | Reachable in the suite | Not reachable | Why |
 |---|---|---|
-| the renderer (count, dedup, order, singular/plural) | the `read` and the case that consumes it | needs a controlling terminal |
+| the renderer (count, dedup, order, singular/plural) | the literal `read -r reply < /dev/tty` line | needs a controlling terminal |
 | the no-tty branch of the gate (T4) | an end-to-end abort (T5's *runtime* half) | `cco start` ends in `docker compose run` |
 | the placement of the gate (T5/T6/T8/T10, static) | the ADR-0058 A2 **live check** | `cco start` is host-only in a session |
+
+📌 **Row 1 was narrowed by U3, and the narrowing is real** — see §6.4. *The case that consumes the
+reply* is no longer out of reach: T13's driver extracts the shipped function body and replaces only
+the `read` line. What stays unreachable is that one line.
 
 **Placement is asserted statically, and that is not a shortcut**: "after secrets, before the marker"
 *is* the decision, and a run under `CCO_NONINTERACTIVE=1` cannot discriminate a misplaced gate from a
@@ -379,14 +387,52 @@ loops were never looked at. See the roadmap's A5 follow-up for the decision.
 render as two deduplicated entries under `⚠ 2 warnings for this session:`, `a` returns 1, bare Enter
 returns 0. That exercises the code, not the integration — the three checks above are the integration.)*
 
+### 6.4 U3's driver — the read half, reached by patching one line
+
+T13 says *assert on the rendered line, not on the parser alone*, and FI-70 is exactly why: the parser
+was always right to reject `1-1`; the **prompt** was wrong to print it. A test of either half alone
+passes throughout the defect. So the test has to do what the user did — read the token off the
+rendered line and type it back — and that needs the `read`.
+
+Three options existed, and the third is what shipped:
+
+| Option | Rejected because |
+|---|---|
+| leave the read half untested | it is the half the defect lives in |
+| drive a pty (`script -qec`) | BSD `script` takes different arguments, and a pty test invites the capture-hang class — already excluded during U1/U2 |
+| **run the real body with only the `read` replaced** | ✅ what `tests/test_resolve.sh`'s `_p8_*` driver does |
+
+The driver `awk`s the function body out of `lib/local-paths.sh` **at run time** and `sed`s
+`read -r reply < /dev/tty` into a queue pop. The rendering, the `case`, and `_resolve_to_abs` are the
+shipped code, not a copy — which is the property that makes it a test rather than a mirror.
+
+⚠ **It carries its own oracle, and must.** If that line is ever reworded, `sed` misses it and an
+unpatched body would **block on `/dev/tty` forever** rather than fail an assertion — the capture-hang
+class, one layer up. `_p8_body` therefore refuses to return any body still naming `/dev/tty`, and
+`test_p8_harness_refuses_a_body_it_could_not_patch` proves the refusal fires on a spelling one space
+away from the real one (`</dev/tty` vs `< /dev/tty`).
+
+📝 **The technique generalises but was not generalised.** `_cco_warn_gate` (`lib/utils.sh:112`) uses
+the identical spelling, so the gate's own prompt is reachable the same way. Out of U3's scope, and
+noted rather than done: the gate's `case` is two lines and was driven through a real pty during U2.
+
+**Two traps paid for while building it**, both silent, both of the shape this repo keeps a list for:
+
+- `reply=$(_p8_reply)` pops the queue **in a subshell**, so the queue never advances and every read
+  replays the first answer. Measured: the destination read consumed the choice `c` and cloned into
+  `./c`. The pop writes through `printf -v` instead.
+- `out=$(…) 2>file` installs the redirect **after** the substitution has already expanded, so the
+  captured stderr was empty while the real output scrolled past the test. The redirect belongs
+  *inside* the subshell (`exec 2>file`).
+
 ## 7. The units *(approved at the Plan gate, 2026-08-13 — the roadmap carries their status)*
 
 1. ✅ **U1 — capture + taxonomy**: `note()`, the buffer, the reclassifications of §3.3, the two lints.
    Self-verifying via T1–T3, T7, T9, T11. No user-visible prompt yet.
 2. ✅ **U2 — the gate**: the prompt in `_start_launch` + `cco new`. T4–T6, T8, T10 + the live check
    (the live check is **owed on the host** — see §6.2).
-3. **U3 — A8's three fixes**: `--writable` (+ changelog + user docs), the clone destination, the
-   reuse tokens. T12–T13.
+3. ✅ **U3 — A8's three fixes**: `--writable` (+ changelog + user docs), the clone destination, the
+   reuse tokens. T12–T13, plus the harness self-test of §6.4.
 
 U1 before U2 is not cosmetic: the gate must not ship while a message that should not gate still can.
 No unit touches a baked file, so **no `cco build`** is in the acceptance lane.
