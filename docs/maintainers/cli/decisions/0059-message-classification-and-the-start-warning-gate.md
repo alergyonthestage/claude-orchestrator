@@ -333,3 +333,126 @@ audit is now known to have covered 12 of the ~36 files that call `warn`. Before 
 session runs §3.2's decision tree over **every** producer reachable from `cco start` / `cco new`,
 enumerated by running the command rather than by reading a list. Recorded here so the gap is a
 scheduled item and not a discovery someone repeats.
+
+### A2 — the pause is what makes the output readable (2026-08-18)
+
+**Status**: Accepted. Ruled by the maintainer at the D19 analysis gate, on the evidence in
+[the D19 analysis](../analysis/d19-warn-producer-reclassification.md). D1…D18 stand; A2 amends
+**what the pause keys on**, and closes D19.
+
+#### D19 is discharged — and it changed no producer's level
+
+The reclassification ran by **executing** `cco start` and `cco new` — 15 hermetic scenarios with
+`docker` mocked, `warn` instrumented in its own frame, `set -x` for what executed and
+`shopt -s extdebug` for which function owns a line. **184 call sites; 46 reached in 12 files; 24
+fired.** Method and per-site verdicts:
+[the analysis](../analysis/d19-warn-producer-reclassification.md).
+
+**Every reached producer is correct at its level. Nothing is reclassified.** What the enumeration
+found is *coverage*, not error:
+
+- The audit's twelve files and the measured twelve are **not the same twelve**. `lib/reminders.sh`,
+  `lib/llms.sh` and — named by nobody, not even by D19 — **`lib/migrate.sh`** were never classified.
+  `_cco_first_run` runs on every host command, so `_cco_backup_legacy_vault` and
+  `_cco_flatten_global_claude` were entered in **all 15** scenarios: their five `warn`s gate a launch
+  for any user still carrying the legacy vault.
+- `lib/cmd-resolve.sh` had **one** site in the audit and has **six** reachable.
+- `index.sh:489,504` are *not* reachable from a start (`_index_rehome_*` is never entered);
+  `access-scope.sh:1422-1425` measured **0 reached** in 15 host-lane runs, confirming §3.3's
+  "container-operator only".
+
+**ADR-0008 was NOT contradicted, and the reading that said so was wrong.** Its *non-blocking* forbids
+a precondition that refuses the command until the tree is clean — it rejects the old clean-tree gate
+because it *"forces commits"*. D1's gate forces nothing and a bare Enter starts, which is ADR-0008's
+own *"the user may knowingly proceed with uncommitted changes"*. The reminders stay `warn`.
+
+#### D20 — the pause is a property of the RUN, not of the warning level
+
+`cco start` takes under five seconds and then Claude Code owns the terminal. Everything cco printed —
+`⚠`, `note:`, `ℹ`, `✓` alike — is gone before it can be read. So the pause's **primary** job in the
+field is not *confirm a condition*: it is **holding the terminal long enough for the run's output to
+be read at all**. D1 keyed it on `warn`, which fused two independent questions:
+
+| Job | Answers | Keyed on, from now |
+|---|---|---|
+| **level** | how serious, how presented | `warn` / `note` / `ℹ`·`✓` — unchanged |
+| **pause** | may the user read what this run printed | **the run reached the launch**, nothing else |
+
+So: **on an interactive terminal, `cco start` and `cco new` always stop before the container runs and
+wait.** What the level changes is what the pause *says*, never whether it happens.
+
+The corollary is why this is not merely nicer: under D1, `note()` and `info()` were **write-only** —
+a note printed, was never captured (the gate keyed on the warn count alone), and was overwritten
+seconds later. D3 created `note()` so the non-gating level would have a spelling in code; a level
+whose messages cannot be read is not a level, and the next author facing that reaches for `warn` for
+the very reason D3 exists.
+
+#### D21 — three graduated forms, one prompt
+
+The body above the prompt is graduated; the answer is not.
+
+| The run emitted | The pause shows | The prompt |
+|---|---|---|
+| chronicle only (`ℹ`/`✓`) | nothing extra | `→ Press Enter to start the session.` |
+| notes, no warnings | the notes, grouped by area | `→ Press Enter to start the session.` |
+| one or more warnings | `⚠ N warnings … in M areas`, grouped (D17) | `Start the session anyway? [S/a]:` |
+
+`a`/`A` aborts in **all three** — the affordance is uniform even where the clean form does not
+advertise it, because a user who picked the wrong project must be able to back out of the one they
+did pick. Bare Enter starts everywhere (D10 unchanged).
+
+#### D22 — the buffer carries the level
+
+`note()` is captured like `warn()`, and the buffer record gains a leading level field
+(`<level>\t<source>\t<message>`; the records stream becomes `<level>\t<area>\t<message>`). The
+renderer emits warnings first, then notes, each grouped by the area derived from `${BASH_SOURCE[1]}`
+(D17 unchanged).
+
+**Deferral stays conditional on the append succeeding** (D18): a buffer that cannot be written makes
+`note` print immediately, exactly as before. Do not simplify that into an unconditional defer — it is
+what keeps a capture problem from eating the message it was built to deliver.
+
+#### D23 — `CCO_ASSUME_YES=1` and `--yes` answer the pause
+
+D20 makes every interactive start pause, so automation driven **from a real terminal** needs a way to
+answer rather than a way to pretend there is no terminal. Two spellings, neither new in kind:
+
+- **`CCO_NONINTERACTIVE=1`** — unchanged, already the single opt-out every prompt honours: behave as
+  if no terminal existed. The gate prints the list and launches (D11).
+- **`CCO_ASSUME_YES=1`** — already means *answer the prompt yes* elsewhere in the codebase
+  (`lib/migrate.sh`). The gate now honours it: the list is rendered, the question is not asked.
+- **`--yes` on `cco start` / `cco new`** — the same, reachable without env plumbing.
+
+The distinction is the one `_cco_have_tty`'s own contract already draws, and it is worth keeping:
+`CCO_NONINTERACTIVE` says *there is nobody there*; `CCO_ASSUME_YES` says *somebody is there and has
+already answered*.
+
+#### D24 — one condition, one sentence, across producers too
+
+D16 aggregated a loop's items into one warning. It did not reach the case where **two different
+producers describe one condition in two different sentences**, which the deduplication cannot catch
+because it keys on the message text. Measured: one uninstalled llms yields *"llms 'X' not installed —
+run 'cco resolve' on a terminal"* (`cmd-resolve.sh:319`) **and** *"llms 'X' is not installed (looked
+in …) → cco llms install"* (`llms.sh:133`), in two different areas; one unresolved pack does the same
+through `cmd-resolve.sh:345` and `packs.sh:195`.
+
+**The downstream sentence survives** — it names where cco looked and the exact remedy, and it is
+stated in terms of the session rather than of the resolution attempt. So the resolve pass stays
+silent for **llms and packs** when it is about to be restated downstream.
+
+⚠ **Repos and extra_mounts are deliberately untouched**: they have **no** downstream producer, so
+`cmd-resolve.sh:271,294` are the only statement of that condition. The rule is therefore not uniform
+across the four kinds, and the asymmetry is commented at the sites — a later "tidy-up" that extends
+the silence to all four deletes the message.
+
+#### D25 — the passive residue badge is removed
+
+`cmd-start.sh:3155` (*"N reference(s) unresolved — run 'cco resolve'"*) counted only what
+`_project_effective_paths` returns (repos + mounts), while `cmd-resolve.sh:383` counts all four kinds.
+The first is always a **subset** of the second — there is no case where it fires alone — so the gate
+showed two contradictory counts of one condition (measured: *"3 reference(s) still unresolved"* beside
+*"1 reference(s) unresolved"*).
+
+It is removed. Its own comment described it as a *"passive ⚠ badge"* that *"never blocks the launch"* —
+a pre-gate device for warnings that scrolled past, which is the job D1 took over and, under D20, the
+job the pause now does for everything.
