@@ -2518,10 +2518,13 @@ if it recurs.
 
 ## FI-55: `cco start` never pauses on its own warnings — the session opens over them
 
-**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md)
-(Accepted, D1…D15) + [design](cli/design/design-warning-gate-and-onboarding-prompts.md). Not
-implemented. Raised by the maintainer 2026-08-06, from repeated field experience. **Quick win,
-Block A**, designed jointly with [A8](#fi-68-cco-project-add-mount---readonly-is-a-no-op-and-no-flag-declares-a-writable-mount).
+**Status**: ✅ **FIXED 2026-08-14 (U1+U2), reworked 2026-08-18 (U4); host acceptance PASSED** —
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (Accepted, D1…D15
++ **Amendment A1**, D16…D19) + [design](cli/design/design-warning-gate-and-onboarding-prompts.md).
+Raised by the maintainer 2026-08-06, from repeated field experience. **Quick win, Block A**, designed
+jointly with [A8](#fi-68-cco-project-add-mount---readonly-is-a-no-op-and-no-flag-declares-a-writable-mount).
+🔴 **D19, the full reclassification of every `warn` producer, is still owed before the cycle merges** —
+see the [roadmap](roadmap.md).
 
 **What happens.** `cco start` emits its warnings (uncommitted `~/.cco`, uncommitted `.cco`,
 framework-reserved `llms/` shadowing, resolution notices…) and then immediately hands the terminal to
@@ -2917,13 +2920,15 @@ other way round.
 
 ---
 
-## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount
+## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount ✅ fixed
 
-**Status**: 🟡 **Decided + designed 2026-08-13** — the maintainer ruled **option 1** (`--writable`
-added, `--readonly` kept as an explicit affirmation):
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `d9c3065`) — the maintainer ruled **option 1**
+(`--writable` added, `--readonly` kept as an explicit affirmation) on 2026-08-13:
 [ADR-0059 D12](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d12--cco-project-add-mount-gains---writable---readonly-stays-and-states-the-default-maintainer-2026-08-13),
-[design §5.1](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented.
-Was a **decision**, not a defect in the default. Reported by the maintainer 2026-08-09 (field
+[design §5.1](cli/design/design-warning-gate-and-onboarding-prompts.md). `changelog.yml` #66 +
+[`cli.md` §3.25](../users/reference/cli.md). ⚠ **The `readonly: true` default is untouched**, and a
+test guards it (`test_add_mount_no_flag_writes_no_readonly_key`) precisely because this report's
+inverted premise invited flipping it. Was a **decision**, not a defect in the default. Reported by the maintainer 2026-08-09 (field
 observation), **re-derived from the code and inverted**: the report read *"the default is rw and
 `--readonly` is the explicit flag"*, and the code says the opposite.
 
@@ -2968,11 +2973,14 @@ extra_mount is reference material rather than a config repo.
 
 ---
 
-## FI-69: the clone prompt never asks where to clone
+## FI-69: the clone prompt never asks where to clone ✅ fixed
 
-**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059 D13](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d13--the-clone-prompt-offers-its-destination-and-accepts-an-override),
-[design §5.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented. Reported by
-the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D13](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d13--the-clone-prompt-offers-its-destination-and-accepts-an-override),
+[design §5.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. The destination is now offered and an override accepted, resolved
+through `_resolve_to_abs` like `(p)`'s answer; the mount case — the one the report was raised from —
+has its own test.
 
 Option `(c)` of the unresolved-path prompt clones to a destination the user is never shown a chance to
 change: `local clone_target="${suggested:-$HOME/Projects/$name}"`, immediately followed by `mkdir -p`
@@ -2997,11 +3005,14 @@ override, in the same keystroke shape as the rest of the prompt. ⚠ Anything ad
 
 ---
 
-## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts
+## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts ✅ fixed
 
-**Status**: 🟡 **Designed 2026-08-13** — [ADR-0059 D14](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d14--the-reuse-prompt-enumerates-the-tokens-it-accepts),
-[design §5.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Not implemented. Reported by
-the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D14](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d14--the-reuse-prompt-enumerates-the-tokens-it-accepts),
+[design §5.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. 📌 Its regression test reads the token off the **rendered** line
+and types it back — the only shape that fails during the defect, since the parser was always right to
+reject `1-1` (design §6.4).
 
 The reuse-or-homonym prompt (ADR-0051 D4) prints its options as
 `[1-${#cands[@]}] reuse that path` (`lib/local-paths.sh:438`). With a single candidate that renders
