@@ -503,10 +503,18 @@ user-facing half.
 - 📌 **T3's driver moved, D5 did not** — see [design §6.1](cli/design/design-warning-gate-and-onboarding-prompts.md).
   D4 removes every `warn` from `_prompt_for_path`, so the test drives `$(_parse_bool …)` instead;
   measured to fail against a shell-array buffer while the rest of the file passes.
-- 🔴 **Three host acceptance checks are OWED** before `0.7.0` — [design §6.2](cli/design/design-warning-gate-and-onboarding-prompts.md)
-  lists them verbatim. `cco start` is host-only in a session, so the ADR-0058 A2 **live check** could
-  not be run from here. The prompt itself *was* driven end to end through a pty (3 warnings → 2
-  deduplicated entries, `a` → abort, Enter → start); that exercises the code, not the integration.
+- ✅ **The three host acceptance checks PASS** (2026-08-18, `cco start cave-auth`, 14 warnings) —
+  [design §6.2](cli/design/design-warning-gate-and-onboarding-prompts.md). The gate stops, shows
+  ADR-0058 A2's warning, aborts cleanly with no marker, and stays out of `--dry-run`.
+- 🔴 **The same run opened a follow-up: the list is unreadable at real scale** — see
+  [design §6.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Three findings, all from
+  one command: (1) the §3.3 audit **missed two producers** reachable from `cco start`
+  (`reminders.sh`, `llms.sh`) — *a named list is a lower bound*, sixth occurrence, and **D1 held
+  anyway** because it keys on the level; (2) those four messages were therefore never classified, and
+  ADR-0008 calls its reminders *non-blocking* while D1 now gates them; (3) three loop producers emit
+  one warn **per item** (5 rule collisions, 3 llms, 2 repos), so 14 lines describe 7 conditions — and
+  each is printed twice, inline and in the list. **Awaiting the maintainer's decision on the
+  rendering and on the classification.**
 - 📝 **One undecided residue in the prompt, flagged not guessed**: an **unrecognised** answer starts
   the session (only `a`/`A` aborts). D10 decided bare Enter and `[S/a]`, not what a stray `n` does;
   starting is D10's own reasoning applied consistently — *confiscating a session the user asked for is

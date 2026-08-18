@@ -296,13 +296,31 @@ correct one — neither prompts. All three static oracles were **measured agains
 implementation they name** (gate after `_cco_running_mark`; gate in `cmd_start` instead of
 `_start_launch`; `cco new` without a gate): each fails its own test and only its own test.
 
-**Owed on the host**, and not substitutable from inside a session:
+✅ **Run on the host 2026-08-18, all three PASS** (`cco start cave-auth`, 14 warnings):
 
-1. `cco start` on a project whose agent definitions keep no return channel → the gate must stop and
-   show [ADR-0058 A2](../../integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)'s
-   warning. This is the message that shipped deliberately unread, one release early, for this moment.
-2. Answer `a` → no container, and `cco list` shows **no** running marker for that project.
-3. `cco start --dry-run` on the same project → the summary, and **no** prompt.
+1. `cco start` on a real project → the gate stops before the container and lists every warning,
+   including [ADR-0058 A2](../../integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)'s
+   — the message that shipped deliberately unread, one release early, for this moment.
+2. Answer `a` → no container **and** no running marker.
+3. `cco start --dry-run` → the summary, and no prompt.
+
+### 6.3 What the live run found that no test could
+
+**The §3.3 audit was a lower bound — for the sixth time in this repo.** Two producers reachable from
+a host `cco start` are absent from its table: `lib/reminders.sh` (3 sites — the ADR-0008 hygiene
+reminders) and `lib/llms.sh` (1 site, in a loop). They surfaced in the live run because **the gate
+captured them anyway**: D1 keys on the *level*, never on a list, so the mechanism held exactly where
+the enumeration failed. That is the P2 argument being paid back rather than merely asserted.
+
+What the omission did cost is **classification**: those four messages were never put through §3.2's
+decision tree. ADR-0008 calls its reminders *non-blocking*, and under D1 they now hold the launch —
+the same contradiction the `decentralized-config` sentence had, in a doc the audit never reached.
+
+**And the gate's readability does not survive a real project.** 14 warnings render as 14 flat lines,
+twice (once inline at emission, once in the list) — and 9 of them are three *conditions* emitted per
+item by a loop: 5 rule collisions from one pack overlay, 3 missing llms, 2 repos with uncommitted
+`.cco`. "One condition, one warn" (D2) was applied to the three blocks §3.3 happened to name, and the
+loops were never looked at. See the roadmap's A5 follow-up for the decision.
 
 *(The prompt itself was driven end to end through a pty during U1/U2 development: three warnings
 render as two deduplicated entries under `⚠ 2 warnings for this session:`, `a` returns 1, bare Enter
