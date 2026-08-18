@@ -47,17 +47,72 @@ test_warn_capture_clean_run_captures_nothing() {
     _cco_warn_capture_end
 }
 
-test_warn_capture_does_not_change_warn_output() {
+# ── D18 — a warning is printed EXACTLY ONCE ──────────────────────────
+# Discriminates against: the shipped-then-amended model, where every warning
+# appeared twice — inline at emission and again in the gate's list. The first real
+# project rendered 14 warnings as 28 lines.
+
+test_warn_is_not_printed_at_emission_while_captured() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_warn_capture "$tmpdir/state"
 
-    local off on
-    off=$(warn "a session condition" 2>&1)
-    _cco_warn_capture_begin
-    on=$(warn "a session condition" 2>&1)
-    _cco_warn_capture_end
+    # Unarmed: warn prints, exactly as it always has.
+    local off; off=$(warn "a session condition" 2>&1)
+    case "$off" in *"a session condition"*) : ;; *) fail "with no capture armed warn must print: $off"; return 1 ;; esac
 
-    assert_equals "$off" "$on" "arming the capture must not alter a single byte of what warn prints"
+    # Armed: warn records and says nothing.
+    _cco_warn_capture_begin
+    local on; on=$(warn "a session condition" 2>&1)
+    assert_empty "$on" "while the capture is armed warn must NOT print — the gate's list is the single rendering (D18)"
+    assert_equals "1" "$(_cco_warn_capture_count)" "…and it must have been recorded rather than dropped"
+
+    # The flush is where it appears, once.
+    local flushed; flushed=$(_cco_warn_flush 2>&1)
+    case "$flushed" in *"a session condition"*) : ;; *) fail "the flush must print the deferred warning: $flushed"; return 1 ;; esac
+    assert_equals "1" "$(printf '%s\n' "$flushed" | grep -c "a session condition" | tr -d ' ')" \
+        "the flush must print it ONCE"
+
+    # And a second flush prints nothing: flushing empties the buffer.
+    local again; again=$(_cco_warn_flush 2>&1)
+    assert_empty "$again" "a second flush must print nothing — the buffer is emptied by the first"
+    _cco_warn_capture_end
+}
+
+test_warn_prints_immediately_when_the_record_cannot_be_written() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    # THE invariant that makes deferral safe (D18): deferral is conditional on the
+    # append succeeding. A capture that cannot be written degrades to the old
+    # behaviour instead of destroying the message it was built to deliver.
+    export _CCO_WARN_LOG="$tmpdir/no/such/dir/cco-warn.XXXXXX"
+    local out; out=$(warn "the message still has to arrive" 2>&1)
+    case "$out" in *"the message still has to arrive"*) : ;;
+        *) fail "an unwritable buffer must make warn print immediately, not swallow it: $out"; return 1 ;; esac
+    unset _CCO_WARN_LOG
+}
+
+test_die_flushes_before_the_error() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    # A command that fails half-way must not swallow the warnings it deferred. The
+    # `die` runs inside $( ), so it terminates only that subshell (FI-62) — which is
+    # exactly what makes this testable in-process.
+    _cco_warn_capture_begin
+    local out
+    out=$( warn "deferred before the failure"; die "boom" 2>&1 ) 2>&1 || true
+    case "$out" in
+        *"deferred before the failure"*) : ;;
+        *) fail "die must flush the deferred warnings — an error path that swallows them is the defect this whole unit exists to end: $out"; return 1 ;;
+    esac
+    # The error belongs LAST, where it is read.
+    local w_line e_line
+    w_line=$(printf '%s\n' "$out" | grep -n "deferred before the failure" | head -1 | cut -d: -f1)
+    e_line=$(printf '%s\n' "$out" | grep -n "boom" | head -1 | cut -d: -f1)
+    [[ -n "$w_line" && -n "$e_line" && "$w_line" -lt "$e_line" ]] \
+        || fail "the warnings must precede the ✗ (warn line=$w_line, error line=$e_line): $out"
+    _cco_warn_capture_end
 }
 
 # ── T2 — a warn is captured, with its exact text ─────────────────────
@@ -356,7 +411,7 @@ test_warn_gate_renders_every_warning_once_in_order() {
 
     # The header counts DISTINCT warnings — the number the user is about to read.
     case "$out" in
-        *"2 warnings for this session:"*) : ;;
+        *"2 warnings for this session"*) : ;;
         *) fail "the header must count the deduplicated warnings, got:"$'\n'"$out"; return 1 ;;
     esac
 
@@ -382,8 +437,82 @@ test_warn_gate_header_agrees_with_a_single_warning() {
     warn "the only thing wrong with this session" 2>/dev/null
     local out; out=$(_cco_warn_gate_render)
     case "$out" in
-        *"1 warning for this session:"*) : ;;
-        *) fail "one warning must not be announced as '1 warnings', got:"$'\n'"$out"; return 1 ;;
+        *"1 warning for this session, in 1 area:"*) : ;;
+        *) fail "one warning in one area must not be announced as '1 warnings … 1 areas', got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+# ── D17 — the list is grouped by an area DERIVED from the producer ───
+# Discriminates against: a flat list (what shipped and did not survive a real
+# project), and against a mapping that silently drops a warning whose producer it
+# does not know.
+
+test_warn_gate_groups_by_producer_area() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    # The producer is recorded, not declared — these are the real file names.
+    _cco_warn_capture_append "lib/packs.sh"     "committed rules are shadowed"
+    _cco_warn_capture_append "lib/llms.sh"      "2 llms are not installed"
+    _cco_warn_capture_append "lib/reminders.sh" "~/.cco has uncommitted changes"
+    _cco_warn_capture_append "lib/packs.sh"     "committed .claude/packs/ is reserved"
+
+    local out; out=$(_cco_warn_gate_render)
+    case "$out" in
+        *"3 areas"*) : ;;
+        *) fail "four warnings from three producers must render as three areas, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"packs & overlays (2)"*) : ;;
+        *) fail "the two lib/packs.sh warnings must be grouped and counted together, got:"$'\n'"$out"; return 1 ;;
+    esac
+    # Declared order, so two runs of the same project read the same way: packs
+    # before llms before config hygiene, whatever order they were emitted in.
+    case "$out" in
+        *"packs & overlays"*"documentation / llms"*"config hygiene"*) : ;;
+        *) fail "areas must render in the declared order, got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_warn_from_an_unmapped_producer_still_appears() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    # THE property that makes the file→area table admissible at all (D17/P2): it is
+    # a maintained list, and a file missing from it may cost a LABEL, never the
+    # warning. A gating list would cost the guarantee — which is why there isn't one.
+    _cco_warn_capture_begin
+    _cco_warn_capture_append "lib/a-module-invented-tomorrow.sh" "something is wrong with this session"
+
+    assert_equals "1" "$(_cco_warn_capture_count)" "an unmapped producer's warning is still counted"
+    local out; out=$(_cco_warn_gate_render)
+    case "$out" in
+        *"other (1)"*"something is wrong with this session"*) : ;;
+        *) fail "an unmapped producer must fall through to 'other' with its warning intact, got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_warn_gate_renders_the_remedy_column() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    _cco_warn_capture_append "lib/reminders.sh" "project repos have divergent .cco → cco sync"
+    _cco_warn_capture_append "lib/reminders.sh" "nothing to suggest here"
+
+    local out; out=$(_cco_warn_gate_render | sed 's/\x1b\[[0-9;]*m//g')
+    case "$out" in
+        *"project repos have divergent .cco"*"→ cco sync"*) : ;;
+        *) fail "a ' → remedy' suffix must survive into the rendering, got:"$'\n'"$out"; return 1 ;;
+    esac
+    # No arrow, no column — the convention degrades instead of demanding adoption.
+    case "$out" in
+        *"nothing to suggest here"*) : ;;
+        *) fail "a message with no remedy must render plainly, got:"$'\n'"$out"; return 1 ;;
     esac
     _cco_warn_capture_end
 }

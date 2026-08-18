@@ -197,7 +197,27 @@ test_generate_mounts_missing_dir_warns() {
     printf 'name: test\nllms:\n  - nonexistent\n' > "$proj_yml"
     local result
     result=$(_generate_llms_mounts "$proj_yml" "" 2>&1)
-    echo "$result" | grep -q "not found" || fail "Should warn about missing directory"
+    echo "$result" | grep -q "not installed" || fail "Should warn about the missing entry: $result"
+    echo "$result" | grep -q "nonexistent" || fail "Should name the entry: $result"
+}
+
+# ONE warning for N missing entries (ADR-0059 D16): the remedy is a single
+# `cco llms install` pass, so three lines would describe one thing to do — and the
+# start-time gate lists entries, where N lines read as N problems.
+test_generate_mounts_missing_dirs_aggregate_into_one_warning() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _setup_llms_env "$tmpdir"
+    local proj_yml="$tmpdir/project.yml"
+    printf 'name: test\nllms:\n  - alpha\n  - beta\n  - gamma\n' > "$proj_yml"
+    local result n
+    result=$(_generate_llms_mounts "$proj_yml" "" 2>&1)
+    n=$(printf '%s\n' "$result" | grep -c "not installed" | tr -d ' ')
+    assert_equals "1" "$n" "three missing entries must produce ONE warning, not three: $result"
+    # …and it must still name every one of them, or aggregation would be hiding.
+    local e
+    for e in alpha beta gamma; do
+        echo "$result" | grep -q "$e" || fail "the aggregated warning dropped '$e': $result"
+    done
 }
 
 test_generate_mounts_empty_when_no_llms() {
