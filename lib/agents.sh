@@ -318,10 +318,16 @@ _agents_report_flush() {
         esac
     done < "$_CCO_AGN_REPORT"
 
+    # A `note`, not a `warn` (ADR-0059 A1 §A2, amending ADR-0058 A2): cco RESOLVED
+    # this, the user's files are unchanged, and nothing is left to decide — the
+    # definition of an accepted divergence. In the first real gated session it was
+    # the least actionable of fourteen entries and it held the launch.
     [[ $norm_n -gt 0 ]] && \
-        warn "Agent teams: widened the declared toolset of ${norm_n} agent definition(s) for this session so teammates can deliver their work — ${norm}. Added where missing: $(_cco_coordination_tools_csv | sed 's/,/, /g'). Your files are unchanged; see 'cco whoami'."
+        note "Agent teams: widened the declared toolset of ${norm_n} agent definition(s) for this session so teammates can deliver their work — ${norm}. Added where missing: $(_cco_coordination_tools_csv | sed 's/,/, /g'). Your files are unchanged; see 'cco whoami'."
+    # This one stays a `warn`, and it is the case the gate exists for: cco could NOT
+    # fix it, so a teammate using one of these will finish its work and lose it.
     [[ $broken_n -gt 0 ]] && \
-        warn "Agent teams: ${broken_n} agent definition(s) keep NO return channel — a teammate using one will finish its work and lose it. ${broken}. Add SendMessage (and the task tools) to their 'tools:' line, or drop the line to inherit every tool."
+        warn "Agent teams: ${broken_n} agent definition(s) keep NO return channel — a teammate using one will finish its work and lose it (${broken}). Add SendMessage and the task tools to their 'tools:' line, or drop the line to inherit every tool → cco whoami"
     return 0
 }
 

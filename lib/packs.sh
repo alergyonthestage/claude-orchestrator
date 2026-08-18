@@ -118,9 +118,16 @@ _detect_cross_tree_conflicts() {
     done
 
     # Per-file collisions in the shared rules/agents/skills trees. A user may
-    # legitimately author there, so report the specific overlapping file.
+    # legitimately author there, so the specific overlapping files are named.
+    #
+    # ONE warn per KIND, listing its files, never one warn per file (ADR-0059 D16).
+    # A pack overlay shadowing five committed rules is ONE thing the user decides
+    # about — and the start-time gate lists entries, so five lines read as five
+    # problems. The first real project measured exactly this: 5 of its 14 warnings
+    # were this single condition.
     [[ -z "$pack_names" ]] && return 0
-    local _pn _f
+    local _pn _f _kind _hits_rules="" _hits_agents="" _hits_skills=""
+    local _n_rules=0 _n_agents=0 _n_skills=0
     while IFS= read -r _pn; do
         [[ -z "$_pn" ]] && continue
         local _proot; _proot=$(_pack_resolve_dir "$_pn" "$project_cco_dir")
@@ -129,20 +136,47 @@ _detect_cross_tree_conflicts() {
         [[ ! -f "$_pyml" ]] && continue
         while IFS= read -r _f; do
             [[ -z "$_f" ]] && continue
-            [[ -e "$claude_dir/rules/$_f" ]] && \
-                warn "Committed .claude/rules/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+            [[ -e "$claude_dir/rules/$_f" ]] && {
+                _hits_rules="${_hits_rules}${_hits_rules:+, }${_f} (${_pn})"
+                _n_rules=$(( _n_rules + 1 )); }
         done <<< "$(yml_get_pack_rules "$_pyml")"
         while IFS= read -r _f; do
             [[ -z "$_f" ]] && continue
-            [[ -e "$claude_dir/agents/$_f" ]] && \
-                warn "Committed .claude/agents/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+            [[ -e "$claude_dir/agents/$_f" ]] && {
+                _hits_agents="${_hits_agents}${_hits_agents:+, }${_f} (${_pn})"
+                _n_agents=$(( _n_agents + 1 )); }
         done <<< "$(yml_get_pack_agents "$_pyml")"
         while IFS= read -r _f; do
             [[ -z "$_f" ]] && continue
-            [[ -e "$claude_dir/skills/$_f" ]] && \
-                warn "Committed .claude/skills/$_f collides with pack '$_pn' — the pack ':ro' overlay wins."
+            [[ -e "$claude_dir/skills/$_f" ]] && {
+                _hits_skills="${_hits_skills}${_hits_skills:+, }${_f} (${_pn})"
+                _n_skills=$(( _n_skills + 1 )); }
         done <<< "$(yml_get_pack_skills "$_pyml")"
     done <<< "$pack_names"
+
+    _pack_warn_collisions rules  "$_n_rules"  "$_hits_rules"
+    _pack_warn_collisions agents "$_n_agents" "$_hits_agents"
+    _pack_warn_collisions skills "$_n_skills" "$_hits_skills"
+}
+
+# Emit the aggregated collision warning for one .claude/<kind>/ tree, or nothing.
+# Usage: _pack_warn_collisions <kind> <count> <"file (pack), file (pack)">
+_pack_warn_collisions() {
+    local kind="$1" n="$2" hits="$3"
+    [[ "$n" -eq 0 ]] && return 0
+    if [[ "$n" -eq 1 ]]; then
+        warn "Committed .claude/${kind}/${hits%% (*} is shadowed by pack '$(_pack_hit_owner "$hits")' — the pack ':ro' overlay wins."
+    else
+        warn "${n} committed .claude/${kind}/ files are shadowed by pack ':ro' overlays — the packs win: ${hits}"
+    fi
+    return 0
+}
+
+# Peel the pack name out of a "file (pack)" hit — the single-hit message names the
+# owning pack rather than repeating the whole list in parentheses.
+_pack_hit_owner() {
+    local h="${1##* (}"
+    printf '%s' "${h%)}"
 }
 
 # Generate Docker volume mount lines for pack resources (ADR-14).
