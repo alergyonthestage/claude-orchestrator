@@ -77,10 +77,11 @@ narrative, the lessons, and the per-stage records live in
   `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
   history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
   `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
-  ⚠ **`feat/cli/start-warning-gate` is 17 commits ahead and unpushed** — the A5/A8 design phase
-  (3 commits), **A5's implementation U1 + U2** (7 commits, 2026-08-14) and **U4, the post-acceptance
-  UX rework + closure** (7 commits, 2026-08-18). It is the branch U3 continues on, and it is **not
-  merged**. Push it from the host before anything else.
+  ⚠ **`feat/cli/start-warning-gate` is UNPUSHED and NOT MERGED** — the A5/A8 design phase, **A5's
+  implementation** (U1 + U2, 2026-08-14) and **U4**, the post-acceptance UX rework (2026-08-18). It
+  is the branch U3 continues on. Push it from the host before anything else.
+  📝 No commit count is recorded here on purpose: a line that states one is invalidated by the very
+  commit that states it. Measure with `git rev-list --count develop..feat/cli/start-warning-gate`.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
   of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
