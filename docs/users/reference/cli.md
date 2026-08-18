@@ -1888,15 +1888,24 @@ Options:
   --url <url>          Coordinate URL (auto-derived from `origin` when --path is a clone)
   --ref <ref>          Git ref / branch for repos and packs
   --variant <v>        llms variant (e.g. full)
-  --readonly           Mark an extra mount read-only
+  --readonly           Mount: record `readonly: true` — states the default
+  --writable           Mount: record `readonly: false` (exclusive with --readonly)
   --path <path>        Also register this name → local path in the index
 
 Examples:
   cco project add repo backend --url git@github.com:org/backend.git --path ~/dev/backend
+  cco project add mount assets --path ~/shared/assets --writable
   cco project add llms react --url https://react.dev/llms-full.txt --variant full
   cco project add pack shared-pack --url https://github.com/org/cco-sharing.git --ref v1.0
   cco project add pack react-guidelines              # project-local authored pack (no url)
 ```
+
+**An extra mount is read-only by default, and `--writable` is the only CLI spelling of
+the opposite** (ADR-0059 D12). The flags are a pair, not a toggle over a default that
+could change: `--readonly` records that default explicitly, `--writable` records
+`readonly: false`, passing both is an error, and passing neither writes no `readonly`
+key at all — the default lives in the code. `--mount <src>:rw` on `cco start` expresses
+the same thing for an ad-hoc mount (ADR-0027 D2).
 
 #### `cco project coords [--diff] [--sync --from <unit>]`
 

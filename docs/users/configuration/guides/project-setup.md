@@ -405,8 +405,12 @@ specific to your machine.
 On a new machine (or for a freshly added member repo), `cco start` detects names
 with no resolved local path and prompts you to:
 
-- **(c) Clone** — auto-clone from the `url:` coordinate (derived from the git remote)
+- **(c) Clone** — clone from the `url:` coordinate (derived from the git remote).
+  The destination is **offered, not imposed**: the prompt shows where it would clone
+  and accepts anything you type instead — Enter accepts the offer, and a relative
+  answer is stored as an absolute path
 - **(p) Specify path** — enter the path where the repo lives on this machine
+  (it must already exist; use **(c)** when it does not)
 - **(s) Skip** — skip the repo for this session (prompted again next time)
 
 You can also resolve paths ahead of time:

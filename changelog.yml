@@ -1426,3 +1426,33 @@ entries:
       launch proceeds exactly as before. `cco start --dry-run` does not prompt
       either: nothing takes the terminal there, so the warnings are already readable.
       No rebuild needed: the gate runs host-side in the CLI.
+
+  - id: 66
+    date: "2026-08-18"
+    type: additive
+    title: "A writable extra mount can finally be declared from the CLI, and the onboarding prompts stop advertising choices they refuse"
+    description: >
+      **`cco project add mount --writable`.** An extra mount is bound read-only by
+      default, and that default is unchanged. What was missing was any way to say
+      the opposite from the command line: `--mount <src>:rw` has expressed a
+      writable mount for a long time, but `cco project add mount` had no spelling
+      for it at all, so the case was reachable only by hand-editing `project.yml`.
+      `--writable` now records `readonly: false`. `--readonly` stays and keeps
+      recording an explicit `readonly: true` — it no longer reads as opting into a
+      restriction that was already unconditional; the pair is what shows you the
+      default. The two together are an error rather than a precedence puzzle, and
+      passing neither still writes no key at all.
+      **The prompt that clones a missing repo now asks where to put it.** It used
+      to clone to a destination you were shown but could not change, and for an
+      extra mount that destination was always `~/Projects/<name>` — a place with no
+      relation to where you keep your mounts. Choosing "specify a path" was no way
+      out either, since it requires a directory that already exists. The prompt now
+      offers its destination and accepts anything you type instead; Enter accepts
+      the offer, and a relative answer is stored as an absolute path so it still
+      resolves from any other directory.
+      **The reuse prompt lists the choices it accepts.** When a name is already
+      bound in another project, the menu offered `[1-n]` — range notation printed
+      among literal keys like `[d]` and `[q]`. With a single candidate it printed
+      `[1-1]`, and typing that back was rejected as invalid. It now prints the
+      tokens themselves: `[1] [2] reuse that path`.
+      No rebuild needed: all three run host-side in the CLI.
