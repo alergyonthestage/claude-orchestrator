@@ -4,7 +4,7 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-09** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-08-18** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -44,6 +44,22 @@
 > of *Not in the sequence*, and left to the `documenter`: the doc predates two ADRs, so the three
 > flagged lines are a lower bound.
 > Full record: [post-merge docs review](configuration/agent-cco-access/reviews/2026-08-09-post-merge-docs-review.md).
+>
+> **2026-08-13 → 18, the A5 + A8 cycle** — designed jointly
+> ([ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md), D1…D15 +
+> **Amendment A1** D16…D19) and built as four units on `feat/cli/start-warning-gate`: **U1 + U2**
+> (2026-08-14) gave `cco start` / `cco new` a gate that stops on the warnings the run emitted;
+> **host acceptance passed 2026-08-18** and its own findings became **U4**, the output model (each
+> warning printed once, grouped by an area derived from the producing file); **U3** shipped the same
+> day and closes **A8** — `--writable`, the clone destination, the literal reuse tokens
+> ([FI-68](improvements.md) … [FI-70](improvements.md), all three closed).
+> 🔴 **One gate stays open before the branch merges: [D19](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd)**,
+> the full reclassification of every `warn` producer. The §3.3 audit enumerated 12 of the ~36 files
+> that call `warn` — *a named list is a lower bound*, for the sixth time — and D1 held anyway,
+> because it keys on the level and never on a list. What was lost is not coverage but
+> **classification**: four messages never went through §3.2's decision tree, and ADR-0008 still calls
+> its reminders *non-blocking* while D1 gates them. The maintainer asked for a dedicated session.
+> ⚠ The branch is **unpushed and unmerged**: the whole cycle is reachable from that ref and nothing else.
 
 ## The planning documents — and why there are three
 
@@ -509,13 +525,27 @@ user-facing half.
   prints a warning exactly once, deferral being conditional on the append succeeding.
   §A2 demotes the agent-teams *widened* notice to a `note` and forward-annotates
   [ADR-0058 A3](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments).
-- 🔴 **[D19] The full reclassification is OWED before this cycle merges.** The §3.3 audit covered
-  **12 of the ~36 files that call `warn`** — `reminders.sh` and `llms.sh` were reachable from
-  `cco start` and absent from it (*a named list is a lower bound*, sixth occurrence). **D1 held
-  anyway**, because it keys on the level and never on a list, so nothing was lost — but four messages
-  went ungated through §3.2's decision tree, and ADR-0008 still calls its reminders *non-blocking*
-  while D1 gates them. One session runs the decision tree over **every** producer, enumerated by
-  running the command rather than by reading a list.
+- 🔴 **[D19] The full reclassification is OWED before this cycle merges — and it is now the ONLY
+  thing this branch owes.** The §3.3 audit covered **12 of the ~36 files that call `warn`** —
+  `reminders.sh` and `llms.sh` were reachable from `cco start` and absent from it (*a named list is a
+  lower bound*, sixth occurrence). **D1 held anyway**, because it keys on the level and never on a
+  list, so nothing was lost — but four messages went ungated through §3.2's decision tree, and
+  ADR-0008 still calls its reminders *non-blocking* while D1 gates them.
+  📌 [ADR-0059 D19](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d19--the-full-reclassification-is-scheduled-not-assumed)
+  is the decision; what follows is only how the session is expected to run.
+
+  | | |
+  |---|---|
+  | **Scope** | every `warn` producer reachable from `cco start` **and** `cco new` |
+  | **Method** | ⚠ **enumerate by RUNNING the command**, never by reading a list — that is the whole point of the item, and reading a list is how the gap was created |
+  | **Per producer** | §3.2's decision tree → `⚠ warn` (gates) · `note:` · `ℹ`/`✓` · prompt-local |
+  | **Two questions it must answer** | are ADR-0008's *non-blocking reminders* (`lib/reminders.sh`, 3 sites) meant to gate? does `lib/llms.sh` (1 site, in a loop) belong at `warn`? |
+  | **Produces** | the §3.3 table **completed** in the design; any reclassification applied in code with its test; a forward annotation wherever a document's own words now contradict D1 (ADR-0008 is the known one); an ADR-0059 amendment if a *decision* is needed |
+  | **Done when** | every producer the run reaches has been classified deliberately — not when a file count is hit |
+
+  📝 The two lints (`INV-WG1`/`INV-WG2`) do **not** cover this and cannot: they check the badge and
+  the class, not whether a message belongs at its level. Classification is a judgement, which is why
+  it is a session and not a check.
 - 📝 **One undecided residue in the prompt, flagged not guessed**: an **unrecognised** answer starts
   the session (only `a`/`A` aborts). D10 decided bare Enter and `[S/a]`, not what a stray `n` does;
   starting is D10's own reasoning applied consistently — *confiscating a session the user asked for is
