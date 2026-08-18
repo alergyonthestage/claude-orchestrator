@@ -194,26 +194,37 @@ immediately, so a broken capture degrades to today's behaviour instead of eating
 gate groups by an area derived from `${BASH_SOURCE[1]}` — no call-site tags, and a file missing from
 the label table falls through to `other` with its warning intact (D17).
 
+As built, on the reporting project — **14 warnings printed twice became this**, measured through a
+pty (the `widened` line is a `note` under §A2, so it is no longer in the list at all):
+
 ```
-⚠ 7 warnings for this session, in 4 areas:
+note: Agent teams: widened the declared toolset of 2 agent definition(s) — analyst.md, reviewer.md. …
 
-  ── packs & overlays (2) ──────────────────────────────
-   · Committed .claude/packs/ is framework-reserved
-   · 5 committed rules shadowed by packs 'cave-core', 'cave-web'
+⚠ 6 warnings for this session, in 3 areas:
 
-  ── config hygiene (3) ────────────────────────────────
-   · ~/.cco has uncommitted changes
-   · 2 repos have uncommitted .cco: cave-auth, cave-auth-web
-   · project repos have divergent .cco          → cco sync
+  ── packs & overlays (2) ────────────────────────────────────
+   · Committed .claude/packs/ is framework-reserved — its contents are shadowed by
+     pack/llms :ro overlays.
+   · 5 committed .claude/rules/ files are shadowed by pack ':ro' overlays — the packs win:
+     cave-architecture-rules.md (cave-core), cave-testing-rules.md (cave-core),
+     cave-dev-workflow.md (cave-core), cave-backend-rules.md (cave-web),
+     cave-frontend-rules.md (cave-web)
 
-  ── documentation / llms (1) ──────────────────────────
-   · 3 llms not installed: shadcn-svelte, …     → cco llms install
+  ── documentation / llms (1) ────────────────────────────────
+   · 3 llms are not installed (shadcn-svelte, svelte, svelte-kit)
+     → cco llms install
 
-  ── agent teams (1) ───────────────────────────────────
-   · widened 2 definitions                      → cco whoami
+  ── config hygiene (3) ──────────────────────────────────────
+   · ~/.cco has uncommitted changes               → cco config save
+   · 2 repos have uncommitted .cco (cave-auth, cave-auth-web)
+     → commit with your normal git flow
+   · project repos have divergent .cco            → cco sync
 
   Start the session anyway? [S/a]:
 ```
+
+Long entries wrap with a **hanging indent** at a fixed width. Not `$COLUMNS`: that variable is not
+exported to a script, so reading it would silently mean 80 everywhere while pretending to adapt.
 
 A message may end in ` → <remedy>`; the renderer right-aligns it when the line fits and drops it to
 its own indented line when it does not. No arrow means no column — the convention degrades to plain

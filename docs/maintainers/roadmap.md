@@ -77,9 +77,10 @@ narrative, the lessons, and the per-stage records live in
   `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
   history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
   `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
-  ⚠ **`feat/cli/start-warning-gate` is 10 commits ahead and unpushed** — the A5/A8 design phase
-  (ADR-0059 + its design doc, 3 commits) and **A5's implementation, U1 + U2** (7 commits,
-  2026-08-14). It is the branch U3 continues on. Push it from the host before anything else.
+  ⚠ **`feat/cli/start-warning-gate` is 16 commits ahead and unpushed** — the A5/A8 design phase
+  (3 commits), **A5's implementation U1 + U2** (7 commits, 2026-08-14) and **U4, the post-acceptance
+  UX rework** (6 commits, 2026-08-18). It is the branch U3 continues on. Push it from the host
+  before anything else.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
   of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
   `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
@@ -492,6 +493,7 @@ should *not* gate still can. **U1 → U3 is a file conflict**, not a preference:
 | **U1** | capture + taxonomy | A5 | `note()` in `lib/colors.sh`; the file-backed warn buffer (D5/D6); the reclassifications of design §3.3; the `INV-WG1`/`INV-WG2` lints | T1–T3, T7, T9, T11 — **no user-visible change yet** | ✅ **done** 2026-08-14 |
 | **U2** | the gate | A5 | the prompt in `_start_launch` (D7) + the same in `cco new` (D9) | T4–T6, T8, T10 + the **live check** below | ✅ **done** 2026-08-14 — live check owed on the host |
 | **U3** | the three surface fixes | A8 | `--writable` (+ `changelog.yml` + user docs), the clone destination (D13), the reuse tokens (D14) | T12–T13 | ▶ next |
+| **U4** | the output model | A5 | aggregation at the loop producers (D16), grouping by derived area (D17), one print per warning (D18), the `widened` demotion (§A2) | 25 tests in `test_warn_capture.sh` + the producer tests | ✅ **done** 2026-08-18 |
 
 ✅ **A5 is shipped — U1 and U2 both landed 2026-08-14.** The whole §3.3 table is applied (3 sites
 changed level, 3 blocks merged, 1 double badge stripped), `note()` is a real emitter, the gate stops
@@ -506,15 +508,21 @@ user-facing half.
 - ✅ **The three host acceptance checks PASS** (2026-08-18, `cco start cave-auth`, 14 warnings) —
   [design §6.2](cli/design/design-warning-gate-and-onboarding-prompts.md). The gate stops, shows
   ADR-0058 A2's warning, aborts cleanly with no marker, and stays out of `--dry-run`.
-- 🔴 **The same run opened a follow-up: the list is unreadable at real scale** — see
-  [design §6.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Three findings, all from
-  one command: (1) the §3.3 audit **missed two producers** reachable from `cco start`
-  (`reminders.sh`, `llms.sh`) — *a named list is a lower bound*, sixth occurrence, and **D1 held
-  anyway** because it keys on the level; (2) those four messages were therefore never classified, and
-  ADR-0008 calls its reminders *non-blocking* while D1 now gates them; (3) three loop producers emit
-  one warn **per item** (5 rule collisions, 3 llms, 2 repos), so 14 lines describe 7 conditions — and
-  each is printed twice, inline and in the list. **Awaiting the maintainer's decision on the
-  rendering and on the classification.**
+- ✅ **U4 — the follow-up that run opened is shipped** (2026-08-18,
+  [ADR-0059 A1](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#amendments),
+  D16–D19). Measured on the reporting project: **14 warnings printed twice → 6 conditions in 3 areas,
+  printed once.** D16 aggregates the loop producers; D17 groups by an area derived from
+  `${BASH_SOURCE[1]}` (no call-site tags, unmapped producer → `other` with the warning intact); D18
+  prints a warning exactly once, deferral being conditional on the append succeeding.
+  §A2 demotes the agent-teams *widened* notice to a `note` and forward-annotates
+  [ADR-0058 A3](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments).
+- 🔴 **[D19] The full reclassification is OWED before this cycle merges.** The §3.3 audit covered
+  **12 of the ~36 files that call `warn`** — `reminders.sh` and `llms.sh` were reachable from
+  `cco start` and absent from it (*a named list is a lower bound*, sixth occurrence). **D1 held
+  anyway**, because it keys on the level and never on a list, so nothing was lost — but four messages
+  went ungated through §3.2's decision tree, and ADR-0008 still calls its reminders *non-blocking*
+  while D1 gates them. One session runs the decision tree over **every** producer, enumerated by
+  running the command rather than by reading a list.
 - 📝 **One undecided residue in the prompt, flagged not guessed**: an **unrecognised** answer starts
   the session (only `a`/`A` aborts). D10 decided bare Enter and `[S/a]`, not what a stray `n` does;
   starting is D10's own reasoning applied consistently — *confiscating a session the user asked for is

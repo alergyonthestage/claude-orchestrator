@@ -264,6 +264,28 @@ your launch is not written as a warning.** Four levels: `⚠` a condition of *th
 `note:` an accepted divergence, nothing is wrong · `ℹ`/`✓` what the command did · plain text
 inside a prompt you are already answering.
 
+Each warning is printed **once**, in that list — grouped by area with a count per group, in a
+fixed order, with the obvious next command in its own column (`→ cco sync`) where there is
+one. A condition affecting several items is one entry naming them all, not one entry each.
+
+```
+⚠ 6 warnings for this session, in 3 areas:
+
+  ── packs & overlays (2) ────────────────────────────────
+   · Committed .claude/packs/ is framework-reserved …
+   · 5 committed .claude/rules/ files are shadowed by …
+
+  ── documentation / llms (1) ────────────────────────────
+   · 3 llms are not installed (svelte, …)   → cco llms install
+
+  ── config hygiene (3) ──────────────────────────────────
+   · ~/.cco has uncommitted changes         → cco config save
+   · project repos have divergent .cco      → cco sync
+   …
+
+  Start the session anyway? [S/a]:
+```
+
 With **no controlling terminal** — CI, a script, a captured run, `CCO_NONINTERACTIVE=1` —
 there is no prompt and the launch proceeds unchanged. **`--dry-run` does not prompt** either:
 nothing takes the terminal there, so the warnings stay on screen. `cco new` gates identically.

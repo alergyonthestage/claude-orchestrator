@@ -1406,6 +1406,14 @@ entries:
       asks whether to continue. Bare Enter starts; `a` aborts, and an abort leaves
       no container and no session marker behind. A clean start stays silent and
       immediate — nothing changes for a session that had nothing to say.
+      **The list is built to be read at a glance.** Each warning is printed
+      **once** — no longer both in passing and again in the list — and the entries
+      are grouped by area (packs & overlays, config hygiene, documentation/llms,
+      agent teams, …) with a count per group, in a fixed order so two runs of the
+      same project read the same way. Where a warning has an obvious next command,
+      it is shown in its own column: `→ cco sync`. And a condition that used to
+      print once per item now prints once: five committed rules shadowed by the
+      same pack overlay are one line naming all five, not five lines.
       **Why every warning, with no curated list.** The rule is a property of the
       level, so a warning written years from now stops the launch on the day it is
       written. The corollary is the part that matters when reading cco's output: a
