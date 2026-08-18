@@ -137,38 +137,71 @@ a genuine session condition when it fires on the session's own project, so it st
 
 | Producer | §3.2 verdict | Reasoning |
 |---|---|---|
-| `reminders.sh` `56` · `72` · `87` · `89` | **→ `note()`** (proposed) | see §5.1 — Q2 is *no* |
+| `reminders.sh` `56` · `72` · `87` · `89` | **stays `warn`** — gates | ADR-0008's *non-blocking* forbids a precondition that forces a commit, not a prompt that defaults to proceed (§5.1). §3.2's Q2 argues for a lower level, but that is the level/pause question of §5.3, not a reclassification |
 | `llms.sh` `133` · `135` | **stays `warn`** — gates | Q2 is *yes*: the project declares documentation the session will not have |
 | `migrate.sh` `160` · `161` · `167` · `174` | **stays `warn`** — gates | a legacy-vault backup that failed leaves secrets unarchived; the session proceeds over an unresolved migration |
 | `migrate.sh` `225` | **stays `warn`** — gates | the same, for a `~/.cco/global/.claude` that could not be flattened |
 
 ## 5. The two questions the item names
 
-### 5.1 Are ADR-0008's *non-blocking reminders* meant to gate? — **No, and the contradiction is literal**
+### 5.1 Are ADR-0008's *non-blocking reminders* meant to gate? — **They already are compatible; the word "blocking" means something else there**
+
+> ⚠ This section replaces an earlier reading of the same evidence, corrected at the
+> analysis gate on 2026-08-18. The first reading held that D1 contradicts ADR-0008. It
+> does not, and the reason is worth keeping because it is the trap the word invites.
 
 [ADR-0008](../../configuration/decentralized-config/decisions/0008-personal-store-management.md)
-is titled *"Config Versioning Model: Explicit Commits + **Non-Blocking** Reminders"*. Its
-alternatives table **rejects** the blocking form in its own words — *"Forces commits …
-blocks legitimate 'proceed uncommitted'; **hostile UX** → Rejected (downgraded to
-reminder)"*. `lib/reminders.sh`'s header repeats it: *"advisory, **NEVER-blocking**
-reminders"*, *"P14: awareness, never a block"*.
+is titled *"Explicit Commits + **Non-Blocking** Reminders"*, and `lib/reminders.sh`'s
+header repeats *"advisory, NEVER-blocking"*. Read on its own that looks decisive. Read in
+context, ADR-0008 says what it means by blocking:
 
-Under D1 all three of them block. The clean-tree gate ADR-0008 deliberately removed has
-been reinstated, by a decision that never mentioned it.
+> *"The old vault **required** a clean tree before `start` … Under ADR-0006 there is no
+> branch switch, so the gate's reason is gone — it becomes a non-blocking reminder, **and
+> the user may knowingly proceed with uncommitted changes**."*
 
-§3.2 reaches the same verdict independently. Q1 is *no* (nobody is in a prompt). Q2 —
-*is something about **this session** not as the user intended?* — is **no**: uncommitted
-changes in `~/.cco` or in a member `.cco`, and a divergent synced set, say nothing about
-what this session will be. The session runs exactly as asked. Q3 then routes them to
-`note()`.
+and its alternatives table rejects *"Keep the clean-tree gate as blocking | **Forces
+commits** | … blocks legitimate 'proceed uncommitted'"*.
 
-Measured cost of the current state: `reminders.sh:72` fired in **10 of the 15 scenarios**
-— every one that reached the reminder stage, including the minimal start and the
-`--dry-run`. It is the one warning a session with nothing wrong with it still shows,
-which is the precise shape that trains a user to answer the gate without reading it.
+**Blocking there is a precondition that refuses the command until the tree is clean.** It
+forces a commit. D1's gate forces nothing: it prints, asks, and a bare Enter starts
+(D10). *Proceeding knowingly with uncommitted changes* is exactly what it lets the user
+do — and, by naming the condition first, it is the only surface on which the "knowingly"
+is literally true. The two decisions agree.
 
-⚖ **This is a decision, not a defect** — it changes what stops a launch, so it belongs in
-an ADR-0059 amendment, not in a reclassification commit.
+So the reminders **stay `warn`**, and nothing in ADR-0008 needs a forward annotation.
+
+What §3.2's Q2 still says is narrower and does not change that verdict: uncommitted
+config is not a property of *this session*. That is an argument about which **level** the
+message deserves, not about whether the user gets to read it — and §5.3 is where those
+two come apart.
+
+### 5.3 The question underneath: D1 fused the level with the pause
+
+Raised by the maintainer at the analysis gate, and it reframes the whole item.
+
+A `cco start` takes under five seconds and then Claude Code owns the terminal. Everything
+`cco` printed — `⚠`, `note:`, `ℹ`, `✓` alike — is gone before it can be read. So the
+gate's stated purpose (*confirm a condition worth acting on*) is not its **primary**
+utility in the field: its primary utility is that it **holds the terminal open long
+enough for the startup output to be read at all**.
+
+That makes D1 a single signal doing two jobs:
+
+| Job | Answers | Today's trigger |
+|---|---|---|
+| **level** | how serious is this, how should it be presented | `warn` vs `note` vs `ℹ`/`✓` |
+| **pause** | may the user read what this run printed | *a `warn` was emitted* — nothing else |
+
+Fusing them has a consequence nobody decided: **`note()` and `info()` are, in practice,
+write-only.** A note prints, is never captured (`_cco_warn_gate` keys on
+`_cco_warn_capture_count`, warns only), and is overwritten seconds later. ADR-0059 D3
+created `note()` so a non-gating level would have a spelling in code — but a level whose
+messages cannot be read is not a level, and the next author facing that reaches for
+`warn` for the same reason D3 was written to prevent.
+
+Separating the two dissolves the reminders question rather than answering it: whichever
+level the reminders carry, the user reads them iff the pause fires. What the pause should
+key on is a decision for an ADR-0059 amendment, not for this analysis.
 
 ### 5.2 Does `lib/llms.sh` belong at `warn`? — **Yes, unchanged**
 
@@ -238,12 +271,14 @@ each is an accepted divergence the user asked for or that cco resolved itself.
 
 ## 9. What is owed, and to whom
 
-| # | Item | Whose call |
+Settled at the analysis gate, 2026-08-18:
+
+| # | Item | Status |
 |---|---|---|
-| 1 | `reminders.sh` (4 sites) → `note()`, and forward-annotate ADR-0008 | **human** — ADR-0059 amendment |
-| 2 | `llms.sh`, `migrate.sh`, `cmd-resolve.sh` classifications | none — confirmed as written; record in §3.3 |
-| 3 | §3.3 table completed with the 12 measured files and current line numbers | documentation |
-| 4 | one condition rendering as two sentences (§7.1) | **human** — user-visible, a follow-up unit |
-| 5 | the contradictory residue counts (§7.2) | **human** — user-visible |
-| 6 | `cmd-start.sh:3155`'s stale comment (§7.3) | none — a factual correction |
-| 7 | nothing detects the *next* unclassified producer | **human** — a lint could compare the reached set against a recorded baseline; none exists today |
+| 1 | **No producer is reclassified.** All 46 reached sites are correct at their level — the 35 already audited, plus `reminders.sh`, `llms.sh`, `migrate.sh` and `cmd-resolve.sh`'s five | decided (§4, §5.1, §5.2) |
+| 2 | §3.3 table completed with the 12 measured files, current line numbers, and the three it never named | **owed — documentation** |
+| 3 | one condition rendering as two sentences in two areas (§7.1) | **owed — in this cycle**, maintainer's call |
+| 4 | the two residue counters contradicting each other (§7.2) | **owed — in this cycle**, maintainer's call |
+| 5 | `cmd-start.sh:3155`'s comment claiming it *"never blocks the launch"* (§7.3) | **owed** — factual correction |
+| 6 | nothing detects the *next* unclassified producer | **recorded as an item**, not built (the lane in §2 is the instrument if it is ever wanted) |
+| 7 | **what the pause keys on** (§5.3) — `warn` only, or anything worth reading | **open — needs an ADR-0059 amendment**; the largest question this session raised, and out of D19's own scope |
