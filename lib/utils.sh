@@ -4,8 +4,8 @@
 # Provides: expand_path(), _path_exists(), _peel_tab(), check_docker(),
 #           check_image(), check_global(), _check_reserved_project_name(),
 #           _sed_i(), _sed_i_or_append(), _substitute(), _cco_have_tty(),
-#           _cco_warn_gate_render() + _cco_warn_gate() (the start-time warning
-#           gate — ADR-0059)
+#           _cco_warn_gate() (the start-time warning gate's PROMPT — ADR-0059; its
+#           renderer and buffer live in colors.sh)
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME
 
@@ -93,40 +93,20 @@ _cco_have_tty() {
 # user explicitly asked for, on a stray keystroke, is the worse of the two errors —
 # which is also why an unrecognised answer starts rather than re-asking.
 #
-# Render the gate's message to STDOUT: the count line, then one badged line per
-# captured warning, deduplicated and in emission order. PURE — no read, no prompt,
-# no terminal — so the part with content in it is unit-testable, the same split
-# `_resolve_reuse_menu` / `_resolve_disambiguate` already use for the reuse prompt.
-# Exit: 0 = something to render (emitted), 1 = no warnings, nothing emitted.
+# The renderer lives in colors.sh beside the buffer (`_cco_warn_gate_render`), NOT
+# here: `die`/`refuse`/`_cco_exit` must flush too, and they are defined there. Only
+# the PROMPT is here, where `_cco_have_tty` is.
 #
-# ⚠ The badge lines are deliberately raw `echo`s and NOT `warn` calls: `warn`
-# appends to the buffer, so rendering the list through it would grow the list it is
-# rendering. This is the declared-legitimate side of the INV-WG2 limit — a report
-# line, not a second producer.
-_cco_warn_gate_render() {
-    local n; n=$(_cco_warn_capture_count)
-    [[ "$n" -gt 0 ]] || return 1
-    local label="warnings"; [[ "$n" -eq 1 ]] && label="warning"
-    echo ""
-    echo -e "${YELLOW}⚠${NC} ${n} ${label} for this session:"
-    echo ""
-    local _m
-    while IFS= read -r _m; do
-        [[ -z "$_m" ]] && continue
-        echo -e "  ${YELLOW}⚠${NC} ${_m}"
-    done < <(_cco_warn_capture_list)
-    echo ""
-    return 0
-}
-
 # Exit: 0 = proceed with the launch, 1 = the user aborted.
 _cco_warn_gate() {
-    local menu; menu=$(_cco_warn_gate_render) || return 0
-    # D11 — the tty check sits AFTER the render check so a clean run costs nothing,
-    # and BEFORE any output so a headless run stays byte-identical to today's.
+    [[ "$(_cco_warn_capture_count)" -gt 0 ]] || return 0
+    # D11 — the tty check sits AFTER the count check so a clean run costs nothing.
+    # With no terminal the gate prints NOTHING and returns: the warnings are not
+    # lost, `_cco_warn_capture_end` flushes them in the same view, without a
+    # question nobody could answer.
     _cco_have_tty || return 0
 
-    printf '%s\n' "$menu" >&2
+    _cco_warn_flush
     local reply
     printf "  Start the session anyway? [S/a]: " >&2
     read -r reply < /dev/tty

@@ -3175,11 +3175,12 @@ EOF
     _agents_report_flush
 
     if $dry_run; then
-        _start_show_summary
         # D8 — a dry-run does NOT gate. Nothing takes the terminal, so the warnings
-        # are already readable on screen, which is the entire objective; a prompt
-        # here would make the inspection path more interactive than the real one.
+        # are readable where they are printed, which is the entire objective; a
+        # prompt here would make the inspection path more interactive than the real
+        # one. The flush comes FIRST so the summary stays the last thing on screen.
         _cco_warn_capture_end
+        _start_show_summary
         return 0
     fi
 

@@ -40,7 +40,17 @@ ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
 # non-gating level exists only in prose and the next author reaches for `warn`
 # because it is the only thing that looks like a function.
 note()  { printf 'note: %s\n' "$*" >&2; }
-warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; _cco_warn_capture_append "$*"; }
+# A warning is printed EXACTLY ONCE (ADR-0059 A1/D18). While the capture is armed
+# `warn` only records — the organized list at the gate is the single rendering. If
+# the record cannot be written, it prints here and now: deferral is conditional on
+# the append SUCCEEDING, so a broken capture degrades to the old behaviour instead
+# of eating the message.
+#
+# ${BASH_SOURCE[1]} is the file that called `warn` — read here, in warn's own frame,
+# and correct inside a command substitution too (measured). It is what the gate
+# groups by (D17), derived rather than declared, so no call site carries a tag.
+warn()  { _cco_warn_capture_append "${BASH_SOURCE[1]:-}" "$*" && return 0
+          echo -e "${YELLOW}⚠${NC} $*" >&2; }
 error() { echo -e "${RED}✗${NC} $*" >&2; }
 
 # ── The warn-capture buffer (ADR-0059 D5/D6) ─────────────────────────
@@ -80,24 +90,75 @@ _cco_warn_capture_begin() {
     return 0
 }
 
-# Append one message. Called by `warn` only. Newlines are folded to spaces so one
-# warning is always one record — otherwise a multi-line message would be counted,
+# Append one record: "<producer-file>\t<message>". Called by `warn` only.
+#
+# Returns 0 ONLY when the record was written — that status is what `warn` reads to
+# decide whether it may defer printing (D18). Newlines are folded to spaces so one
+# warning is always one record; otherwise a multi-line message would be counted,
 # and listed, as several.
 _cco_warn_capture_append() {
-    [[ -n "${_CCO_WARN_LOG:-}" ]] || return 0
-    [[ -w "$_CCO_WARN_LOG" ]] || return 0
+    [[ -n "${_CCO_WARN_LOG:-}" ]] || return 1
+    [[ -w "$_CCO_WARN_LOG" ]] || return 1
+    local _src="${1##*/}"; shift
     local _m="$*"
     _m="${_m//$'\n'/ }"
-    printf '%s\n' "$_m" >> "$_CCO_WARN_LOG" 2>/dev/null || true
+    printf '%s\t%s\n' "${_src:-other}" "$_m" >> "$_CCO_WARN_LOG" 2>/dev/null || return 1
     return 0
 }
 
-# The captured messages, in emission order, DEDUPLICATED on exact text: one
-# condition can have two producers (lib/packs.sh:167 and lib/session-context.sh:38
-# emit the same sentence), and listing it twice reads as two problems.
-_cco_warn_capture_list() {
+# Map a producing FILE to the area the gate groups it under (ADR-0059 D17).
+#
+# ⚠ This is a maintained list, and it is admissible HERE precisely where a gating
+# list was not (P2). A file missing from it falls through to `other`: its warning is
+# still shown, still counted, still gates. The list can only ever cost a LABEL. That
+# is the whole difference from a curated list of "important" warnings, which would
+# cost the guarantee — and the reason the AREA is derived from BASH_SOURCE rather
+# than tagged at ~130 call sites, where forgetting one is the normal outcome.
+_cco_warn_area() {
+    case "$1" in
+        packs.sh|cmd-pack.sh|session-context.sh)           printf 'packs & overlays' ;;
+        reminders.sh|cmd-config.sh|cmd-sync.sh)            printf 'config hygiene' ;;
+        llms.sh|cmd-llms.sh)                               printf 'documentation / llms' ;;
+        agents.sh)                                         printf 'agent teams' ;;
+        index.sh|local-paths.sh|cmd-resolve.sh|paths.sh)   printf 'paths & index' ;;
+        secrets.sh|auth.sh)                                printf 'auth & secrets' ;;
+        yaml.sh)                                           printf 'project.yml' ;;
+        cmd-start.sh|cmd-new.sh|cmd-chrome.sh)             printf 'session' ;;
+        update*.sh|migrate.sh|cmd-update.sh|cmd-build.sh)  printf 'updates' ;;
+        *)                                                 printf 'other' ;;
+    esac
+}
+
+# The declared render order. Fixed, so two runs of the same project read the same
+# way — an order that follows cco's internal pipeline is arbitrary to the reader.
+_CCO_WARN_AREAS='project.yml
+session
+paths & index
+packs & overlays
+documentation / llms
+agent teams
+auth & secrets
+config hygiene
+updates
+other'
+
+# Emit "<area>\t<message>" per DISTINCT message, in emission order.
+# Deduplicated on the MESSAGE alone: one condition can have two producers
+# (lib/packs.sh and lib/session-context.sh emit the same sentence), and listing it
+# twice reads as two problems. The first occurrence's area wins.
+_cco_warn_capture_records() {
     [[ -n "${_CCO_WARN_LOG:-}" && -f "${_CCO_WARN_LOG:-}" ]] || return 0
-    awk '!_cco_seen[$0]++' "$_CCO_WARN_LOG"
+    local _ln _src _msg
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        _src="${_ln%%$'\t'*}"; _msg="${_ln#*$'\t'}"
+        printf '%s\t%s\n' "$(_cco_warn_area "$_src")" "$_msg"
+    done < <(awk '{ m=$0; sub(/^[^\t]*\t/, "", m) } !_cco_seen[m]++' "$_CCO_WARN_LOG")
+}
+
+# The captured messages, in order, deduplicated — the plain list, no areas.
+_cco_warn_capture_list() {
+    _cco_warn_capture_records | while IFS= read -r _r; do printf '%s\n' "${_r#*$'\t'}"; done
 }
 
 # How many DISTINCT messages were captured. Counted with awk, never `wc -l`: BSD
@@ -108,26 +169,112 @@ _cco_warn_capture_count() {
         printf '0\n'
         return 0
     fi
-    awk '!_cco_seen[$0]++ { n++ } END { print n+0 }' "$_CCO_WARN_LOG"
+    awk '{ m=$0; sub(/^[^\t]*\t/, "", m) } !_cco_seen[m]++ { n++ } END { print n+0 }' "$_CCO_WARN_LOG"
 }
 
-# Remove the buffer and disarm the capture. Cleanup is EXPLICIT at the verb's exit
-# paths, never an EXIT trap alone: `cco new` installs its own trap
-# (lib/cmd-new.sh:75) which REPLACES bin/cco's sentinel trap (ADR-0059 D9). A file
-# left behind by a hard kill is inert — an unread list of strings in $TMPDIR.
+# Render the captured warnings to STDOUT, grouped by area, with a count per group
+# (ADR-0059 D17). PURE — no read, no prompt, no terminal — so the half with content
+# in it is unit-testable, the split _resolve_reuse_menu/_resolve_disambiguate
+# already use. Exit: 0 = something rendered, 1 = nothing captured.
+#
+# ⚠ The badge lines are raw `echo`s and NOT `warn` calls: `warn` appends to the
+# buffer, so rendering the list through it would grow the list it is rendering. The
+# declared-legitimate side of the INV-WG2 limit — a report line, not a producer.
+#
+# A message may end in " → <remedy>"; the remedy is aligned into its own column when
+# the line fits and dropped to an indented line when it does not. No arrow means no
+# column — the convention degrades to plain text instead of requiring every message
+# to adopt it.
+# Print <text> after <prefix>, wrapped on word boundaries with the continuation
+# lines hung under the first (ADR-0059 A1). An aggregated warning naming five files
+# is long by construction, and a 250-column line reflowed by the terminal at column
+# 0 destroys the list structure the grouping just built. A fixed width, not
+# $COLUMNS: that variable is not exported to a script, so reading it would silently
+# mean "80" everywhere and pretend to be adaptive.
+_cco_warn_wrap() {
+    local text="$1" pre="$2" width="${3:-88}" _first=1 _l
+    while IFS= read -r _l; do
+        if [[ $_first -eq 1 ]]; then printf '%s%s\n' "$pre" "$_l"; _first=0
+        else printf '%*s%s\n' ${#pre} '' "$_l"; fi
+    done < <(printf '%s\n' "$text" | fold -s -w "$width" 2>/dev/null || printf '%s\n' "$text")
+}
+
+_cco_warn_gate_render() {
+    local recs; recs=$(_cco_warn_capture_records)
+    [[ -n "$recs" ]] || return 1
+    local n; n=$(printf '%s\n' "$recs" | grep -c .)
+    local areas; areas=$(printf '%s\n' "$recs" | cut -f1 | awk '!s[$0]++')
+    local na; na=$(printf '%s\n' "$areas" | grep -c .)
+
+    local wlabel="warnings"; [[ "$n" -eq 1 ]] && wlabel="warning"
+    local alabel="areas";    [[ "$na" -eq 1 ]] && alabel="area"
+    echo ""
+    echo -e "${YELLOW}⚠${NC} ${n} ${wlabel} for this session, in ${na} ${alabel}:"
+
+    local area line msg head rem cnt rule pad
+    while IFS= read -r area; do
+        [[ -z "$area" ]] && continue
+        printf '%s\n' "$areas" | grep -qxF "$area" || continue
+        cnt=$(printf '%s\n' "$recs" | cut -f1 | grep -cxF "$area")
+        # A fixed-width rule keeps the group headers scannable as a column of their
+        # own, whatever the messages under them do.
+        rule=$(printf '%*s' $(( 52 - ${#area} )) ''); rule="${rule// /─}"
+        echo ""
+        echo -e "  ${BOLD}── ${area} (${cnt})${NC} ${rule}"
+        while IFS= read -r line; do
+            [[ "${line%%$'\t'*}" == "$area" ]] || continue
+            msg="${line#*$'\t'}"
+            head="$msg"; rem=""
+            [[ "$msg" == *" → "* ]] && { head="${msg% → *}"; rem="${msg##* → }"; }
+            if [[ -n "$rem" && ${#head} -le 44 ]]; then
+                pad=$(printf '%*s' $(( 45 - ${#head} )) '')
+                echo -e "   · ${head}${pad}${BLUE}→ ${rem}${NC}"
+            else
+                _cco_warn_wrap "$head" "   · "
+                [[ -n "$rem" ]] && echo -e "     ${BLUE}→ ${rem}${NC}"
+            fi
+        done <<< "$recs"
+    done <<< "$_CCO_WARN_AREAS"
+    echo ""
+    return 0
+}
+
+# Render the captured warnings to STDERR and EMPTY the buffer (ADR-0059 D18). This
+# is the single print: the buffer is flushed by the first of the gate, capture_end,
+# or an exit primitive, and emptying it means a second flush prints nothing while a
+# warning raised afterwards is still captured and still shown.
+_cco_warn_flush() {
+    local out; out=$(_cco_warn_gate_render) || return 0
+    # A trailing blank line, explicitly: `$( )` strips the renderer's own, and
+    # without it the gate's question sits flush against the last warning.
+    printf '%s\n\n' "$out" >&2
+    : > "$_CCO_WARN_LOG" 2>/dev/null || true
+    return 0
+}
+
+# Flush, then remove the buffer and disarm the capture. Cleanup is EXPLICIT at the
+# verb's exit paths, never an EXIT trap alone: `cco new` installs its own trap
+# (lib/cmd-new.sh) which REPLACES bin/cco's sentinel trap (ADR-0059 D9).
+#
+# It FLUSHES because it is the last chance: on a headless run, a `--dry-run` or an
+# abort no gate ever renders, and warnings that were deferred and never printed
+# would be warnings destroyed by the mechanism built to deliver them.
 _cco_warn_capture_end() {
     [[ -n "${_CCO_WARN_LOG:-}" ]] || return 0
+    _cco_warn_flush
     rm -f "$_CCO_WARN_LOG" 2>/dev/null || true
     unset _CCO_WARN_LOG
     return 0
 }
-die()   { error "$@"; _cco_completed=true; exit 1; }
+# `die` flushes BEFORE the ✗: a command that fails half-way must not swallow the
+# warnings it had already deferred, and the error belongs last, where it is read.
+die()   { _cco_warn_flush; error "$@"; _cco_completed=true; exit 1; }
 # Policy refusal (D8/ADR-0043 exit-code convention): the request is well-formed but
 # denied by access scope, host-only status, a removed alias, or a bare namespace.
 # Distinct exit 2 so callers/tests can tell "refused by policy" (retry with wider
 # access / on the host) from an actual error (exit 1: unknown verb, missing file,
 # parse). Graceful degrade (scope-filtered output) stays exit 0 with a notice.
-refuse() { error "$@"; _cco_completed=true; exit 2; }
+refuse() { _cco_warn_flush; error "$@"; _cco_completed=true; exit 2; }
 
 # ── The EXIT-trap sentinel discipline (INV-EXIT, cycle-1.2 S5 / R-G) ──
 #
@@ -157,4 +304,4 @@ refuse() { error "$@"; _cco_completed=true; exit 2; }
 # path (correct — let the trap speak) or a bug. Enforced statically by
 # `test_invariant_exit_sentinel_discipline` in tests/test_invariants.sh, which
 # records the one allowlisted subshell-local exit and its reason.
-_cco_exit() { _cco_completed=true; exit "${1:-0}"; }
+_cco_exit() { _cco_warn_flush; _cco_completed=true; exit "${1:-0}"; }
