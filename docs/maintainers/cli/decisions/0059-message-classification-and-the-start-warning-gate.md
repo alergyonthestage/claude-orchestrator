@@ -238,3 +238,98 @@ leaves `--readonly` a flag that cannot change an outcome.
   reason A2 was allowed to ship unread.
 - `--writable` is an **additive** change: it needs a `changelog.yml` entry and a line in the user CLI
   reference, per `.claude/rules/update-system.md`.
+
+---
+
+## Amendments
+
+### A1 — the gate's output model, after the first real project (2026-08-18)
+
+**Status**: Accepted. Ruled by the maintainer on the evidence of the first host acceptance run
+(`cco start cave-auth`, **14 warnings**). D1…D15 are unchanged; A1 amends what the gate *emits*.
+
+The gate worked. Its output did not survive contact with a real project: 14 flat lines, each printed
+**twice** — once inline at emission and once in the list — and 9 of those 14 were three *conditions*
+emitted one line per item by a loop (5 rule collisions from one pack overlay, 3 missing llms, 2 repos
+with an uncommitted `.cco`). The mechanism the ADR is about was correct; the surface it produced was
+not readable, which for a message the user is meant to *act on* is the same failure by a shorter route
+(**P1**).
+
+⚠ **The §3.3 audit was a lower bound — the sixth time in this repo.** `lib/reminders.sh` and
+`lib/llms.sh` are reachable from a host `cco start` and appear nowhere in its table. They were
+captured anyway: **D1 keys on the level, never on a list**, so the mechanism held exactly where the
+enumeration failed. This is **P2 paying itself back** rather than being asserted. What the omission
+did cost is *classification* — four messages never went through §3.2's decision tree — and a full
+reclassification of every producer is scheduled before this cycle merges (see D19).
+
+#### D16 — one condition, one warn, inside loops too
+
+D2's rule was applied to the three multi-`warn` blocks §3.3 happened to name; the **loop** producers
+were never looked at. A producer that iterates emits **one** aggregated warning naming its items, not
+one warning per item. Five rule collisions from one pack overlay are one thing the user must decide
+about, and the gate lists entries — so N items read as N problems.
+
+Sites: `lib/packs.sh` (rules/agents/skills collisions), `lib/llms.sh` (missing entries),
+`lib/reminders.sh` (repos with an uncommitted `.cco`). The aggregation happens **at emission**, so it
+shortens the inline stream and the gate's list from one change.
+
+#### D17 — the gate groups by an area DERIVED from the producer
+
+The list is grouped, with a count per group, and the groups are emitted in a fixed declared order so
+two runs of the same project read the same way.
+
+The area is **derived**, not declared: `warn` records `${BASH_SOURCE[1]}` — the file that called it,
+which is correct inside a command substitution too (measured) — and the renderer maps file → label.
+No tag at any of the ~130 call sites, and nothing to remember when writing warning number 131.
+
+The file→label table is a maintained list, and that is admissible **here** precisely where a gating
+list was not (**P2**): a file missing from it falls through to `other` and the warning is still shown,
+still counted, still gates. The list can only cost a label. A *gating* list costs the guarantee.
+
+#### D18 — a warning is printed exactly once
+
+While the capture is armed, `warn` **defers**: it appends and does not print. The buffer is flushed —
+rendered to stderr and then emptied — by whichever of these comes first:
+
+| Path | Flushed by |
+|---|---|
+| interactive launch | the gate, immediately before its question |
+| no TTY · `--dry-run` · abort | `_cco_warn_capture_end`, same view, no question |
+| `die` / `refuse` / `_cco_exit` | the exit primitive, **before** the `✗`, so an error path never swallows the warnings |
+| the buffer cannot be written | nobody — `warn` prints immediately, exactly as before |
+
+That last row is the invariant that makes the rest safe: **deferral is conditional on the append
+having succeeded.** A capture that fails degrades to today's behaviour instead of losing the message —
+the same fail-soft rule D5 already stated, now load-bearing rather than merely polite.
+
+Flushing empties the buffer, so a second flush prints nothing and a warning emitted *after* one is
+still captured and still shown.
+
+**Rejected: repaint the terminal** — erase the already-printed lines and replace them with the gate's
+view. It requires knowing how many *physical rows* the earlier output occupied, which depends on the
+terminal width, on wrapping, and on any interleaved output including a subprocess's; a miscount erases
+the wrong lines. It destroys scrollback, and it does nothing at all under a pipe, a redirect, or CI —
+where `cco start` still has to be readable.
+
+**The cost, stated**: warnings no longer appear next to the step that produced them. The group label
+replaces that context, and is more useful than pipeline order to a reader deciding what to do.
+
+#### A2 — `agents.sh`'s *widened* message becomes a `note` (amends [ADR-0058 A2](../../integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments))
+
+Two messages ship from that normalizer and §3.3 classified them as one:
+
+- *"widened the declared toolset of N definition(s)"* — cco **resolved** it, the user's files are
+  unchanged, and there is nothing to do. That is the definition of an accepted divergence (**D2**), so
+  it is a `note`. It was the least actionable of the 14 in the live run and it gated.
+- *"N definition(s) keep NO return channel"* — cco could **not** resolve it and a teammate will lose
+  its work. Unchanged: a `warn`, and the flagship case the gate exists for.
+
+The distinction is not "how loud", it is **whether anything is left for the user to decide**.
+
+#### D19 — the full reclassification is scheduled, not assumed
+
+A1 fixes the two classifications the live run exposed. It does **not** claim the rest are right: the
+audit is now known to have covered 12 of the ~36 files that call `warn`. Before this cycle merges, one
+session runs §3.2's decision tree over **every** producer reachable from `cco start` / `cco new`,
+enumerated by running the command rather than by reading a list. Recorded here so the gap is a
+scheduled item and not a discovery someone repeats.

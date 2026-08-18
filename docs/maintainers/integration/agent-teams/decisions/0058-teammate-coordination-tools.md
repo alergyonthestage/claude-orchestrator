@@ -325,3 +325,20 @@ accident"*, not *"the channel always exists"*. The second is not achievable with
 intent. This is the third place where D6's visibility is the entire remedy — with D10's `rw` cell and
 D11 — and the reason the warning must name the **file** and the **member**, so the reader can tell an
 exclusion they chose from an omission they never noticed.
+
+### A3 — the *widened* message is a `note`, not a `⚠ warn` (2026-08-18, by [ADR-0059 A1 §A2](../../../cli/decisions/0059-message-classification-and-the-start-warning-gate.md#a2--agentsshs-widened-message-becomes-a-note-amends-adr-0058-a2))
+
+Forward annotation — **A2 is otherwise unchanged**, and its central claim is now discharged: the
+start-time warning it shipped deliberately unread *is* read, on the first line of the gate's list
+(host acceptance run, 2026-08-18).
+
+What changed is the level of **one** of the two messages this ADR's normalizer emits. *"widened the
+declared toolset of N definition(s)"* reports work cco **completed**, on files it did not modify, with
+nothing left for the user to decide — an accepted divergence, which under ADR-0059 D2 is a `note` and
+does not hold the launch. *"N definition(s) keep NO return channel"* is untouched: there cco could not
+fix it, a teammate will finish its work and lose it, and it remains the `⚠ warn` this ADR was written
+for.
+
+A2's own wording anticipated the wrong half of this — it expected the gate to make the *widened*
+notice matter. In the first real session it was the least actionable of fourteen entries. The gate is
+what made that visible, which is what a decision surface is for.

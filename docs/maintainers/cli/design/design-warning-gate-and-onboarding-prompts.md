@@ -179,6 +179,48 @@ an abort leaves no registry entry to reap.
 
 ### 4.4 The prompt
 
+> **Amended by [ADR-0059 A1](../decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
+> (2026-08-18)** after the first host run. The mockup below is the *shape*; §4.5 is what is built.
+
+### 4.5 The output model, as amended (A1 · D16–D18)
+
+**A warning is printed exactly once.** While the capture is armed `warn` appends and does not print;
+the buffer is rendered to stderr and emptied by the first of: the gate (then its question),
+`_cco_warn_capture_end` (no TTY, `--dry-run`, abort), or `die`/`refuse`/`_cco_exit` (before the `✗`).
+⚠ **Deferral is conditional on the append succeeding** — an unwritable buffer makes `warn` print
+immediately, so a broken capture degrades to today's behaviour instead of eating the message.
+
+**The list is aggregated and grouped.** Loop producers emit one warning naming their items (D16); the
+gate groups by an area derived from `${BASH_SOURCE[1]}` — no call-site tags, and a file missing from
+the label table falls through to `other` with its warning intact (D17).
+
+```
+⚠ 7 warnings for this session, in 4 areas:
+
+  ── packs & overlays (2) ──────────────────────────────
+   · Committed .claude/packs/ is framework-reserved
+   · 5 committed rules shadowed by packs 'cave-core', 'cave-web'
+
+  ── config hygiene (3) ────────────────────────────────
+   · ~/.cco has uncommitted changes
+   · 2 repos have uncommitted .cco: cave-auth, cave-auth-web
+   · project repos have divergent .cco          → cco sync
+
+  ── documentation / llms (1) ──────────────────────────
+   · 3 llms not installed: shadcn-svelte, …     → cco llms install
+
+  ── agent teams (1) ───────────────────────────────────
+   · widened 2 definitions                      → cco whoami
+
+  Start the session anyway? [S/a]:
+```
+
+A message may end in ` → <remedy>`; the renderer right-aligns it when the line fits and drops it to
+its own indented line when it does not. No arrow means no column — the convention degrades to plain
+text rather than requiring every message to adopt it.
+
+### 4.4bis The prompt *(original shape, pre-A1)*
+
 ```
 ⚠ 2 warnings for this session:
 
