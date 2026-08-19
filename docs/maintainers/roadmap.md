@@ -63,7 +63,8 @@
 > ⭐ What the measurement really found is what **A2** then decided: D1 had fused the level with the
 > pause, leaving `note:` and `ℹ` write-only. The pause now keys on *the run reaching the launch*; the
 > level only decides what it says.
-> ⚠ The branch is **unpushed and unmerged**: the whole cycle is reachable from that ref and nothing else.
+> ⚠ The branch is **unmerged**, and **partly pushed** — it tracks `origin/feat/cli/start-warning-gate`
+> and runs ahead of it. Measure with `git branch -vv`; do not repeat a stated push status.
 
 ## The planning documents — and why there are three
 
@@ -97,10 +98,14 @@ narrative, the lessons, and the per-stage records live in
   `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
   history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
   `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
-  ⚠ **`feat/cli/start-warning-gate` is UNPUSHED and NOT MERGED** — the A5/A8 design phase, **A5's
+  ⚠ **`feat/cli/start-warning-gate` is NOT MERGED** — the A5/A8 design phase, **A5's
   implementation** (U1 + U2, 2026-08-14), **U4**, the post-acceptance UX rework, **U3 = all of A8**,
   and **U5 = D19 + Amendment A2** (all 2026-08-18). Every unit of the A5+A8 plan is now on it and
   **nothing is owed before it merges**. Push it from the host before anything else.
+  ⚠ **It is NOT unpushed** — three documents said so, this one included, and the measurement
+  disagrees: it has an upstream (`origin/feat/cli/start-warning-gate`) and runs ahead of it, so a
+  plain `git push` is what it needs. Same rule as the commit count below: **measure, never restate**
+  (`git branch -vv`).
   📝 No commit count is recorded here on purpose: a line that states one is invalidated by the very
   commit that states it. Measure with `git rev-list --count develop..feat/cli/start-warning-gate`.
   📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*

@@ -35,7 +35,7 @@ flowchart LR
 
 | Gate | What unblocks it |
 |---|---|
-| **Push `feat/cli/start-warning-gate`** (never pushed) | host-only — the command is under *How to resume* |
+| **Push `feat/cli/start-warning-gate`** | host-only — no SSH key, no `gh` auth, no token in this session (measured). ⚠ It is **not** unpushed: it tracks `origin/feat/cli/start-warning-gate` and runs ahead of it, so a plain `git push` is what it needs. The command is under *How to resume* |
 | **Merge `feat/cli/start-warning-gate` → `develop`** | a human sign-off. ⚠ The branch is **not merged**: the whole cycle is reachable from this ref and nothing else |
 | **A live look at the new pause** | ⭐ worth one host `cco start` before the merge — the previous acceptance run measured the *old* form, which stopped only on warnings. Nothing depends on it: the three graduated forms and the abort are covered in the suite, through the shipped body |
 | **macOS host suite (bash 3.2)** | owed before `0.7.0`; nothing has run the full suite on 3.2 since `v0.6.0` (`1626 / 0` on that tree) |
@@ -43,12 +43,26 @@ flowchart LR
 
 ## How to resume
 
-**1. Push, from the host** — the one owed action no session can perform:
+**1. Push, from the host** — the one owed action no session can perform (measured here: no
+`~/.ssh`, `gh auth status` reports no host, no token in the environment):
 
 ```
 cd /Users/alessandro/Projects/CaveResistance/Software/claude-orchestrator
-git push -u origin feat/cli/start-warning-gate
+git push
 ```
+
+⚠ **The branch is NOT unpushed** — three documents said it was, including the handoff this one
+replaces. It has an upstream and runs ahead of it; `-u origin <branch>` is not needed. No distance is
+recorded here on purpose (a stated count is invalidated by the commit that states it — the same rule
+the roadmap applies to the commit count). Measure before repeating any such claim:
+
+```
+git branch -vv | grep start-warning-gate      # upstream + how far ahead
+git rev-list --count develop..feat/cli/start-warning-gate
+```
+
+📝 What this session **cannot** verify is whether the remote still holds that ref: `git ls-remote`
+fails here (`Host key verification failed`), so `origin/…` is only what the local clone last saw.
 
 **2. Then the merge gate.** ⚠ A merge whose **diff touches `.cco/`** is host-only in this project.
 This one does not, but check before assuming.
@@ -61,7 +75,9 @@ suite silently.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] **Push `feat/cli/start-warning-gate`** — host-only (command above)
+- [ ] **Push `feat/cli/start-warning-gate`** — host-only; plain `git push`, it already has an upstream
+- [ ] **Look at the new pause once on a real terminal** — the earlier acceptance run measured the form
+      A2 replaced. Not a blocker; the three forms and the abort are covered in the suite
 - [ ] **Merge to `develop`** — the human review point; the cycle owes nothing else
 - [ ] **macOS host suite (bash 3.2)** — owed before the `0.7.0` release
 - [ ] **[A1](roadmap.md)** — `cco save`, project-config versioning helper (needs a short design)
@@ -142,6 +158,12 @@ its level. What the measurement bought was coverage — and the discovery that m
 - 📝 **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) is ON**, deliberately. Masked
   in-container figures are the `…/7` ones. Pin `--claude-access` explicitly for any A4-style
   measurement in this project.
+- ⚠ **"Unpushed" was a restated claim, not a measured one — and it was wrong.** The previous handoff,
+  the roadmap and my memory all said the branch had never been pushed; `git branch -vv` shows an
+  upstream at `48bef8a` with HEAD ahead of it. This is the *second* time in this repo that a push
+  status carried in prose disagreed with the refs (the A4 cycle was the first). ⭐ **Treat every
+  stated branch position as unverified**: `git branch -vv` and
+  `git rev-list --count develop..<branch>` cost nothing.
 - ⚠ **git in this container needs `safe.directory`** and `~/.gitconfig` is a read-only bind mount, so
   it cannot be set globally. Use
   `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/claude-orchestrator git …`.
