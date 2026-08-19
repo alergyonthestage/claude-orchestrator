@@ -517,10 +517,11 @@ should *not* gate still can. **U1 → U3 is a file conflict**, not a preference:
 | **U4** | the output model | A5 | aggregation at the loop producers (D16), grouping by derived area (D17), one print per warning (D18), the `widened` demotion (§A2 of A1) | 25 tests in `test_warn_capture.sh` + the producer tests | ✅ **done** 2026-08-18 |
 | **U5** | D19 + Amendment A2 | A5 | the reclassification measured by *running* both verbs (design §3.3); then the pause keyed on the run (D20/D21), the two-level buffer (D22), `--yes` (D23), the cross-producer dedup (D24), the removed residue badge (D25) | 13 new tests in `test_warn_capture.sh` (incl. the `_wg_*` prompt driver) + 2 in `test_resolve.sh` | ✅ **done** 2026-08-18 |
 
-✅ **A5 is shipped.** The §3.3 table is applied in full, `note()` is a real emitter, the gate runs on
-both launch paths, and `tests/test_warn_capture.sh` (25 tests) + `INV-WG1`/`INV-WG2` cover it. Suite
-**1695 / 7 of 1702** with U3 on top (1683 / 7 of 1690 at A5's own close) — the 7 are the known
-host-only set, verified name for name and unchanged.
+✅ **A5 is shipped.** The §3.3 survey is applied in full, `note()` is a real captured emitter, the
+pause runs on both launch paths, and `tests/test_warn_capture.sh` (38 tests) +
+`INV-WG1`/`INV-WG2`/`INV-WG3` cover it. Suite **1710 / 7 of 1717** after U5 (1695 / 7 of 1702 after
+U3; 1683 / 7 of 1690 at A5's own close) — the 7 are the known host-only set, verified name for name
+and unchanged.
 [changelog.yml #65](../../changelog.yml) + [`cli.md` §3.2](../users/reference/cli.md) carry the
 user-facing half.
 
