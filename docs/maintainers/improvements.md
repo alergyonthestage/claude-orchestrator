@@ -3065,3 +3065,40 @@ while there, not the three flagged lines — the doc predates two ADRs, so a nam
 (this project's third recurrence of that lesson). Belongs to the `documenter`, not to an inline fix.
 
 **Effort**: Medium — the rewrite is small, the re-derivation is the work.
+
+---
+
+## FI-72: nothing detects the *next* unclassified `warn` producer
+
+**Status**: 🔴 Open — raised by the
+[D19 reclassification](cli/analysis/d19-warn-producer-reclassification.md) (2026-08-18), §9 item 6.
+Recorded, deliberately not built in that cycle.
+
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1 keys the
+pause on the **level**, never on a curated list, so a `warn` written years from now is captured,
+listed and answered for without anyone remembering the ADR. That guarantee holds and needs nothing.
+
+What has no mechanism at all is the step *before* it: putting a new producer through §3.2's decision
+tree. D19 measured **184 call sites, 46 reached in 12 files** — and found three files that had never
+been classified, one of which (`lib/migrate.sh`) no human list had ever named. The design's §3.3 table
+is now correct and is a **snapshot of a moving tree**: it is a lower bound again the moment someone
+adds warning number 185.
+
+**Direction**: the instrument already exists as a throwaway — §2 of the D19 analysis. Its three
+probes are cheap and hermetic: a trace line inside `warn` (`${BASH_SOURCE[1]}:${BASH_LINENO[0]}`),
+`set -x` with `FUNCNAME` in `PS4`, and `shopt -s extdebug; declare -F` to attribute a line to its
+function. Turned into a lint it would run the hermetic `cco start` scenarios, diff the reached set
+against a committed inventory, and fail on a producer the inventory does not name.
+
+⚠ **What it must NOT become is a gating list.** The value is a *reminder to classify*, and it may
+only ever cost a review comment. The moment the pause consults it, P2 is violated and the message
+that should have stopped the launch stops being shown — which is precisely the failure ADR-0059
+refuses to build.
+
+📌 Two false-pass traps this lane already paid for, worth reusing rather than re-discovering: an
+oracle that matched a function name inside a **comment** on an executed line (strip `#…` before
+matching), and a brace-depth body parser that mis-attributed lines (use `declare -F`, which the shell
+answers itself).
+
+**Effort**: Medium — the probes are written; making them a stable lint over the scenario battery,
+and deciding what the committed inventory looks like, is the work.

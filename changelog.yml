@@ -1391,41 +1391,56 @@ entries:
       No rebuild needed: the projection is produced at start time by the CLI.
 
   - id: 65
-    date: "2026-08-14"
+    date: "2026-08-18"
     type: additive
-    title: "cco start now pauses on its own warnings instead of losing them"
+    title: "cco start now pauses before it hands over the terminal, instead of losing what it printed"
     description: >
-      **The defect.** `cco start` printed its warnings and then handed the terminal
+      **The defect.** `cco start` printed its messages and then handed the terminal
       to `docker compose run`. The Claude Code TUI opened over them and the
-      scrollback was gone, so the entire warning surface of the command was
-      write-only — including the one that says a teammate will finish its work and
-      lose it. This was measured, not supposed: a real warning sat on the first line
-      after the start command through a complete acceptance run, read by nobody.
-      **What changes.** If a start emitted one or more warnings, `cco start` (and
-      `cco new`) now stops immediately before the container runs, lists them, and
-      asks whether to continue. Bare Enter starts; `a` aborts, and an abort leaves
-      no container and no session marker behind. A clean start stays silent and
-      immediate — nothing changes for a session that had nothing to say.
-      **The list is built to be read at a glance.** Each warning is printed
+      scrollback was gone, so the entire message surface of the command was
+      write-only — including the warning that says a teammate will finish its work
+      and lose it. This was measured, not supposed: a real warning sat on the first
+      line after the start command through a complete acceptance run, read by
+      nobody.
+      **What changes.** On an interactive terminal, `cco start` and `cco new` now
+      always stop immediately before the container runs and wait for you. That is
+      the point: a start takes about five seconds, and everything it wrote — `⚠`,
+      `note:`, `ℹ`, `✓` alike — is unreadable the moment the session opens. Bare
+      Enter starts; `a` aborts, and an abort leaves no container and no session
+      marker behind.
+      **What the pause says depends on what the run found.** A run with nothing to
+      report, or with notes only, shows them and asks `Press Enter to start the
+      session`. A run that emitted one or more warnings lists them and asks
+      `Start the session anyway? [S/a]`. `a` aborts in every case, including the
+      quiet one that does not advertise it — so a wrong project is always one
+      keystroke away from being backed out of.
+      **The list is built to be read at a glance.** Each message is printed
       **once** — no longer both in passing and again in the list — and the entries
       are grouped by area (packs & overlays, config hygiene, documentation/llms,
       agent teams, …) with a count per group, in a fixed order so two runs of the
-      same project read the same way. Where a warning has an obvious next command,
-      it is shown in its own column: `→ cco sync`. And a condition that used to
-      print once per item now prints once: five committed rules shadowed by the
-      same pack overlay are one line naming all five, not five lines.
-      **Why every warning, with no curated list.** The rule is a property of the
-      level, so a warning written years from now stops the launch on the day it is
-      written. The corollary is the part that matters when reading cco's output: a
-      message that should not stop your launch is no longer written as a warning.
-      Four levels now exist — `⚠` (a condition of this session, gates), `note:` (an
-      accepted divergence, nothing is wrong), `ℹ`/`✓` (what the command did), and
-      plain feedback inside a prompt you are already answering.
-      **Unattended runs are unaffected.** With no controlling terminal — CI, a
-      script, a captured run, or `CCO_NONINTERACTIVE=1` — there is no prompt and the
-      launch proceeds exactly as before. `cco start --dry-run` does not prompt
-      either: nothing takes the terminal there, so the warnings are already readable.
-      No rebuild needed: the gate runs host-side in the CLI.
+      same project read the same way. Warnings come first, notes after them. Where
+      a message has an obvious next command, it is shown in its own column:
+      `→ cco sync`. And a condition that used to print once per item now prints
+      once: five committed rules shadowed by the same pack overlay are one line
+      naming all five, not five lines. A missing llms or pack is stated once too,
+      in the sentence that names where cco looked and what to run — not twice, in
+      two different wordings.
+      **Four message levels, and only one of them asks you to decide.** `⚠` is a
+      condition of this session you may want to act on; `note:` is an accepted
+      divergence with nothing to do about it; `ℹ`/`✓` are the chronicle of what the
+      command did; plain feedback inside a prompt is part of the prompt. There is no
+      curated list of "important" warnings — the behaviour is a property of the
+      level, so a warning written years from now escalates the pause on the day it
+      is written.
+      **Automation has two spellings, and they say different things.** With no
+      controlling terminal — CI, a script, a captured run, or
+      `CCO_NONINTERACTIVE=1` — there is no prompt and the launch proceeds exactly as
+      before: that one means *nobody is there*. `CCO_ASSUME_YES=1`, or the new
+      `--yes` / `-y` flag on `cco start` and `cco new`, means *somebody is there and
+      has already answered*: the list is still shown, only the question is skipped.
+      `cco start --dry-run` does not pause either — nothing takes the terminal
+      there, so the output is already readable.
+      No rebuild needed: it all runs host-side in the CLI.
 
   - id: 66
     date: "2026-08-18"

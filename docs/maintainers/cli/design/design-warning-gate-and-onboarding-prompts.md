@@ -73,40 +73,53 @@ flowchart TD
   Q2 -- yes --> W["warn() — GATES the launch"]
 ```
 
-### 3.3 The audit
+### 3.3 The producer survey
 
-Every `warn` reachable from a host `cco start` / `cco new`. **Unchanged** means it is already
-classified correctly and gates as written.
+> **Superseded in place by the D19 measurement (2026-08-18).** The first version of this section
+> was an audit — a table assembled by *reading* the tree — and it was a **lower bound**: it covered
+> 12 of the ~36 files that call `warn`, and the twelve it named are **not** the twelve a start
+> actually reaches. The table below is what a start *runs*, enumerated by executing `cco start` and
+> `cco new` under an instrumented `warn`. Method, the per-site verdicts, and the numbers behind each
+> row: [the D19 analysis](../analysis/d19-warn-producer-reclassification.md).
 
-| Site | Message | Verdict |
+**184 `warn` call sites in the executable trees; 46 reached, in 12 files; 24 fired.** Keyed on file
+and condition, not on line number — line numbers drift between the survey and the reader, and the
+condition is what the classification is about.
+
+| Producer | The condition it reports | Verdict |
 |---|---|---|
-| `cmd-start.sh:1153` | config-editor: resource not mounted in this session | unchanged — **gates** |
-| `cmd-start.sh:1585` | Invalid `auth.method` — defaulting to `oauth` | unchanged — **gates** |
-| `cmd-start.sh:1643` | No repositories defined in project.yml | unchanged — **gates** |
-| `cmd-start.sh:1697-1699` | init-workspace skill shadowed by the managed copy | **merge 3 warns → 1** — gates |
-| `cmd-start.sh:1959` | Agent teams: cannot prepare the agents overlay | unchanged — **gates** |
-| `cmd-start.sh:3134` | N reference(s) unresolved | **strip the leading `⚠`** (INV-WG1) — gates |
-| `cmd-start.sh:3223-3224` | Browser: CDP port claimed / using port N instead | **merge 2 warns → 1** — gates |
-| `packs.sh:74,83,92` | agent/rule/skill defined in two packs — one overwrites | unchanged — **gates** |
-| `packs.sh:116,133,138,143` | committed `.claude/…` shadowed by a pack `:ro` overlay | unchanged — **gates** |
-| `packs.sh:161` | pack not resolved | unchanged — **gates** |
-| `packs.sh:167` + `session-context.sh:38` | pack.yml has no valid top-level keys | unchanged — **gates**; identical text from two producers, **deduplicated in the buffer** (§4.4) |
-| `agents.sh:322,324` | ADR-0058 D6 — toolset widened / no return channel | unchanged — **gates**. The flagship case |
-| `yaml.sh:118,283` | invalid boolean / invalid enum — using the default | unchanged — **gates** |
-| `index.sh:489,504,533,538,542,547` | re-home and residue reconciliation | unchanged — **gates** |
-| `index.sh:1197-1220` | legacy-index reconcile divergences | unchanged — **gates** |
-| `secrets.sh:102` | malformed line in `secrets.env` | unchanged — **gates**. Emitted *after* every other step → the reason for D7 |
-| `local-paths.sh:504` | could not bind name → path in the index | unchanged — **gates** |
-| `cmd-new.sh:198` | could not extract the OAuth token from Keychain | unchanged — **gates** (`cco new`, D9) |
-| `local-paths.sh:109,120,151,164,445,450` | "No URL available for clone" · "Path '…' does not exist" · "Invalid choice 'x'" | **→ prompt-local** (D4) — no gate |
-| `cmd-resolve.sh:841` | "note: '…' does not exist on this machine yet" | **→ `note()`** (D3) — no gate |
-| `paths.sh:620` | dev-sandbox: seeded STATE+DATA (one-shot) | **→ `note()`** — no gate |
-| `paths.sh:638` | dev-sandbox active — state isolated | **→ `note()`** — no gate. 📌 *the one judgement call*: it is loud by intent, but the user typed `--dev-sandbox` themselves and nothing is wrong. Gating every dev-sandbox start would be friction on the developer path |
-| `paths.sh:611,616` | dev-sandbox: STATE/DATA seed was incomplete | unchanged — **gates** |
-| `access-scope.sh:1424-1427` | hidden / not-mounted / unresolved by access scope | **out of scope** — container-operator only, never in a host start |
+| `cmd-start.sh` (6) | config-editor resource not mounted · invalid `auth.method` · no repos in `project.yml` · init-workspace skill shadowed · agents overlay cannot be prepared · browser CDP port claimed | unchanged — **gates**. Measured as 7; the seventh was the passive residue badge, **removed** by A2 D25 |
+| `packs.sh` (8) | an agent/rule/skill defined in two packs · committed `.claude/…` shadowed by a pack `:ro` overlay · pack not resolved · `pack.yml` has no valid top-level keys | unchanged — **gates** |
+| `index.sh` (8) | index residue reconciliation · legacy-index reconcile divergences | unchanged — **gates** |
+| `cmd-resolve.sh` (6) | no `.cco/project.yml` in the unit · repo · extra_mount · llms · pack unresolved on this machine · the residue count | unchanged — **gates**. Only *one* of the six was ever audited; llms and packs now go silent when a start is about to restate them (**A2 D24**) |
+| `reminders.sh` (4) | `~/.cco` uncommitted · repos with an uncommitted `.cco` · divergent `.cco` across repos | **never classified before D19** — stays `warn`, **gates** (ADR-0008's *non-blocking* forbids a precondition that forces commits, not a prompt that defaults to proceed) |
+| `migrate.sh` (5) | the legacy vault could not be backed up · `~/.cco/global/.claude` could not be flattened | ⚠ **named by nobody** — `_cco_first_run` runs on every host command, so these gate a launch for any user still carrying the legacy vault. Stays `warn`, **gates** |
+| `llms.sh` (2) | N referenced llms are not installed | **never classified before D19** — stays `warn`, **gates** |
+| `yaml.sh` (2) | invalid boolean / invalid enum — using the default | unchanged — **gates** |
+| `agents.sh` (1 of 2) | a definition keeps **no return channel** | unchanged — **gates**. The flagship case |
+| `agents.sh` (the other) | the declared toolset was **widened** | **→ `note()`** (A1 §A2) — cco resolved it, nothing is left to decide |
+| `secrets.sh` (1) | a malformed line in `secrets.env` | unchanged — **gates**. Emitted *after* every other step → the reason for D7 |
+| `session-context.sh` (1) | `pack.yml` has no valid top-level keys | unchanged — **gates**; identical text to `packs.sh`, **deduplicated in the buffer** |
+| `cmd-new.sh` (1) | the OAuth token could not be extracted from the Keychain | unchanged — **gates** (`cco new`, D9) |
+| `local-paths.sh` | "No URL available for clone" · "Path '…' does not exist" · "Invalid choice 'x'" | **→ prompt-local** (D4) — the user is already reading the prompt |
+| `cmd-resolve.sh` | "'…' does not exist on this machine yet" | **→ `note()`** (D3) |
+| `paths.sh` | dev-sandbox seeded / active | **→ `note()`**. 📌 *the one judgement call*: loud by intent, but the user typed `--dev-sandbox` and nothing is wrong |
+| `paths.sh` | the dev-sandbox STATE/DATA seed was incomplete | unchanged — **gates** |
 
-**Net**: 3 sites change level, 3 blocks merge, 1 badge is stripped. Everything else was already
-honest — which is the result the audit had to be capable of producing to be worth running.
+**Measured NOT reachable from a start**, recorded so the next survey does not re-derive it:
+`index.sh:489,504` (inside `_index_rehome_*`, never entered) and `access-scope.sh`'s
+hidden/not-mounted/unresolved family (container-operator only, **0 reached** in 15 host-lane runs).
+
+**Net: no producer is reclassified by D19.** Three files had simply never been through §3.2's
+decision tree, and all three are correct where they stand. What the measurement bought is
+*coverage* — and the proof that **P2 pays itself back**: the mechanism keys on the level, so the four
+messages the audit never named were captured, listed and gated anyway, exactly where the enumeration
+failed.
+
+⚠ **Nothing detects the *next* unclassified producer.** The instrument that would is the D19 lane
+(§2 of the analysis); building it is recorded in `improvements.md`, not done. Until then this table
+is a snapshot, and a snapshot of a moving tree is a lower bound the moment it is written — which is
+the reason the guarantee was never allowed to depend on it (**P2**).
 
 ## 4. Mechanism
 
@@ -130,10 +143,13 @@ In `lib/colors.sh`, beside the emitter it instruments (single producer):
 | Function | Contract |
 |---|---|
 | `_cco_warn_capture_begin` | creates the buffer, exports `_CCO_WARN_LOG`. Idempotent |
-| `warn()` | unchanged output; additionally appends the rendered message to `$_CCO_WARN_LOG` when set and writable. **A capture failure never breaks `warn`** |
-| `_cco_warn_capture_list` | the captured messages, in order, **deduplicated on exact text** |
-| `_cco_warn_capture_count` | the number of distinct messages |
-| `_cco_warn_capture_end` | removes the buffer, unsets the variable |
+| `warn()` · `note()` | append `<level>\t<source>\t<message>` to `$_CCO_WARN_LOG` when set and writable, and then **print nothing** (D18/D22). **A capture failure never breaks either**: the append's status is what decides whether printing may be deferred |
+| `_cco_warn_capture_records [<level>]` | `<level>\t<area>\t<message>` per distinct message, in emission order. Deduplicated **before** the level filter, so one sentence emitted at two levels is one entry and the warning wins |
+| `_cco_warn_capture_list [<level>]` | the captured messages, in order, **deduplicated on exact text** |
+| `_cco_warn_capture_count [<level>]` | the number of distinct messages; `warn` is the filter the pause reads to choose its form |
+| `_cco_warn_gate_render` | the two sections (warnings, then notes) to stdout. **Pure** — no read, no prompt, no terminal |
+| `_cco_warn_flush` | renders to stderr and **empties** the buffer; a second flush prints nothing |
+| `_cco_warn_capture_end` | flushes, removes the buffer, unsets the variable |
 
 **D6 — location.** `mktemp "${TMPDIR:-/tmp}/cco-warn.XXXXXX"`: the template form is the spelling BSD
 and GNU agree on (`lib/sync-meta.sh:117` is the precedent). Never STATE/DATA/CACHE — INV-S1 forbids
@@ -166,12 +182,18 @@ flowchart TD
   DR -- yes --> SUM["_start_show_summary — no gate (D8)"]
   DR -- no --> L["_start_launch"]
   L --> SEC["load_global_secrets · load_secrets_file"]
-  SEC --> G{"warnings captured?"}
-  G -- "none" --> RUN["docker compose run"]
-  G -- "≥1" --> Q["the gate prompt"]
-  Q -- "start (default)" --> RUN
-  Q -- "abort" --> X["exit 0 — no marker, no container"]
+  SEC --> T{"a terminal? (_cco_have_tty)"}
+  T -- "no · CCO_NONINTERACTIVE" --> F["flush the list, no question"] --> RUN["docker compose run"]
+  T -- yes --> FL["flush the list"]
+  FL --> AY{"CCO_ASSUME_YES · --yes?"}
+  AY -- yes --> RUN
+  AY -- no --> Q["the pause — form chosen by the levels emitted (A2 D21)"]
+  Q -- "Enter / anything but a (default)" --> RUN
+  Q -- "a" --> X["exit 0 — no marker, no container"]
 ```
+
+⚠ **The pause does not branch on whether anything was captured** (A2 D20). It branches on whether
+there is a terminal. A clean run pauses too — that is the amendment, not an oversight.
 
 Inside `_start_launch`, **after** secrets loading and **before** `_cco_running_mark`. Secrets warn
 last of all (`lib/secrets.sh:102`), so any earlier placement misses them; marking after the gate means
@@ -179,8 +201,9 @@ an abort leaves no registry entry to reap.
 
 ### 4.4 The prompt
 
-> **Amended by [ADR-0059 A1](../decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
-> (2026-08-18)** after the first host run. The mockup below is the *shape*; §4.5 is what is built.
+> **Amended twice on 2026-08-18** — by [ADR-0059 A1](../decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
+> after the first host run, and by **A2** at the D19 gate. The mockup in §4.4bis is the original
+> *shape*; §4.5 is the output model and **§4.6 is what the pause keys on** — which is what is built.
 
 ### 4.5 The output model, as amended (A1 · D16–D18)
 
@@ -229,6 +252,57 @@ exported to a script, so reading it would silently mean 80 everywhere while pret
 A message may end in ` → <remedy>`; the renderer right-aligns it when the line fits and drops it to
 its own indented line when it does not. No arrow means no column — the convention degrades to plain
 text rather than requiring every message to adopt it.
+
+### 4.6 The pause, as amended (A2 · D20–D23)
+
+**The pause is a property of the RUN, not of the warning level.** A start takes under five seconds
+and then Claude Code owns the terminal; everything cco printed — `⚠`, `note:`, `ℹ`, `✓` alike — is
+gone before it can be read. D1 keyed the stop on `warn`, which fused two independent questions:
+
+| Job | Answers | Keyed on |
+|---|---|---|
+| **level** | how serious, how presented | `warn` / `note` / `ℹ`·`✓` — unchanged |
+| **pause** | may the user read what this run printed | **the run reached the launch**, nothing else |
+
+So on an interactive terminal `cco start` and `cco new` **always** stop before the container runs.
+What the level changes is what the pause *says*:
+
+| The run emitted | The pause shows | The prompt |
+|---|---|---|
+| chronicle only (`ℹ`/`✓`) | nothing extra | `→ Press Enter to start the session.` |
+| notes, no warnings | the notes, grouped by area | `→ Press Enter to start the session.` |
+| one or more warnings | `⚠ N warnings … in M areas`, grouped (D17) | `Start the session anyway? [S/a]:` |
+
+`a`/`A` aborts in **all three** — uniform even where the clean form does not advertise it, because a
+user who picked the wrong project must be able to back out of the one they did pick. Bare Enter
+starts everywhere (D10 unchanged), and an unrecognised answer starts rather than re-asking.
+
+**The buffer carries the level** (D22). `note()` is captured exactly like `warn()`; the record is
+`<level>\t<source>\t<message>` and the records stream `<level>\t<area>\t<message>`. The renderer
+emits **warnings first, then notes**, each grouped by the area derived from `${BASH_SOURCE[1]}`.
+Two sections, never one merged list: what the reader must decide about and what cco already settled
+are different questions, and the section badge is the only thing that says which is which.
+
+⚠ **Deferral stays conditional on the append succeeding**, for notes as for warnings. A buffer that
+cannot be written makes `note` print immediately. Do not simplify that into an unconditional defer:
+it is what keeps a capture problem from eating the message it was built to deliver.
+
+**Two opt-outs, and they are not synonyms** (D23):
+
+| Spelling | Means | The list | The question |
+|---|---|---|---|
+| `CCO_NONINTERACTIVE=1` | *there is nobody there* | flushed by `_cco_warn_capture_end` | not asked |
+| `CCO_ASSUME_YES=1`, `--yes`/`-y` | *somebody is there and has already answered* | **rendered at the pause** | not asked |
+
+The second exists because D20 makes every interactive start pause: automation driven from a real
+terminal needs a way to *answer*, not a way to pretend the terminal is absent — and it still has a
+reader, so it still gets the list.
+
+**Why this is not merely nicer.** Under D1, `note()` and `info()` were **write-only**: a note
+printed, was never captured (the gate keyed on the warn count alone) and was overwritten seconds
+later. D3 created `note()` so the non-gating level would have a spelling in code; a level whose
+messages cannot be read is not a level, and the next author facing that reaches for `warn` for the
+very reason D3 exists.
 
 ### 4.4bis The prompt *(original shape, pre-A1)*
 
@@ -347,9 +421,11 @@ Stated rather than implied, because a test plan that does not name its own edge 
 | the no-tty branch of the gate (T4) | an end-to-end abort (T5's *runtime* half) | `cco start` ends in `docker compose run` |
 | the placement of the gate (T5/T6/T8/T10, static) | the ADR-0058 A2 **live check** | `cco start` is host-only in a session |
 
-📌 **Row 1 was narrowed by U3, and the narrowing is real** — see §6.4. *The case that consumes the
-reply* is no longer out of reach: T13's driver extracts the shipped function body and replaces only
-the `read` line. What stays unreachable is that one line.
+📌 **Row 1 was narrowed twice, and both narrowings are real.** U3 brought the onboarding prompts'
+`case` into reach (§6.4); **A2 brought the pause's own prompt into reach** with the same driver,
+duplicated into `tests/test_warn_capture.sh` so that file stays runnable on its own. D21 makes the
+question itself the contract — three graduated forms over one answer — and no static probe can tell
+them apart. What stays unreachable is the literal `read` line, and nothing else.
 
 **Placement is asserted statically, and that is not a shortcut**: "after secrets, before the marker"
 *is* the decision, and a run under `CCO_NONINTERACTIVE=1` cannot discriminate a misplaced gate from a
@@ -412,9 +488,15 @@ class, one layer up. `_p8_body` therefore refuses to return any body still namin
 `test_p8_harness_refuses_a_body_it_could_not_patch` proves the refusal fires on a spelling one space
 away from the real one (`</dev/tty` vs `< /dev/tty`).
 
-📝 **The technique generalises but was not generalised.** `_cco_warn_gate` (`lib/utils.sh:112`) uses
-the identical spelling, so the gate's own prompt is reachable the same way. Out of U3's scope, and
-noted rather than done: the gate's `case` is two lines and was driven through a real pty during U2.
+✅ **The technique was generalised in A2.** `_cco_warn_gate` uses the identical spelling, and the
+amendment gave it a reason to be reached: D21's three forms and the *`a` aborts in all three*
+affordance are behaviour, not placement. `tests/test_warn_capture.sh` carries its own `_wg_*` copy of
+the driver — duplicated deliberately, so `bin/test --file test_warn_capture` runs standalone — with
+the same refuse-an-unpatched-body oracle, for the same reason.
+
+📌 The strongest oracle there is not a string match. `CCO_ASSUME_YES=1` is asserted with **`a` queued
+as the answer**: had the gate read it, the run would have aborted, so `rc 0` proves the read never
+happened — where checking for the absence of the prompt text proves only that the text changed.
 
 **Two traps paid for while building it**, both silent, both of the shape this repo keeps a list for:
 
@@ -433,6 +515,10 @@ noted rather than done: the gate's `case` is two lines and was driven through a 
    (the live check is **owed on the host** — see §6.2).
 3. ✅ **U3 — A8's three fixes**: `--writable` (+ changelog + user docs), the clone destination, the
    reuse tokens. T12–T13, plus the harness self-test of §6.4.
+4. ✅ **U4 — D19 + A2**: the reclassification measured by *running* the two verbs (§3.3), then the
+   amendment it produced — the pause keyed on the run (§4.6), the two-level buffer, `--yes`, D24's
+   cross-producer dedup and D25's removed residue badge. Self-verifying: the `_wg_*` prompt driver
+   and the D24 pair in `tests/test_resolve.sh`.
 
 U1 before U2 is not cosmetic: the gate must not ship while a message that should not gate still can.
 No unit touches a baked file, so **no `cco build`** is in the acceptance lane.
