@@ -11,6 +11,20 @@ that invalidated F3), §5 (functional-write floor + the mountpoint annotation); 
 STATE / CACHE separation — the view is CACHE); 0047 (privilege boundary — the view is *not* a
 confined bucket); 0019 D5 (three-layer pack resolution — unchanged).
 
+> **Refined — 2026-08-19 (`fix(start)`: gRPC-FUSE file overlays).** The "inert
+> stub" remedy assumed the per-file bind layered over each stub always applies.
+> Docker Desktop's gRPC-FUSE backend falsified that: single-FILE binds over a
+> directory bind are listed by `docker inspect` but never enter the container's
+> mount namespace, so the container read the 0-byte stubs themselves — every
+> pack agent and rule arrived empty, silently (found by the agentic-harness E2E
+> validation, where it disabled agent frontmatter for seven runs). Since then a
+> FILE mountpoint is materialised as a real **content copy** of its source, not
+> an empty stub — where the bind applies it shadows the copy (live view, no
+> behaviour change); where the backend drops it, the copy serves the content as
+> of session start. Directory mountpoints are unchanged. The same pattern was
+> applied to the committed-workflows overlay (`_emit_workflows_overlay`).
+> Nothing else in this ADR changes: ownership, CACHE placement, D1-D5 hold.
+
 ---
 
 ## Context

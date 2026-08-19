@@ -768,7 +768,14 @@ _emit_workflows_overlay() {
             if [[ -d "$f" ]]; then
                 mkdir -p "$state_dir/$base" || return 1
             else
-                [[ -e "$state_dir/$base" ]] || : > "$state_dir/$base" || return 1
+                # A content COPY, not a 0-byte stub — same gRPC-FUSE fallback as
+                # _claude_view_stub (see the view mechanism note): where the
+                # per-file bind below is silently dropped, the copy serves the
+                # committed content instead of an empty file. Refreshed every
+                # start; never overwrites a file already present in STATE.
+                if [[ ! -e "$state_dir/$base" ]]; then
+                    cp "$f" "$state_dir/$base" || return 1
+                fi
             fi
         fi
         _compose_vol "$f" "/workspace/.claude/workflows/$base" "$mode"
@@ -838,11 +845,22 @@ _start_prepare_transcripts_bucket() {
 # creates every framework mountpoint host-side, in a tree IT owns, so visibility
 # of packs/llms no longer depends on the authoring policy.
 #
-# The view is mountpoints ONLY (empty dirs/files) and becomes the /workspace/.claude
-# parent at the policy's mode (D3 — never rw-by-fiat: that would fake successful
-# writes into CACHE); the committed tree is bound back in entry by entry. Built
-# ONLY when the session injects children (D2) — a project with no packs/llms keeps
+# The view holds one mountpoint per entry — empty dirs for directory sources,
+# CONTENT COPIES for file sources — and becomes the /workspace/.claude parent at
+# the policy's mode (D3 — never rw-by-fiat: that would fake successful writes
+# into CACHE); the committed tree is bound back in entry by entry. Built ONLY
+# when the session injects children (D2) — a project with no packs/llms keeps
 # today's single whole-tree bind, byte-identical.
+#
+# File mountpoints carry a real copy, not a 0-byte placeholder, because Docker
+# Desktop's gRPC-FUSE backend silently fails to apply single-FILE binds layered
+# over a directory bind: `docker inspect` lists them, /proc/mounts in the
+# container does not, and the container reads the naked mountpoint (measured
+# 2026-08-18, agentic-harness E2E: every pack agent and rule arrived 0-byte).
+# With a copy in the view the per-file bind becomes redundancy: where it works
+# (Linux, VirtioFS) it shadows the copy with a live view of the source; where
+# the backend drops it, the copy — refreshed at every start, since the view is
+# rebuilt from scratch — serves the same content as of session start.
 
 # Split a compose volume line — '      - "SRC:TGT[:MODE]"' — into _CV_SRC/_CV_TGT.
 # A container target never contains ':', so peeling an optional trailing :ro|:rw
@@ -854,8 +872,9 @@ _claude_view_split() {
     _CV_TGT="${raw##*:}"; _CV_SRC="${raw%:*}"
 }
 
-# Create one mountpoint <rel> inside <view>, shaped after its source (dir → dir,
-# anything else → empty file). Never overwrites an existing entry.
+# Create one mountpoint <rel> inside <view>, shaped after its source (dir →
+# empty dir, file → content COPY — the gRPC-FUSE fallback, see the mechanism
+# note above; anything else → empty file). Never overwrites an existing entry.
 _claude_view_stub() {
     local view="$1" rel="$2" src="$3"
     # SEPARATE statement, deliberately: `local a=$1 b="$a/x"` expands b's RHS
@@ -867,7 +886,13 @@ _claude_view_stub() {
         mkdir -p "$mp" || return 1
     else
         mkdir -p "$(dirname "$mp")" || return 1
-        [[ -e "$mp" ]] || : > "$mp" || return 1
+        if [[ ! -e "$mp" ]]; then
+            if [[ -f "$src" ]]; then
+                cp "$src" "$mp" || return 1
+            else
+                : > "$mp" || return 1
+            fi
+        fi
     fi
     return 0
 }

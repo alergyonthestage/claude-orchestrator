@@ -1389,3 +1389,22 @@ entries:
       **The form that needs none of this**: `disallowedTools:` over an inherited
       toolset, instead of an exhaustive `tools:` allowlist.
       No rebuild needed: the projection is produced at start time by the CLI.
+
+  - id: 65
+    date: "2026-08-19"
+    type: additive
+    title: "Pack agents and rules no longer arrive empty on Docker Desktop (gRPC-FUSE)"
+    description: >
+      On Docker Desktop with the gRPC-FUSE file-sharing backend, the per-file
+      bind mounts that layer pack agents, rules and committed workflow files
+      into a composing session were silently dropped by the backend: `docker
+      inspect` listed them, but the container read the 0-byte placeholder the
+      claude-view kept underneath — so every pack agent and rule loaded as an
+      empty file, with no error anywhere (found during the agentic-harness E2E
+      validation, where it silently disabled agent frontmatter for seven runs).
+      The view and the workflows overlay now materialise a real content COPY in
+      every file mountpoint instead of a 0-byte stub. Where the backend applies
+      the per-file bind (Linux, VirtioFS) nothing changes — the bind shadows
+      the copy with a live view of the source. Where it drops it, the copy
+      serves the same content as of session start, refreshed at every start.
+      No action needed; sessions pick this up at the next `cco start`.

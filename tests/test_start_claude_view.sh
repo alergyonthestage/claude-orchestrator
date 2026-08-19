@@ -67,8 +67,41 @@ test_claude_view_materializes_mountpoints() {
         || fail "skill mountpoint missing — runc would EROFS on the :ro parent"
     [[ -f "$CV_VIEW/rules/testing.md" ]] \
         || fail "rule mountpoint missing (must be a FILE for a file bind)"
-    [[ ! -s "$CV_VIEW/rules/testing.md" ]] \
-        || fail "a mountpoint stub must stay empty — it carries no content"
+    cmp -s "$CV_PACK/rules/testing.md" "$CV_VIEW/rules/testing.md" \
+        || fail "a file mountpoint must carry a COPY of its source — on gRPC-FUSE the per-file bind is silently dropped and the container reads the mountpoint itself"
+}
+
+# The gRPC-FUSE regression (2026-08-18, agentic-harness E2E): Docker Desktop's
+# gRPC-FUSE backend lists single-FILE binds in `docker inspect` but never applies
+# them — the container reads the naked mountpoint. A 0-byte stub therefore served
+# every pack agent and rule as an empty file, with no error anywhere. The view
+# must carry a byte-identical copy in EVERY file mountpoint it creates, so the
+# per-file bind degrades to redundancy instead of to silent content loss.
+test_claude_view_file_mountpoints_carry_source_content() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _cv_test_env; _cv_fixture "$tmpdir"
+    # Cover both lanes: injected pack children AND committed entries re-bound
+    # inside an injected namespace (both go through _claude_view_stub).
+    printf '{"model":"x"}\n' > "$CV_SRC/settings.json"
+    echo "# a" > "$CV_SRC/agents/mine.md"
+
+    local out; out=$(_emit_claude_view "$CV_VIEW" "$CV_SRC" "ro" "$CV_INJECTED" "false")
+
+    local all; all=$(printf '%s\n%s\n' "$out" "$CV_INJECTED")
+    local line raw tgt src rel checked=0
+    while IFS= read -r line; do
+        [[ "$line" == *':/workspace/.claude/'* ]] || continue
+        raw="${line#*\"}"; raw="${raw%\"*}"
+        case "$raw" in *:ro|*:rw) raw="${raw%:*}" ;; esac
+        tgt="${raw##*:}"; src="${raw%:*}"
+        rel="${tgt#/workspace/.claude/}"
+        [[ -f "$src" ]] || continue
+        cmp -s "$src" "$CV_VIEW/$rel" \
+            || fail "file mountpoint '$rel' differs from its source — a backend that drops the per-file bind would serve wrong content"
+        checked=$((checked + 1))
+    done <<< "$all"
+
+    [[ "$checked" -ge 3 ]] || fail "expected at least 3 file binds to check, saw $checked — the fixture stopped covering the file lane"
 }
 
 # INV-MP as a PROPERTY, not a spot check: every target this function emits under
