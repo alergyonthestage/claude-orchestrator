@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/test_warn_capture.sh — the message taxonomy and the warn-capture buffer
 #
-# Contract under test: ADR-0059 D1…D6 and the API table in
+# Contract under test: ADR-0059 D1…D6, Amendments A1 (D16…D18) and A2 (D20…D25),
+# and the API table in
 # docs/maintainers/cli/design/design-warning-gate-and-onboarding-prompts.md §4.2.
 # These tests are written from that contract — inputs → expected outputs — not from
 # the implementation: they must hold for ANY buffer that satisfies §4.2, and fail
@@ -9,6 +10,12 @@
 #
 # Test-plan coverage (design §6): T1, T2, T3 ⭐, T7, T9. T4–T6, T8, T10 belong to the
 # gate (unit U2) and T12–T13 to the surface fixes (U3); neither exists yet.
+#
+# ⚠ A2 MOVED THE PAUSE OFF THE WARNING LEVEL. The launch pauses because the run
+# reached the launch, not because a `warn` was emitted — so "no warnings ⇒ no
+# prompt" is NOT the contract any more, and a test asserting it would re-create the
+# write-only `note`/`ℹ` the amendment exists to end. What the level still decides is
+# what the pause SAYS (D21) and which section the message lands in (D22).
 #
 # ⚠ WHY THERE IS NO LIVE PROMPT HERE. `_prompt_for_path` reads /dev/tty, and the
 # suite's own runner captures the output of every test — a prompt whose text is
@@ -40,10 +47,9 @@ test_warn_capture_clean_run_captures_nothing() {
     _cco_warn_capture_begin
     info "a chronicle line"
     ok   "another chronicle line"
-    note "an accepted divergence"
 
-    assert_equals "0" "$(_cco_warn_capture_count)" "no warn ⇒ the count must be 0"
-    assert_empty "$(_cco_warn_capture_list)" "no warn ⇒ the list must be empty"
+    assert_equals "0" "$(_cco_warn_capture_count)" "chronicle only ⇒ the count must be 0"
+    assert_empty "$(_cco_warn_capture_list)" "chronicle only ⇒ the list must be empty"
     _cco_warn_capture_end
 }
 
@@ -226,13 +232,16 @@ test_warn_capture_deduplicates_identical_messages() {
     _cco_warn_capture_end
 }
 
-# ── T9 — only `warn` is captured ─────────────────────────────────────
-# Discriminates against: D2 collapsing back into "everything gates", which is the
-# state the taxonomy exists to leave. A gate that fires on a chronicle line teaches
-# users to answer it without reading, and then the one message that mattered is lost
-# in the same way it is lost today.
+# ── T9 (as amended by A2 D22) — the chronicle levels are not captured ─
+# Discriminates against: D2 collapsing back into "everything is a warning", which is
+# the state the taxonomy exists to leave. A `[S/a]` question raised by a chronicle
+# line teaches users to answer without reading, and then the one message that
+# mattered is lost in the same way it is lost today.
+#
+# `note` is deliberately NOT in this list any more: A2 D22 captures it, into its own
+# section. What it must not do is make the pause ask `[S/a]` — asserted below.
 
-test_warn_capture_ignores_the_non_gating_levels() {
+test_warn_capture_ignores_the_chronicle_levels() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _source_warn_capture "$tmpdir/state"
 
@@ -240,13 +249,18 @@ test_warn_capture_ignores_the_non_gating_levels() {
     {
         info  "started demo from repo [source: cwd]"
         ok    "Cloned demo"
-        note  "dev-sandbox active — internal state isolated"
         error "Failed to clone git@example.com:org/demo.git"
         echo  "  Invalid choice 'x'" >&2      # prompt-local (D4)
     } 2>/dev/null
 
     assert_equals "0" "$(_cco_warn_capture_count)" \
-        "info/ok/note/error and prompt-local feedback must NOT gate a launch (ADR-0059 D2)"
+        "info/ok/error and prompt-local feedback are not messages OF THE SESSION (ADR-0059 D2)"
+
+    # Discrimination: the buffer is armed and does capture — otherwise the 0 above
+    # proves only that nothing was recording.
+    warn "a real session condition" 2>/dev/null
+    assert_equals "1" "$(_cco_warn_capture_count)" \
+        "the buffer really was armed — without this the assertion above passes vacuously"
     _cco_warn_capture_end
 }
 
@@ -454,10 +468,10 @@ test_warn_gate_groups_by_producer_area() {
 
     _cco_warn_capture_begin
     # The producer is recorded, not declared — these are the real file names.
-    _cco_warn_capture_append "lib/packs.sh"     "committed rules are shadowed"
-    _cco_warn_capture_append "lib/llms.sh"      "2 llms are not installed"
-    _cco_warn_capture_append "lib/reminders.sh" "~/.cco has uncommitted changes"
-    _cco_warn_capture_append "lib/packs.sh"     "committed .claude/packs/ is reserved"
+    _cco_warn_capture_append warn "lib/packs.sh"     "committed rules are shadowed"
+    _cco_warn_capture_append warn "lib/llms.sh"      "2 llms are not installed"
+    _cco_warn_capture_append warn "lib/reminders.sh" "~/.cco has uncommitted changes"
+    _cco_warn_capture_append warn "lib/packs.sh"     "committed .claude/packs/ is reserved"
 
     local out; out=$(_cco_warn_gate_render)
     case "$out" in
@@ -485,7 +499,7 @@ test_warn_from_an_unmapped_producer_still_appears() {
     # a maintained list, and a file missing from it may cost a LABEL, never the
     # warning. A gating list would cost the guarantee — which is why there isn't one.
     _cco_warn_capture_begin
-    _cco_warn_capture_append "lib/a-module-invented-tomorrow.sh" "something is wrong with this session"
+    _cco_warn_capture_append warn "lib/a-module-invented-tomorrow.sh" "something is wrong with this session"
 
     assert_equals "1" "$(_cco_warn_capture_count)" "an unmapped producer's warning is still counted"
     local out; out=$(_cco_warn_gate_render)
@@ -501,8 +515,8 @@ test_warn_gate_renders_the_remedy_column() {
     _source_warn_capture "$tmpdir/state"
 
     _cco_warn_capture_begin
-    _cco_warn_capture_append "lib/reminders.sh" "project repos have divergent .cco → cco sync"
-    _cco_warn_capture_append "lib/reminders.sh" "nothing to suggest here"
+    _cco_warn_capture_append warn "lib/reminders.sh" "project repos have divergent .cco → cco sync"
+    _cco_warn_capture_append warn "lib/reminders.sh" "nothing to suggest here"
 
     local out; out=$(_cco_warn_gate_render | sed 's/\x1b\[[0-9;]*m//g')
     case "$out" in
@@ -654,4 +668,361 @@ test_cco_new_gates_through_the_same_implementation() {
         *"rm -rf"*"_cco_warn_capture_end"*) : ;;
         *) fail "cco new's EXIT trap must also sweep the warn buffer (ADR-0059 D9) — it replaces the sentinel trap armed in bin/cco"; return 1 ;;
     esac
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# A2 — the pause (D20…D23) and the two-level buffer (D22)
+#
+# ⚠ THE PROMPT IS REACHED HERE, unlike in the U2 section above. D21 makes the
+# question itself the contract — three graduated forms over one answer — and a
+# static probe cannot tell them apart. The technique is the one A8 already uses on
+# the onboarding prompts (tests/test_resolve.sh): run the REAL body, read out of
+# lib/utils.sh at run time, with ONLY `read -r reply < /dev/tty` replaced. The
+# driver is duplicated rather than imported so `bin/test --file test_warn_capture`
+# stays runnable on its own; both copies carry the same oracle — they REFUSE a body
+# they failed to patch, because an unpatched one would block on /dev/tty forever
+# instead of failing an assertion.
+# ═══════════════════════════════════════════════════════════════════════
+
+_WG_REPLIES=""
+
+# Pop the next queued reply into <varname> (one per patched read).
+# ⚠ NOT a command substitution: `reply=$(_wg_reply)` pops in a SUBSHELL, so the
+# queue never advances and every read replays the first answer.
+_wg_reply() {
+    local __v="$1" __r="${_WG_REPLIES%%$'\n'*}"
+    _WG_REPLIES="${_WG_REPLIES#*$'\n'}"
+    printf -v "$__v" '%s' "$__r"
+}
+
+# Echo <fn>'s body (braces stripped) from <src>, tty read → queue pop.
+# rc 1 if the substitution found nothing to replace.
+_wg_patched_body() {
+    local fn="$1" src="${2:-$REPO_ROOT/lib/utils.sh}" body
+    body=$(_wg_fn_body "$src" "$fn" | sed '1d;$d' \
+           | sed 's#read -r reply < /dev/tty#_wg_reply reply#')
+    [[ -n "$body" ]] || return 1
+    case "$body" in *"/dev/tty"*) return 1 ;; esac
+    printf '%s\n' "$body"
+}
+
+# Run the shipped _cco_warn_gate body with its tty read answered from the queue.
+_wg_run_gate() {
+    local _body
+    _body=$(_wg_patched_body _cco_warn_gate) \
+        || { echo "HARNESS: the tty read was not patched out of _cco_warn_gate" >&2; return 99; }
+    eval "$_body"
+}
+
+# The harness's own oracle. Without it a reworded read line would leave `< /dev/tty`
+# in place and the suite would BLOCK FOREVER instead of failing — the capture-hang
+# class, one layer up.
+test_wg_harness_refuses_a_body_it_could_not_patch() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf '%s\n' 'f() {' '    read -r reply </dev/tty' '}' > "$tmp/src.sh"   # no space: sed misses it
+    local rc=0
+    _wg_patched_body f "$tmp/src.sh" >/dev/null || rc=$?
+    [[ $rc -eq 1 ]] || { fail "_wg_patched_body must refuse a body that still reads /dev/tty (rc=$rc)"; return 1; }
+
+    printf '%s\n' 'f() {' '    read -r reply < /dev/tty' '}' > "$tmp/src.sh"  # the real spelling
+    rc=0
+    _wg_patched_body f "$tmp/src.sh" >/dev/null || rc=$?
+    [[ $rc -eq 0 ]] || { fail "_wg_patched_body must accept the spelling it patches (rc=$rc)"; return 1; }
+}
+
+# ── D22 — the buffer carries the level ───────────────────────────────
+# Discriminates against: a buffer that captures `note` into the SAME list as
+# `warn`. That reads as "N warnings" over a run where cco resolved everything
+# itself, and re-teaches the answer-without-reading habit D1 exists to prevent.
+
+test_note_is_captured_but_is_not_a_warning() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    note "widened the declared toolset of 2 definition(s)" 2>/dev/null
+
+    assert_equals "1" "$(_cco_warn_capture_count)"      "a note IS captured (A2 D22) — under D1 it was write-only"
+    assert_equals "0" "$(_cco_warn_capture_count warn)" "…and it is NOT a warning: it must not produce the [S/a] form"
+    assert_equals "1" "$(_cco_warn_capture_count note)" "…it is counted at its own level"
+    assert_equals "widened the declared toolset of 2 definition(s)" "$(_cco_warn_capture_list note)" \
+        "and the text arrives intact"
+    _cco_warn_capture_end
+}
+
+test_capture_count_and_list_filter_by_level() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    { warn "a condition to decide about"; note "an accepted divergence"; warn "a second condition"; } 2>/dev/null
+
+    assert_equals "3" "$(_cco_warn_capture_count)"      "unfiltered, the count is every distinct message"
+    assert_equals "2" "$(_cco_warn_capture_count warn)" "the warn filter counts warnings only"
+    assert_equals "1" "$(_cco_warn_capture_count note)" "the note filter counts notes only"
+    assert_equals "a condition to decide about
+a second condition" "$(_cco_warn_capture_list warn)" "the filtered list keeps emission order and drops the note"
+    _cco_warn_capture_end
+}
+
+test_note_is_deferred_while_armed_and_prints_when_it_cannot_be_recorded() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    # Unarmed: note prints, exactly as it always has.
+    local off; off=$(note "an accepted divergence" 2>&1)
+    case "$off" in *"note: an accepted divergence"*) : ;;
+        *) fail "with no capture armed note must print: $off"; return 1 ;; esac
+
+    # Armed: it records and says nothing — one message, one rendering (D18).
+    _cco_warn_capture_begin
+    local on; on=$(note "an accepted divergence" 2>&1)
+    assert_empty "$on" "while the capture is armed note must NOT print at emission (D18/D22)"
+    _cco_warn_capture_end
+
+    # THE invariant that makes deferral safe, for notes too: deferral is conditional
+    # on the append SUCCEEDING. Do not simplify this into an unconditional defer.
+    export _CCO_WARN_LOG="$tmpdir/no/such/dir/cco-warn.XXXXXX"
+    local out; out=$(note "this note still has to arrive" 2>&1)
+    case "$out" in *"this note still has to arrive"*) : ;;
+        *) fail "an unwritable buffer must make note print immediately, not swallow it: $out"; return 1 ;; esac
+    unset _CCO_WARN_LOG
+}
+
+# ── D22 — the renderer emits warnings first, then notes ──────────────
+# Discriminates against: one merged list. What the reader must decide about and
+# what cco already settled are different questions; the section badge is the only
+# thing that says which is which.
+
+test_renderer_puts_warnings_before_notes_in_two_sections() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    _cco_warn_capture_append note "lib/agents.sh" "widened the declared toolset of 2 definition(s)"
+    _cco_warn_capture_append warn "lib/packs.sh"  "committed rules are shadowed by the pack overlay"
+
+    local out; out=$(_cco_warn_gate_render | sed 's/\x1b\[[0-9;]*m//g')
+    case "$out" in
+        *"1 warning for this session"*) : ;;
+        *) fail "the warning section must count ONLY warnings, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"1 note for this session"*) : ;;
+        *) fail "the notes must render in their own section, got:"$'\n'"$out"; return 1 ;;
+    esac
+
+    # Order, measured on line numbers — the note was emitted FIRST, so a renderer
+    # that simply replayed the buffer would put it first.
+    local w n
+    w=$(printf '%s\n' "$out" | grep -n "warning for this session" | head -1 | cut -d: -f1)
+    n=$(printf '%s\n' "$out" | grep -n "note for this session"    | head -1 | cut -d: -f1)
+    [[ -n "$w" && -n "$n" && "$w" -lt "$n" ]] \
+        || { fail "warnings must render BEFORE notes (warn line=$w, note line=$n):"$'\n'"$out"; return 1; }
+}
+
+test_renderer_shows_notes_alone_with_no_warning_badge() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+
+    _cco_warn_capture_begin
+    _cco_warn_capture_append note "lib/index.sh" "dev-sandbox active — internal state isolated"
+
+    local out rc=0
+    out=$(_cco_warn_gate_render | sed 's/\x1b\[[0-9;]*m//g') || rc=$?
+    assert_equals "0" "$rc" "notes alone are still something to render (D21 middle row)"
+    case "$out" in
+        *"dev-sandbox active"*) : ;;
+        *) fail "the note must be listed, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"warning"*) fail "a run with no warnings must not announce warnings, got:"$'\n'"$out"; return 1 ;;
+        *) : ;;
+    esac
+    # The area grouping is the same machinery (D17), derived from the producer.
+    case "$out" in
+        *"paths & index"*) : ;;
+        *) fail "a note must be grouped by its producer's area like a warning, got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+# ── D20/D21 — the pause happens because the run reached the launch ───
+# ⭐ THE amendment's whole point. Discriminates against D1's own gate, which
+# returned immediately when nothing had warned — leaving every `note:` and every
+# `ℹ` on a stream the TUI overwrote seconds later.
+
+_wg_pause_src() {
+    _cco_have_tty() { return 0; }        # a terminal is reachable
+    unset CCO_ASSUME_YES
+}
+
+test_pause_asks_press_enter_on_a_run_with_nothing_to_report() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    _wg_pause_src
+
+    _cco_warn_capture_begin
+    info "started demo from repo [source: cwd]" 2>/dev/null
+
+    local out rc=0
+    _WG_REPLIES=$'\n'
+    out=$(_wg_run_gate 2>&1) || rc=$?
+    assert_equals "0" "$rc" "bare Enter starts (D10)"
+    case "$out" in
+        *"Press Enter to start the session"*) : ;;
+        *) fail "⭐ D20: a clean run MUST still pause — the chronicle is unreadable otherwise. Got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"[S/a]"*) fail "a run with no warnings must not ask 'anyway?', got:"$'\n'"$out"; return 1 ;;
+        *) : ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_pause_asks_press_enter_when_the_run_emitted_only_notes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    _wg_pause_src
+
+    _cco_warn_capture_begin
+    note "widened the declared toolset of 2 definition(s)" 2>/dev/null
+
+    local out rc=0
+    _WG_REPLIES=$'\n'
+    out=$(_wg_run_gate 2>&1) || rc=$?
+    assert_equals "0" "$rc" "bare Enter starts"
+    case "$out" in
+        *"widened the declared toolset"*) : ;;
+        *) fail "the notes must be RENDERED at the pause — that is what makes them readable at all, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"Press Enter to start the session"*) : ;;
+        *) fail "notes must not escalate the question, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"[S/a]"*) fail "D21: notes must NOT produce the warning form, got:"$'\n'"$out"; return 1 ;;
+        *) : ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_pause_asks_start_anyway_when_the_run_emitted_a_warning() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    _wg_pause_src
+
+    _cco_warn_capture_begin
+    warn "1 agent definition(s) keep NO return channel" 2>/dev/null
+
+    local out rc=0
+    _WG_REPLIES=$'\n'
+    out=$(_wg_run_gate 2>&1) || rc=$?
+    assert_equals "0" "$rc" "bare Enter STARTS even here (D10) — confiscating an explicitly requested session is the worse error"
+    case "$out" in
+        *"1 agent definition(s) keep NO return channel"*) : ;;
+        *) fail "the warning must be rendered at the pause, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"Start the session anyway? [S/a]"*) : ;;
+        *) fail "D21: a warning must escalate the question to [S/a], got:"$'\n'"$out"; return 1 ;;
+    esac
+    _cco_warn_capture_end
+}
+
+test_pause_aborts_on_a_in_all_three_forms() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    _wg_pause_src
+
+    # D21: `a` aborts in ALL THREE forms — the affordance is uniform even where the
+    # clean form does not advertise it, because a user who picked the wrong project
+    # must be able to back out of the one they did pick.
+    local rc
+
+    _cco_warn_capture_begin
+    info "nothing to report" 2>/dev/null
+    rc=0; _WG_REPLIES=$'a\n'; _wg_run_gate >/dev/null 2>&1 || rc=$?
+    assert_equals "1" "$rc" "'a' must abort a CLEAN run too — the form does not advertise it, the gate still honours it"
+    _cco_warn_capture_end
+
+    _cco_warn_capture_begin
+    note "an accepted divergence" 2>/dev/null
+    rc=0; _WG_REPLIES=$'a\n'; _wg_run_gate >/dev/null 2>&1 || rc=$?
+    assert_equals "1" "$rc" "'a' must abort a notes-only run"
+    _cco_warn_capture_end
+
+    _cco_warn_capture_begin
+    warn "a condition worth deciding about" 2>/dev/null
+    rc=0; _WG_REPLIES=$'A\n'; _wg_run_gate >/dev/null 2>&1 || rc=$?
+    assert_equals "1" "$rc" "'A' must abort a warning run — the answer is case-insensitive"
+    _cco_warn_capture_end
+
+    # Negative control: any other answer STARTS, so the assertions above measure the
+    # abort and not a gate that returns 1 for everything.
+    _cco_warn_capture_begin
+    warn "a condition worth deciding about" 2>/dev/null
+    rc=0; _WG_REPLIES=$'x\n'; _wg_run_gate >/dev/null 2>&1 || rc=$?
+    assert_equals "0" "$rc" "an unrecognised answer STARTS rather than re-asking (D10)"
+    _cco_warn_capture_end
+}
+
+# ── D23 — CCO_ASSUME_YES renders the list and skips the question ─────
+# Discriminates against: treating it as a synonym of CCO_NONINTERACTIVE. The two
+# say different things — "nobody is there" versus "somebody is there and has
+# already answered" — and only the first may suppress the rendering.
+
+test_pause_honours_assume_yes_without_reading_the_answer() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_warn_capture "$tmpdir/state"
+    _wg_pause_src
+    export CCO_ASSUME_YES=1
+
+    _cco_warn_capture_begin
+    warn "a condition worth deciding about" 2>/dev/null
+
+    # `a` is queued: if the gate READ the answer it would abort. rc 0 is the proof
+    # that it did not — a stronger oracle than the absence of the prompt text.
+    local out rc=0
+    _WG_REPLIES=$'a\n'
+    out=$(_wg_run_gate 2>&1) || rc=$?
+    assert_equals "0" "$rc" "CCO_ASSUME_YES=1 must not read the answer — the queued 'a' proves the read never happened"
+    case "$out" in
+        *"a condition worth deciding about"*) : ;;
+        *) fail "D23: the list is still RENDERED — automation from a real terminal has a reader, got:"$'\n'"$out"; return 1 ;;
+    esac
+    case "$out" in
+        *"[S/a]"*|*"Press Enter"*) fail "the question must not be asked, got:"$'\n'"$out"; return 1 ;;
+        *) : ;;
+    esac
+    unset CCO_ASSUME_YES
+    _cco_warn_capture_end
+}
+
+test_start_and_new_both_spell_the_flag() {
+    # D23: `--yes` is reachable on BOTH launch verbs. One of two is the shape this
+    # repo has paid for repeatedly, and it is invisible from either side.
+    local f
+    for f in cmd-start cmd-new; do
+        grep -qE '^\s+--yes\|-y\)' "$REPO_ROOT/lib/$f.sh" \
+            || { fail "lib/$f.sh must accept --yes/-y (ADR-0059 A2 D23)"; return 1; }
+        grep -q -- '--yes, -y' "$REPO_ROOT/lib/$f.sh" \
+            || { fail "lib/$f.sh must document --yes in its --help output — an undocumented flag is not a surface"; return 1; }
+    done
+}
+
+# ── D25 — the passive residue badge is gone ──────────────────────────
+# Discriminates against: its return. It counted repos+mounts while cco resolve
+# counts all four kinds, so it was always a SUBSET and never fired alone — the
+# pause showed two contradictory counts of one condition.
+
+test_start_no_longer_counts_the_unresolved_residue_itself() {
+    assert_empty "$(grep -n 'unresolved_refs' "$REPO_ROOT/lib/cmd-start.sh" || true)" \
+        "D25: cmd-start must not keep its own residue counter — it double-counted what cco resolve already reports"
+
+    # Discrimination: the SURVIVING statement is the resolve pass's, and the probe
+    # can see it. Without this the assertion above passes against any text at all.
+    local kept; kept=$(grep -c 'reference(s) still unresolved' "$REPO_ROOT/lib/cmd-resolve.sh" || true)
+    [[ "$kept" -ge 1 ]] \
+        || { fail "the residue probe does not discriminate: cmd-resolve.sh no longer states the condition either, so the launch would report it nowhere"; return 1; }
 }

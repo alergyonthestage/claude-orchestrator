@@ -444,6 +444,81 @@ test_resolve_pack_missing_warns_non_tty() {
         || fail "Expected an executable install hint, got: $out"
 }
 
+# ── D24 (ADR-0059 A2) — one condition, one sentence, across producers ─
+#
+# A start generates the compose right after this call, and the compose generators
+# restate an uninstalled llms or pack in a better sentence — one that names where
+# cco looked and the exact remedy. Two producers, two wordings, one condition: the
+# buffer deduplicates on the message TEXT and cannot catch that. So the resolve pass
+# goes silent for those two kinds when the caller says the sentence is coming.
+#
+# ⚠ Repos and extra_mounts have NO downstream producer. The rule is deliberately not
+# uniform across the four kinds, and the second test is what fails if a later
+# "tidy-up" extends the silence to all four — which would DELETE the message.
+
+_RSV_D24_YML='name: demo
+repos:
+  - name: myrepo
+  - name: absent-repo
+    url: https://github.com/org/absent.git
+llms:
+  - name: svelte
+    url: https://svelte.dev/llms.txt
+packs:
+  - name: team-pack
+    url: https://github.com/org/sharing.git'
+
+_rsv_d24_run() {   # $1 = tmp root, $2 = the downstream-restates argument ("" or set)
+    export LLMS_DIR="$1/llms"; mkdir -p "$LLMS_DIR"
+    export PACKS_DIR="$1/packs"; mkdir -p "$PACKS_DIR"
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+    source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+    _cco_have_tty() { return 1; }                                   # headless
+    _resolve_unit "$1/myrepo" "$2" 2>&1
+}
+
+test_resolve_is_silent_for_llms_and_packs_when_restated_downstream() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_D24_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+
+    local out; out=$(_rsv_d24_run "$tmp" downstream-restates)
+
+    [[ "$out" != *"llms 'svelte' not installed"* ]] \
+        || fail "D24: the resolve pass must not restate an uninstalled llms a start is about to describe better, got: $out"
+    [[ "$out" != *"pack 'team-pack' not installed"* ]] \
+        || fail "D24: same for a pack, got: $out"
+
+    # ⚠ The asymmetry, asserted: repos have no downstream producer, so this line is
+    # the ONLY statement of that condition and must survive.
+    [[ "$out" == *"repo 'absent-repo' unresolved on this machine"* ]] \
+        || fail "D24: repos are deliberately NOT silenced — nothing downstream repeats them, got: $out"
+}
+
+test_resolve_still_reports_llms_and_packs_when_it_is_the_only_producer() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_D24_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+
+    # `cco resolve` run on its own generates no compose, so nothing will restate it.
+    # This is also the control for the test above: it proves the silence there is
+    # the argument's doing and not a fixture that never had those entries.
+    local out; out=$(_rsv_d24_run "$tmp" "")
+
+    [[ "$out" == *"llms 'svelte' not installed"* ]] \
+        || fail "a standalone resolve must still name the uninstalled llms — nothing else will, got: $out"
+    [[ "$out" == *"pack 'team-pack' not installed"* ]] \
+        || fail "a standalone resolve must still name the uninstalled pack, got: $out"
+    [[ "$out" == *"repo 'absent-repo' unresolved on this machine"* ]] \
+        || fail "and the repo line is unconditional, got: $out"
+}
+
 test_resolve_pack_tty_invokes_heal() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"

@@ -4,8 +4,8 @@
 # Provides: RED, GREEN, YELLOW, BLUE, BOLD, NC, info(), ok(), note(), warn(),
 #           error(), die() (exit 1 — actual error), refuse() (exit 2 — policy
 #           refusal), _cco_exit() (exit <code> — any other DELIBERATE termination),
-#           and the warn-capture buffer the start-time gate reads
-#           (_cco_warn_capture_begin/_list/_count/_end — ADR-0059 D5/D6)
+#           and the message buffer the start-time pause reads
+#           (_cco_warn_capture_begin/_list/_count/_end — ADR-0059 D5/D6/A2 D22)
 # Dependencies: none
 # Globals: _cco_completed (the EXIT-trap sentinel owned by bin/cco),
 #          _CCO_WARN_LOG (the capture buffer's path; unset = capture off)
@@ -39,7 +39,13 @@ ok()    { echo -e "${GREEN}✓${NC} $*" >&2; }
 # sites with nothing behind them. D3 makes it real: without a spelling in code, the
 # non-gating level exists only in prose and the next author reaches for `warn`
 # because it is the only thing that looks like a function.
-note()  { printf 'note: %s\n' "$*" >&2; }
+#
+# It is CAPTURED exactly like `warn` (A2 D22). Under D1 a note printed, was never
+# recorded, and was overwritten by the TUI seconds later: write-only, which is not a
+# level at all — and the next author facing that reaches for `warn` for the very
+# reason D3 exists. Deferral is conditional on the append succeeding, same as `warn`.
+note()  { _cco_warn_capture_append note "${BASH_SOURCE[1]:-}" "$*" && return 0
+          printf 'note: %s\n' "$*" >&2; }
 # A warning is printed EXACTLY ONCE (ADR-0059 A1/D18). While the capture is armed
 # `warn` only records — the organized list at the gate is the single rendering. If
 # the record cannot be written, it prints here and now: deferral is conditional on
@@ -49,7 +55,7 @@ note()  { printf 'note: %s\n' "$*" >&2; }
 # ${BASH_SOURCE[1]} is the file that called `warn` — read here, in warn's own frame,
 # and correct inside a command substitution too (measured). It is what the gate
 # groups by (D17), derived rather than declared, so no call site carries a tag.
-warn()  { _cco_warn_capture_append "${BASH_SOURCE[1]:-}" "$*" && return 0
+warn()  { _cco_warn_capture_append warn "${BASH_SOURCE[1]:-}" "$*" && return 0
           echo -e "${YELLOW}⚠${NC} $*" >&2; }
 error() { echo -e "${RED}✗${NC} $*" >&2; }
 
@@ -90,19 +96,21 @@ _cco_warn_capture_begin() {
     return 0
 }
 
-# Append one record: "<producer-file>\t<message>". Called by `warn` only.
+# Append one record: "<level>\t<producer-file>\t<message>". Called by `warn` and
+# `note` only — they are the two levels the pause renders (A2 D22).
 #
-# Returns 0 ONLY when the record was written — that status is what `warn` reads to
-# decide whether it may defer printing (D18). Newlines are folded to spaces so one
-# warning is always one record; otherwise a multi-line message would be counted,
-# and listed, as several.
+# Returns 0 ONLY when the record was written — that status is what `warn`/`note`
+# read to decide whether they may defer printing (D18). Newlines are folded to
+# spaces so one message is always one record; otherwise a multi-line message would
+# be counted, and listed, as several.
 _cco_warn_capture_append() {
     [[ -n "${_CCO_WARN_LOG:-}" ]] || return 1
     [[ -w "$_CCO_WARN_LOG" ]] || return 1
+    local _lvl="$1"; shift
     local _src="${1##*/}"; shift
     local _m="$*"
     _m="${_m//$'\n'/ }"
-    printf '%s\t%s\n' "${_src:-other}" "$_m" >> "$_CCO_WARN_LOG" 2>/dev/null || return 1
+    printf '%s\t%s\t%s\n' "${_lvl:-warn}" "${_src:-other}" "$_m" >> "$_CCO_WARN_LOG" 2>/dev/null || return 1
     return 0
 }
 
@@ -142,37 +150,49 @@ config hygiene
 updates
 other'
 
-# Emit "<area>\t<message>" per DISTINCT message, in emission order.
+# Emit "<level>\t<area>\t<message>" per DISTINCT message, in emission order.
+# With a <level> argument (warn|note) only that level's records are emitted.
+#
 # Deduplicated on the MESSAGE alone: one condition can have two producers
 # (lib/packs.sh and lib/session-context.sh emit the same sentence), and listing it
-# twice reads as two problems. The first occurrence's area wins.
+# twice reads as two problems. The first occurrence's level and area win — which is
+# also why the dedup runs BEFORE the level filter: a sentence emitted once as a
+# `warn` and once as a `note` is one condition, and it is the warning that stands.
 _cco_warn_capture_records() {
     [[ -n "${_CCO_WARN_LOG:-}" && -f "${_CCO_WARN_LOG:-}" ]] || return 0
-    local _ln _src _msg
+    local _want="${1:-}" _ln _lvl _src _msg
     while IFS= read -r _ln; do
         [[ -z "$_ln" ]] && continue
+        _lvl="${_ln%%$'\t'*}"; _ln="${_ln#*$'\t'}"
         _src="${_ln%%$'\t'*}"; _msg="${_ln#*$'\t'}"
-        printf '%s\t%s\n' "$(_cco_warn_area "$_src")" "$_msg"
-    done < <(awk '{ m=$0; sub(/^[^\t]*\t/, "", m) } !_cco_seen[m]++' "$_CCO_WARN_LOG")
+        [[ -n "$_want" && "$_lvl" != "$_want" ]] && continue
+        printf '%s\t%s\t%s\n' "$_lvl" "$(_cco_warn_area "$_src")" "$_msg"
+    done < <(awk '{ m=$0; sub(/^[^\t]*\t[^\t]*\t/, "", m) } !_cco_seen[m]++' "$_CCO_WARN_LOG")
 }
 
-# The captured messages, in order, deduplicated — the plain list, no areas.
+# The captured messages, in order, deduplicated — the plain list, no level, no
+# areas. Optional <level> filter, as above.
 _cco_warn_capture_list() {
-    _cco_warn_capture_records | while IFS= read -r _r; do printf '%s\n' "${_r#*$'\t'}"; done
+    _cco_warn_capture_records "${1:-}" | while IFS= read -r _r; do
+        _r="${_r#*$'\t'}"; printf '%s\n' "${_r#*$'\t'}"
+    done
 }
 
-# How many DISTINCT messages were captured. Counted with awk, never `wc -l`: BSD
-# `wc` pads its output with spaces, so `[[ "$n" == "0" ]]` fails on macOS against a
-# count that is genuinely zero.
+# How many DISTINCT messages were captured, optionally at one <level> only.
+# Counted with awk, never `wc -l`: BSD `wc` pads its output with spaces, so
+# `[[ "$n" == "0" ]]` fails on macOS against a count that is genuinely zero.
 _cco_warn_capture_count() {
     if [[ -z "${_CCO_WARN_LOG:-}" || ! -f "${_CCO_WARN_LOG:-}" ]]; then
         printf '0\n'
         return 0
     fi
-    awk '{ m=$0; sub(/^[^\t]*\t/, "", m) } !_cco_seen[m]++ { n++ } END { print n+0 }' "$_CCO_WARN_LOG"
+    awk -v want="${1:-}" '
+        { m=$0; sub(/^[^\t]*\t[^\t]*\t/, "", m); l=$0; sub(/\t.*/, "", l) }
+        !_cco_seen[m]++ && (want == "" || l == want) { n++ }
+        END { print n+0 }' "$_CCO_WARN_LOG"
 }
 
-# Render the captured warnings to STDOUT, grouped by area, with a count per group
+# Render the captured messages to STDOUT, grouped by area, with a count per group
 # (ADR-0059 D17). PURE — no read, no prompt, no terminal — so the half with content
 # in it is unit-testable, the split _resolve_reuse_menu/_resolve_disambiguate
 # already use. Exit: 0 = something rendered, 1 = nothing captured.
@@ -199,17 +219,27 @@ _cco_warn_wrap() {
     done < <(printf '%s\n' "$text" | fold -s -w "$width" 2>/dev/null || printf '%s\n' "$text")
 }
 
-_cco_warn_gate_render() {
-    local recs; recs=$(_cco_warn_capture_records)
+# One level's section: the header line, then the groups. $1 = warn | note.
+# Exit: 0 = rendered, 1 = nothing captured at that level.
+_cco_warn_render_section() {
+    local lvl="$1"
+    local recs; recs=$(_cco_warn_capture_records "$lvl" | cut -f2-)
     [[ -n "$recs" ]] || return 1
     local n; n=$(printf '%s\n' "$recs" | grep -c .)
     local areas; areas=$(printf '%s\n' "$recs" | cut -f1 | awk '!s[$0]++')
     local na; na=$(printf '%s\n' "$areas" | grep -c .)
 
-    local wlabel="warnings"; [[ "$n" -eq 1 ]] && wlabel="warning"
-    local alabel="areas";    [[ "$na" -eq 1 ]] && alabel="area"
+    local alabel="areas"; [[ "$na" -eq 1 ]] && alabel="area"
+    local wlabel head_line
+    if [[ "$lvl" == "note" ]]; then
+        wlabel="notes"; [[ "$n" -eq 1 ]] && wlabel="note"
+        head_line="${BOLD}note:${NC} ${n} ${wlabel} for this session, in ${na} ${alabel}:"
+    else
+        wlabel="warnings"; [[ "$n" -eq 1 ]] && wlabel="warning"
+        head_line="${YELLOW}⚠${NC} ${n} ${wlabel} for this session, in ${na} ${alabel}:"
+    fi
     echo ""
-    echo -e "${YELLOW}⚠${NC} ${n} ${wlabel} for this session, in ${na} ${alabel}:"
+    echo -e "$head_line"
 
     local area line msg head rem cnt rule pad
     while IFS= read -r area; do
@@ -235,18 +265,27 @@ _cco_warn_gate_render() {
             fi
         done <<< "$recs"
     done <<< "$_CCO_WARN_AREAS"
-    echo ""
     return 0
 }
 
-# Render the captured warnings to STDERR and EMPTY the buffer (ADR-0059 D18). This
-# is the single print: the buffer is flushed by the first of the gate, capture_end,
+# Warnings first, then notes (A2 D22). Two sections, never one merged list: what
+# the reader must decide about and what cco already settled are different
+# questions, and the badge is the only thing that says which is which.
+_cco_warn_gate_render() {
+    local _any=1
+    _cco_warn_render_section warn && _any=0
+    _cco_warn_render_section note && _any=0
+    return $_any
+}
+
+# Render the captured messages to STDERR and EMPTY the buffer (ADR-0059 D18). This
+# is the single print: the buffer is flushed by the first of the pause, capture_end,
 # or an exit primitive, and emptying it means a second flush prints nothing while a
-# warning raised afterwards is still captured and still shown.
+# message raised afterwards is still captured and still shown.
 _cco_warn_flush() {
     local out; out=$(_cco_warn_gate_render) || return 0
     # A trailing blank line, explicitly: `$( )` strips the renderer's own, and
-    # without it the gate's question sits flush against the last warning.
+    # without it the pause's question sits flush against the last message.
     printf '%s\n\n' "$out" >&2
     : > "$_CCO_WARN_LOG" 2>/dev/null || true
     return 0

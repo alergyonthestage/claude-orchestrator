@@ -21,6 +21,9 @@ cmd_new() {
             --teammate-mode) teammate_mode="$2"; shift 2 ;;
             --port) extra_ports+=("$2"); shift 2 ;;
             --mount) [[ $# -lt 2 ]] && die "--mount requires <src>[:<target>][:ro|:rw]."; user_mounts+=("$2"); shift 2 ;;
+            # ADR-0059 A2 D23 — same spelling as `cco start`: the list is rendered,
+            # the question is skipped. See lib/cmd-start.sh for the full rationale.
+            --yes|-y) CCO_ASSUME_YES=1; shift ;;
             --help|-h)
                 cat <<'EOF'
 Usage: cco new [OPTIONS]
@@ -33,6 +36,9 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
+  --yes, -y            Answer the start-time pause: show the messages, do not ask
+                       (same as CCO_ASSUME_YES=1; CCO_NONINTERACTIVE=1 instead says
+                       there is no terminal at all)
 EOF
                 return 0
                 ;;

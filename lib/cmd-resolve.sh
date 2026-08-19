@@ -243,9 +243,23 @@ _project_foreach() {
 # `cco start` aborts before the container boots, `cco resolve[/--all]` stop cleanly.
 # Bindings already written by earlier entries stay valid — the membership record and
 # the summary below are simply skipped for this aborted run; a re-run completes them.
-# Usage: _resolve_unit <unit_dir>
+#
+# ADR-0059 A2 D24 — `<downstream-restates>` (2nd arg, non-empty when the caller is
+# about to generate a compose) silences the non-TTY report for **llms and packs
+# only**: the compose generators restate that condition in a better sentence — one
+# that names where cco looked and the exact remedy, in terms of the session rather
+# than of the resolution attempt. Two producers, two wordings, one condition: the
+# buffer's deduplication keys on the message text and cannot catch that.
+#
+# ⚠ Repos and extra_mounts are DELIBERATELY not silenced, in either mode: they have
+# NO downstream producer, so the reports below are the only statement of that
+# condition. The rule is therefore not uniform across the four kinds. A later
+# tidy-up that extends the silence to all four DELETES the message.
+#
+# Usage: _resolve_unit <unit_dir> [<downstream-restates>]
 _resolve_unit() {
     local unit_dir="$1"
+    local downstream_restates="${2:-}"
     local project_yml="$unit_dir/.cco/project.yml"
     [[ -f "$project_yml" ]] || { warn "No .cco/project.yml in $unit_dir"; return 1; }
 
@@ -268,6 +282,8 @@ _resolve_unit() {
         fi
         if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
+            # Never silenced (D24): a repo has no downstream producer, so this is
+            # the only statement of the condition.
             warn "repo '$name' unresolved on this machine — run 'cco resolve' on a terminal${url:+ (or clone $url)}"
             continue
         fi
@@ -291,6 +307,7 @@ _resolve_unit() {
         fi
         if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
+            # Never silenced (D24), same as repos: no downstream producer.
             warn "mount '$name' unresolved on this machine — run 'cco resolve' on a terminal${url:+ (or clone $url)}"
             continue
         fi
@@ -316,7 +333,9 @@ _resolve_unit() {
         [[ -d "${LLMS_DIR:-}/$name" ]] && continue          # already installed
         if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
-            warn "llms '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco llms install $url --name $name)}"
+            # D24 — silent when _generate_llms_mounts is about to say it better.
+            [[ -n "$downstream_restates" ]] || \
+                warn "llms '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco llms install $url --name $name)}"
             continue
         fi
         rc=0
@@ -342,7 +361,9 @@ _resolve_unit() {
         [[ -n "$(_pack_resolve_dir "$name" "$unit_dir/.cco")" ]] && continue   # already in a local layer
         if ! _cco_have_tty; then
             unresolved=$((unresolved + 1))
-            warn "pack '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco pack install $url --pick $name)}"
+            # D24 — silent when _generate_pack_mounts is about to say it better.
+            [[ -n "$downstream_restates" ]] || \
+                warn "pack '$name' not installed — run 'cco resolve' on a terminal${url:+ (or: cco pack install $url --pick $name)}"
             continue
         fi
         rc=0

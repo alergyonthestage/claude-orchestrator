@@ -4,7 +4,7 @@
 # Provides: expand_path(), _path_exists(), _peel_tab(), check_docker(),
 #           check_image(), check_global(), _check_reserved_project_name(),
 #           _sed_i(), _sed_i_or_append(), _substitute(), _cco_have_tty(),
-#           _cco_warn_gate() (the start-time warning gate's PROMPT — ADR-0059; its
+#           _cco_warn_gate() (the start-time pause's PROMPT — ADR-0059 + A2; its
 #           renderer and buffer live in colors.sh)
 # Dependencies: colors.sh
 # Globals: IMAGE_NAME
@@ -67,17 +67,29 @@ _cco_have_tty() {
     (exec < /dev/tty) 2>/dev/null
 }
 
-# ── The start-time warning gate (ADR-0059 D1/D10/D11) ────────────────
+# ── The start-time pause (ADR-0059 D1/D10/D11, A2 D20/D21/D23) ───────
 #
-# `cco start` emits warnings and then hands the terminal to `docker compose run`;
+# `cco start` emits messages and then hands the terminal to `docker compose run`;
 # the Claude Code TUI opens over them and the scrollback is gone, so the entire
-# warning surface of the command was WRITE-ONLY. That is measured, not supposed:
+# message surface of the command was WRITE-ONLY. That is measured, not supposed:
 # FI-54 sat in that stream, on the first line after the start command, through a
 # complete six-check acceptance run, read by nobody.
 #
-# So: if this run emitted one or more `warn`s, stop and ask. A clean run stays
-# silent and immediate — a gate that fires unconditionally would teach users to
-# answer it without reading, which is the same failure by a different route.
+# ⚠ THE PAUSE IS A PROPERTY OF THE RUN, NOT OF THE WARNING LEVEL (A2 D20). D1 keyed
+# it on `warn`, which fused two independent questions: *how serious is this message*
+# (the level's job) and *may the user read what this run printed at all* (the
+# pause's). A start takes under five seconds; everything cco wrote — `⚠`, `note:`,
+# `ℹ`, `✓` alike — is gone before it can be read. So on an interactive terminal the
+# launch ALWAYS stops here and waits. What the level changes is what the pause SAYS:
+#
+#   warnings present    → the grouped list, then `Start the session anyway? [S/a]`
+#   notes only          → the grouped notes, then `Press Enter to start`
+#   chronicle only      → nothing extra, then `Press Enter to start`
+#
+# Do not "optimise" the clean case back into an immediate launch: that is what made
+# `note()` and `info()` write-only, and a level whose messages cannot be read is not
+# a level — the next author facing that reaches for `warn`, which is the failure D3
+# exists to prevent.
 #
 # ONE implementation for BOTH launch paths (`cco start` and `cco new`, D9). Two
 # copies is how the twin verb keeps the defect after the fix ships.
@@ -89,9 +101,17 @@ _cco_have_tty() {
 # proceeds exactly as before: a question whose text a capture swallowed still
 # blocks on /dev/tty, and that is a silent unattributable hang.
 #
-# D10: bare Enter STARTS (`[S/a]`); only `a`/`A` aborts. Confiscating a session the
-# user explicitly asked for, on a stray keystroke, is the worse of the two errors —
-# which is also why an unrecognised answer starts rather than re-asking.
+# `CCO_ASSUME_YES=1` (and its flag, `--yes`) is the OTHER opt-out, and the two are
+# not interchangeable (A2 D23): `CCO_NONINTERACTIVE` says *there is nobody there*,
+# `CCO_ASSUME_YES` says *somebody is there and has already answered*. The second
+# still renders the list — automation driven from a real terminal has a reader.
+#
+# D10: bare Enter STARTS (`[S/a]`); only `a`/`A` aborts, in ALL THREE forms — the
+# affordance is uniform even where the clean form does not advertise it, because a
+# user who picked the wrong project must be able to back out of the one they did
+# pick. Confiscating a session the user explicitly asked for, on a stray keystroke,
+# is the worse of the two errors — which is also why an unrecognised answer starts
+# rather than re-asking.
 #
 # The renderer lives in colors.sh beside the buffer (`_cco_warn_gate_render`), NOT
 # here: `die`/`refuse`/`_cco_exit` must flush too, and they are defined there. Only
@@ -99,16 +119,36 @@ _cco_have_tty() {
 #
 # Exit: 0 = proceed with the launch, 1 = the user aborted.
 _cco_warn_gate() {
-    [[ "$(_cco_warn_capture_count)" -gt 0 ]] || return 0
-    # D11 — the tty check sits AFTER the count check so a clean run costs nothing.
-    # With no terminal the gate prints NOTHING and returns: the warnings are not
-    # lost, `_cco_warn_capture_end` flushes them in the same view, without a
+    # D11 — with no terminal the pause prints NOTHING and returns: the messages are
+    # not lost, `_cco_warn_capture_end` flushes them in the same view, without a
     # question nobody could answer.
     _cco_have_tty || return 0
 
+    # BOTH counts are read BEFORE the flush: flushing EMPTIES the buffer (D18), so
+    # asking afterwards would report a clean run every time and the `[S/a]` form
+    # would never be reached.
+    local nwarn nall
+    nwarn=$(_cco_warn_capture_count warn)
+    nall=$(_cco_warn_capture_count)
+
     _cco_warn_flush
+    # The renderer supplies its own blank line; a run with nothing captured has to
+    # get one here, or the prompt lands glued to the last `ℹ` of the chronicle.
+    [[ "$nall" -gt 0 ]] || echo "" >&2
+
+    # D23 — rendered, not asked. Spelled as an `if`, not `[[ … ]] && return`: the
+    # short form leaves the whole list non-zero when the test is false, which is a
+    # trap to walk into for a function whose return value IS the abort decision.
+    if [[ -n "${CCO_ASSUME_YES:-}" ]]; then
+        return 0
+    fi
+
     local reply
-    printf "  Start the session anyway? [S/a]: " >&2
+    if [[ "$nwarn" -gt 0 ]]; then
+        printf "  Start the session anyway? [S/a]: " >&2
+    else
+        printf "  → Press Enter to start the session. " >&2
+    fi
     read -r reply < /dev/tty
     case "$reply" in
         [Aa]) echo "" >&2; return 1 ;;

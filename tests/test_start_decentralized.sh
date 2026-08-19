@@ -72,18 +72,29 @@ test_start_no_name_outside_repo_fails() {
     assert_output_contains "No .cco/project.yml"
 }
 
-# ── Conscious-skip: unresolved member excluded + ⚠ badge (never silent) ─
+# ── Conscious-skip: unresolved member excluded + reported (never silent) ─
 
-test_start_unresolved_member_excluded_and_badged() {
+test_start_unresolved_member_excluded_and_reported() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     # Two members: dummy-repo (seeded, resolves) + ghost-repo (never seeded).
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\n  - name: ghost-repo\n')"
     run_cco start "test-proj" --dry-run --dump
-    # Non-TTY unresolved member -> warned + excluded, never a hard block.
-    assert_output_contains "ghost-repo"
-    assert_output_contains "1 reference(s) unresolved"
+    # Non-TTY unresolved member -> reported by name + excluded, never a hard block.
+    assert_output_contains "repo 'ghost-repo' unresolved on this machine"
+    assert_output_contains "1 reference(s) still unresolved"
+
+    # ⚠ ADR-0059 A2 D25 — ONE count of that condition, not two. `cmd-start` used to
+    # add its own badge over what `_project_effective_paths` returns (repos +
+    # mounts), while the resolve pass counts all four kinds: the first was always a
+    # SUBSET of the second and never fired alone, so the two rendered side by side
+    # as contradictory counts of one thing ("3 … still unresolved" beside "1 …
+    # unresolved"). The badge is gone; this is the arm that fails if it comes back.
+    local counts; counts=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -c 'reference(s)' || true)
+    [[ "$counts" -eq 1 ]] \
+        || { fail "one unresolved condition must be counted ONCE, got $counts lines naming 'reference(s)':"$'\n'"${CCO_OUTPUT:-}"; return 1; }
+
     # The resolved member is mounted; the unresolved one is NOT (no empty mount).
     local compose="$DRY_RUN_DIR/.cco/docker-compose.yml"
     assert_file_contains "$compose" ":/workspace/dummy-repo"
@@ -95,13 +106,13 @@ test_start_unresolved_member_excluded_and_badged() {
     fi
 }
 
-test_start_all_resolved_no_badge() {
+test_start_all_resolved_reports_no_residue() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     setup_cco_env "$tmpdir"
     setup_global_from_defaults "$tmpdir"
     create_project "$tmpdir" "test-proj" "$(minimal_project_yml test-proj)"
     run_cco start "test-proj" --dry-run --dump
-    if echo "${CCO_OUTPUT:-}" | grep -qF "reference(s) unresolved"; then
-        fail "No ⚠ badge expected when every member resolves"
+    if echo "${CCO_OUTPUT:-}" | grep -qF "reference(s)"; then
+        fail "No unresolved-residue message expected when every member resolves"
     fi
 }
