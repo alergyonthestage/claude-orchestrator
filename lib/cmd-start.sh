@@ -2312,7 +2312,15 @@ YAML
             _claude_view=$(_cco_project_claude_view "$project_name")
             if [[ "$dry_run" != "true" ]]; then
                 # Rebuilt from scratch: a removed pack must leave no stale mountpoint.
-                rm -rf "$_claude_view"
+                # Docker Desktop's gRPC-FUSE file sharing stamps a deny-delete ACL on
+                # every dir it bind-mounts, and the ACL outlives the container — so the
+                # first rm after a session fails EACCES on the view's dirs. Strip the
+                # ACLs (macOS chmod -N; harmless failure elsewhere) and retry.
+                if ! rm -rf "$_claude_view" 2>/dev/null; then
+                    chmod -RN "$_claude_view" 2>/dev/null || true
+                    rm -rf "$_claude_view" \
+                        || die "Cannot clear the stale .claude view at $_claude_view (deny-delete ACL from Docker Desktop file sharing?)."
+                fi
                 mkdir -p "$_claude_view" \
                     || die "Cannot create the .claude mountpoint view at $_claude_view."
             fi
