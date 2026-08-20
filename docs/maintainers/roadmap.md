@@ -4,7 +4,7 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-18** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-08-20** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -65,6 +65,16 @@
 > level only decides what it says.
 > ⚠ The branch is **unmerged**, and **partly pushed** — it tracks `origin/feat/cli/start-warning-gate`
 > and runs ahead of it. Measure with `git branch -vv`; do not repeat a stated push status.
+>
+> **2026-08-20, A1's design** — ✅ **[ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md)
+> written and accepted** (D1…D8), taking the number this roadmap reserved for it and never wrote.
+> The unit is **three verbs, not one**: `cco project save` plus `cco project history` and
+> `cco config history` — D2 ruled that reading the config's history is a cco verb on **both** stores,
+> so the user never needs git. All five decisions the A1 entry owed are taken; see the entry.
+> 🔑 One measurement is load-bearing and counter-intuitive: **committing a read-only `.cco/` succeeds**
+> (git writes to `.git/`, which is `rw`), so D8's `edit-project+` gate is **policy, not mechanism** —
+> and `project save` deliberately gets no ro-mount guard. ⚠ Exactly one file in the unit is
+> image-baked (the managed rule), so exactly one `cco build` is owed at acceptance.
 
 ## The planning documents — and why there are three
 
@@ -130,10 +140,10 @@ narrative, the lessons, and the per-stage records live in
   instead, exactly as the runbook does.
 - **Next free ADR number: 0060** (0059 = message classification + the start warning gate,
   **Accepted (design)** with D1…D15; 0058 = teammate coordination tools, **implemented** for D4/D5+D6,
-  D1…D11 + amendments A1–A3). ⚠ **ADR-0038 and
-  ADR-0040 do not exist as documents** — they are
-  numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
-  for the first time; do not go looking for a file.
+  D1…D11 + amendments A1–A3). ✅ **ADR-0038 now exists** — written 2026-08-20 as A1's design
+  (project-config versioning + the history surface), taking the number this roadmap had reserved for it.
+  ⚠ **ADR-0040 still does not exist as a document** — it is a number reserved by an earlier roadmap
+  entry for workstream F. Whoever writes it writes it for the first time; do not go looking for a file.
 
 ## The plan — order ratified 2026-08-04
 
@@ -261,7 +271,13 @@ ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the 
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-#### A1 — `cco save`: project-config versioning helper
+#### A1 — `cco project save`: project-config versioning, and the history surface
+
+✅ **DESIGN DONE AND ACCEPTED 2026-08-20** —
+[ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md) (D1…D8,
+all eight ruled by the maintainer at the gate) +
+[design](configuration/decentralized-config/design/design-project-config-versioning.md). The ADR
+number reserved by this entry is now **written**. Implementation not started.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
@@ -272,27 +288,36 @@ model never got its twin.
 `cco-config-interaction.md` and ADR-0042's Level-C guidance tell edit-level agents to version config
 atomically with `cco project save` — a verb that does not exist. Today the rule degrades gracefully by
 calling it *forthcoming* and pointing at plain git. When this ships, that text is restored to the real
-verb.
+verb. ✅ **D1 chose that spelling**, so the restoration is a deletion, not a rewrite.
 
-**Scope (v1).** Stage **exclusively** `<repo>/.cco/**`, never the rest of the working tree; secret
-detection before commit, reusing `lib/secrets.sh` as `cco config save` does; `secrets.env` stays
-gitignored and is never staged; an isolated-history read (`git log -- <repo>/.cco/` already
-path-filters, regardless of how a commit was made).
+**Scope, as designed — three verbs, not one.** The unit closes a 2×2 matrix: `cco config save` is
+shipped; **`cco project save`**, **`cco project history`** and **`cco config history`** are new. The
+read half grew from the maintainer's ruling on D2: the user gets an official cco command for the
+history of *both* stores and never needs to know git — and the personal store is the side where the
+user is least able to construct the git command themselves.
 
-**Decisions the session owes.**
-- **The verb name.** The maintainer's note says `cco save`; ADR-0042 and the managed rule assume
-  `cco project save`; `cco config save` is taken by the personal store. Pick once — the injected
-  context and the managed rule must name the real verb.
-- Path-filtered history vs a commit trailer (`Cco-Save: true` + `git log --grep`), and whether a
-  companion read verb (`cco project history`) exists at all.
-- `--amend` / message templating: in or out.
-- **Multi-repo**: commit the invoking repo's `.cco/` only, or fan out to every config-bearing member
-  the way `--sync` does?
-- **Operator-shim classification**: in-container write verb at `cco_access ≥ edit-project`, or
-  host-only? Confirm the secret scan and the path scoping hold under container-operator mode.
+🔑 **The one measurement the implementation must not re-derive.** Committing a **read-only** `.cco/`
+*succeeds* — `git add -- .cco/` returns 0, because git reads the worktree and writes to `.git/`, which
+is `rw` (the `.cco` bind is a read-only child mount inside a read-write repo). The twin's ro-mount
+guard exists because `~/.cco` **contains its own `.git`**, and that reason does not transfer. So D8's
+`edit-project+` gate is **policy, not mechanism**, and `project save` gets **no** ro-mount guard
+mirroring `_config_save`'s. A reader who reasons from the filesystem will conclude the opposite.
 
-**References.** ADR number **reserved as 0038, never written**. Twins to read first: `lib/cmd-config.sh`
-(`cco config save`), `lib/secrets.sh`, `bin/cco` `_cco_operator_shim`. Integration contract:
+**The five decisions this entry owed are all taken** (ADR-0038): the verb name is `cco project save`
+(D1); the history is path-filtered, never trailer-marked (D3 — measured: a trailer would show **0 of
+the 5** real config commits in this repo); `--amend` and message templating are **out**, `-m` only
+(D5); multi-repo commits the **invoking repo only** and *names* the others, distinguishing
+uncommitted from divergent (D4); the shim classification is `_op_write … project` for `save`, free for
+`project history`, `_op_read_scope global` for `config history` (D8 — measured: at `read-project`
+`~/.cco` is not mounted as a store at all).
+
+⚠ **One `cco build` in the acceptance lane**, owed by exactly one file: the managed rule
+`defaults/managed/.claude/rules/cco-config-interaction.md` is **image-baked**. Everything else is
+host-side CLI produced at run time.
+
+**References.** Twins to read first: `lib/cmd-config.sh` (`cco config save`), `lib/secrets.sh`,
+`bin/cco` `_cco_operator_shim`, `lib/reminders.sh` (reminder (b) is the caller already waiting for the
+verb). Integration contract:
 [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md).
 
 #### A2 — Per-project custom Docker image ([FI-49](improvements.md))
