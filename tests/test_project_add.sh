@@ -96,6 +96,103 @@ test_add_mount_with_target_and_readonly() {
     assert_file_contains "$m" "readonly: true" || return 1
 }
 
+# ── T12 — the --writable / --readonly pair (ADR-0059 D12) ────────────
+#
+# The pair is what teaches the default: --readonly states it, --writable is the
+# ONLY CLI spelling of the opposite, and the `readonly: true` DEFAULT is untouched
+# (P4). The polarity is asserted on both sides — the key written, and what the
+# consumer makes of it — because a flag that writes the wrong polarity, or a "fix"
+# that inverts the shipped default, is exactly what FI-68 arrived asking for.
+
+test_add_mount_writable_writes_readonly_false() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _pa_unit "$tmp/dev/repo1"
+
+    _pa_cco_in "$tmp/dev/repo1" project add mount assets --target /workspace/assets --writable || return 1
+    assert_file_contains "$tmp/dev/repo1/.cco/project.yml" "readonly: false" || return 1
+}
+
+test_add_mount_no_flag_writes_no_readonly_key() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _pa_unit "$tmp/dev/repo1"
+
+    _pa_cco_in "$tmp/dev/repo1" project add mount assets --target /workspace/assets || return 1
+    local m="$tmp/dev/repo1/.cco/project.yml"
+    assert_file_contains "$m" "- name: assets" || return 1
+    if grep -q "readonly:" "$m"; then
+        fail "no flag must write NO readonly key — the default lives in the code (local-paths.sh:312), not in every manifest"
+        return 1
+    fi
+}
+
+# The polarity that matters is the effective bind, not the string in the file.
+test_add_mount_flag_polarity_reaches_the_consumer() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _pa_unit "$tmp/dev/repo1"
+    mkdir -p "$tmp/assets"
+
+    _pa_cco_in "$tmp/dev/repo1" project add mount rw-one --writable --path "$tmp/assets" || return 1
+    _pa_cco_in "$tmp/dev/repo1" project add mount ro-one --readonly --path "$tmp/assets" || return 1
+    _pa_cco_in "$tmp/dev/repo1" project add mount bare   --path "$tmp/assets" || return 1
+
+    # Field 3 of _effective_extra_mounts is the readonly boolean (ADR-0049 §7).
+    local out
+    out=$(
+        export CCO_ALLOW_HOST_RESOLVE=1
+        source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh";  source "$REPO_ROOT/lib/yaml.sh"
+        source "$REPO_ROOT/lib/index.sh";  source "$REPO_ROOT/lib/local-paths.sh"
+        _effective_extra_mounts "$tmp/dev/repo1/.cco/project.yml" | awk -F'\t' '{print $3}' | tr '\n' ' '
+    )
+    assert_equals "false true true " "$out" "--writable must bind rw, --readonly ro, and NO flag must stay ro (P4: the default is untouched)"
+}
+
+test_add_mount_writable_and_readonly_are_mutually_exclusive() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _pa_unit "$tmp/dev/repo1"
+
+    local rc=0
+    _pa_cco_in "$tmp/dev/repo1" project add mount assets --readonly --writable || rc=$?
+    [[ $rc -ne 0 ]] || { fail "--readonly --writable together must be an error, not a precedence puzzle"; return 1; }
+    assert_output_contains "mutually exclusive" || return 1
+
+    # Both orders — a guard that only reads one way is half a guard.
+    rc=0
+    _pa_cco_in "$tmp/dev/repo1" project add mount assets --writable --readonly || rc=$?
+    [[ $rc -ne 0 ]] || { fail "the mutual exclusion must hold in both orders"; return 1; }
+
+    # And nothing was written by the refused call.
+    if grep -q "readonly:" "$tmp/dev/repo1/.cco/project.yml"; then
+        fail "a refused invocation must not have written a readonly key"
+        return 1
+    fi
+}
+
+# The applicability guards key on the same $ro variable, so --writable is refused
+# for repo/llms/pack for free — but their MESSAGES must name it, or the user is
+# told a flag they did not pass is the invalid one.
+test_add_writable_is_refused_and_named_for_every_other_type() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    _pa_unit "$tmp/dev/repo1"
+
+    local t rc
+    for t in repo llms pack; do
+        rc=0
+        _pa_cco_in "$tmp/dev/repo1" project add "$t" thing --url https://ex.com/x.git --writable || rc=$?
+        [[ $rc -ne 0 ]] || { fail "--writable must be refused for $t"; return 1; }
+        # BOTH halves, and this is not pedantry: "Unknown option: --writable"
+        # also contains the flag name, so an --writable-only probe passes against
+        # the very code that has no --writable at all (measured).
+        assert_output_contains "--writable" || return 1
+        assert_output_contains "are not valid for $t" || return 1
+    done
+}
+
 test_add_llms_requires_url() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"

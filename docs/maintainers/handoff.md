@@ -1,155 +1,186 @@
-# Handoff — 2026-08-13 (evening)
+# Handoff — 2026-08-18 (late)
 
-> **Ephemeral.** At most one of these exists; the previous was deleted before this was written. It
-> links **out** to the roadmap, ADRs and analyses — nothing links back to it.
+> **Ephemeral.** At most one of these exists per line of work; the previous was deleted before this
+> was written. It links **out** to the roadmap, ADRs and designs — nothing links back to it.
 
 ## Methodology / where we are
 
-**[FI-58](improvements.md) is CLOSED** — designed, implemented, **verified in a live session**, and
-**merged into `develop`**. Nothing from it is half-done and the working tree is clean.
+**Phase: Implementation — and the A5 + A8 cycle is finished.** All five units are on
+`feat/cli/start-warning-gate`: **U1** (taxonomy + capture buffer + lints) and **U2** (the gate),
+2026-08-14; **U4** (the output model), **U3** (= all of [A8](roadmap.md)) and **U5** (= D19 +
+[Amendment A2](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)),
+2026-08-18.
 
-**Phase for the next session: Design (short), not Implementation.** The queue returns to
-[Block A → `0.7.0`](roadmap.md), whose next item is **A5** (`cco start` must pause on its own
-warnings, [FI-55](improvements.md)). The roadmap pairs **A5 with A8** in one short design over the
-same interactive surface, and **A8 carries a decision only the maintainer can take** — so the gate
-ahead is a design gate, not a build. Do not open the editor on `lib/cmd-start.sh` first.
+Suite **1710 passed / 7 failed of 1717** — the 7 are the [known host-only set](roadmap.md)
+(6 `test_as_*` + `test_paths_symlink_safe_tool_root`), verified name for name. Working tree clean.
 
-- `develop` at **`979a0e4`**, **14 commits ahead** of `origin/develop`, **unpushed**.
-- The feature branch is merged and deleted locally; `origin/feat/delegation/return-channel` still
-  exists on the remote.
+**Nothing is owed before the merge.** What is left is host-only: push, then the merge gate.
+Measure the branch's position with `git rev-list --count develop..feat/cli/start-warning-gate` —
+never trust a number written in a document.
+
+```mermaid
+flowchart LR
+    U1["U1 · taxonomy + buffer<br/>✅ 08-14"] --> U2["U2 · the gate<br/>✅ 08-14"]
+    U2 --> HOST["host acceptance<br/>✅ 08-18 · 3/3"]
+    HOST --> U4["U4 · output model<br/>✅ 08-18"]
+    U1 --> U3["U3 = A8 · 3 surface fixes<br/>✅ 08-18"]
+    U4 --> D19["D19 · reclassify every<br/>warn producer<br/>✅ 08-18"]
+    U3 --> D19
+    D19 --> A2["Amendment A2 · the pause<br/>keys on the RUN<br/>✅ 08-18"]
+    A2 --> PUSH["push the branch<br/>🔴 host-only"]
+    PUSH --> MERGE["merge → develop<br/>🔴 human gate"]
+```
+
+### Gates still open
+
+| Gate | What unblocks it |
+|---|---|
+| **Push `feat/cli/start-warning-gate`** | host-only — no SSH key, no `gh` auth, no token in this session (measured). ⚠ It is **not** unpushed: it tracks `origin/feat/cli/start-warning-gate` and runs ahead of it, so a plain `git push` is what it needs. The command is under *How to resume* |
+| **Merge `feat/cli/start-warning-gate` → `develop`** | a human sign-off. ⚠ The branch is **not merged**: the whole cycle is reachable from this ref and nothing else |
+| **A live look at the new pause** | ⭐ worth one host `cco start` before the merge — the previous acceptance run measured the *old* form, which stopped only on warnings. Nothing depends on it: the three graduated forms and the abort are covered in the suite, through the shipped body |
+| **macOS host suite (bash 3.2)** | owed before `0.7.0`; nothing has run the full suite on 3.2 since `v0.6.0` (`1626 / 0` on that tree) |
+| **One undecided UX residue** | see *Open questions* — not blocking, and the current behaviour is defensible |
 
 ## How to resume
 
-**1. Push, from the host** — the only owed actions that cannot run in a session (network verbs):
+**1. Push, from the host** — the one owed action no session can perform (measured here: no
+`~/.ssh`, `gh auth status` reports no host, no token in the environment):
 
 ```
 cd /Users/alessandro/Projects/CaveResistance/Software/claude-orchestrator
-git push origin develop
-git push origin --delete feat/delegation/return-channel
-git push origin --delete feat/access/claude-md-axis     # merged long ago, still on the remote
+git push
 ```
 
-**2. Answer A8's open decision before designing** ([FI-68](improvements.md)): add `--writable` to
-`cco project add mount`, or fix only the help text and leave writable mounts to `project.yml`. It
-grants a user-perceivable capability from a one-line command, so it is a human gate.
-⚠ **FI-68 arrived with its premise inverted** — the report says "the default is rw"; the code
-defaults `readonly` to **`true`** (`lib/local-paths.sh:312`), as documented. **The default is not in
-scope.** An implementer taking the report at face value would invert a shipped security default.
+⚠ **The branch is NOT unpushed** — three documents said it was, including the handoff this one
+replaces. It has an upstream and runs ahead of it; `-u origin <branch>` is not needed. No distance is
+recorded here on purpose (a stated count is invalidated by the commit that states it — the same rule
+the roadmap applies to the commit count). Measure before repeating any such claim:
 
-**3. Then design A5 + A8 together** (one short design over the same surface — see the roadmap's A8
-entry for why splitting them derives the TTY contract twice, and the second derivation is the one
-that hangs the suite). Two constraints A5 must satisfy, both already paid for once:
-- the prompt gates on `_cco_have_tty` and honours `CCO_NONINTERACTIVE=1`;
-- **only `⚠ warn` gates**, never `note:`/`ℹ`. Classifying every start-time message honestly is the
-  real work; the prompt itself is small.
+```
+git branch -vv | grep start-warning-gate      # upstream + how far ahead
+git rev-list --count develop..feat/cli/start-warning-gate
+```
 
-**4. A5 now has a concrete warning waiting for it.** The FI-58 normalizer emits a real `⚠ warn` when
-it widens a toolset or when it finds a definition it cannot fix — [ADR-0058
-A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments) shipped it
-knowing nobody can read it until A5 lands. That is the first message A5 should be tested against.
+📝 What this session **cannot** verify is whether the remote still holds that ref: `git ls-remote`
+fails here (`Host key verification failed`), so `origin/…` is only what the local clone last saw.
+
+**2. Then the merge gate.** ⚠ A merge whose **diff touches `.cco/`** is host-only in this project.
+This one does not, but check before assuming.
+
+**3. Do not re-derive the TTY contract.** `_cco_have_tty` (`lib/utils.sh`) is the single interactivity
+spelling, enforced by `test_invariant_tty_gate_single_spelling`. A raw `/dev/tty` probe hangs the
+suite silently.
 
 ## Tasks
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] **Push `develop` + delete the two merged remote branches** — host-only (command block above)
-- [ ] **[A5](roadmap.md)** — `cco start` must pause on its own warnings ([FI-55](improvements.md)) —
-      **design first**, paired with A8
-- [ ] **[A8](roadmap.md)** — onboarding prompts + mount-declaration surface
-      ([FI-68](improvements.md) … [FI-70](improvements.md)) — **carries the open decision above**
+- [ ] **Push `feat/cli/start-warning-gate`** — host-only; plain `git push`, it already has an upstream
+- [ ] **Look at the new pause once on a real terminal** — the earlier acceptance run measured the form
+      A2 replaced. Not a blocker; the three forms and the abort are covered in the suite
+- [ ] **Merge to `develop`** — the human review point; the cycle owes nothing else
+- [ ] **macOS host suite (bash 3.2)** — owed before the `0.7.0` release
 - [ ] **[A1](roadmap.md)** — `cco save`, project-config versioning helper (needs a short design)
 - [ ] **[A2](roadmap.md)** — per-project custom Docker image ([FI-49](improvements.md); short design)
 - [ ] **[A3](roadmap.md)** — cross-scope collision warning ([FI-32](improvements.md)) + three open decisions
 - [ ] **[A6](roadmap.md)** — `.claude/worktrees` in the functional-write floor ([FI-56](improvements.md))
 - [ ] **[A7](roadmap.md)** — the A4 review residue ([FI-62](improvements.md) … [FI-66](improvements.md))
-- [ ] **[FI-71](improvements.md)** — config-editor design doc drift; a `documenter` task, out of sequence
-- [ ] **FI-58 leftovers** — ADR-0058's **D3** (cco's own two definitions in the subtractive form),
-      **D7** (the teams knob) and **D8-as-amended** (fallback instruction in the `SubagentStart`
-      hook) are unbuilt. ⚠ D8 touches a **baked** file (`config/hooks/subagent-context.sh`), so
-      whichever unit takes it also takes a `cco build` in its acceptance lane
-- [ ] **Report the upstream defect** — `llms-full.txt:543` states *"Team coordination tools such as
-      `SendMessage` and the task management tools are always available to a teammate even when
-      `tools` restricts other tools"*. **Measured false** on 2.1.220 and 2.1.226, and again this
-      session. Needs a control run on a stock installation first (analysis-002 §12)
-- [ ] **macOS host suite (bash 3.2)** — last full run `1626 / 0` on the `v0.6.0` tree; **owed again**
-      before the `0.7.0` release. `lib/agents.sh` was parse-checked on real bash 3.2 via the Docker
-      socket, but the *suite* has not run on 3.2 since
+- [ ] **FI-58 leftovers** — ADR-0058's **D3**, **D7** and **D8-as-amended** are unbuilt. ⚠ D8 touches a
+      **baked** file (`config/hooks/subagent-context.sh`), so whichever unit takes it also takes a
+      `cco build` in its acceptance lane
+- [ ] **[FI-72](improvements.md)** *(new)* — nothing detects the *next* unclassified `warn` producer
 
 ## Context
 
 ### Decided this session
 
-- **[ADR-0058 A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)**
-  — D6's warning ships **ahead of A5**, emitted-but-unread for one release. Read the ADR, not this
-  line.
-- **[ADR-0058 A3](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)**
-  — a coordination tool named in `disallowedTools:` is **honoured**, never overridden.
-- **Unit scope** was fixed to D4/D5 + D6 only, keeping a baked file (and therefore a `cco build`)
-  out of the acceptance lane.
-- **Taxonomy, provisional and worth ratifying**: the probe record went to
-  `integration/agent-teams/reviews/`, a **canonical** leaf — deliberately **not** the `acceptance/`
-  leaf the access domain invented, because propagating that leaf into a second domain would settle
-  an open taxonomy question by accident. Still listed under *Open questions*.
+**[ADR-0059 Amendment A2](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#amendments)
+(D20–D25)** — ruled by the maintainer at the D19 analysis gate, then built. Read the ADR and
+[design §4.6](cli/design/design-warning-gate-and-onboarding-prompts.md), not this line. In one
+sentence: **the pause is a property of the RUN, not of the warning level** — D1 had fused *how
+serious is this message* with *may the user read what this run printed*, which left `note()` and
+`info()` write-only by construction.
 
-### 🔑 Non-obvious things the next session would otherwise rediscover
-
-- 🔑 **The lead's inbox drains when the lead's TURN ENDS**, not while it runs. Mid-turn, a teammate
-  transcript saying `{"success":true,"message":"Message sent to team-lead's inbox"}` and a lead
-  conversation containing nothing are **both true simultaneously**. This was one step from being
-  filed as a second defect. Close the turn before concluding anything about delivery.
-- 🔑 **A standing negative control for delegation exists and needs no restart**: a *platform
-  built-in* with an exhaustive `tools:` allowlist — `statusline-setup` (`tools: Read, Edit`) — is
-  restricted exactly like a cco role agent and is a definition **cco never touches**. Spawn it beside
-  a normalized role: it makes **zero tool calls**, its answer is produced as text and discarded, and
-  the lead gets an **idle notification with no content**. Nothing else varies, which is stronger
-  discrimination than rebuilding a session with the fix disabled.
-- 🔑 **Delivery is a `<teammate-message>` carrying content. An idle notification alone is a
-  non-delivery.** That is the oracle; `success: true` in the sender's transcript is not.
-- 🔑 **`ToolSearch` in the guaranteed set is measured, not argued** — the restricted role called
-  `ToolSearch` *before* `SendMessage`. Guaranteeing the channel alone would grant a tool the agent
-  cannot find.
-- 🔑 **The agent-mount producer list was a lower bound — the fifth recurrence in this repo.** ADR-0058
-  D5 names two; the code has **four**: the global tree (`lib/cmd-start.sh`, whole-directory mount),
-  pack agents (`lib/packs.sh`, per-file), the **committed project tree** (per-entry through
-  `_emit_claude_view`, or whole through the no-injection arm), and the **repo-native** trees
-  (`<repo>/**/.claude`, recursive). The last two are empty in this repo and populated in an adopting
-  one. `INV-AGN` therefore keys on the mount **target**, not a call-site list, and **declares its own
-  limit**: a static lint cannot see a fully dynamic target.
-- ⚠ **`lib/cmd-start.sh` now depends on `lib/agents.sh`.** A context that sources the former without
-  the latter emits mounts with an **EMPTY source** — not merely unnormalized ones. It surfaced as two
-  `test_start_claude_view` failures; the fix is to source it exactly as `bin/cco` does.
-- 📝 **`cco start` is host-only in a session**, so no in-container check can exercise the compose
-  generator end to end. What *can* be run in-session: source the lib modules and call
-  `_generate_pack_mounts` directly against the real pack (that is how the six roles were confirmed
-  before the live run).
-- 📝 **No `cco build` was needed for any of this** — the projection is produced at start time by
-  `./bin/cco` on the host. The rule stands: only baked files (image, `config/`, `defaults/managed/`)
-  force a rebuild.
-- 📝 **Two collateral defects remain recorded, not tracked as FIs**: `run_in_background: false` is
-  silently ignored under agent teams, and a team stays pinned to the session that created it. Rule
-  the second in or out first if [FI-61](improvements.md) recurs.
+**D19 is discharged and reclassified nothing.** Every one of the 46 reached producers is correct at
+its level. What the measurement bought was coverage — and the discovery that made A2 necessary.
 
 ### Open questions needing a human
 
-- **[FI-68](improvements.md)'s capability question** — the A8 gate, restated in *How to resume* item 2.
-- **The `acceptance/` leaf** — invented in the access domain relative to the pack's canonical set
-  (`analysis/ design/ decisions/ reviews/`). This session put its probe record in `reviews/` rather
-  than spread the contested leaf. Ratify one way or the other; moving existing files breaks links.
-- The four **open decisions** already listed in the roadmap (bash-3.2 fixtures, the `cco init`
-  `$HOME` guard, the duplicated `pack internalize` section, the tutorial preset's "no write risk"
-  wording), plus the fifth (does the worktree design move up?).
+- 📝 **An unrecognised answer at the pause starts the session** (only `a`/`A` aborts). D10 decided
+  bare Enter and `[S/a]`; it did not decide what a stray `n` does. Starting is D10's own reasoning
+  applied consistently — *confiscating a session the user asked for is the worse error* — but a
+  re-prompt loop is a one-line change and a UX call. **Not blocking.**
+- 📝 **[Open decision #7](roadmap.md)** — should `cco clean` sweep `$TMPDIR/cco-warn.*`? The design
+  claimed `cco clean --tmp` already did; it does not, and the claim is corrected in
+  [design §4.2](cli/design/design-warning-gate-and-onboarding-prompts.md).
+- The five older ones are in the roadmap's [Open decisions](roadmap.md).
+
+### 🔑 Non-obvious things the next session would otherwise rediscover
+
+- ⚠ **The defect this session paid for, and its class.** Removing D25's counting loop left
+  `_start_resolve_paths` ending on `[[ $rc -eq 2 ]] && return 2`, whose status on the normal path is
+  **1**. The caller read that as a failed resolve and aborted every start: **227 suite failures**, all
+  of them a dry-run that produced no compose file. ⭐ **Deleting the last statement of a function
+  changes its return value.** An explicit `return 0` is now there with the reason attached.
+- 🔑 **The pause's own prompt is now reachable in the suite**, with `tests/test_resolve.sh`'s `_p8_*`
+  technique duplicated as `_wg_*` in `tests/test_warn_capture.sh` (deliberately duplicated, so
+  `bin/test --file test_warn_capture` runs standalone). It `awk`s the shipped `_cco_warn_gate` body
+  out of `lib/utils.sh` **at run time** and `sed`s **only** `read -r reply < /dev/tty` into a queue
+  pop. ⚠ It **refuses a body it could not patch** — an unpatched one would block on `/dev/tty`
+  forever rather than fail an assertion.
+- ⭐ **The strongest oracle in that file is not a string match.** `CCO_ASSUME_YES=1` is asserted with
+  **`a` queued as the answer**: had the gate read it, the run would have aborted, so `rc 0` proves the
+  read never happened. Checking for the absence of the prompt text proves only that the text changed.
+- 🔑 **Both counts are read BEFORE the flush** in `_cco_warn_gate`. Flushing **empties** the buffer
+  (D18), so asking afterwards reports a clean run every time and the `[S/a]` form is never reached.
+- 🔑 **Deferral is conditional on the append succeeding** — for `note` now as much as for `warn`. A
+  buffer that cannot be written prints immediately. Do not "simplify" it into an unconditional defer.
+- 🔑 **Dedup runs BEFORE the level filter** in `_cco_warn_capture_records`: one sentence emitted at two
+  levels is one entry, and the warning is the one that stands.
+- 🔑 **D24's silence is deliberately NOT uniform across the four kinds.** llms and packs go quiet
+  during a start because compose generation restates them better; repos and extra_mounts have **no**
+  downstream producer, so `cmd-resolve.sh:271,294` are the only statement of that condition. A later
+  tidy-up that extends the silence to all four **deletes the message**. Commented at the sites.
+- 🔑 **The area is DERIVED from `${BASH_SOURCE[1]}`**, read inside the emitter's own frame. The
+  file→area table in `lib/colors.sh` is a maintained list and is admissible **only because** a missing
+  file costs a *label* (falls to `other`), never the message. A *gating* list would cost the guarantee.
+- 🔑 **D19's method, if it is ever repeated** ([the analysis](cli/analysis/d19-warn-producer-reclassification.md)
+  §2): a trace line inside `warn` (`${BASH_SOURCE[1]}:${BASH_LINENO[0]}`), `set -x` with `FUNCNAME` in
+  `PS4`, and `shopt -s extdebug; declare -F` to attribute a line to its function. ⚠ Two false-pass
+  traps it paid for: an oracle that matched a function name inside a **comment** (strip `#…` first),
+  and a brace-depth body parser that mis-attributed lines (`declare -F` instead — the shell answers).
+- ⚠ **When a message changes, grep the suite for the old wording.** `test_start_..._and_badged`
+  asserted the exact sentence D25 removed; it is now `..._and_reported` and counts that the condition
+  is stated **once**, which is the property D25 is about.
+- 🔑 **The in-container bash-3.2 lane loses STDOUT** (the docker socket proxy): only the **exit code**
+  comes back, and the container name must start with `cc-claude-orchestrator-`.
+- 📝 **No unit in this cycle touches a baked file**, so **no `cco build`** is in the acceptance lane.
+- 📝 **The FI-25 mask (`access: {claude: all}` in `.cco/project.yml`) is ON**, deliberately. Masked
+  in-container figures are the `…/7` ones. Pin `--claude-access` explicitly for any A4-style
+  measurement in this project.
+- ⚠ **"Unpushed" was a restated claim, not a measured one — and it was wrong.** The previous handoff,
+  the roadmap and my memory all said the branch had never been pushed; `git branch -vv` shows an
+  upstream at `48bef8a` with HEAD ahead of it. This is the *second* time in this repo that a push
+  status carried in prose disagreed with the refs (the A4 cycle was the first). ⭐ **Treat every
+  stated branch position as unverified**: `git branch -vv` and
+  `git rev-list --count develop..<branch>` cost nothing.
+- ⚠ **git in this container needs `safe.directory`** and `~/.gitconfig` is a read-only bind mount, so
+  it cannot be set globally. Use
+  `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/claude-orchestrator git …`.
 
 ## Reference documents
 
-- [roadmap.md](roadmap.md) — the living SSOT for status and priorities
-- [improvements.md](improvements.md) — the `FI-*` tracker (`FI-1 … FI-71`)
-- [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — guaranteed
-  coordination tools, D1…D11 + amendments A1/A2/A3
-- [Delivery probe results](integration/agent-teams/reviews/0058-delivery-probe-results.md) — the live
-  verification **(produced this session)**
-- [analysis-002](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md) — the
-  evidence behind ADR-0058
-- [ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)
-  — Axis-B resource classes; `entries.agents` is the cell ADR-0058 D10 rules on
-- [ADR-0054](configuration/decentralized-config/decisions/0054-framework-owned-mountpoints.md) — the
-  overlay-and-mount mechanism the normalizer reuses
+- [roadmap.md](roadmap.md) — the living SSOT; A5 carries the U1…U5 table and the discharged D19 block
+- [improvements.md](improvements.md) — the `FI-*` tracker; **FI-72 opened** this session
+- [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) — message
+  classification and the start-time pause: D1…D15 + A1 (D16…D19) + **A2 (D20…D25)**
+- [design-warning-gate-and-onboarding-prompts.md](cli/design/design-warning-gate-and-onboarding-prompts.md)
+  — **§3.3** the producer survey *(rewritten from the measurement)*, **§4.6** what the pause keys on
+  *(new)*, **§6.2/§6.4** what the suite can and cannot reach *(narrowed again)*
+- [d19-warn-producer-reclassification.md](cli/analysis/d19-warn-producer-reclassification.md) — the
+  measurement: method, the 15 scenarios, the per-site verdicts
+- [ADR-0058](integration/agent-teams/decisions/0058-teammate-coordination-tools.md) — its D3/D7/D8
+  leftovers are in *Tasks*
+- [ADR-0008](configuration/decentralized-config/decisions/0008-personal-store-management.md) — its
+  *non-blocking* reminders: **compatible with the pause**, and D19 §5.1 records why the opposite
+  reading was wrong

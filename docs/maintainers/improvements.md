@@ -2518,8 +2518,13 @@ if it recurs.
 
 ## FI-55: `cco start` never pauses on its own warnings — the session opens over them
 
-**Status**: 🔴 Open — raised by the maintainer 2026-08-06, from repeated field experience. **Quick
-win, Block A.**
+**Status**: ✅ **FIXED 2026-08-14 (U1+U2), reworked 2026-08-18 (U4); host acceptance PASSED** —
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (Accepted, D1…D15
++ **Amendment A1**, D16…D19) + [design](cli/design/design-warning-gate-and-onboarding-prompts.md).
+Raised by the maintainer 2026-08-06, from repeated field experience. **Quick win, Block A**, designed
+jointly with [A8](#fi-68-cco-project-add-mount---readonly-is-a-no-op-and-no-flag-declares-a-writable-mount).
+🔴 **D19, the full reclassification of every `warn` producer, is still owed before the cycle merges** —
+see the [roadmap](roadmap.md).
 
 **What happens.** `cco start` emits its warnings (uncommitted `~/.cco`, uncommitted `.cco`,
 framework-reserved `llms/` shadowing, resolution notices…) and then immediately hands the terminal to
@@ -2915,11 +2920,22 @@ other way round.
 
 ---
 
-## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount
+## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount ✅ fixed
 
-**Status**: 🔴 Open — a **decision**, not a defect in the default. Reported by the maintainer
-2026-08-09 (field observation), **re-derived from the code and inverted**: the report read *"the
-default is rw and `--readonly` is the explicit flag"*, and the code says the opposite.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `d9c3065`) — the maintainer ruled **option 1**
+(`--writable` added, `--readonly` kept as an explicit affirmation) on 2026-08-13:
+[ADR-0059 D12](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d12--cco-project-add-mount-gains---writable---readonly-stays-and-states-the-default-maintainer-2026-08-13),
+[design §5.1](cli/design/design-warning-gate-and-onboarding-prompts.md). `changelog.yml` #66 +
+[`cli.md` §3.25](../users/reference/cli.md). ⚠ **The `readonly: true` default is untouched**, and a
+test guards it (`test_add_mount_no_flag_writes_no_readonly_key`) precisely because this report's
+inverted premise invited flipping it. Was a **decision**, not a defect in the default. Reported by the maintainer 2026-08-09 (field
+observation), **re-derived from the code and inverted**: the report read *"the default is rw and
+`--readonly` is the explicit flag"*, and the code says the opposite.
+
+📌 The maintainer's own correction, 2026-08-13, is the clearest statement of the defect and is
+recorded verbatim because it is narrower than the original report: *the CLI with no flag writes only
+the mount's name, without `readonly: true` — which is the default anyway; the real problem is that
+`--readonly` is useless because it is already the default, and no flag sets `rw` from the CLI.*
 
 **What the code does.** `_effective_extra_mounts` resolves the mount mode as
 `ro=$(_parse_bool "$ro_raw" "true")` (`lib/local-paths.sh:312`) — an **absent** `readonly:` key
@@ -2957,9 +2973,14 @@ extra_mount is reference material rather than a config repo.
 
 ---
 
-## FI-69: the clone prompt never asks where to clone
+## FI-69: the clone prompt never asks where to clone ✅ fixed
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D13](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d13--the-clone-prompt-offers-its-destination-and-accepts-an-override),
+[design §5.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. The destination is now offered and an override accepted, resolved
+through `_resolve_to_abs` like `(p)`'s answer; the mount case — the one the report was raised from —
+has its own test.
 
 Option `(c)` of the unresolved-path prompt clones to a destination the user is never shown a chance to
 change: `local clone_target="${suggested:-$HOME/Projects/$name}"`, immediately followed by `mkdir -p`
@@ -2984,9 +3005,14 @@ override, in the same keystroke shape as the rest of the prompt. ⚠ Anything ad
 
 ---
 
-## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts
+## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts ✅ fixed
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D14](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d14--the-reuse-prompt-enumerates-the-tokens-it-accepts),
+[design §5.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. 📌 Its regression test reads the token off the **rendered** line
+and types it back — the only shape that fails during the defect, since the parser was always right to
+reject `1-1` (design §6.4).
 
 The reuse-or-homonym prompt (ADR-0051 D4) prints its options as
 `[1-${#cands[@]}] reuse that path` (`lib/local-paths.sh:438`). With a single candidate that renders
@@ -3039,3 +3065,40 @@ while there, not the three flagged lines — the doc predates two ADRs, so a nam
 (this project's third recurrence of that lesson). Belongs to the `documenter`, not to an inline fix.
 
 **Effort**: Medium — the rewrite is small, the re-derivation is the work.
+
+---
+
+## FI-72: nothing detects the *next* unclassified `warn` producer
+
+**Status**: 🔴 Open — raised by the
+[D19 reclassification](cli/analysis/d19-warn-producer-reclassification.md) (2026-08-18), §9 item 6.
+Recorded, deliberately not built in that cycle.
+
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1 keys the
+pause on the **level**, never on a curated list, so a `warn` written years from now is captured,
+listed and answered for without anyone remembering the ADR. That guarantee holds and needs nothing.
+
+What has no mechanism at all is the step *before* it: putting a new producer through §3.2's decision
+tree. D19 measured **184 call sites, 46 reached in 12 files** — and found three files that had never
+been classified, one of which (`lib/migrate.sh`) no human list had ever named. The design's §3.3 table
+is now correct and is a **snapshot of a moving tree**: it is a lower bound again the moment someone
+adds warning number 185.
+
+**Direction**: the instrument already exists as a throwaway — §2 of the D19 analysis. Its three
+probes are cheap and hermetic: a trace line inside `warn` (`${BASH_SOURCE[1]}:${BASH_LINENO[0]}`),
+`set -x` with `FUNCNAME` in `PS4`, and `shopt -s extdebug; declare -F` to attribute a line to its
+function. Turned into a lint it would run the hermetic `cco start` scenarios, diff the reached set
+against a committed inventory, and fail on a producer the inventory does not name.
+
+⚠ **What it must NOT become is a gating list.** The value is a *reminder to classify*, and it may
+only ever cost a review comment. The moment the pause consults it, P2 is violated and the message
+that should have stopped the launch stops being shown — which is precisely the failure ADR-0059
+refuses to build.
+
+📌 Two false-pass traps this lane already paid for, worth reusing rather than re-discovering: an
+oracle that matched a function name inside a **comment** on an executed line (strip `#…` before
+matching), and a brace-depth body parser that mis-attributed lines (use `declare -F`, which the shell
+answers itself).
+
+**Effort**: Medium — the probes are written; making them a stable lint over the scenario battery,
+and deciding what the committed inventory looks like, is the work.

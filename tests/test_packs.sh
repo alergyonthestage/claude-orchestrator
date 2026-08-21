@@ -847,7 +847,32 @@ test_cross_tree_pack_file_collision_warns() {
     mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/rules"
     echo "user rule" > "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/foo.md"
     run_cco start "test-proj" --dry-run --dump
-    assert_output_contains ".claude/rules/foo.md collides with pack 'r-pack'"
+    assert_output_contains ".claude/rules/foo.md is shadowed by pack 'r-pack'"
+}
+
+# ONE warning for N collisions in the same tree (ADR-0059 D16). A pack overlay
+# shadowing several committed rules is ONE thing the user decides about, and the
+# start-time gate lists entries — the first real project measured 5 of its 14
+# warnings as this single condition.
+test_cross_tree_pack_file_collisions_aggregate_into_one_warning() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    mkdir -p "$CCO_PACKS_DIR/r-pack/rules"
+    create_pack "$tmpdir" "r-pack" "$(printf 'name: r-pack\nrules:\n  - foo.md\n  - bar.md\n')"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/foo.md"
+    echo "pack rule" > "$CCO_PACKS_DIR/r-pack/rules/bar.md"
+    create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
+    mkdir -p "$(host_cco_dir "$tmpdir" test-proj)/claude/rules"
+    echo "user rule" > "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/foo.md"
+    echo "user rule" > "$(host_cco_dir "$tmpdir" test-proj)/claude/rules/bar.md"
+    run_cco start "test-proj" --dry-run --dump
+
+    local n; n=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -c "shadowed by pack" | tr -d ' ')
+    assert_equals "1" "$n" "two collisions in one tree must produce ONE warning, not two"
+    # …and it must name both, or the aggregation is hiding rather than summarising.
+    assert_output_contains "foo.md"
+    assert_output_contains "bar.md"
 }
 
 test_cross_tree_no_collision_no_warn() {
@@ -860,7 +885,11 @@ test_cross_tree_no_collision_no_warn() {
     create_project "$tmpdir" "test-proj" "$(printf 'name: test-proj\nrepos:\n  - name: dummy-repo\npacks:\n  - r-pack\n')"
     # No committed .claude/rules/foo.md → nothing collides.
     run_cco start "test-proj" --dry-run --dump
-    if echo "${CCO_OUTPUT:-}" | grep -qFe "collides with pack"; then
+    # ⚠ Keep this pattern in step with the message. It was "collides with pack"
+    # until ADR-0059 D16 reworded it, at which point this negative test would have
+    # gone on passing while matching a string the code can no longer emit — green
+    # for free, which is the failure mode a negative control exists to avoid.
+    if echo "${CCO_OUTPUT:-}" | grep -qFe "shadowed by pack"; then
         echo "ASSERTION FAILED: no collision expected when committed config is clean"
         return 1
     fi

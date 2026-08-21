@@ -9,7 +9,7 @@
 # the index.
 #
 #   cco project add repo  <name> [--url --ref] [--path <p>]
-#   cco project add mount <name> [--url --ref --target --readonly] [--path <p>]
+#   cco project add mount <name> [--url --ref --target --readonly|--writable] [--path <p>]
 #   cco project add llms  <name>  --url <u> [--variant <v>]
 #   cco project add pack  <name> [--url --ref]
 #
@@ -130,11 +130,15 @@ the index (repo/mount only). No real path is ever written into project.yml.
 
 Resource flags:
   repo   --url <u> --ref <r>                  [--path <p>]
-  mount  --url <u> --ref <r> --target <t> --readonly  [--path <p>]
+  mount  --url <u> --ref <r> --target <t> [--readonly|--writable]  [--path <p>]
   llms   --url <u> --variant <v>              (url required)
   pack   --url <u> --ref <r>
 
 Options:
+  --readonly     Mount: record readonly: true. An extra mount is read-only by
+                 default, so this states that default rather than opting into it
+  --writable     Mount: record readonly: false — the only CLI spelling of a
+                 writable extra mount. Mutually exclusive with --readonly
   --path <p>     Bind name -> absolute path in the STATE index (repo/mount)
   --project <n>  Operate on a named project instead of the cwd one
 
@@ -159,7 +163,8 @@ EOF
             --target)   [[ $# -lt 2 ]] && die "--target requires a value";  target="$2";  shift 2 ;;
             --path)     [[ $# -lt 2 ]] && die "--path requires a value";    path="$2";    shift 2 ;;
             --project)  [[ $# -lt 2 ]] && die "--project requires a value"; project="$2"; shift 2 ;;
-            --readonly) ro="true"; shift ;;
+            --readonly) [[ "$ro" == "false" ]] && die "--readonly and --writable are mutually exclusive"; ro="true";  shift ;;
+            --writable) [[ "$ro" == "true"  ]] && die "--readonly and --writable are mutually exclusive"; ro="false"; shift ;;
             --help|-h)     cmd_project_add --help; return 0 ;;
             -*) die "Unknown option: $1. Run 'cco project add --help'." ;;
             *)
@@ -173,18 +178,18 @@ EOF
     case "$restype" in
         repo)
             [[ -n "$variant" ]] && die "--variant is not valid for repo"
-            [[ -n "$target" || -n "$ro" ]] && die "--target/--readonly are not valid for repo"
+            [[ -n "$target" || -n "$ro" ]] && die "--target/--readonly/--writable are not valid for repo"
             ;;
         mount)
             [[ -n "$variant" ]] && die "--variant is not valid for mount"
             ;;
         llms)
-            [[ -n "$ref" || -n "$target" || -n "$ro" ]] && die "--ref/--target/--readonly are not valid for llms"
+            [[ -n "$ref" || -n "$target" || -n "$ro" ]] && die "--ref/--target/--readonly/--writable are not valid for llms"
             [[ -n "$path" ]] && die "llms has no local path — use 'cco llms install' for content"
             [[ -z "$url" ]] && die "llms requires --url (it is mandatory; ADR-0017 D1)"
             ;;
         pack)
-            [[ -n "$variant" || -n "$target" || -n "$ro" ]] && die "--variant/--target/--readonly are not valid for pack"
+            [[ -n "$variant" || -n "$target" || -n "$ro" ]] && die "--variant/--target/--readonly/--writable are not valid for pack"
             [[ -n "$path" ]] && die "--path is not valid for pack (a pack's local copy lives under ~/.cco/packs)"
             ;;
     esac

@@ -224,6 +224,9 @@ Options:
   --dry-run            Show the generated docker-compose without running
                        (uses ephemeral staging via mktemp, no persistent files)
   --dump               With --dry-run: write output to .tmp/ for inspection
+  --yes, -y            Answer the start-time pause: show the messages, don't ask
+                       (same as CCO_ASSUME_YES=1). CCO_NONINTERACTIVE=1 is the
+                       other spelling and says something else — see below
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
@@ -254,6 +257,64 @@ come from the machine-local index (`<state>/cco/index`); if any repo/mount is un
 `cco start` prompts to **[r]esolve** (`cco resolve`), **[c]lone from `<url>`** (when the
 coordinate carries a `url`), or **[s]kip** — it never launches with a silent empty mount.
 `cco start` always prints which `<repo>/.cco` source it used.
+
+**The start-time pause**: on an interactive terminal, `cco start` **always** stops immediately
+before the container runs and waits — **bare Enter starts, `a` aborts** — and an abort leaves no
+container and no session marker. It is not a reaction to something being wrong: a start takes about
+five seconds and then the Claude Code TUI owns the terminal, so everything cco printed is gone before
+you could read it. The pause is what makes the output readable at all.
+
+What the pause **says** depends on what the run found:
+
+| The run emitted | You see | The question |
+|---|---|---|
+| nothing but `ℹ`/`✓` | just the chronicle | `→ Press Enter to start the session.` |
+| `note:` messages, no warnings | the notes, grouped | `→ Press Enter to start the session.` |
+| one or more `⚠` warnings | the warnings, grouped | `Start the session anyway? [S/a]:` |
+
+`a` aborts in **all three**, including the quiet form that does not advertise it — a wrong project is
+always one keystroke away from being backed out of.
+
+Which messages escalate the question is deliberately unconditional (there is no list of "important"
+warnings), so the corollary is what to read cco's output by: **a message that should not ask you to
+decide is not written as a warning.** Four levels: `⚠` a condition of *this session* · `note:` an
+accepted divergence, nothing is wrong · `ℹ`/`✓` what the command did · plain text inside a prompt you
+are already answering.
+
+Each message is printed **once**, in that list — warnings first, then notes, grouped by area with a
+count per group, in a fixed order, with the obvious next command in its own column (`→ cco sync`)
+where there is one. A condition affecting several items is one entry naming them all, not one entry
+each.
+
+```
+⚠ 6 warnings for this session, in 3 areas:
+
+  ── packs & overlays (2) ────────────────────────────────
+   · Committed .claude/packs/ is framework-reserved …
+   · 5 committed .claude/rules/ files are shadowed by …
+
+  ── documentation / llms (1) ────────────────────────────
+   · 3 llms are not installed (svelte, …)   → cco llms install
+
+  ── config hygiene (3) ──────────────────────────────────
+   · ~/.cco has uncommitted changes         → cco config save
+   · project repos have divergent .cco      → cco sync
+   …
+
+note: 1 note for this session, in 1 area:
+
+  ── agent teams (1) ─────────────────────────────────────
+   · Agent teams: widened the declared toolset of 2 definitions …
+
+  Start the session anyway? [S/a]:
+```
+
+**Two ways to run this unattended, and they say different things.** With **no controlling
+terminal** — CI, a script, a captured run, `CCO_NONINTERACTIVE=1` — there is nobody there: no
+prompt, and the launch proceeds unchanged. With **`--yes` / `-y`** (or `CCO_ASSUME_YES=1`) somebody
+*is* there and has already answered: the list is still printed, only the question is skipped.
+**`--dry-run` does not pause** either — nothing takes the terminal there, so the output stays on
+screen. `cco new` behaves identically, `--yes` included.
 
 **Reserved names: `tutorial`, `config-editor`**
 
@@ -535,6 +596,8 @@ Options:
   --mount <s>[:<t>][:ro|:rw]  Mount reference material (repeatable; read-only by
                        default, :rw to make writable; target defaults to
                        /workspace/<basename>)
+  --yes, -y            Answer the start-time pause: show the messages, don't ask
+                       (same as CCO_ASSUME_YES=1) — see §3.2
   --port <p>           Port mapping (repeatable)
 
 Examples:
@@ -1853,15 +1916,24 @@ Options:
   --url <url>          Coordinate URL (auto-derived from `origin` when --path is a clone)
   --ref <ref>          Git ref / branch for repos and packs
   --variant <v>        llms variant (e.g. full)
-  --readonly           Mark an extra mount read-only
+  --readonly           Mount: record `readonly: true` — states the default
+  --writable           Mount: record `readonly: false` (exclusive with --readonly)
   --path <path>        Also register this name → local path in the index
 
 Examples:
   cco project add repo backend --url git@github.com:org/backend.git --path ~/dev/backend
+  cco project add mount assets --path ~/shared/assets --writable
   cco project add llms react --url https://react.dev/llms-full.txt --variant full
   cco project add pack shared-pack --url https://github.com/org/cco-sharing.git --ref v1.0
   cco project add pack react-guidelines              # project-local authored pack (no url)
 ```
+
+**An extra mount is read-only by default, and `--writable` is the only CLI spelling of
+the opposite** (ADR-0059 D12). The flags are a pair, not a toggle over a default that
+could change: `--readonly` records that default explicitly, `--writable` records
+`readonly: false`, passing both is an error, and passing neither writes no `readonly`
+key at all — the default lives in the code. `--mount <src>:rw` on `cco start` expresses
+the same thing for an ad-hoc mount (ADR-0027 D2).
 
 #### `cco project coords [--diff] [--sync --from <unit>]`
 

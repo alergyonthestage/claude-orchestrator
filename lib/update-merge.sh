@@ -148,7 +148,7 @@ _resolve_with_merge() {
                 # Either way, .cco/base is updated (user dealt with the merge).
                 # cco start blocks if markers remain — that's the safety net.
                 if grep -q '<<<<<<<' "$installed_dir/$rel_path" 2>/dev/null; then
-                    warn "  ⚠ $rel_path written with conflict markers"
+                    warn "  $rel_path written with conflict markers"
                     info "    Resolve markers manually. 'cco start' will block until resolved."
                     info "    Your original is saved as ${rel_path}.bak"
                 else

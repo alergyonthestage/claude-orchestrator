@@ -116,15 +116,24 @@ _generate_llms_mounts() {
     [[ -z "$entries" ]] && return 0
 
     echo "      # LLMs.txt documentation (read-only mounts from central llms registry)"
+    # ONE warn naming every missing entry, never one per entry (ADR-0059 D16): the
+    # remedy is a single `cco llms install` pass, so N lines describe one thing to do.
+    local _missing="" _nmissing=0
     while IFS=$'\t' read -r lname ldesc lvariant; do
         [[ -z "$lname" ]] && continue
         local llms_dir="$LLMS_DIR/$lname"
         if [[ -d "$llms_dir" ]]; then
             _compose_vol "${llms_dir}" "/workspace/.claude/llms/${lname}" "ro"
         else
-            warn "LLMs '$lname': directory not found at $llms_dir (run 'cco llms install' first)"
+            _missing="${_missing}${_missing:+, }${lname}"
+            _nmissing=$(( _nmissing + 1 ))
         fi
     done <<< "$entries"
+    if [[ "$_nmissing" -eq 1 ]]; then
+        warn "llms '$_missing' is not installed (looked in $LLMS_DIR) → cco llms install"
+    elif [[ "$_nmissing" -gt 1 ]]; then
+        warn "$_nmissing llms are not installed ($_missing) → cco llms install"
+    fi
 }
 
 # Collect resolved llms entries for the injected session context's llms section.

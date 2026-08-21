@@ -53,7 +53,7 @@ _reminder_cross_repo_divergence() {
         fi
     done
     if [[ $count -ge 2 ]] && $divergent; then
-        warn "project repos have divergent .cco — run 'cco sync' to converge from a chosen source"
+        warn "project repos have divergent .cco → cco sync"
     fi
     return 0
 }
@@ -69,17 +69,25 @@ _emit_config_reminders() {
     local cfg
     cfg=$(_cco_config_dir)
     if _reminder_git_dirty "$cfg"; then
-        warn "~/.cco has uncommitted changes — commit them to version your global config"
+        warn "~/.cco has uncommitted changes → cco config save"
     fi
 
-    # (b) uncommitted involved <repo>/.cco
-    local r
+    # (b) uncommitted involved <repo>/.cco — ONE warn naming every repo, never one
+    #     per repo (ADR-0059 D16). The user commits them in one pass; N lines in the
+    #     start-time gate read as N problems when there is one thing to do.
+    local r _dirty="" _ndirty=0
     for r in ${roots[@]+"${roots[@]}"}; do
         [[ -d "$r/.cco" ]] || continue
         if _reminder_git_dirty "$r" ".cco"; then
-            warn "$(basename "$r"): .cco has uncommitted changes — commit it with your normal git flow"
+            _dirty="${_dirty}${_dirty:+, }$(basename "$r")"
+            _ndirty=$(( _ndirty + 1 ))
         fi
     done
+    if [[ "$_ndirty" -eq 1 ]]; then
+        warn "$_dirty: .cco has uncommitted changes → commit with your normal git flow"
+    elif [[ "$_ndirty" -gt 1 ]]; then
+        warn "$_ndirty repos have uncommitted .cco ($_dirty) → commit with your normal git flow"
+    fi
 
     # (c) cross-repo divergence
     _reminder_cross_repo_divergence ${roots[@]+"${roots[@]}"}

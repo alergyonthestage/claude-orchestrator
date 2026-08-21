@@ -2094,3 +2094,107 @@ test_invariant_agent_mounts_go_through_the_normalizer() {
         || { fail "INV-AGN over-reaches: a declared-legitimate shape (a normalized per-file mount, a directory mount WITH its overlay pass, a non-agent mount, or prose in a comment) was flagged:"$'\n'"$overreach"; return 1; }
     return 0
 }
+
+# ── INV-WG the warning-taxonomy CLASS guard (ADR-0059 D15) ───────────
+# `warn` is the ONE level that gates a launch, and the gate has no curated list of
+# gating messages (D1/P2) — the rule is a property of the LEVEL. Two shapes would
+# break that property silently, so both are checked rather than intended.
+#
+# TWO ARMS:
+#   [WG1] a `warn` whose message body already begins with `⚠`. The badge is
+#     `warn`'s own job, so the line renders "⚠ ⚠ …" — and in the gate's list, where
+#     every entry is prefixed with the badge again, it renders a third time. Two
+#     sites shipped this (lib/cmd-start.sh, lib/update-merge.sh).
+#   [WG2] a CLONED producer: the `warn()` emit shape — the yellow ⚠ badge applied to
+#     forwarded positional arguments — appearing outside lib/colors.sh. A second
+#     warning function looks identical on screen and writes nothing to the capture
+#     buffer, so its message is emitted, never captured, and never gates. That is
+#     the exact failure the whole unit exists to end.
+#   [WG3] the same clone, one level down: a `note:` prefix printed with `printf`/
+#     `echo` over forwarded arguments, outside lib/colors.sh. Before ADR-0059 A2
+#     that was merely untidy — a note was never captured by anything. **A2 D22
+#     captures `note` too**, and renders it at the pause, so a cloned note emitter
+#     now loses its message exactly the way a cloned warn does: printed into the
+#     stream the TUI overwrites, absent from the list that is meant to be read.
+#     D3 converted the five bare `note:` echoes that existed; this arm is what
+#     stops the sixth.
+#
+# ⚠ DECLARED LIMIT, not a silent cap (the style ADR-0058 D5 established). A static
+# lint cannot tell a DECORATIVE `⚠` inside a table row or a menu line — legitimate,
+# and live at lib/cmd-resolve.sh:480, lib/cmd-project-query.sh:293 and
+# lib/local-paths.sh:412 — from a warning written as a raw `echo`, which would
+# bypass the buffer just as effectively as a cloned producer. WG2 keys on the
+# argument-forwarding shape precisely so those three stay silent; the residue is a
+# review concern, and this paragraph is the record that it was seen, not missed.
+_invwg_lint_prog() {
+    cat <<'AWK'
+{
+  line=$0
+  # A line that is ENTIRELY a comment is prose: this repo quotes code in comments
+  # constantly, and flagging the documentation of a defect as the defect is how a
+  # lint teaches people to delete its comments.
+  if (line ~ /^[ \t]*#/) next
+  if (line ~ /(^|[^A-Za-z0-9_])warn[ \t]+"[ \t]*⚠/) print FILENAME "|" FNR "|WG1"
+  fwd = (line ~ /\$\*/ || line ~ /\$@/ || line ~ /\$[1-9]/ || line ~ /\$\{[1-9]/)
+  if (line ~ /YELLOW/ && line ~ /⚠/ && fwd)
+    print FILENAME "|" FNR "|WG2"
+  # The prefix must OPEN the emitted string: `info "  • note: …"` is a chronicle
+  # sub-line naming the word, not a note emitter, and it is live in lib/cmd-forget.sh.
+  if (line ~ /(^|[^A-Za-z0-9_])(printf|echo)[ \t]/ && line ~ /["'"'"']note: / && fwd)
+    print FILENAME "|" FNR "|WG3"
+}
+AWK
+}
+
+# Echo the VIOLATING hits ("<basename>|<line>|<arm>" per line) found in <libdir>.
+# Empty output = clean.
+_invwg_lint_violations() {
+    local libdir="$1" f b prog hf ln arm
+    prog=$(_invwg_lint_prog)
+    for f in "$libdir"/*.sh; do
+        b=$(basename "$f")
+        # EXCLUDED: colors.sh IS the producer — the one legitimate home of the shape.
+        [[ "$b" == "colors.sh" ]] && continue
+        while IFS='|' read -r hf ln arm; do
+            [[ -z "$hf" ]] && continue
+            printf '%s|%s|%s\n' "$b" "$ln" "$arm"
+        done < <(awk "$prog" "$f")
+    done
+}
+
+test_invariant_warn_badge_and_single_producer() {
+    # 1. The live tree must be clean.
+    local v; v=$(_invwg_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] || { fail "INV-WG: a warn message body starts with its own badge [WG1], or an emitter is cloned outside lib/colors.sh — warn [WG2] or note [WG3]. A cloned producer writes nothing to the capture buffer, so its message is never rendered at the start-time pause (ADR-0059 D15 + A2 D22):"$'\n'"$v"; return 1; }
+
+    # 2. Discrimination, per arm — a static invariant cannot "fail on a reverted
+    #    tree", so it must prove it catches the real shapes. Both probes below are
+    #    the shapes that actually shipped.
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    # Flat, not $tmp/lib: _invwg_lint_violations globs <libdir>/*.sh directly.
+    printf '\n_invwg_probe_badge() {\n    warn "⚠ ${p}: ${n} reference(s) unresolved"\n    warn "  ⚠ $rel written with conflict markers"\n}\n' > "$tmp/probe.sh"
+    printf '\n_invwg_probe_clone() {\n    echo -e "${YELLOW}⚠${NC} $*" >&2\n}\n' > "$tmp/probe2.sh"
+    printf '\n_invwg_probe_note_clone() {\n    printf '"'"'note: %%s\\n'"'"' "$*" >&2\n}\n' > "$tmp/probe3.sh"
+    local planted; planted=$(_invwg_lint_violations "$tmp")
+    [[ "$planted" == *"probe.sh|3|WG1"* && "$planted" == *"probe.sh|4|WG1"* ]] \
+        || { fail "INV-WG does NOT discriminate: a planted double ⚠ badge went uncaught (both the bare and the indented form must be seen):"$'\n'"${planted:-<no hits>}"; return 1; }
+    [[ "$planted" == *"probe2.sh|3|WG2"* ]] \
+        || { fail "INV-WG does NOT discriminate: a planted clone of the warn producer went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+    [[ "$planted" == *"probe3.sh|3|WG3"* ]] \
+        || { fail "INV-WG does NOT discriminate: a planted clone of the NOTE producer went uncaught — under A2 D22 that message is captured, so a clone loses it exactly as a cloned warn does:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 3. Over-reach: the declared-legitimate shapes must stay silent, or the lint
+    #    pushes its own exceptions into the code it is meant to protect.
+    rm -f "$tmp"/*.sh
+    {
+        printf '_invwg_legit_inline() {\n    warn "Browser: CDP port ⚠ is a decorative glyph here, not a badge"\n}\n'
+        printf '_invwg_legit_report_row() {\n    echo -e "  ${YELLOW}⚠${NC} ${yml_name:-$name}: $_unresolved reference(s) unresolved"\n}\n'
+        printf '_invwg_legit_table() {\n    printf "    %%-5s %%-22s ⚠ unresolved\\n" "$kind" "$name" >&2\n}\n'
+        printf '_invwg_legit_comment() {\n    local x=1\n}\n# warn "⚠ prose quoting the defect this lint forbids"\n'
+        printf '_invwg_legit_note_word() {\n    info "  • note: these paths stay referenced by other projects — ${paths_kept[*]}"\n}\n'
+    } > "$tmp/legit.sh"
+    local overreach; overreach=$(_invwg_lint_violations "$tmp")
+    [[ -z "$overreach" ]] \
+        || { fail "INV-WG over-reaches: a declared-legitimate shape (a decorative ⚠ inside a message, a report row, a table line, prose in a comment, or the word 'note:' inside a chronicle sub-line) was flagged:"$'\n'"$overreach"; return 1; }
+    return 0
+}

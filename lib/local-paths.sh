@@ -68,6 +68,16 @@ _local_paths_get() {
 # ── Interactive prompt ───────────────────────────────────────────────
 
 # Prompt user for a local path (TTY only).
+#
+# ⚠ Every message this function and _resolve_disambiguate print is PROMPT-LOCAL
+# (ADR-0059 D4): a plain `echo … >&2`, never a `warn`. It is a reclassification and
+# not a demotion — what makes "Invalid choice 'x'" non-gating is that it has already
+# been read, by construction, by a user who was looking at the prompt when it
+# appeared and typically corrected the input on the spot. Under D1 every `warn`
+# gates the launch, so a corrected typo would hold the session hostage at the end of
+# the run. Anything genuinely wrong with the SESSION still warns from the caller
+# (_resolve_entry_index below does exactly that when the index write fails).
+#
 # Usage: _prompt_for_path <name> <url> <suggested_path> <label>
 # Output (stdout): resolved path
 # Exit codes: 0=resolved, 1=skip, 2=abort
@@ -106,7 +116,7 @@ _prompt_for_path() {
     case "$reply" in
         [Cc])
             if [[ -z "$url" ]]; then
-                warn "No URL available for clone"
+                echo "  No URL available for clone" >&2
                 # Fall through to path prompt
                 printf "  Path for '%s': " "$name" >&2
                 read -r reply < /dev/tty
@@ -117,7 +127,7 @@ _prompt_for_path() {
                 expanded=$(_resolve_to_abs "$reply")
                 # Use _path_exists (not `-d`) — extra_mounts may be files
                 if ! _path_exists "$expanded"; then
-                    warn "Path '$expanded' does not exist"
+                    echo "  Path '$expanded' does not exist" >&2
                     return 1
                 fi
                 echo "$expanded"
@@ -125,6 +135,16 @@ _prompt_for_path() {
             fi
             local clone_target="${suggested:-$HOME/Projects/$name}"
             clone_target=$(expand_path "$clone_target")
+            # D13: the destination is OFFERED, not imposed — Enter accepts it.
+            # `suggested` is computed only for repos, so a mount falls back to
+            # ~/Projects/<name>, a location with no relation to where the user
+            # keeps mounts, and (p) is no escape (it demands an existing path).
+            # The override is the answer; no second derivation is invented for
+            # mounts (YAGNI). M7: absolutize it exactly as (p) does — a relative
+            # path stored in the index resolves wrong from any other cwd.
+            printf "  Clone into [%s]: " "$clone_target" >&2
+            read -r reply < /dev/tty
+            [[ -n "$reply" ]] && clone_target=$(_resolve_to_abs "$reply")
             local parent
             parent=$(dirname "$clone_target")
             mkdir -p "$parent"
@@ -148,7 +168,7 @@ _prompt_for_path() {
             expanded=$(_resolve_to_abs "$reply")
             # Use _path_exists (not `-d`) — extra_mounts may be files
             if ! _path_exists "$expanded"; then
-                warn "Path '$expanded' does not exist"
+                echo "  Path '$expanded' does not exist" >&2
                 return 1
             fi
             echo "$expanded"
@@ -161,7 +181,7 @@ _prompt_for_path() {
             return 2
             ;;
         *)
-            warn "Invalid choice '$reply'"
+            echo "  Invalid choice '$reply'" >&2
             return 1
             ;;
     esac
@@ -435,19 +455,27 @@ _resolve_disambiguate() {
     echo "" >&2
     printf '%s\n' "$menu" >&2
     echo "  Reuse one of these paths (the same resource), or specify a different path (a homonym)." >&2
-    echo "    [1-${#cands[@]}] reuse that path    [d] specify a different path    [q] quit" >&2
+    # D14: the literal tokens, never a range. `[1-${#cands[@]}]` was range
+    # notation rendered among literal keys ([d], [q]), and with a single candidate
+    # it printed `[1-1]` — which the parser below then rejects, because a `-`
+    # fails its `*[!0-9]*` test. The user who typed back the token they had just
+    # been shown was told their choice was invalid. The candidates are names bound
+    # in other projects; enumerating them needs no upper-bound fallback (YAGNI).
+    local _toks="" _n
+    for ((_n = 1; _n <= ${#cands[@]}; _n++)); do _toks="${_toks:+$_toks }[$_n]"; done
+    echo "    $_toks reuse that path    [d] specify a different path    [q] quit" >&2
     printf "  Choice: " >&2
     local reply
     read -r reply < /dev/tty
     case "$reply" in
         [Dd]) return 1 ;;
         [Qq]) return 2 ;;
-        *[!0-9]*|'') warn "Invalid choice '$reply' — specify a different path"; return 1 ;;
+        *[!0-9]*|'') echo "  Invalid choice '$reply' — specify a different path" >&2; return 1 ;;
         *)
             if [[ "$reply" -ge 1 && "$reply" -le ${#cands[@]} ]]; then
                 printf '%s\n' "${cands[$((reply - 1))]}"; return 0
             fi
-            warn "Choice '$reply' out of range — specify a different path"; return 1 ;;
+            echo "  Choice '$reply' out of range — specify a different path" >&2; return 1 ;;
     esac
 }
 
