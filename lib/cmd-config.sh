@@ -7,6 +7,7 @@
 # auto-commit in v1. Sync transports already-made commits, never fabricates them.
 #
 #   cco config save [-m <msg>]   stage the allowlisted set + secret-scan + commit
+#   cco config status [--full]   what save WOULD commit (ADR-0038 A1; never writes)
 #   cco config history [-n N]    read that history back (ADR-0038 D2, --full for diffs)
 #   cco config push              push to the (private) remote — advisory warning
 #   cco config pull              fast-forward pull; non-FF -> abort + notify
@@ -22,10 +23,10 @@
 # preview-first `--fix`) is implemented here (_config_validate, ADR-0021 §5 /
 # design §9 P5 — the lifecycle/delete-cascade work).
 #
-# Provides: cmd_config(), _config_validate(), _config_history()
+# Provides: cmd_config(), _config_validate(), _config_history(), _config_status()
 # Dependencies: colors.sh, utils.sh, secrets.sh (_secret_scan_staged — the ONE
 #   scanner both save gates share; the project twin passes a pathspec, this one
-#   scans the whole store), config-history.sh (_history_* for `config history`),
+#   scans the whole store), config-read.sh (_history_/_status_ helpers for the read verbs),
 #   paths.sh (_cco_{config,state,data,cache}_dir, _cco_remotes_{,token_}file),
 #   index.sh (_index_list_paths/projects, _index_get_path/_index_get_project_repos,
 #   _index_remove_path/_index_remove_project), tags.sh (_tags_all/_tags_forget),
@@ -114,6 +115,72 @@ _config_save() {
     git -C "$cfg" commit -q -m "$msg" >/dev/null 2>&1 || die "git commit failed in ~/.cco."
     local sha; sha=$(git -C "$cfg" rev-parse --short HEAD 2>/dev/null)
     ok "saved ~/.cco @ ${sha} — ${msg}"
+}
+
+_config_status_usage() {
+    cat <<'EOF'
+Usage: cco config status [--full]
+
+Show what 'cco config save' would commit from your personal ~/.cco store. Nothing
+is written, staged or changed.
+
+Options:
+      --full             Also show the diff of each change
+
+Each line is a file and its fate in that commit: M modified, A new, D deleted.
+Only the allowlisted config is listed — a stray file in ~/.cco is not shown,
+because save would not commit it either. What was already saved is
+'cco config history'.
+EOF
+}
+
+# The preview for the PERSONAL store (ADR-0038 A1). Its pathspecs are the allowlist,
+# not the whole tree — A1 D11: a preview is worth having only if it reproduces its
+# own save's rule about what gets committed, and `_config_save` stages
+# `_CONFIG_ALLOWLIST` and nothing else. A plain `git status` on ~/.cco would name
+# files this verb's twin would never commit.
+_config_status() {
+    _status_parse_args config "$@"
+    if [[ "$_STATUS_HELP" == true ]]; then _config_status_usage; return 0; fi
+
+    local cfg; cfg=$(_cco_config_dir)
+    # ⚠ Not reachable from the host: J0 (_cco_first_run, lib/migrate.sh) git-inits
+    # ~/.cco on EVERY host command, so a store without .git cannot survive to here.
+    # Kept for the container, where the store is a MOUNT and may arrive without one —
+    # and because the alternative is worse: _status_changed on a non-git tree returns
+    # nothing, which would render as "clean", and "clean" claims the config is saved.
+    # The host suite therefore covers the never-saved state, not this branch.
+    if [[ ! -d "$cfg/.git" ]]; then
+        printf '~/.cco is not versioned yet — %s records its first version\n' "'cco config save'"
+        return 0
+    fi
+
+    # Exactly the set `_config_save` stages: allowlisted AND present.
+    local -a specs=(); local entry
+    for entry in "${_CONFIG_ALLOWLIST[@]}"; do
+        [[ -e "$cfg/$entry" ]] && specs+=("$entry")
+    done
+    if [[ ${#specs[@]} -eq 0 ]]; then
+        printf '~/.cco holds no config to save yet\n'
+        return 0
+    fi
+
+    local changed; changed=$(_status_changed "$cfg" "" ${specs[@]+"${specs[@]}"})
+    if [[ -z "$changed" ]]; then
+        local last; last=$(_status_last_saved "$cfg")
+        if [[ -n "$last" ]]; then
+            printf '~/.cco is clean — nothing to save (last saved %s)\n' "$last"
+        else
+            printf '~/.cco is clean, and has never been committed — %s records its first version\n' "'cco config save'"
+        fi
+        return 0
+    fi
+
+    local n; n=$(printf '%s\n' "$changed" | grep -c .)
+    printf '~/.cco — %s file(s) to save:\n' "$n"
+    printf '%s\n' "$changed" | _status_render "$cfg" "" "$_STATUS_FULL"
+    printf '\n  → cco config save\n'
+    return 0
 }
 
 _config_history_usage() {
@@ -619,13 +686,14 @@ cmd_config() {
     case "$sub" in
         ""|--help|-h|help)
             cat <<'EOF'
-Usage: cco config <save|history|push|pull|validate> [options]
+Usage: cco config <save|status|history|push|pull|validate> [options]
 
 Version and sync your personal ~/.cco global config store (packs, templates,
 global .claude config). Explicit, manual commits — cco never auto-commits.
 
 Commands:
   save [-m <msg>]         Stage the allowlisted config + secret-scan + commit
+  status [--full]         Show what save would commit (nothing is changed)
   history [-n N] [--full] Show how ~/.cco changed over time
   push                    Push to your (private) remote
   pull                    Fast-forward pull from your remote (non-FF aborts)
@@ -638,10 +706,11 @@ EOF
             return 0
             ;;
         save) _config_save "$@" ;;
+        status)  _config_status "$@" ;;
         history) _config_history "$@" ;;
         push) _config_push "$@" ;;
         pull) _config_pull "$@" ;;
         validate) _config_validate "$@" ;;
-        *) die "Unknown 'cco config' command: $sub. Use save, history, push, pull, or validate." ;;
+        *) die "Unknown 'cco config' command: $sub. Use save, status, history, push, pull, or validate." ;;
     esac
 }

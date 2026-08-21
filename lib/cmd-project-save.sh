@@ -4,8 +4,9 @@
 # The PROJECT column of the config 2x2: `<repo>/.cco/` is versioned by the repo's
 # own git, so this is the twin of `cco config save` for a store cco does NOT own.
 #
-#   cco project save [-m <msg>]        stage .cco/** + secret-scan + commit
-#   cco project history [-n N] [--full]  read that history back
+#   cco project save [-m <msg>]          stage .cco/** + secret-scan + commit
+#   cco project status [--full]          what save WOULD commit, and would it succeed
+#   cco project history [-n N] [--full]  what was saved before
 #
 # EVERY DIFFERENCE FROM THE TWIN DESCENDS FROM ONE FACT: `~/.cco` is a git repo cco
 # created and owns; `<repo>/.cco/` is a subtree of the USER's repository (P-C).
@@ -29,10 +30,10 @@
 #     gate on this verb is therefore POLICY, enforced at the shim (ADR-0038 D8) —
 #     do not "fix" it by reasoning from the mount table, which permits the write.
 #
-# Provides: cmd_project_save(), cmd_project_history()
+# Provides: cmd_project_save(), cmd_project_status(), cmd_project_history()
 # Dependencies: colors.sh (ok/info/note/die), cmd-resolve.sh (_resolve_find_unit_dir),
 #   secrets.sh (_secret_scan_staged, _SECRET_PROJECT_GITIGNORE_CLASSES,
-#   _secret_gitignore_probe), config-history.sh (_history_*),
+#   _secret_gitignore_probe), config-read.sh (_history_/_status_ helpers),
 #   reminders.sh (_reminder_git_dirty, _reminder_roots_divergent),
 #   local-paths.sh (_effective_repo_mounts)
 
@@ -84,37 +85,47 @@ of the config changed. The personal store's twin is 'cco config history'.
 EOF
 }
 
-# D7 barrier — the FIRST of the two, and the one that must hold before anything is
-# staged. `<repo>/.cco/.gitignore` must exist AND must actually ignore each secret
-# class cco's own scaffold declares.
+# D7 barrier, as a PURE QUESTION with no verdict attached. Echoes:
+#   ""              the barrier holds
+#   "missing"       there is no `<repo>/.cco/.gitignore` at all
+#   "<cls>, <cls>"  it exists but does not ignore these classes
+#
+# `save` turns this into a refusal (D7); `status` into a report (A1 D10) — one rule,
+# two levels, the same split `_reminder_roots_divergent` makes. A second copy of the
+# check inside `status` would be exactly the drift this unit keeps closing elsewhere.
 #
 # Coverage is measured by ASKING GIT (`git check-ignore`), not by grepping the file
 # for a literal: a rule that matches is what protects the user, however it is
 # spelled and wherever in the repo's ignore chain it lives.
-_project_save_assert_gitignore() {
+_project_gitignore_gaps() {
     local root="$1"
-    local repo; repo=$(basename "$root")
-    local gi="$root/.cco/.gitignore"
-
-    if [[ ! -f "$gi" ]]; then
-        error "refusing to save — $repo/.cco/.gitignore is missing."
-        echo "  Without it, a secret dropped under .cco/ would be committed. Create it with:" >&2
-        _project_save_gitignore_lines >&2
-        die "cco does not write that file for you — it is a versioned file in YOUR repository (ADR-0038 D7)."
-    fi
-
+    [[ -f "$root/.cco/.gitignore" ]] || { printf 'missing\n'; return 0; }
     local cls probe missing=""
     for cls in "${_SECRET_PROJECT_GITIGNORE_CLASSES[@]}"; do
         probe=$(_secret_gitignore_probe "$cls")
         git -C "$root" check-ignore -q ".cco/$probe" 2>/dev/null && continue
         missing="${missing}${missing:+, }$cls"
     done
-    [[ -z "$missing" ]] && return 0
+    printf '%s\n' "$missing"
+}
 
-    error "refusing to save — $repo/.cco/.gitignore does not ignore: $missing"
-    echo "  Add the missing lines to $repo/.cco/.gitignore, then retry:" >&2
+# The save-side verdict on that question: refuse, and name the fix (D7). Runs BEFORE
+# anything is staged — it is what makes the save safe to run at all.
+_project_save_assert_gitignore() {
+    local root="$1" gaps
+    gaps=$(_project_gitignore_gaps "$root")
+    [[ -z "$gaps" ]] && return 0
+    local repo; repo=$(basename "$root")
+
+    if [[ "$gaps" == missing ]]; then
+        error "refusing to save — $repo/.cco/.gitignore is missing."
+        echo "  Without it, a secret dropped under .cco/ would be committed. Create it with:" >&2
+    else
+        error "refusing to save — $repo/.cco/.gitignore does not ignore: $gaps"
+        echo "  Add the missing lines to $repo/.cco/.gitignore, then retry:" >&2
+    fi
     _project_save_gitignore_lines >&2
-    die "cco does not edit that file for you — it is a versioned file in YOUR repository (ADR-0038 D7)."
+    die "cco does not write that file for you — it is a versioned file in YOUR repository (ADR-0038 D7)."
 }
 
 # The lines the refusal above tells the user to add — printed from the SAME array
@@ -128,7 +139,9 @@ _project_save_gitignore_lines() {
     printf '    !secrets.env.example\n'
 }
 
-# D4 — after the commit, report what this invocation did NOT cover. Two INDEPENDENT
+# D4 — report what this invocation did NOT cover. Shared by `save` (after the
+# commit) and by `status` (as part of the preview, where it arguably matters more:
+# that is the moment before you decide). Two INDEPENDENT
 # facts, deliberately reported apart: a member repo can be committed and divergent
 # (someone committed a different config there), or identical and uncommitted. A
 # single merged line would hide exactly the distinction the user needs.
@@ -139,7 +152,7 @@ _project_save_gitignore_lines() {
 #
 # ⚠ Level is `note`, never `warn` (design §2.6). A `warn` escalates the `cco start`
 # pause; nothing reported here should make a multi-repo project stop at every launch.
-_project_save_report_members() {
+_project_config_report_members() {
     local root="$1"
     local yml="$root/.cco/project.yml"
     [[ -f "$yml" ]] || return 0
@@ -226,8 +239,94 @@ cmd_project_save() {
     local sha; sha=$(git -C "$root" rev-parse --short HEAD 2>/dev/null)
     ok "saved $repo/.cco @ ${sha} — ${msg}"
 
-    _project_save_report_members "$root"
+    _project_config_report_members "$root"
     return 0
+}
+
+_project_status_usage() {
+    cat <<'EOF'
+Usage: cco project status [--full]
+
+Show what 'cco project save' would commit from this repo's <repo>/.cco/ — and
+whether it would succeed. Nothing is written, staged or changed.
+
+Options:
+      --full             Also show the diff of each change
+
+Each line is a file and its fate in that commit: M modified, A new, D deleted.
+Files git ignores are excluded, because save would not commit them either.
+What was already saved is 'cco project history'.
+EOF
+}
+
+# `status` answers a different question from `history` — what is NOT saved yet,
+# rather than what was. Everything it prints is the ANSWER, so it goes to stdout and
+# pipes; only the cross-repo facts, which are about OTHER repos, stay `note`.
+#
+# ⚠ It never refuses and never dies on a config problem (A1 D10). A preview that
+# dies is one nobody can use to find out why their save would die — so the D7
+# barrier is REPORTED here, in the same words `save` refuses with, and the file list
+# is still printed underneath so one invocation answers both halves.
+cmd_project_status() {
+    _status_parse_args project "$@"
+    if [[ "$_STATUS_HELP" == true ]]; then _project_status_usage; return 0; fi
+
+    local root; root=$(_project_unit_root)
+    [[ -n "$root" ]] || die "not inside a cco project — 'cco project status' reads the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml."
+    local repo; repo=$(basename "$root")
+
+    if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        printf '%s/.cco cannot be versioned yet — %s is not a git repository. Run '"'"'git init'"'"' there, then '"'"'cco project save'"'"'.\n' "$repo" "$repo"
+        return 0
+    fi
+
+    local changed; changed=$(_status_changed "$root" ".cco/" ".cco")
+    local gaps; gaps=$(_project_gitignore_gaps "$root")
+
+    if [[ -z "$changed" ]]; then
+        local last; last=$(_status_last_saved "$root" ".cco")
+        if [[ -n "$last" ]]; then
+            printf '%s/.cco is clean — nothing to save (last saved %s)\n' "$repo" "$last"
+        else
+            printf '%s/.cco is clean, and has never been committed — %s records its first version\n' \
+                "$repo" "'cco project save'"
+        fi
+        # Still worth saying: a barrier that is already broken will refuse the FIRST
+        # save the user makes, and the clean case is when they can fix it for free.
+        [[ -n "$gaps" ]] && _project_status_report_gaps "$repo" "$gaps"
+        _project_config_report_members "$root"
+        return 0
+    fi
+
+    local n; n=$(printf '%s\n' "$changed" | grep -c .)
+    if [[ -n "$gaps" ]]; then
+        printf '%s/.cco — %s file(s) to save, but %s would refuse:\n' "$repo" "$n" "'cco project save'"
+        _project_status_report_gaps "$repo" "$gaps"
+        printf '\n'
+    else
+        printf '%s/.cco — %s file(s) to save:\n' "$repo" "$n"
+    fi
+
+    printf '%s\n' "$changed" | _status_render "$root" ".cco/" "$_STATUS_FULL"
+
+    if [[ -z "$gaps" ]]; then
+        printf '\n  → cco project save\n'
+    fi
+    _project_config_report_members "$root"
+    return 0
+}
+
+# The barrier report, in the SAME words `save` refuses with — a preview that
+# paraphrased the refusal would send the user looking for a different message.
+_project_status_report_gaps() {
+    local repo="$1" gaps="$2"
+    if [[ "$gaps" == missing ]]; then
+        printf '  %s/.cco/.gitignore is missing — without it a secret dropped under .cco/ would be committed.\n' "$repo"
+    else
+        printf '  %s/.cco/.gitignore does not ignore: %s\n' "$repo" "$gaps"
+    fi
+    printf '  Add these lines to %s/.cco/.gitignore (cco does not write that file for you — it is yours):\n' "$repo"
+    _project_save_gitignore_lines
 }
 
 cmd_project_history() {

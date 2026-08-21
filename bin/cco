@@ -91,7 +91,7 @@ source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-resolve.sh"
 source "$LIB_DIR/cmd-sync.sh"
 source "$LIB_DIR/tags.sh"
-source "$LIB_DIR/config-history.sh"
+source "$LIB_DIR/config-read.sh"
 source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
@@ -217,7 +217,7 @@ Discovery:
   whoami                 Show this session's resolved access scope (claude/cco/paths)
 
 Resources:
-  project <cmd>          Manage projects (save, history, add, validate, coords, rename, show, ...)
+  project <cmd>          Manage projects (save, status, history, add, validate, coords, show, ...)
   repo rename [<o>] <n>  Rename a repo's per-project label (cwd-first; --move-dir)
   extra-mount rename <o> <n>  Rename an extra_mount's per-project label
   pack <cmd>             Manage knowledge packs (create, install, update, rename, ...)
@@ -439,7 +439,7 @@ _cco_operator_shim() {
                 # There is no `.git` there, so the verb is structurally unable to
                 # answer and would degrade into a false "no history yet". Exact
                 # precedent: `template show|validate`.
-                history) _op_read_scope global "config history" ;;
+                history|status) _op_read_scope global "config $sub" ;;
                 push|pull) refuse "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
                 *) _op_unknown_sub config "$sub" ;;
             esac ;;
@@ -520,9 +520,11 @@ _cco_operator_shim() {
                 # config may not fix it into the repo's history either — do not
                 # "relax" it by reasoning from the mount table, which permits it.
                 save) _op_write "project save" project ;;
-                # `history` reads the repo's OWN git, like show|validate|coords —
-                # nothing personal-global, nothing host-shaped. Free at every level.
-                history) return 0 ;;
+                # `history` and `status` read the repo's OWN git, like
+                # show|validate|coords — nothing personal-global, nothing
+                # host-shaped, and `status` writes nothing at all. Free at every
+                # level (A1 D12).
+                history|status) return 0 ;;
                 list) _op_removed_list project ;;   # ADR-0029 redirect (exit 2)
                 rename) refuse "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
                 export|import|add) _op_hostonly "project $sub" ;;
@@ -658,6 +660,7 @@ Usage: cco project <command> [options]
 
 Commands:
   save [-m <msg>]        Commit this repo's .cco/ config (secret-scanned, nothing else)
+  status [--full]        Show what save would commit (nothing is changed)
   history [-n N] [--full]  Show how this repo's .cco/ config changed over time
   export [name]          Export a project's config as a .tar.gz snapshot
   import <archive>       Import a project from a .tar.gz snapshot
@@ -686,6 +689,7 @@ EOF
             delete)
                 die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
             save)        cmd_project_save "$@" ;;
+            status)      cmd_project_status "$@" ;;
             history)     cmd_project_history "$@" ;;
             validate)    cmd_project_validate "$@" ;;
             coords)      cmd_project_coords "$@" ;;

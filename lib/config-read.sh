@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# lib/config-history.sh — the READ half of the config 2x2 (ADR-0038 D2/D6).
+# lib/config-read.sh — the READ half of the config matrix (ADR-0038 D2/D6 + A1).
 #
-#   cco project history   <repo>/.cco  — the repo's own git, path-filtered to .cco/
-#   cco config  history   ~/.cco       — the personal store's own git, unfiltered
+#   cco project history / status   <repo>/.cco  — the repo's own git, scoped to .cco/
+#   cco config  history / status   ~/.cco       — the personal store's own git
 #
-# ONE renderer for both. What differs between the two stores is only data: the git
-# root, the pathspec, and the prefix stripped from a changed path before it is
-# grouped. The verb bodies stay with their stores (cmd-project-save.sh /
-# cmd-config.sh) and call in here — a second renderer would drift in exactly the
-# column that earns the verb.
+# TWO questions, deliberately two verbs (A1 D9): `history` is what WAS saved,
+# `status` is what is NOT saved yet — the distance `git log` keeps from `git status`.
+#
+# ONE renderer per question, shared by both stores. What differs between the stores
+# is only data: the git root, the pathspec(s), and the prefix stripped from a changed
+# path before it is grouped. The verb bodies stay with their stores
+# (cmd-project-save.sh / cmd-config.sh) and call in here — a second renderer would
+# drift in exactly the column that earns the verb.
 #
 # WHY A PATH FILTER AND NOT A COMMIT TRAILER (ADR-0038 D3): `git log -- <path>`
 # answers "how did my config change" however the commit was made. A trailer stamped
@@ -17,7 +20,7 @@
 # or by `cco sync` is the normal case.
 #
 # Provides: _history_parse_args(), _history_render(), _history_has_commits(),
-#   _history_group_label()
+#   _history_group_label(), _status_parse_args(), _status_changed(), _status_render()
 # Dependencies: colors.sh (die)
 
 # The default number of commits shown (ADR-0038 Open / design §7). Fits a terminal
@@ -130,4 +133,99 @@ _history_render() {
     done < <(git -C "$root" log -n "$n" --date=short \
                  --format='%h%x09%ad%x09%an%x09%s' ${sel[@]+"${sel[@]}"} 2>/dev/null)
     return 0
+}
+
+# ── The `status` half (ADR-0038 Amendment A1) ────────────────────────
+#
+# `history` answers what WAS saved; `status` answers what is NOT saved yet. The
+# preview is only worth having if it reproduces the save's OWN rule about what gets
+# committed (A1 D11) — which differs per store, and is passed in as pathspecs:
+#
+#   project  →  `.cco`                (everything under it that git does not ignore)
+#   config   →  the _CONFIG_ALLOWLIST entries that exist
+#
+# A plain `git status` on either root would name files neither verb would commit.
+# That is the failure this shape exists to prevent — the same class as the design's
+# warning against `_sync_synced_files`: the *nearly* right list is the dangerous one.
+
+# Parse the `status` surface: `--full` only. Sets _STATUS_FULL and _STATUS_HELP.
+# Usage: _status_parse_args <verb-label> [args...]
+_status_parse_args() {
+    local verb="$1"; shift
+    _STATUS_FULL=false
+    _STATUS_HELP=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h) _STATUS_HELP=true; shift ;;
+            --full) _STATUS_FULL=true; shift ;;
+            -*) die "Unknown option: $1. Run 'cco $verb status --help'." ;;
+            *)  die "Unexpected argument: $1. 'cco $verb status' takes options only." ;;
+        esac
+    done
+    return 0
+}
+
+# Echo "<mark>\t<config-relative-path>" for every change the matching `save` would
+# commit — gitignored files excluded by git itself, everything outside the
+# pathspecs excluded by the pathspecs.
+#
+# `-z` (not the default quoting) so a path with a space or a non-ASCII character is
+# read whole; `--no-renames` so every record is the two-char code plus one path.
+# Usage: _status_changed <git_root> <strip-prefix> [<pathspec>...]
+_status_changed() {
+    local root="$1" strip="$2"; shift 2
+    local -a sel=()
+    [[ $# -gt 0 ]] && sel=( -- "$@" )
+    local rec xy p mark
+    while IFS= read -r -d '' rec; do
+        [[ -z "$rec" ]] && continue
+        xy="${rec:0:2}"
+        p="${rec:3}"
+        [[ -z "$p" ]] && continue
+        # One meaning per record: what this file's fate is in the commit `save`
+        # would make. The index/worktree split the two-char code carries is not the
+        # user's question here — "will it be committed, and as what" is.
+        case "$xy" in
+            '??') mark=A ;;
+            *D*)  mark=D ;;
+            A*)   mark=A ;;
+            *)    mark=M ;;
+        esac
+        [[ -n "$strip" ]] && p="${p#"$strip"}"
+        printf '%s\t%s\n' "$mark" "$p"
+    done < <(git -C "$root" status --porcelain -z -uall --no-renames ${sel[@]+"${sel[@]}"} 2>/dev/null)
+}
+
+# Render the changed set to STDOUT (it is data, so it pipes). With <full> true each
+# entry is followed by its diff — including NEW files, which `git diff HEAD` cannot
+# show: those are diffed against /dev/null with `--no-index`, so nothing has to be
+# staged. A read verb never touches the index, so `--intent-to-add` is not an option
+# here however convenient it looks.
+# Usage: _status_render <git_root> <strip-prefix> <full:true|false>   [stdin: changed lines]
+_status_render() {
+    local root="$1" strip="$2" full="$3"
+    local mark rel path
+    while IFS=$'\t' read -r mark rel; do
+        [[ -z "$mark" ]] && continue
+        printf '  %s  %s\n' "$mark" "$rel"
+        [[ "$full" == true ]] || continue
+        path="${strip}${rel}"
+        if git -C "$root" cat-file -e "HEAD:$path" 2>/dev/null; then
+            git -C "$root" diff HEAD -- "$path" 2>/dev/null
+        else
+            git -C "$root" diff --no-index -- /dev/null "$path" 2>/dev/null || true
+        fi
+    done
+    return 0
+}
+
+# The one-line "last saved" tail for a clean store — it is what makes `status` a
+# complete answer rather than a bare "nothing to do", and it is the natural handoff
+# to `history`. Echoes empty when there is no history to name.
+# Usage: _status_last_saved <git_root> [<pathspec>]
+_status_last_saved() {
+    local root="$1" spec="${2:-}"
+    local -a sel=()
+    [[ -n "$spec" ]] && sel=( -- "$spec" )
+    git -C "$root" log -n 1 --date=short --format='%ad %h %s' ${sel[@]+"${sel[@]}"} 2>/dev/null || printf ''
 }
