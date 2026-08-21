@@ -4,7 +4,7 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-20** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -63,8 +63,7 @@
 > ⭐ What the measurement really found is what **A2** then decided: D1 had fused the level with the
 > pause, leaving `note:` and `ℹ` write-only. The pause now keys on *the run reaching the launch*; the
 > level only decides what it says.
-> ⚠ The branch is **unmerged**, and **partly pushed** — it tracks `origin/feat/cli/start-warning-gate`
-> and runs ahead of it. Measure with `git branch -vv`; do not repeat a stated push status.
+> ✅ **MERGED into `develop` 2026-08-21** (`6208228`, `--no-ff`), branch deleted.
 >
 > **2026-08-20, A1's design** — ✅ **[ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md)
 > written and accepted** (D1…D8), taking the number this roadmap reserved for it and never wrote.
@@ -75,6 +74,15 @@
 > (git writes to `.git/`, which is `rw`), so D8's `edit-project+` gate is **policy, not mechanism** —
 > and `project save` deliberately gets no ro-mount guard. ⚠ Exactly one file in the unit is
 > image-baked (the managed rule), so exactly one `cco build` is owed at acceptance.
+>
+> **2026-08-21, the merge** — both branches are **in `develop`**: the A5+A8 cycle (`6208228`) and A1's
+> design (`90c1391`), two `--no-ff` merges, both feature branches deleted. Suite on the merged
+> `develop`: **1710 / 7 of 1717**, identical to the pre-merge figure, so nothing regressed. 🔴
+> **`develop` is unpushed, 40 ahead** — that is the next action, and `origin/feat/cli/start-warning-gate`
+> is the one merged remote branch still to delete. ⚠ **`feat/claude-view-file-overlays` is rares' and
+> stays untouched** (`43c2c33`, local = remote). The A1 implementation now runs on
+> **`feat/config/save-and-history`**, cut from the merged tip — where `note()` finally exists, which is
+> the whole reason the design branch could not be cut from the old `develop`.
 
 ## The planning documents — and why there are three
 
@@ -105,26 +113,33 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ✅ **`develop` is level with `origin/develop`** at `c93ea38` (the FI-58 merge and its
-  history are pushed), and both stale remote branches — `feat/delegation/return-channel`,
-  `feat/access/claude-md-axis` — are **deleted**. Nothing is owed to the remote on `develop`.
-  ⚠ **`feat/cli/start-warning-gate` is NOT MERGED** — the A5/A8 design phase, **A5's
-  implementation** (U1 + U2, 2026-08-14), **U4**, the post-acceptance UX rework, **U3 = all of A8**,
-  and **U5 = D19 + Amendment A2** (all 2026-08-18). Every unit of the A5+A8 plan is now on it and
-  **nothing is owed before it merges**. Push it from the host before anything else.
-  ⚠ **It is NOT unpushed** — three documents said so, this one included, and the measurement
-  disagrees: it has an upstream (`origin/feat/cli/start-warning-gate`) and runs ahead of it, so a
-  plain `git push` is what it needs. Same rule as the commit count below: **measure, never restate**
-  (`git branch -vv`).
-  📝 No commit count is recorded here on purpose: a line that states one is invalidated by the very
-  commit that states it. Measure with `git rev-list --count develop..feat/cli/start-warning-gate`.
-  📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
-  of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
-  `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
+  `0.6.0`. ✅ **The A5+A8 cycle and A1's design are MERGED into `develop`** (2026-08-21), as two
+  `--no-ff` merges in that order: `6208228` (the five A5/A8 units) and `90c1391` (ADR-0038 + design).
+  Both feature branches were deleted locally with `-d` — it did not refuse, and `git log develop..<b>`
+  was **0 for both** before the deletion.
+  🔴 **`develop` is UNPUSHED — 40 commits ahead of `origin/develop`.** Push it from the host before
+  anything else. 📝 That count is recorded knowing the rule below invalidates it: it is a snapshot,
+  and `git rev-list --count origin/develop..develop` is the authority.
+  📝 **`origin/feat/cli/start-warning-gate` still exists on the remote** and is the one merged branch
+  left to delete there — outward-facing, so it is asked rather than assumed.
+  ⚠ **`feat/claude-view-file-overlays` is NOT ours and is deliberately untouched** — rares' branch,
+  verified identical local and remote at `43c2c33`, reviewed by the maintainer in a dedicated session.
+  It must stay out of every cleanup sweep.
+  ⚠ **Measure, never restate — a rule this project has now paid for four times.** A branch position
+  written in prose has disagreed with the refs three times, and a *stated commit count is invalidated
+  by the commit that states it* (the last handoff commit turned its own "+2" into "+3"). And ⚠ **the
+  host can change this session's branch under it**: host and container share one working tree, so a
+  host-side `checkout` or `push` lands here with no fetch. `git branch --show-current` before any
+  write, not only at session start.
+  📝 A local deletion can need `-D` when the branch is merged into `develop` but *ahead of its own
+  stale remote-tracking ref* — `-d` reads that ref, not `develop`. Verify with `git log develop..<branch>`
+  (empty = safe), never by trusting `-d`'s refusal. It was not needed this time.
   ⚠ **Push with `--follow-tags`** when a tag is involved — a bare `git push` leaves the tag behind
   and `release.yml` never fires.
-- **Test baseline**: in-container **1654 passed / 7 failed of 1661**, measured on `develop` after the
-  FI-58 merge (2026-08-13, mask on) — +21 over the previous baseline, all from that unit. Previously
+- **Test baseline**: in-container **1710 passed / 7 failed of 1717**, measured on `develop` **after the
+  two 2026-08-21 merges** (mask on) — identical to the figure measured on the branch before merging, so
+  the merges introduced no regression; the 7 verified **name for name**. Before it, **1654 / 7 of 1661**
+  after the FI-58 merge (2026-08-13). Previously
   **1633 passed / 7 failed of 1640** on `develop` at `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
   [FI-19](improvements.md)). +2 against A4's `1631/7 of 1638`: the FI-67 regression pair. The last
