@@ -3,8 +3,10 @@
 #
 # Provides:
 #   Loading:   load_secrets_file(), load_global_secrets()
-#   Scanning:  _secret_match_filename(), _secret_match_content()
-#              _SECRET_FILENAME_PATTERNS, _SECRET_CONTENT_PATTERNS
+#   Scanning:  _secret_match_filename(), _secret_match_content(),
+#              _secret_scan_staged(), _secret_gitignore_probe()
+#              _SECRET_FILENAME_PATTERNS, _SECRET_CONTENT_PATTERNS,
+#              _SECRET_PROJECT_GITIGNORE_CLASSES
 #   Deprecated: migrate_memory_to_claude_state() [use migrations/project/001],
 #               _migrate_to_managed() [use migrations/global/001]
 # Dependencies: colors.sh, utils.sh
@@ -62,6 +64,33 @@ _secret_match_filename() {
     return 1
 }
 
+# ── The project-config gitignore floor (ADR-0038 D7) ────────────────
+#
+# The secret filename classes cco's OWN project scaffold declares in
+# <repo>/.cco/.gitignore (_cco_write_project_gitignore, lib/migrate.sh). This is
+# the coverage `cco project save` refuses below — deliberately NOT the whole
+# _SECRET_FILENAME_PATTERNS list above, which also carries `.netrc` and
+# `.cco/remotes`. cco has never written those two into a project's .gitignore, so
+# demanding them would refuse every project it scaffolded itself.
+#
+# The narrower floor costs nothing: the 2-pass scan runs on the staged set ALWAYS
+# (D7), against the FULL pattern list — so a `.netrc` under .cco/ is still caught
+# and still refuses the save. The floor decides what must be barred BEFORE staging;
+# the scan is what actually reads the files.
+#
+# Kept in step with the scaffold by test_invariant_project_gitignore_floor_covered.
+_SECRET_PROJECT_GITIGNORE_CLASSES=( 'secrets.env' '*.env' '*.key' '*.pem' '.credentials.json' )
+
+# A concrete filename that matches <class>, for `git check-ignore` to rule on:
+# coverage is measured by asking git, not by grepping the file for a literal.
+# A glob class needs a real name to probe with; a literal class probes as itself.
+_secret_gitignore_probe() {
+    case "$1" in
+        \**) printf 'cco-gitignore-probe%s\n' "${1#\*}" ;;
+        *)   printf '%s\n' "$1" ;;
+    esac
+}
+
 # Scan a file's contents for _SECRET_CONTENT_PATTERNS.
 # Text-files only (binaries skipped). Stops at first match.
 # Echoes "<line_number>:<pattern>" on hit; return 0 on match, 1 otherwise.
@@ -79,6 +108,35 @@ _secret_match_content() {
         fi
     done
     return 1
+}
+
+# 2-pass secret scan (filename, then content) over the currently STAGED files of
+# <git_root>, optionally narrowed to <pathspec>; *.example is exempt (FR-S3).
+# Echoes "<path>\t(why)" on the FIRST hit and returns 1 (block); returns 0 clean.
+#
+# ONE scanner for both save gates — `cco config save` (~/.cco, the whole store) and
+# `cco project save` (<repo>/.cco, path-scoped). It lives here, beside the pattern
+# lists, for the reason this file's header already gives: a second copy drifts.
+#
+# The PATHSPEC is what lets one function serve both. Without it the project verb
+# would scan the user's unrelated staged work and refuse over a file it was never
+# going to commit — the twin can omit it only because it owns its whole tree.
+# Usage: _secret_scan_staged <git_root> [<pathspec>]
+_secret_scan_staged() {
+    local root="$1" spec="${2:-}" f hit
+    local -a sel=()
+    [[ -n "$spec" ]] && sel=( -- "$spec" )
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        [[ "$f" == *.example ]] && continue
+        if hit=$(_secret_match_filename "$f" 2>/dev/null) && [[ -n "$hit" ]]; then
+            printf '%s\t(filename matches %s)\n' "$f" "$hit"; return 1
+        fi
+        if [[ -f "$root/$f" ]] && hit=$(_secret_match_content "$root/$f" 2>/dev/null) && [[ -n "$hit" ]]; then
+            printf '%s\t(content matches at line %s)\n' "$f" "${hit%%:*}"; return 1
+        fi
+    done < <(git -C "$root" diff --cached --name-only ${sel[@]+"${sel[@]}"} 2>/dev/null)
+    return 0
 }
 
 # Load secrets from a specific file into an array of -e flags

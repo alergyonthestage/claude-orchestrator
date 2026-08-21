@@ -125,7 +125,7 @@ _cco_warn_capture_append() {
 _cco_warn_area() {
     case "$1" in
         packs.sh|cmd-pack.sh|session-context.sh)           printf 'packs & overlays' ;;
-        reminders.sh|cmd-config.sh|cmd-sync.sh)            printf 'config hygiene' ;;
+        reminders.sh|cmd-config.sh|cmd-sync.sh|cmd-project-save.sh) printf 'config hygiene' ;;
         llms.sh|cmd-llms.sh)                               printf 'documentation / llms' ;;
         agents.sh)                                         printf 'agent teams' ;;
         index.sh|local-paths.sh|cmd-resolve.sh|paths.sh)   printf 'paths & index' ;;

@@ -91,11 +91,13 @@ source "$LIB_DIR/cmd-new.sh"
 source "$LIB_DIR/cmd-resolve.sh"
 source "$LIB_DIR/cmd-sync.sh"
 source "$LIB_DIR/tags.sh"
+source "$LIB_DIR/config-history.sh"
 source "$LIB_DIR/cmd-config.sh"
 source "$LIB_DIR/cmd-stop.sh"
 source "$LIB_DIR/cmd-chrome.sh"
 source "$LIB_DIR/cmd-project-query.sh"
 source "$LIB_DIR/cmd-project-add.sh"
+source "$LIB_DIR/cmd-project-save.sh"
 source "$LIB_DIR/cmd-project-validate.sh"
 source "$LIB_DIR/cmd-project-coords.sh"
 source "$LIB_DIR/cmd-project-export-import.sh"
@@ -215,7 +217,7 @@ Discovery:
   whoami                 Show this session's resolved access scope (claude/cco/paths)
 
 Resources:
-  project <cmd>          Manage projects (add, validate, coords, rename, show, export, import)
+  project <cmd>          Manage projects (save, history, add, validate, coords, rename, show, ...)
   repo rename [<o>] <n>  Rename a repo's per-project label (cwd-first; --move-dir)
   extra-mount rename <o> <n>  Rename an extra_mount's per-project label
   pack <cmd>             Manage knowledge packs (create, install, update, rename, ...)
@@ -224,7 +226,7 @@ Resources:
 
 Tools & Sharing:
   chrome <cmd>           Manage Chrome debug session on host
-  config <save|push|pull> Version + sync your personal ~/.cco store
+  config <cmd>           Version + read + sync your personal ~/.cco store
   remote <cmd>           Manage sharing-repo remotes
 
 Run 'cco help' for this message, or 'cco <command> --help' for command-specific help.
@@ -432,6 +434,12 @@ _cco_operator_shim() {
                 # 2026-07-02).
                 validate) refuse "'cco config validate' is host-only — it sanitizes machine-local index/state that is not coherent inside a container. $host_hint" ;;
                 save) _op_write "config save" global ;;   # ~/.cco personal store
+                # Measured (ADR-0038 D8): at read-project `~/.cco` is NOT mounted as
+                # a store — only the referenced pack is bound under `~/.cco/packs/`.
+                # There is no `.git` there, so the verb is structurally unable to
+                # answer and would degrade into a false "no history yet". Exact
+                # precedent: `template show|validate`.
+                history) _op_read_scope global "config history" ;;
                 push|pull) refuse "'cco config $sub' is host-only (network + credentials). $host_hint" ;;
                 *) _op_unknown_sub config "$sub" ;;
             esac ;;
@@ -504,6 +512,17 @@ _cco_operator_shim() {
             case "$sub" in
                 "") return 0 ;;
                 show|validate|coords) return 0 ;;
+                # ADR-0038 D8. `save` writes the CURRENT project's config tree →
+                # Pc=rw, symmetric with `config save`'s `_op_write … global`.
+                # ⚠ POLICY, not mechanism: a read-only `.cco` bind sits inside a
+                # read-write repo and `git add -- .cco/` on it returns 0 (measured).
+                # The gate holds because a session that may not EDIT the project's
+                # config may not fix it into the repo's history either — do not
+                # "relax" it by reasoning from the mount table, which permits it.
+                save) _op_write "project save" project ;;
+                # `history` reads the repo's OWN git, like show|validate|coords —
+                # nothing personal-global, nothing host-shaped. Free at every level.
+                history) return 0 ;;
                 list) _op_removed_list project ;;   # ADR-0029 redirect (exit 2)
                 rename) refuse "'cco project rename' is host-only (re-keys machine-local state). $host_hint" ;;
                 export|import|add) _op_hostonly "project $sub" ;;
@@ -540,6 +559,11 @@ _cco_verb_touches_store() {
         # honest answer means a future re-classification cannot silently lose the
         # trampoline. `tests/test_privilege_boundary.sh` pins it.
         remote)  [[ "$s" == "list" ]] && return 0 ;;                  # DATA remotes registry
+        # `project save|history` are deliberately ABSENT (default-deny). `history`
+        # reads only the repo's own git. `save` commits into the USER's repo, and
+        # elevating it would create cco-svc-owned objects in a tree the agent user
+        # must keep writing — its D4 member report reads the index best-effort and
+        # degrades to silence when it cannot, which is Invariant H1's contract anyway.
         project) case "$s" in show|validate|coords) return 0 ;; esac ;;  # index membership
         pack|template|llms) case "$s" in show|validate) return 0 ;; esac ;;  # DATA source provenance
     esac
@@ -633,6 +657,8 @@ case "$cmd" in
 Usage: cco project <command> [options]
 
 Commands:
+  save [-m <msg>]        Commit this repo's .cco/ config (secret-scanned, nothing else)
+  history [-n N] [--full]  Show how this repo's .cco/ config changed over time
   export [name]          Export a project's config as a .tar.gz snapshot
   import <archive>       Import a project from a .tar.gz snapshot
   add <res> <name>       Embed a repo|mount|llms|pack coordinate (cwd-first)
@@ -659,6 +685,8 @@ EOF
                 die "'cco project $subcmd' was removed — use 'cco project add pack <name>' to embed a pack coordinate (ADR-0023 D3 / AD12 no-alias)." ;;
             delete)
                 die "'cco project delete' was removed — a project's config lives in its repo at <repo>/.cco/; remove it with normal git/filesystem ops. To deregister cco's machine-local bookkeeping for a project, use 'cco forget <project>' (the repo is untouched; ADR-0021)." ;;
+            save)        cmd_project_save "$@" ;;
+            history)     cmd_project_history "$@" ;;
             validate)    cmd_project_validate "$@" ;;
             coords)      cmd_project_coords "$@" ;;
             rename)      cmd_project_rename "$@" ;;
