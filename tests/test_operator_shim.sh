@@ -793,3 +793,19 @@ test_operator_config_history_needs_read_global() {
     assert_gate_allows read-global config history || return 1
     return 0
 }
+
+# A1 D12 — the `status` pair is classified exactly like the `history` pair, from the
+# same measurement: `project status` reads the repo's own git (and writes nothing at
+# all), `config status` cannot answer at read-project, where ~/.cco is not mounted
+# as a store. Asserted as pairs so the level argument stays load-bearing.
+test_operator_project_status_is_free_at_read_project() {
+    assert_gate_allows read-project project status || return 1
+    return 0
+}
+
+test_operator_config_status_needs_read_global() {
+    lane_cco read-project config status
+    assert_refused "$OP_RC" "$OP_OUT" "read-global scope" || return 1
+    assert_gate_allows read-global config status || return 1
+    return 0
+}

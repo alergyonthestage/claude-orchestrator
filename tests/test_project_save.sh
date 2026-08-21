@@ -414,3 +414,172 @@ test_config_history_lists_the_personal_store() {
     assert_output_contains "first global" || return 1
     assert_output_contains ".claude/CLAUDE.md" || return 1
 }
+
+# ── `status` (ADR-0038 Amendment A1) ─────────────────────────────────
+#
+# The preview's whole value is that it reproduces its own save's rule about what
+# gets committed (A1 D11). A test that only checked "it lists changed files" would
+# pass on a plain `git status` — which names files neither verb would commit.
+
+test_project_status_lists_exactly_what_save_would_commit() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_cco_in "$r" project save -m "initial" || return 1
+
+    printf 'description: x\n' >> "$r/.cco/project.yml"       # M
+    printf '# new\n'   > "$r/.cco/claude/rules/naming.md"    # A
+    rm "$r/.cco/claude/rules/style.md"                       # D
+    printf 'TOKEN=real\n' > "$r/.cco/secrets.env"            # gitignored — save skips it
+    printf 'more code\n' >> "$r/src.txt"                     # outside .cco — save skips it
+
+    # NOTE: project.yml is the cwd-first ANCHOR (_resolve_find_unit_dir keys on it),
+    # so it is deliberately the MODIFIED file here, never the deleted one — deleting
+    # it makes the repo unresolvable, which is a different verb's contract.
+    _ps_cco_in "$r" project status || return 1
+    assert_output_contains "M  project.yml"            || return 1
+    assert_output_contains "A  claude/rules/naming.md" || return 1
+    assert_output_contains "D  claude/rules/style.md"  || return 1
+    # The two exclusions are the point: both would be listed by a bare `git status`.
+    assert_output_not_contains "secrets.env" || return 1
+    assert_output_not_contains "src.txt"     || return 1
+}
+
+# A read verb that writes is not a preview. Nothing may move — not HEAD, not the
+# index, not the working tree.
+test_project_status_changes_nothing() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_cco_in "$r" project save -m "initial" || return 1
+    printf '# more\n' >> "$r/.cco/claude/rules/style.md"
+    git -C "$r" add -- src.txt                      # the user's own staging must survive too
+
+    local head_before porcelain_before
+    head_before=$(git -C "$r" rev-parse HEAD)
+    porcelain_before=$(git -C "$r" status --porcelain)
+
+    _ps_cco_in "$r" project status --full || return 1
+
+    assert_equals "$head_before" "$(git -C "$r" rev-parse HEAD)" "status must create no commit" || return 1
+    assert_equals "$porcelain_before" "$(git -C "$r" status --porcelain)" \
+        "status must leave the index and working tree untouched" || return 1
+}
+
+test_project_status_clean_names_the_last_save() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_cco_in "$r" project save -m "tighten the rules" || return 1
+
+    _ps_cco_in "$r" project status || return 1
+    assert_output_contains "is clean" || return 1
+    assert_output_contains "tighten the rules" || return 1
+}
+
+test_project_status_never_committed() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+
+    _ps_cco_in "$r" project status || return 1
+    assert_output_contains "project.yml" || return 1
+    assert_output_contains "cco project save" || return 1
+}
+
+# A1 D10 — the barrier is REPORTED, never enforced. `save` refuses on it (T5/T6);
+# `status` must still answer, at rc 0, in the same words. A preview that dies is one
+# nobody can use to find out why their save would die.
+test_project_status_reports_the_barrier_without_refusing() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'secrets.env\n*.env\n*.pem\n.credentials.json\n' > "$r/.cco/.gitignore"   # no *.key
+
+    _ps_cco_in "$r" project status || return 1      # rc 0 IS the assertion
+    assert_output_contains "would refuse" || return 1
+    assert_output_contains "*.key" || return 1
+    # It still answers the question that was asked.
+    assert_output_contains "project.yml" || return 1
+    # And it does not author the file it is complaining about (P-C).
+    assert_file_not_contains "$r/.cco/.gitignore" "*.key" || return 1
+}
+
+test_project_status_missing_gitignore_is_reported_not_fatal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    rm -f "$r/.cco/.gitignore"
+
+    _ps_cco_in "$r" project status || return 1      # rc 0 IS the assertion
+    assert_output_contains "is missing" || return 1
+    assert_file_not_exists "$r/.cco/.gitignore" || return 1
+}
+
+# --full must cover NEW files too. `git diff HEAD` cannot show an untracked file,
+# and staging it to make it visible is exactly what a read verb may not do.
+test_project_status_full_diffs_new_files_too() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_cco_in "$r" project save -m "initial" || return 1
+    printf '# brand new\n' > "$r/.cco/claude/rules/naming.md"
+
+    _ps_cco_in "$r" project status --full || return 1
+    assert_output_contains "brand new" || return 1
+    assert_output_contains "diff --git" || return 1
+}
+
+# ── `cco config status` — the other half of D11 ──────────────────────
+
+test_config_status_lists_only_the_allowlist() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$HOME/.cco/.claude"
+    printf '# global\n' > "$HOME/.cco/.claude/CLAUDE.md"
+    run_cco config save -m "first" || return 1
+
+    printf '# edited\n' >> "$HOME/.cco/.claude/CLAUDE.md"   # allowlisted
+    printf 'junk\n'      > "$HOME/.cco/scratch.txt"         # NOT allowlisted
+
+    run_cco config status || return 1
+    assert_output_contains ".claude/CLAUDE.md" || return 1
+    # `config save` would never commit it, so the preview must not promise it.
+    assert_output_not_contains "scratch.txt" || return 1
+}
+
+# A store that has never been saved. ⚠ NOT the `-d .git` branch: J0
+# (_cco_first_run, lib/migrate.sh) git-inits ~/.cco on every host command, so that
+# branch is unreachable from the host suite by construction — it exists for a
+# container where the store is mounted without its .git. What IS reachable, and what
+# the user actually meets, is a git tree with no commits.
+test_config_status_on_a_never_saved_store() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$HOME/.cco/.claude"
+    printf '# global\n' > "$HOME/.cco/.claude/CLAUDE.md"
+    printf 'junk\n'      > "$HOME/.cco/scratch.txt"
+
+    run_cco config status || return 1               # rc 0 IS the assertion
+    assert_output_contains ".claude/CLAUDE.md" || return 1
+    assert_output_contains "cco config save" || return 1
+    # ⚠ This is where the allowlist pathspec is LOAD-BEARING and the sibling test
+    # above cannot see it. Once `config save` has run, its whitelist .gitignore
+    # (`*` then `!`-re-include) excludes a stray file by itself, so dropping the
+    # pathspec changes nothing there. Before the first save that barrier does not
+    # exist yet — and a preview that promised to commit scratch.txt would be lying
+    # about the very command it previews (A1 D11).
+    assert_output_not_contains "scratch.txt" || return 1
+}
+
+test_config_status_clean_after_save() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$HOME/.cco/.claude"
+    printf '# global\n' > "$HOME/.cco/.claude/CLAUDE.md"
+    run_cco config save -m "first global" || return 1
+
+    run_cco config status || return 1
+    assert_output_contains "is clean" || return 1
+    assert_output_contains "first global" || return 1
+}
