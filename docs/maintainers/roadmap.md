@@ -286,7 +286,7 @@ ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the 
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-#### A1 — `cco project save`: project-config versioning, and the history surface
+#### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
 ✅ **DESIGN DONE AND ACCEPTED 2026-08-20** —
 [ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md) (D1…D8,
@@ -294,18 +294,27 @@ all eight ruled by the maintainer at the gate) +
 [design](configuration/decentralized-config/design/design-project-config-versioning.md). The ADR
 number reserved by this entry is now **written**.
 
-✅ **IMPLEMENTED 2026-08-21** on `feat/config/save-and-history` — all three verbs, both barriers, the
-D4 multi-repo report, the D8 shim classification, and every surface in design §5. T1…T22 are covered
-plus three shapes the plan did not name (a pre-staged file surviving both a save and a refusal; a
-`.gitignore` spelled equivalently; INV-GIF, the drift guard on the coverage floor). Suite **1737
-passed / 7 failed of 1744** — the 7 are the known host-only set, verified name for name.
+✅ **IMPLEMENTED 2026-08-21** on `feat/config/save-and-history` — **five verbs**, both barriers, the
+D4 multi-repo report, the shim classification, and every surface in design §5. T1…T22 + S1…S9 are
+covered, plus four shapes no plan named (a pre-staged file surviving both a save and a refusal; a
+`.gitignore` spelled equivalently; INV-GIF, the drift guard on the coverage floor; and the
+never-saved store, the only state where `config status`'s allowlist pathspec is load-bearing).
 
-**Both `Open` choices are settled**: the default commit message is **`project config update`** (it
+✅ **`cco build` DONE 2026-08-21** — the acceptance lane is closed. The rebuilt image carries the
+managed rule naming the real verb; verified in-session at `/etc/claude-code/`, no *"forthcoming"*.
+
+⭐ **Amendment A1 (D9…D12) widened the unit mid-flight** — the maintainer raised, against the
+finished three verbs, that the write half had **no preview**: `save` has two refusal paths and a
+commit set that is not obvious from outside, and `history` answers a different question (what WAS
+saved). `cco project status` + `cco config status` close it, on both stores by P-B — the same
+argument that turned D2 from one read verb into two. The matrix is now **2×3**.
+
+**Both original `Open` choices are settled**: default commit message **`project config update`** (it
 lands in the user's own log among code commits, where the twin's bare `config update` would be
-ambiguous) and `history`'s default limit is **`-n 10`**.
+ambiguous); `history`'s default limit **`-n 10`**.
 
-⚠ **Still owed before the entry closes**: the `cco build` in the acceptance lane (below) and a live
-look at the rebuilt managed rule. Nothing else.
+▶ **Next: `/review-implementation` over the whole branch**, then the merge gate. Nothing else is
+owed inside the unit.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
@@ -318,8 +327,10 @@ atomically with `cco project save` — a verb that does not exist. Today the rul
 calling it *forthcoming* and pointing at plain git. When this ships, that text is restored to the real
 verb. ✅ **D1 chose that spelling**, so the restoration is a deletion, not a rewrite.
 
-**Scope, as designed — three verbs, not one.** The unit closes a 2×2 matrix: `cco config save` is
-shipped; **`cco project save`**, **`cco project history`** and **`cco config history`** are new. The
+**Scope — five verbs, not one.** The unit closes a 2×3 matrix: `cco config save` is shipped;
+**`cco project save`**, **`cco project status`**, **`cco config status`**, **`cco project history`**
+and **`cco config history`** are new (the `status` row is Amendment A1, raised during
+implementation). The
 read half grew from the maintainer's ruling on D2: the user gets an official cco command for the
 history of *both* stores and never needs to know git — and the personal store is the side where the
 user is least able to construct the git command themselves.
