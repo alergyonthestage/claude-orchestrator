@@ -2198,3 +2198,48 @@ test_invariant_warn_badge_and_single_producer() {
         || { fail "INV-WG over-reaches: a declared-legitimate shape (a decorative ⚠ inside a message, a report row, a table line, prose in a comment, or the word 'note:' inside a chronicle sub-line) was flagged:"$'\n'"$overreach"; return 1; }
     return 0
 }
+
+# ── INV-GIF: cco's own project scaffold covers the save-gate floor ────
+#
+# `cco project save` refuses when <repo>/.cco/.gitignore does not ignore every
+# class in _SECRET_PROJECT_GITIGNORE_CLASSES (ADR-0038 D7). That array and the
+# scaffold `_cco_write_project_gitignore` writes are two lists of the same thing,
+# deliberately kept apart: the writer is reached by `cco init` through
+# _source_migration_deps, which does not source secrets.sh, so making the writer
+# read the array would break its caller.
+#
+# The cost of that separation is drift, and drift here has a specific shape: a
+# class added to the floor but not to the scaffold makes `cco project save` refuse
+# EVERY project cco itself created — a verb dead on arrival for every user. This
+# is the mechanical guard that makes the separation safe.
+#
+# Direction matters: scaffold ⊇ floor. The scaffold may ignore MORE (it also
+# excludes the generated session artifacts); it may never ignore less.
+test_invariant_project_gitignore_floor_covered() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    (
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/utils.sh"
+        source "$REPO_ROOT/lib/paths.sh"
+        source "$REPO_ROOT/lib/migrate.sh"
+        source "$REPO_ROOT/lib/secrets.sh"
+
+        mkdir -p "$tmp/repo/.cco"
+        git init -q "$tmp/repo" 2>/dev/null
+        _cco_write_project_gitignore "$tmp/repo/.cco/.gitignore"
+
+        local cls probe missing=""
+        for cls in "${_SECRET_PROJECT_GITIGNORE_CLASSES[@]}"; do
+            probe=$(_secret_gitignore_probe "$cls")
+            git -C "$tmp/repo" check-ignore -q ".cco/$probe" 2>/dev/null && continue
+            missing="${missing}${missing:+, }$cls"
+        done
+        [[ -z "$missing" ]] || { echo "ASSERTION FAILED: cco's own .cco/.gitignore scaffold does not cover the save-gate floor: $missing — every project cco scaffolds would be refused by 'cco project save'"; exit 1; }
+
+        # The committed skeleton must stay committable: exempting it is what lets a
+        # project ship secrets.env.example while secrets.env stays ignored.
+        if git -C "$tmp/repo" check-ignore -q ".cco/secrets.env.example" 2>/dev/null; then
+            echo "ASSERTION FAILED: the scaffold ignores secrets.env.example — the skeleton must remain committable"; exit 1
+        fi
+    ) || return 1
+}

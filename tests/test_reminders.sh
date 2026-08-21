@@ -87,6 +87,25 @@ test_reminder_uncommitted_repo_cco_warns() {
     printf '%s' "$out" | grep -qF "repo1: .cco has uncommitted" || { echo "ASSERTION FAILED: missing (b) reminder; got: $out"; return 1; }
 }
 
+# ADR-0038: reminder (b) now names a VERB, closing the asymmetry with (a) that
+# was in front of the user at every `cco start` and every `cco sync` — (a) said
+# `→ cco config save` while (b) could only say "use your normal git flow", because
+# the verb it needed did not exist. Both remedies must be runnable commands.
+test_reminder_repo_cco_remedy_names_the_verb() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    _rem_test_env "$tmp"
+
+    _rem_repo "$tmp/repo1" "# v1"
+    printf '%s\n' "# locally edited, not committed" > "$tmp/repo1/.cco/claude/CLAUDE.md"
+
+    local out; out=$(_emit_config_reminders "$tmp/repo1" 2>&1)
+    printf '%s' "$out" | grep -qF "cco project save" \
+        || { echo "ASSERTION FAILED: (b) must name 'cco project save'; got: $out"; return 1; }
+    printf '%s' "$out" | grep -qF "normal git flow" \
+        && { echo "ASSERTION FAILED: (b) still hands the user back to git; got: $out"; return 1; }
+    return 0
+}
+
 test_reminder_committed_repo_cco_silent() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     _rem_test_env "$tmp"

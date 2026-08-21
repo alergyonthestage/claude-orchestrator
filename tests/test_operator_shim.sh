@@ -752,3 +752,44 @@ test_operator_blocks_remote_remove_and_rename() {
         || fail "the refusal must keep the 'secrets stay off the container' family: $OP_OUT"
     return 0
 }
+
+# ── ADR-0038 D8 — the three new config verbs' classification ─────────
+#
+# Each of the three is gated differently, and none of the three gates follows from
+# the others. Asserted as PAIRS (refused at one level, admitted at the next) so the
+# level argument is load-bearing rather than decorative — a gate that admitted
+# every level would pass a one-sided test.
+
+# T18 / T19 — `project save` writes the CURRENT project's config tree → Pc=rw.
+#
+# ⚠ The gate is POLICY, not mechanism (ADR-0038 D8): committing a READ-ONLY `.cco/`
+# actually SUCCEEDS — `git add -- .cco/` returns 0 because git reads the worktree
+# and writes to `.git/`, which is rw. So nothing in the filesystem enforces this
+# and nothing else would catch its removal. This test is the only thing standing
+# between the decision and a future reader who "fixes" it from the mount table.
+test_operator_project_save_needs_edit_project() {
+    lane_cco read-project project save -m x
+    assert_refused "$OP_RC" "$OP_OUT" "needs Pc=rw" || return 1
+    assert_gate_allows edit-project project save || return 1
+    return 0
+}
+
+# T20 — `project history` reads the repo's OWN git, like show|validate|coords.
+# Free at every read level: there is nothing personal-global about it.
+test_operator_project_history_is_free_at_read_project() {
+    assert_gate_allows read-project project history || return 1
+    return 0
+}
+
+# T21 / T22 — `config history` needs read-global.
+#
+# Measured, not chosen: at read-project `~/.cco` is not mounted as a STORE — only
+# the referenced pack is bound under `~/.cco/packs/`. There is no `.git` there, so
+# the verb cannot answer and would degrade into a false "no history yet". Exact
+# precedent: `template show|validate`.
+test_operator_config_history_needs_read_global() {
+    lane_cco read-project config history
+    assert_refused "$OP_RC" "$OP_OUT" "read-global scope" || return 1
+    assert_gate_allows read-global config history || return 1
+    return 0
+}
