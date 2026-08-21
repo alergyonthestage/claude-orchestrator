@@ -2,7 +2,8 @@
 
 **Status**: **Accepted (design)** — 2026-08-20. The eight decisions below were ruled by the maintainer
 at the design gate the same day. **Implemented 2026-08-21** — see the *Open* section for the two
-values it settled; none of D1…D8 changed on contact with the build.
+values it settled; none of D1…D8 changed on contact with the build. **Amendment A1** (D9…D12,
+2026-08-21) adds the `status` pair: the write half had no preview, a cell D2's matrix left empty.
 Closes roadmap item **[A1](../../../roadmap.md)**.
 
 **Design**: [Project config versioning and the history surface](../design/design-project-config-versioning.md).
@@ -240,3 +241,62 @@ floor is therefore the class set the scaffold declares, held in step with it by 
 (INV-GIF). Nothing is lost: the 2-pass scan still runs against the **full** list on every save, so a
 `.netrc` under `.cco/` is caught and refused — the floor decides what must be barred before staging,
 the scan is what reads the files.
+
+---
+
+## Amendments
+
+### A1 — 2026-08-21: the write half has no preview (`cco project status` / `cco config status`)
+
+Raised by the maintainer **during implementation**, against the finished three verbs. Not a defect —
+a cell of the model this ADR itself defines, which D2 did not notice it was leaving empty.
+
+**The gap.** `save` is a write with two refusal paths (the D7 barrier and the secret scan) and a
+`.cco/**`-scoped commit set that is not obvious from the outside. There is no way to ask *what would
+`save` commit, and would it succeed* short of running it. `history` does not answer it: history is
+what **was** saved, status is what is **not saved yet** — the same distance `git log` keeps from
+`git status`. Folding it into `history`'s output was considered and declined for that reason: two
+questions, two answers, and a read verb that prepends a different question to its own output is one
+users cannot pipe.
+
+`cco project show` does not answer it either, and must not be extended to: it is the **topology**
+card (which repos are members, who else references them). Working-tree state is a different subject.
+
+### D9 — the verb is `status`, on **both** stores *(maintainer, 2026-08-21)*
+
+`cco project status` **and** `cco config status`. This is P-B applied a third time, and the argument
+is the one that already turned D2 from one read verb into two: a verb that exists for one store and
+not the other is a gap, and `cco config save` has exactly the same missing preview. The matrix D2
+closed is now 2×3.
+
+The name is `status` rather than `diff` because the default answer is *which files*, not *what
+changed inside them*; `--full` adds the diff, symmetric with `history --full`.
+
+### D10 — `status` reports the barrier, it never enforces it *(maintainer, 2026-08-21)*
+
+A missing or insufficient `.cco/.gitignore` makes `save` **refuse** (D7). `status` must **say so and
+exit 0** — it is a read verb, and a preview that dies is a preview nobody can use to find out why
+their save would die. It names the same fix, in the same words, and still lists what would be
+committed, so one invocation answers both halves of the question.
+
+This is also why `status` emits no `warn`: same reasoning as the design's §2.6.
+
+### D11 — each `status` mirrors ITS OWN save's rule, not a generic `git status`
+
+The two stores decide "what would be committed" differently, and the preview is worthless if it does
+not reproduce that decision exactly:
+
+| Store | What `save` commits | What `status` must therefore list |
+|---|---|---|
+| `<repo>/.cco` | everything under `.cco/**` that git does not ignore | changes under `.cco/**`, gitignored files excluded |
+| `~/.cco` | only `_CONFIG_ALLOWLIST` entries | changes under those entries — a stray `~/.cco/scratch.txt` is **not** listed, because `save` would not commit it |
+
+A plain `git status` on either root would name files neither verb would commit. That is the failure
+this decision exists to prevent, and it is the same class as the design's warning against
+`_sync_synced_files`: the *nearly* right list is the dangerous one.
+
+### D12 — shim: `project status` free, `config status` needs `read-global`
+
+Identical to D8's reasoning for the `history` pair, from the same measurement: `project status` reads
+the repo's own git; `config status` cannot answer at `read-project`, where `~/.cco` is not mounted as
+a store.

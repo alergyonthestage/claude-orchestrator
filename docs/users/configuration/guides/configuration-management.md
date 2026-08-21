@@ -75,6 +75,7 @@ mixed in with unrelated work, so cco gives you the same ergonomics `cco config s
 gives the personal store:
 
 ```bash
+cco project status                           # what is not saved yet (writes nothing)
 cco project save -m "tighten review rules"   # commit ONLY .cco/**, secret-scanned
 cco project history                          # how the config changed, and which parts
 cco project history -n 1 --full              # with the diff
@@ -100,6 +101,11 @@ other member repos still have an uncommitted `.cco/` — and, separately, whethe
 members have **drifted apart** in content, which is a `cco sync` question rather than
 a commit one.
 
+`cco project status` is the preview: it lists exactly what `save` would commit — not what
+`git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. If the
+`.gitignore` barrier is incomplete it tells you there, at exit 0, instead of making you discover it
+by having a save refused.
+
 `cco project history` is path-filtered, so it shows every commit that touched
 `.cco/` — including commits that also touched code, and commits made by hand long
 before the verb existed. The equivalent by hand is `git log -- .cco/`, without the
@@ -117,6 +123,7 @@ scan refuses real secrets and exempts `*.example`.
 remote is opt-in). Version and sync it with `cco config`:
 
 ```bash
+cco config status                      # what is not saved yet (writes nothing)
 cco config save -m "add deploy pack"   # explicit, manual commit (allowlist + secret scan)
 cco config history                     # how the store changed, and which parts
 cco config push                        # push to your opt-in personal remote

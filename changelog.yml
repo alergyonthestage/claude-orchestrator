@@ -1475,7 +1475,7 @@ entries:
   - id: 67
     date: "2026-08-21"
     type: additive
-    title: "cco project save — version a project's own config, and read either store's history back"
+    title: "cco project save/status/history — version a project's own config, see what is unsaved, and read either store's history back"
     description: >
       **`cco project save`.** Your project's config lives in `<repo>/.cco/` and is
       versioned by the repo's own git — which meant committing it by hand, picking
@@ -1504,9 +1504,22 @@ entries:
       including commits that also touched code, and commits made by hand long
       before this verb existed. A store you have never saved is told so, not
       treated as an error.
+      **`cco project status` and `cco config status`.** Before you save, the other
+      question: what have I actually changed, and would saving it work? Both stores
+      answer it, writing nothing at all — one line per file with its fate in that
+      commit (`M` modified, `A` new, `D` deleted), and `--full` for the diffs. What
+      it lists is **exactly what `save` would commit**, which is not what
+      `git status` would show you: files git ignores are absent, everything outside
+      `.cco/` is absent however dirty your tree is, and on the personal store only
+      the allowlisted config appears. If the `.cco/.gitignore` barrier is missing or
+      incomplete, `status` says so and still answers — at exit 0, in the same words
+      the refusal would use, so you find out before a save is refused rather than
+      after. A clean config names its last save, so "nothing to do" never reads the
+      same as "never saved".
       In a session, `project save` needs an edit-project (or wider) level and
-      `project history` is free at any level; `config history` needs read-global,
-      because at read-project the personal store is not mounted for it to read.
+      `project status` / `project history` are free at any level; the `config`
+      readers need read-global, because at read-project the personal store is not
+      mounted for them to read.
       No rebuild needed for the commands themselves — they run host-side in the
       CLI. The baked agent rule that pointed at this verb before it existed is
       updated in the image, so `cco build` refreshes what in-session agents are

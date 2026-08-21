@@ -3102,3 +3102,46 @@ answers itself).
 
 **Effort**: Medium — the probes are written; making them a stable lint over the scenario battery,
 and deciding what the committed inventory looks like, is the work.
+
+---
+
+## FI-73: piping any cco verb into a consumer that closes early prints `✗ cco exited unexpectedly`
+
+**Status**: 🔴 Open — raised 2026-08-21 while implementing [A1](roadmap.md)'s `status` verbs.
+**Pre-existing, not introduced by that unit** (measured, below).
+
+The EXIT trap in `bin/cco:14` prints `✗ cco exited unexpectedly (exit N)` unless `_cco_completed`
+is true. When stdout is a pipe whose reader exits first — `| head -n`, or `| less` and the user
+quits — the next write raises `SIGPIPE`, bash dies on the signal, and the trap runs with the
+sentinel still false. The user gets an error on a run that did exactly what they asked.
+
+That is precisely the failure the INV-EXIT discipline (`lib/colors.sh`) names in its own words:
+*"It must NEVER fire on a run that terminated deliberately, because an ✗ on a correct exit is both a
+lie and a mask."* A closed downstream pipe is a deliberate termination — the user's, not cco's.
+
+**Measured** — the discriminator is whether the verb writes MORE lines after the reader stops, not
+how much it writes in total:
+
+| Probe | Lines | `\| head -1` → sentinel |
+|---|---|---|
+| `cco docs` | 26 | **yes** ← untouched by A1, which is what makes this pre-existing |
+| `cco project status` | 6 | yes |
+| `cco project status --full` | 29 | yes |
+| `cco project history` | 1 | no (nothing left to write) |
+| `cco list` | 2 | no (same) |
+
+A verb emitting its output through ONE `cat` heredoc (`cco help`, the group `--help` texts) does not
+trigger it either: the single write lands in the pipe buffer before the reader exits.
+
+**Why A1 raised it.** `status` and `history --full` are report verbs, so they are the ones users
+actually pipe. The bug was always reachable; nothing made it likely before.
+
+**Candidate fix** — one line, and it needs a decision because it edits a statically-enforced
+invariant: `trap '_cco_completed=true' PIPE` alongside the EXIT trap, classifying a SIGPIPE death as
+deliberate. Deliberately NOT applied at the end of the implementing session: it changes global CLI
+behaviour on a guarded invariant, which is a maintainer's call, and
+`test_invariant_exit_sentinel_discipline` must be extended with the case in the same change.
+
+⚠ Verify the fix on the case it must still catch: a real `set -u` violation must go on printing the
+✗. A trap that silences the sentinel wholesale would trade the bug for the crash-reporting it exists
+to provide.

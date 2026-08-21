@@ -10,12 +10,17 @@
 
 ## 1. What is being built
 
-Three verbs, closing the 2×2 matrix ADR-0038 D2 states:
+Five verbs, closing the matrix ADR-0038 D2 states and Amendment A1 widens:
 
 | | personal `~/.cco` | project `<repo>/.cco` |
 |---|---|---|
 | **write** | `cco config save` *(shipped, unchanged)* | **`cco project save`** |
-| **read** | **`cco config history`** | **`cco project history`** |
+| **read — what is not saved yet** | **`cco config status`** | **`cco project status`** |
+| **read — what was saved** | **`cco config history`** | **`cco project history`** |
+
+The `status` row is Amendment A1, raised during implementation: the write half had
+no preview, and `history` does not supply one — it answers what **was** saved, the
+distance `git log` keeps from `git status`. §8 holds its mechanism.
 
 ```mermaid
 flowchart TB
@@ -239,6 +244,72 @@ failure that cannot occur.
 ⚠ The `cco build` is the **only** part of this unit that needs one, and it is needed by exactly one
 file. Everything else is host-side CLI, produced at run time.
 
+## 5b. `cco project status` and `cco config status` (Amendment A1)
+
+### 5b.1 Surface
+
+```
+cco project status [--full]
+cco config  status [--full]
+```
+
+No `-n`: there is one current state, not a list to limit. `--full` adds the diff,
+symmetric with `history --full`.
+
+### 5b.2 The one property that makes it worth having
+
+**Each `status` reproduces ITS OWN save's rule about what gets committed** (A1 D11).
+A preview that lists files the save would skip is worse than no preview, because it
+is believed:
+
+| Store | `save` commits | `status` therefore lists |
+|---|---|---|
+| `<repo>/.cco` | everything under `.cco/**` git does not ignore | `git status … -- .cco`, so gitignored files are excluded by git itself |
+| `~/.cco` | the `_CONFIG_ALLOWLIST` entries that exist | `git status … -- <those entries>` |
+
+⚠ **The allowlist pathspec looks redundant and is not.** Once `config save` has run,
+its whitelist `.gitignore` (`*` then `!`-re-include) already excludes a stray file,
+so dropping the pathspec changes nothing — *on a store that has been saved before*.
+Before the first save that barrier does not exist, and the preview would promise to
+commit a `~/.cco/scratch.txt` that `config save` would never touch. This is the
+`_sync_synced_files` trap in a new costume: the **nearly** right list is the
+dangerous one, and the case that exposes it is not the common one.
+
+### 5b.3 It reports the barrier; it never enforces it (A1 D10)
+
+`save` refuses on a missing or insufficient `.cco/.gitignore` (D7). `status` prints
+the same finding, **in the same words**, at **rc 0**, and still lists what would be
+committed. A preview that dies is one nobody can use to find out why their save
+would die — and paraphrasing the refusal would send the user hunting for a message
+that does not exist.
+
+One rule, two levels: `_project_gitignore_gaps` is the pure question,
+`_project_save_assert_gitignore` the refusal, `_project_status_report_gaps` the
+report. Same split as `_reminder_roots_divergent`.
+
+### 5b.4 A read verb touches nothing
+
+Not HEAD, not the index, not the working tree — pinned by
+`test_project_status_changes_nothing`, which compares full `git status --porcelain`
+before and after.
+
+This is why `--full` diffs **new** files with `git diff --no-index -- /dev/null
+<path>` rather than the obvious `git add --intent-to-add`: `git diff HEAD` cannot
+show an untracked file, and staging one to make it visible is precisely the write
+this verb may not perform.
+
+### 5b.5 Output goes to stdout
+
+The whole answer — header, barrier report, file list, the `→ cco project save`
+hint — is stdout, so it pipes. Only the cross-repo facts stay `note` on stderr:
+they are about **other** repos, not the answer to "what is in this one".
+
+⚠ Known, and NOT introduced by this unit: piping any cco verb into a consumer that
+closes early (`| head`, `| less` then quit) makes the EXIT trap print
+`✗ cco exited unexpectedly`. Measured on `cco docs | head -1`, which this unit never
+touched. Recorded as [FI-73](../../../improvements.md); `status --full` and
+`history --full` are simply the verbs most likely to be piped.
+
 ## 6. Test plan
 
 Derived from the contract above, not from the implementation. New file `tests/test_project_save.sh`,
@@ -271,6 +342,18 @@ mirroring `tests/test_config.sh`'s seeding style.
 | T16 | no config commits yet | `info` + rc **0**, never a die |
 | T17 | `config history` on a non-git `~/.cco` | `info` naming `cco config save`, rc 0 |
 
+### 6.2b `status` (Amendment A1)
+
+| # | Test | Asserts |
+|---|---|---|
+| S1 | the listed set | M/A/D correct; a **gitignored** file and a file **outside `.cco/`** are both absent |
+| S2 | nothing is written | HEAD **and** full `git status --porcelain` identical before and after, including the user's own staging |
+| S3 | clean store | names the last save; never-saved store points at `save` |
+| S4 | insufficient `.gitignore` | **reported at rc 0**, names the gap and the fix, still lists the files, authors nothing |
+| S5 | missing `.gitignore` | same, and creates no file |
+| S6 | `--full` on a NEW file | its diff appears (the `--no-index` path) |
+| S7 | `config status` | lists only allowlisted paths — asserted on a **never-saved** store, the only state where the pathspec is load-bearing (§5b.2) |
+
 ### 6.3 Shim
 
 | # | Test | Asserts |
@@ -280,6 +363,8 @@ mirroring `tests/test_config.sh`'s seeding style.
 | T20 | `project history` at `read-project` | reaches the dispatcher (free) |
 | T21 | `config history` at `read-project` | refused, exit 2, names `read-global` |
 | T22 | `config history` at `read-global` | reaches the dispatcher |
+| S8 | `project status` at `read-project` | reaches the dispatcher (free, A1 D12) |
+| S9 | `config status` at `read-project` / `read-global` | refused exit 2 / reaches the dispatcher |
 
 Extend `tests/test_operator_shim.sh` for T18–T22 rather than starting a third file — that is where the
 sibling classifications are already asserted.

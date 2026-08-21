@@ -1252,11 +1252,12 @@ token store never crosses into a session (see §3.2).
 
 ---
 
-### 3.13d `cco project save` / `cco project history`
+### 3.13d `cco project save` / `cco project status` / `cco project history`
 
-**Version this repo's `<repo>/.cco/` config, and read that history back** — without needing to
-know git, the pathspec, or where the config lives. The twins for the personal store are
-`cco config save` / `cco config history` (§3.21).
+**Version this repo's `<repo>/.cco/` config, see what is not saved yet, and read the history back** —
+without needing to know git, the pathspec, or where the config lives. `status` answers *what have I
+not saved*, `history` answers *what did I save* — the same distance `git status` keeps from
+`git log`. The twins for the personal store are `cco config save` / `status` / `history` (§3.21).
 
 Run either from anywhere inside the repo; cco walks up to the root that holds `.cco/project.yml`.
 
@@ -1291,6 +1292,47 @@ did not cover — which other member repos still have an uncommitted `.cco/`, an
 whether the members carry **divergent** config content, which is a `cco sync` question rather
 than a commit one. The two are reported apart because a repo can be committed *and* divergent.
 
+#### `cco project status [--full]`
+
+**What would `cco project save` commit, and would it succeed?** Nothing is written, staged or
+changed — run it as often as you like.
+
+```
+Usage: cco project status [--full]
+
+Options:
+      --full             Also show the diff of each change
+
+Examples:
+  cco project status
+  cco project status --full
+```
+
+Each line is a file and its fate in that commit — `M` modified, `A` new, `D` deleted:
+
+```
+app/.cco — 3 file(s) to save:
+  M  project.yml
+  A  claude/rules/naming.md
+  D  claude/rules/style.md
+
+  → cco project save
+```
+
+What it lists is **exactly what `save` would commit**, which is not the same as what `git status`
+would show you: files git ignores are absent (save skips them too), and so is everything outside
+`.cco/`, however dirty your working tree is.
+
+If the `.cco/.gitignore` barrier is missing or incomplete, `status` **says so and still answers**,
+at exit 0 — it is the fastest way to find out *why* a save would be refused, in the same words the
+refusal uses. It never writes that file for you either.
+
+A clean config names its last save, so you can tell "nothing to do" from "never saved":
+
+```
+app/.cco is clean — nothing to save (last saved 2026-08-21 57b0f1a tighten the review rules)
+```
+
 #### `cco project history [-n <count>] [--full]`
 
 ```
@@ -1314,8 +1356,8 @@ including commits that also touched code and commits made by hand long before th
 A project that has never committed its config is told so, at exit 0 — an empty history is a
 normal state, not an error.
 
-**In a session**: `project save` needs an `edit-project` (or wider) session; `project history`
-is available at every level.
+**In a session**: `project save` needs an `edit-project` (or wider) session; `project status` and
+`project history` are available at every level.
 
 ---
 
@@ -1786,6 +1828,24 @@ Examples:
   cco config save
   cco config save -m "Add react-guidelines pack"
 ```
+
+#### `cco config status [--full]`
+
+The same preview for the personal store: what `cco config save` would commit, writing nothing. Same
+output and same `--full` as `cco project status` (§3.13d).
+
+```
+Usage: cco config status [--full]
+
+Examples:
+  cco config status
+  cco config status --full
+```
+
+Only the **allowlisted** config is listed — `packs/`, `templates/`, `.claude/`, the global
+`setup*.sh` / `mcp-packages.txt` / `languages` and `secrets.env.example`. A stray file you dropped
+in `~/.cco` is not shown, because `cco config save` would not commit it. **In a session** this verb
+needs `read-global` or wider, for the same reason as `cco config history` below.
 
 #### `cco config history [-n <count>] [--full]`
 
