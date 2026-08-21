@@ -3,6 +3,10 @@
 > **Living design** for roadmap item **[A1](../../../roadmap.md)**. Decisions and their rationale are
 > in [ADR-0038](../decisions/0038-project-config-versioning.md); this document holds the mechanism,
 > the command surfaces and the test plan. It does not restate the ADR.
+>
+> **Built 2026-08-21.** The mechanism below is what shipped; §7 records the choices the build had to
+> make and why. Tests live in `tests/test_project_save.sh` (T1…T17), `tests/test_operator_shim.sh`
+> (T18…T22) and `tests/test_invariants.sh` (INV-GIF).
 
 ## 1. What is being built
 
@@ -70,6 +74,11 @@ Staging is explicit and path-scoped — `git add -- .cco/` — and **never** `gi
 second barrier of the twin, and it is the one that transfers unchanged: whatever else is dirty in the
 user's working tree is not touched, which is the entire ergonomic point of the verb.
 
+⚠ **The pathspec is repeated on the COMMIT** — `git commit -m … -- .cco`. Staging alone is not enough:
+a file the user had **already staged** before running the verb is in the index, and a bare
+`git commit` would sweep it into the config commit. With the pathspec it stays staged and uncommitted,
+exactly as they left it. Measured, including on an unborn HEAD, and pinned by T1's second test.
+
 The first barrier does **not** transfer. In `~/.cco` it is a *whitelist* `.gitignore` (`*`, then
 `!`-re-include of authored config). In `<repo>/.cco` it is a *blacklist* — the shipped file ignores
 `secrets.env`, `*.env`, `*.key`, `*.pem`, `.credentials.json`, plus the generated session artifacts
@@ -85,20 +94,31 @@ have.
 
 ### 2.4 The missing-barrier refusal (D7)
 
-Before staging, the verb checks that `.cco/.gitignore` exists and that it covers the
-`_SECRET_FILENAME_PATTERNS` classes. If it does not, the verb **refuses and names the fix** — it does
-not author the file. Rationale is in ADR-0038 D7 (P-C: the file would land in the user's repo, inside
-the very commit they asked for).
+Before staging, the verb checks that `.cco/.gitignore` exists and that it actually ignores each class
+in **`_SECRET_PROJECT_GITIGNORE_CLASSES`** — the classes cco's own scaffold declares, **not** the whole
+`_SECRET_FILENAME_PATTERNS` list; §7 records why that distinction is load-bearing and what keeps the
+two in step. If it does not, the verb **refuses and names the fix** — it does not author the file.
+Rationale is in ADR-0038 D7 (P-C: the file would land in the user's repo, inside the very commit they
+asked for).
+
+Coverage is measured by **asking git** (`git check-ignore` on a probe path per class), never by
+grepping the file for a literal: what protects the user is a rule that matches, however it is spelled
+and wherever in the repo's ignore chain it lives.
 
 The 2-pass scan (`_secret_match_filename` + `_secret_match_content`, `*.example` exempt) then runs on
-the staged set regardless, exactly as `_config_scan_staged` does. On a hit: unstage, name the offending
+the staged set regardless, against the **full** pattern list. On a hit: unstage, name the offending
 path and the pattern it matched, and die.
 
-🔑 The scan is reused **as-is** from `lib/secrets.sh`. `_config_scan_staged` is nearly the right
-function already; it differs only in taking `~/.cco` as its git root and resolving staged paths
-relative to it. Factor the common part rather than writing a second scanner — the file's own header
-says why (*"keeping the pattern lists and match semantics here avoids drift across the two gates"*),
-and a divergent second copy is the failure that comment predicts.
+🔑 The scan is **one function for both gates** — `_secret_scan_staged` in `lib/secrets.sh`, which
+`cco config save` now calls too. What made one function serve both is an optional **pathspec**: the
+project verb passes `.cco`, so it never scans (and never refuses over) staged work elsewhere in the
+user's tree; the twin omits it because it owns its whole store. Factoring rather than copying is what
+the file's own header asks for (*"keeping the pattern lists and match semantics here avoids drift
+across the two gates"*), and a divergent second copy is the failure that comment predicts.
+
+⚠ The unstage is scoped too — `git reset -q -- .cco`, never the twin's bare `git reset`. Clearing the
+whole index would discard staging the user did themselves, as the side effect of a verb that refused
+to do anything.
 
 ### 2.5 Reporting the other member repos (D4)
 
@@ -272,9 +292,29 @@ sibling classifications are already asserted.
   `.cco` bind. The measurement that `git add` succeeds on one was made by hand and is recorded in
   ADR-0038 D8; a hermetic test cannot reproduce a virtiofs child mount.
 
-## 7. Open at implementation
+## 7. Settled at implementation
 
-Both are ADR-0038's *Open* section, restated here as build-time choices:
+Both of ADR-0038's *Open* items are decided, and one thing the plan left implicit had to be too:
 
-- The default commit message when `-m` is absent (the twin uses `config update`).
-- The default `-n` limit for `history`.
+| Choice | Value |
+|---|---|
+| default commit message when `-m` is absent | **`project config update`** — the commit lands in the user's own log among code commits, where the twin's bare `config update` would not say *which* config |
+| default `-n` for `history` | **10** |
+| which patterns §2.4's coverage check demands | the classes **cco's own scaffold writes**, not all of `_SECRET_FILENAME_PATTERNS` |
+
+The third needs its reason recorded, because the obvious reading of §2.4 is wrong. The full pattern
+list carries `.netrc` and `.cco/remotes`; `_cco_write_project_gitignore` has never written either, so
+demanding them would refuse `cco project save` on every project cco scaffolded itself — the verb dead
+on arrival. The floor is `_SECRET_PROJECT_GITIGNORE_CLASSES` (`lib/secrets.sh`), and **INV-GIF**
+(`tests/test_invariants.sh`) fails if the scaffold ever stops satisfying it. The 2-pass scan is
+unaffected and still runs against the full list, so nothing is unguarded: the floor bars classes
+*before* staging, the scan reads the files.
+
+Two implementation shapes worth naming, both measured rather than reasoned:
+
+- **The pathspec is on the COMMIT as well as the staging.** `git commit -m … -- .cco` builds the
+  commit from `.cco/` alone, leaving an unrelated file the user had already staged **staged and
+  uncommitted**. Without it, `save` would sweep their pending work into the config commit — and it
+  works on an unborn HEAD too.
+- **The refusal's reset is scoped as well**: `git reset -q -- .cco`, never the twin's bare
+  `git reset`, which would discard staging the user did themselves as the side effect of a refusal.

@@ -67,18 +67,43 @@ own remote — clone the repo on a second machine *or* hand it to a teammate, an
 
 ## 3. Versioning Your Configuration
 
-### 3.1 Project config — ordinary git on the repo
+### 3.1 Project config — `cco project save`
 
-`<repo>/.cco/` is committed with the code it serves, using your **normal git flow**.
-There is no special command — it is just files in the repo.
+`<repo>/.cco/` is committed with the code it serves, in the repo's own git. You can
+always do that by hand — it is just files in the repo — but the config is normally
+mixed in with unrelated work, so cco gives you the same ergonomics `cco config save`
+gives the personal store:
 
 ```bash
-git add .cco                       # stage the project config
-git commit -m "tighten review rules"
-git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by construction
+cco project save -m "tighten review rules"   # commit ONLY .cco/**, secret-scanned
+cco project history                          # how the config changed, and which parts
+cco project history -n 1 --full              # with the diff
 
-git log -- .cco/                   # isolate the config history
+git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by construction
 ```
+
+`cco project save` stages **only** `.cco/**`. Anything else that is dirty — or that
+you had already staged — is left untouched, so you can save the config in the middle
+of a task without disturbing it. Run it from anywhere inside the repo.
+
+Two things it deliberately refuses rather than fixes for you:
+
+- **a missing or insufficient `.cco/.gitignore`** — it names the lines to add, but
+  does not write them. That file is a versioned file in *your* repository, and
+  authoring it would put a change you did not ask for inside the commit you did.
+- **a secret-shaped file under `.cco/`** — the same 2-pass scan `cco config save`
+  runs (filename and content, `*.example` exempt). The refusal unstages `.cco/` and
+  nothing else.
+
+In a multi-repo project the save covers the repo you ran it in, then tells you which
+other member repos still have an uncommitted `.cco/` — and, separately, whether the
+members have **drifted apart** in content, which is a `cco sync` question rather than
+a commit one.
+
+`cco project history` is path-filtered, so it shows every commit that touched
+`.cco/` — including commits that also touched code, and commits made by hand long
+before the verb existed. The equivalent by hand is `git log -- .cco/`, without the
+column naming which parts of the config changed.
 
 `<repo>/.cco/project.yml` is **machine-agnostic** — it carries logical names +
 coordinates only, never real local paths — so `git diff` is always truthful and the
@@ -93,6 +118,7 @@ remote is opt-in). Version and sync it with `cco config`:
 
 ```bash
 cco config save -m "add deploy pack"   # explicit, manual commit (allowlist + secret scan)
+cco config history                     # how the store changed, and which parts
 cco config push                        # push to your opt-in personal remote
 cco config pull                        # pull on another machine
 ```

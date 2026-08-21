@@ -1471,3 +1471,43 @@ entries:
       `[1-1]`, and typing that back was rejected as invalid. It now prints the
       tokens themselves: `[1] [2] reuse that path`.
       No rebuild needed: all three run host-side in the CLI.
+
+  - id: 67
+    date: "2026-08-21"
+    type: additive
+    title: "cco project save — version a project's own config, and read either store's history back"
+    description: >
+      **`cco project save`.** Your project's config lives in `<repo>/.cco/` and is
+      versioned by the repo's own git — which meant committing it by hand, picking
+      it out from whatever else your working tree happened to be holding. The
+      personal store has had `cco config save` for exactly this since the start;
+      the in-repo side never got its twin. It has one now. `cco project save`
+      stages **only** `.cco/**` and commits it: anything else that is dirty, or
+      that you had already staged, is left exactly as it was, so you can save the
+      config in the middle of a task. Run it from anywhere inside the repo, with
+      `-m` for the message. Two things it refuses rather than fixing for you: a
+      `.cco/.gitignore` that is missing or does not cover the secret patterns (it
+      names the lines to add, but that file is a versioned file in your repository
+      and writing it would put an unrequested change in the commit you asked for),
+      and a secret-shaped file staged under `.cco/` — the same two-pass scan
+      `cco config save` runs, with `*.example` exempt. In a multi-repo project it
+      also tells you which other member repos still have an uncommitted `.cco/`,
+      and separately whether the members have drifted apart in content, which is a
+      `cco sync` question rather than a commit one.
+      **`cco project history` and `cco config history`.** Asking how your config
+      changed used to mean knowing git, knowing the pathspec, and — for `~/.cco` —
+      knowing where the store even lives. Both stores now answer for themselves:
+      one line per commit with the date, the author, the message, and **which
+      parts of the config changed** (`project.yml`, `claude/rules`, …), `-n` to
+      change how many, `--full` to add the diff. The project one is path-filtered
+      rather than marked, so it shows every commit that touched `.cco/` —
+      including commits that also touched code, and commits made by hand long
+      before this verb existed. A store you have never saved is told so, not
+      treated as an error.
+      In a session, `project save` needs an edit-project (or wider) level and
+      `project history` is free at any level; `config history` needs read-global,
+      because at read-project the personal store is not mounted for it to read.
+      No rebuild needed for the commands themselves — they run host-side in the
+      CLI. The baked agent rule that pointed at this verb before it existed is
+      updated in the image, so `cco build` refreshes what in-session agents are
+      told.

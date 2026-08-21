@@ -77,6 +77,8 @@ cco project show <name>      # Show project roles, referenced-by, repo-centric v
 cco project add <res> <name> # Embed a repo|mount|llms|pack coordinate (cwd-first)
 cco project validate [name]  # Check share-readiness (coordinates, no path leaks)
 cco project coords           # Show/reconcile coordinate consistency across units
+cco project save [-m <msg>]  # Commit this repo's .cco/ config (only .cco/**, secret-scanned)
+cco project history          # Show how this repo's .cco/ config changed (-n, --full)
 cco remote add <n> <url>     # Register a sharing-repo remote
 cco remote add <n> <url> --token <t>  # Register with auth token
 cco remote remove <name>     # Unregister a remote
@@ -91,6 +93,7 @@ cco llms update [name]       # Re-download from source (--all for all)
 cco llms rename <old> <new>  # Rename an llms entry (updates YAML refs)
 cco llms remove <name>       # Remove an llms entry
 cco config save [-m <msg>]   # Commit ~/.cco changes with secret detection
+cco config history           # Show how ~/.cco changed (-n, --full)
 cco config push              # Push ~/.cco to its remote (multi-PC sync)
 cco config pull              # Pull ~/.cco from its remote
 cco update                   # Migrations + discovery (framework + remote) + changelog
@@ -112,7 +115,7 @@ cco docs [<topic>]           # Browse the bundled user documentation offline
 cco chrome [start|stop|status] # Manage a host Chrome debug session for automation
 ```
 
-> Project config lives in each repo at `<repo>/.cco/` and is versioned with the repo's normal git — there is no `cco vault`. `cco config save/push/pull` versions and syncs only the personal store `~/.cco`.
+> Project config lives in each repo at `<repo>/.cco/` and is versioned with the repo's own git — there is no `cco vault`. `cco project save` commits it (staging `.cco/**` and nothing else, so unrelated or already-staged work is untouched); `cco config save/push/pull` versions and syncs only the personal store `~/.cco`. `cco project history` / `cco config history` read either back (ADR-0038).
  
 The CLI is a single bash script at `bin/cco` with no dependencies beyond bash (3.2+), docker, and standard Unix tools (jq, sed, awk). Compatible with macOS default `/bin/bash` — no Homebrew bash required.
 
@@ -176,6 +179,7 @@ Per `docs/maintainers/environment/design/design-docker.md` (sezione directory st
 - `lib/access-scope.sh` — Unified CLI environment & access-scope layer (ADR-0043): scopes read-verb OUTPUT in container-operator mode (`_env_in_scope`/`_env_owner_in_scope`/`_env_note_hidden`/`_env_flush_hidden_notice`/`_env_require_visible`; the three availability states `_env_member_state`/`_env_project_state`). Host-open; hidden ≠ absent (count-only stderr notice)
 - `lib/store.sh` — Internal-store write primitives (ADR-0047 boundary): named whole-cascade ops for the confined buckets (STATE index sidecars, DATA registries, CACHE llms), reached from command bodies only via the `store-op` plan/apply crossing through the setuid `cco-svc` helper (never a direct `rm`/`mv`/`[[ -d ]]`). Enforces INV-S1..S6 (no code outside this layer mutates OR predicates a confined path); a static CLASS lint in `tests/test_invariants.sh` keeps it so
 - `lib/cmd-config.sh` / `lib/cmd-sync.sh` — Personal-store versioning (`cco config save/push/pull` on `~/.cco`) and `cco sync` (copy resolved config into place)
+- `lib/cmd-project-save.sh` / `lib/config-history.sh` — The project half of the config 2x2 (ADR-0038): `cco project save` commits `<repo>/.cco/` with a `-- .cco` pathspec on both the staging and the commit, so an already-staged unrelated file is neither committed nor unstaged; a missing/insufficient `.cco/.gitignore` refuses and names the fix rather than being authored (P-C). ⚠ There is **no** ro-mount guard mirroring `_config_save`'s: `git add -- .cco/` on a read-only `.cco` bind returns **0** (git reads the worktree, writes to the rw `.git/`), so the `edit-project+` gate is **policy at the shim**, not mechanism. `config-history.sh` is the one renderer both `history` verbs share
 - `lib/tags.sh` — Per-user tags registry (`cmd_tag`) **and** the unified index verb `cmd_list` (there is no `lib/cmd-list.sh`)
 - `lib/cmd-remote.sh` — Remote management: add, remove, list sharing-repo remotes
 - `lib/remote.sh` — Remote clone helper: sparse-checkout, shallow fallback, token auth

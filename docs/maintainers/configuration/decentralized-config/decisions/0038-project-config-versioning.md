@@ -1,7 +1,8 @@
 # ADR 0038 — Versioning and reading a project's committed config
 
 **Status**: **Accepted (design)** — 2026-08-20. The eight decisions below were ruled by the maintainer
-at the design gate the same day. Implementation not started.
+at the design gate the same day. **Implemented 2026-08-21** — see the *Open* section for the two
+values it settled; none of D1…D8 changed on contact with the build.
 Closes roadmap item **[A1](../../../roadmap.md)**.
 
 **Design**: [Project config versioning and the history surface](../design/design-project-config-versioning.md).
@@ -222,3 +223,20 @@ recorded here rather than left to be rediscovered as a bug.
 - **The default commit message.** D5 fixes the surface (`-m` only) but not the string the verb uses
   when `-m` is absent; the twin uses `config update`. Settled at implementation, and cheap to change.
 - **The default limit of `history`.** D6 fixes the shape, not the number. Settled at implementation.
+
+### Settled at implementation *(2026-08-21)*
+
+- **The default commit message is `project config update`**, not the twin's bare `config update`.
+  The two commits do not land in the same place: the twin's goes into `~/.cco`, a log that holds
+  nothing but config, while this one goes into the **user's own repository**, among their code
+  commits. There, `config update` does not say *which* config.
+- **`history`'s default limit is `-n 10`.**
+
+One thing D7 left implicit and the build had to decide: **which** patterns the `.cco/.gitignore`
+coverage check demands. The full `_SECRET_FILENAME_PATTERNS` list carries `.netrc` and `.cco/remotes`,
+and cco's own project scaffold (`_cco_write_project_gitignore`) has never written either — so keying
+the check to that list would refuse `cco project save` on **every project cco itself created**. The
+floor is therefore the class set the scaffold declares, held in step with it by a mechanical invariant
+(INV-GIF). Nothing is lost: the 2-pass scan still runs against the **full** list on every save, so a
+`.netrc` under `.cco/` is caught and refused — the floor decides what must be barred before staging,
+the scan is what reads the files.

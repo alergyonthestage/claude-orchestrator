@@ -292,7 +292,20 @@ run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (
 [ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md) (D1…D8,
 all eight ruled by the maintainer at the gate) +
 [design](configuration/decentralized-config/design/design-project-config-versioning.md). The ADR
-number reserved by this entry is now **written**. Implementation not started.
+number reserved by this entry is now **written**.
+
+✅ **IMPLEMENTED 2026-08-21** on `feat/config/save-and-history` — all three verbs, both barriers, the
+D4 multi-repo report, the D8 shim classification, and every surface in design §5. T1…T22 are covered
+plus three shapes the plan did not name (a pre-staged file surviving both a save and a refusal; a
+`.gitignore` spelled equivalently; INV-GIF, the drift guard on the coverage floor). Suite **1737
+passed / 7 failed of 1744** — the 7 are the known host-only set, verified name for name.
+
+**Both `Open` choices are settled**: the default commit message is **`project config update`** (it
+lands in the user's own log among code commits, where the twin's bare `config update` would be
+ambiguous) and `history`'s default limit is **`-n 10`**.
+
+⚠ **Still owed before the entry closes**: the `cco build` in the acceptance lane (below) and a live
+look at the rebuilt managed rule. Nothing else.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo

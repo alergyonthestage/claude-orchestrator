@@ -1252,6 +1252,73 @@ token store never crosses into a session (see §3.2).
 
 ---
 
+### 3.13d `cco project save` / `cco project history`
+
+**Version this repo's `<repo>/.cco/` config, and read that history back** — without needing to
+know git, the pathspec, or where the config lives. The twins for the personal store are
+`cco config save` / `cco config history` (§3.21).
+
+Run either from anywhere inside the repo; cco walks up to the root that holds `.cco/project.yml`.
+
+#### `cco project save [-m <msg>]`
+
+```
+Usage: cco project save [-m <message>]
+
+Options:
+  -m, --message <msg>    Commit message (default: "project config update")
+
+Examples:
+  cco project save
+  cco project save -m "tighten the review rules"
+```
+
+**Only `.cco/**` is staged and committed.** Whatever else is dirty in your working tree — or
+that you had **already staged** — is left exactly as it was: not committed, not unstaged. That
+is the whole point of the verb, and the reason you can run it mid-task.
+
+Before anything is staged, two barriers run:
+
+| Barrier | What happens |
+|---|---|
+| `.cco/.gitignore` missing, or not ignoring `secrets.env` / `*.env` / `*.key` / `*.pem` / `.credentials.json` | **refuses** and prints the lines to add. cco does **not** write that file — it is a versioned file in *your* repository, and authoring it would put an unrequested change inside the commit you asked for |
+| a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path |
+
+A repo that is not under git is refused too: cco does not `git init` a repository it does not own.
+
+In a **multi-repo project**, the save covers the repo you ran it in and then tells you what it
+did not cover — which other member repos still have an uncommitted `.cco/`, and (separately)
+whether the members carry **divergent** config content, which is a `cco sync` question rather
+than a commit one. The two are reported apart because a repo can be committed *and* divergent.
+
+#### `cco project history [-n <count>] [--full]`
+
+```
+Usage: cco project history [-n <count>] [--full]
+
+Options:
+  -n, --max-count <n>    How many commits to show (default: 10)
+      --full             Also show each commit's diff
+
+Examples:
+  cco project history
+  cco project history -n 30
+  cco project history -n 1 --full
+```
+
+One line per commit — date, commit, author, message, and **which parts of the config changed**
+(`project.yml`, `claude/rules`, …), which is what saves you a second trip to git.
+
+The history is **path-filtered, not marked**: it shows every commit that touched `.cco/`,
+including commits that also touched code and commits made by hand long before this verb existed.
+A project that has never committed its config is told so, at exit 0 — an empty history is a
+normal state, not an error.
+
+**In a session**: `project save` needs an `edit-project` (or wider) session; `project history`
+is available at every level.
+
+---
+
 ### 3.14 `cco project validate [name]`
 
 **Share-readiness validation**: check that a project's config is safe to share via its repo
@@ -1688,8 +1755,9 @@ Examples:
 
 > **Removed**: `cco project install` and `cco project publish` no longer exist. To share a
 > project, push its repo (the `<repo>/.cco/` rides the remote); to bootstrap a repo without a
-> committed `.cco/`, use `cco init`, `cco init --migrate`, or `cco project import`. To version
-> and multi-PC-sync your **personal** `~/.cco` store, use `cco config save/push/pull` (§3.21).
+> committed `.cco/`, use `cco init`, `cco init --migrate`, or `cco project import`. To version a
+> project's own `<repo>/.cco/`, use `cco project save` (§3.13d); to version and multi-PC-sync
+> your **personal** `~/.cco` store, use `cco config save/push/pull` (§3.21).
 
 ---
 
@@ -1698,7 +1766,8 @@ Examples:
 Version and multi-PC-sync your **personal** global store (`~/.cco/` — `.claude/`,
 `packs/`, `templates/`). `~/.cco` is **always** a git-init'd working tree; only the remote is
 opt-in. This replaces the removed `cco vault` surface. (Project config in `<repo>/.cco/` rides
-each repo's **own** git remote with your normal git flow — `cco config` does not touch it.)
+each repo's **own** git remote — `cco config` does not touch it; its twin is `cco project save`,
+§3.13d.)
 
 #### `cco config save [-m <msg>]`
 
@@ -1717,6 +1786,28 @@ Examples:
   cco config save
   cco config save -m "Add react-guidelines pack"
 ```
+
+#### `cco config history [-n <count>] [--full]`
+
+Read the `~/.cco` history back. Same surface and same output as `cco project history` (§3.13d) —
+one line per commit with the parts of the config that changed — but over the personal store,
+which has no pathspec because the whole store *is* the config.
+
+```
+Usage: cco config history [-n <count>] [--full]
+
+Options:
+  -n, --max-count <n>    How many commits to show (default: 10)
+      --full             Also show each commit's diff
+
+Examples:
+  cco config history
+  cco config history -n 1 --full
+```
+
+A store you have never saved is reported as such, at exit 0. **In a session** this verb needs
+`read-global` or wider: at `read-project` only the packs your project references are mounted
+under `~/.cco/packs/`, so the store's git is not there to read.
 
 #### `cco config push` / `cco config pull`
 
