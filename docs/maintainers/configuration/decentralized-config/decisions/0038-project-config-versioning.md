@@ -4,7 +4,9 @@
 at the design gate the same day. **Implemented 2026-08-21** — see the *Open* section for the two
 values it settled; none of D1…D8 changed on contact with the build. **Amendment A1** (D9…D12,
 2026-08-21) adds the `status` pair: the write half had no preview, a cell D2's matrix left empty.
-Closes roadmap item **[A1](../../../roadmap.md)**.
+**Amendment A2** (D13…D15, 2026-08-21) corrects **D7**: the predicate chosen to measure gitignore
+coverage answers a different question than D7 asks, and diverges from it in two opposite directions —
+one false refusal, one false pass. Closes roadmap item **[A1](../../../roadmap.md)**.
 
 **Design**: [Project config versioning and the history surface](../design/design-project-config-versioning.md).
 The mechanism, the command surfaces and the test plan live there; this ADR records only what was
@@ -171,6 +173,13 @@ cco does **not** write that `.gitignore` itself, which is where this deliberatel
 `<repo>/.cco` the file is a **versioned file in the user's repository**, and authoring it would put an
 unrequested change into the very commit the user asked for (P-C).
 
+> **Amended 2026-08-21 by [A2](#a2--2026-08-21-the-d7-barrier-measures-the-wrong-thing-in-two-states)
+> (D13, D15).** What is decided above stands — the scan always runs, staging stays explicit-path, and
+> cco still does not author that file. What A2 corrects is how *"does not cover the secret patterns"*
+> is **measured**: `git check-ignore` answers a different question than this decision asks, and the two
+> diverge in two states — a tracked file (false refusal) and a root rule that swallows `.cco/` whole
+> (false pass).
+
 ### D8 — shim classification: `save` is a project-axis write, `config history` needs read-global
 
 Derived from the measurements, not chosen freely:
@@ -300,3 +309,92 @@ this decision exists to prevent, and it is the same class as the design's warnin
 Identical to D8's reasoning for the `history` pair, from the same measurement: `project status` reads
 the repo's own git; `config status` cannot answer at `read-project`, where `~/.cco` is not mounted as
 a store.
+
+### A2 — 2026-08-21: the D7 barrier measures the wrong thing in two states
+
+Raised by **`/review-implementation`** against the accepted A1 branch, from two measurements. Neither
+is a defect of the build — the implementation is faithful to D7 as written. What A2 corrects is D7
+itself: it says *"when `.cco/.gitignore` is missing or does not cover the secret patterns"*, and the
+mechanism chosen to measure that — `git check-ignore` — answers a **different question** than the one
+D7 asks. D7 asks *does a rule protect this class*; `check-ignore` answers *would git ignore this path
+right now*. The two diverge in exactly two states, and they diverge in **opposite directions**:
+
+| State | D7's question | What `check-ignore` answers | Consequence |
+|---|---|---|---|
+| the file is already **tracked** | protected — the rule is there | **not** ignored (git consults the index) | refusal loop: the remedy is a line already in the file |
+| the root `.gitignore` ignores **`.cco/` entirely** | not protected — no class-specific rule exists | ignored, for all four probes | barrier passes vacuously, and nothing is ever saved |
+
+Both were measured. The first is a **false refusal**, the second a **false pass** — which is why one
+amendment covers them: a single predicate is answering for two questions, and correcting only the
+direction that annoys would leave the direction that silently loses data.
+
+### D13 — the barrier asks whether a rule EXISTS, not whether git applies it today *(maintainer, 2026-08-21)*
+
+`_project_gitignore_gaps` probes with **`git check-ignore --no-index`**. Without that flag git
+consults the index first, so a file the user committed *before* adding the rule reports as *not
+ignored* — and the refusal then prints, as its remedy, a line that is **already in the file**. The
+save is refused permanently and the instruction cannot be followed. `status` repeats the same
+unfollowable remedy. `--no-index` is not a loosening: it is what the design's own words —
+*"a rule that matches, however it is spelled and wherever in the ignore chain it lives"* — already
+specify. The index is not part of the ignore chain.
+
+A **tracked** secret is still reported, as a `note`, and the save proceeds:
+
+- **The save is not the event that exposes the secret.** The file is already in the repository's
+  history; it got there in an earlier commit. Refusing forever punishes a past act, blocks the user
+  from versioning their config at all, and un-exposes nothing.
+- **The floor still holds where it can act** (measured): `_secret_scan_staged` reads
+  `git diff --cached --name-only`. Tracked **and modified** → `git add -- .cco` stages it → the scan
+  **refuses**. Tracked and unmodified → it is not in the commit at all. Neither path lets *new* secret
+  content through, which is the only thing `save` is in a position to prevent.
+- **The `note` must not imply that untracking cleans the past**, or it trades one false belief for
+  another: `git rm --cached` stops future commits, it does not rewrite the ones already made. The
+  message says so.
+
+**Level: `note`, never `warn`** — §2.6 of the design, unchanged and load-bearing. A `⚠ warn` gates a
+launch (ADR-0059 D1); nothing this verb observes should stop a session from starting.
+
+**No confirmation prompt.** Considered and rejected on three grounds, the first mechanical:
+
+1. `_cco_warn_gate` has **exactly two call sites**, both launches, and
+   `test_warn_gate_is_reached_only_through_the_two_launch_paths` asserts that set by name. A third
+   site is an amendment to ADR-0059, not a code change.
+2. The gate exists because `cco start` hands the terminal to the TUI and the scrollback is destroyed
+   (ADR-0059 P1). `project save` is a foreground command that ends and leaves its output on screen —
+   the message is readable without a pause, so the pause buys nothing.
+3. A tracked file **stays tracked** until the user acts. The prompt would fire on every save,
+   forever, which is precisely how a real refusal is trained into reflex. A prompt fits a one-shot
+   irreversible act; this is a standing state.
+
+*(A fourth, minor: `save` can run from automation, and a prompt would derive the
+`_cco_have_tty` / `CCO_NONINTERACTIVE` / `CCO_ASSUME_YES` contract a second time — which ADR-0059
+names as how this suite acquires a silent hang.)*
+
+### D14 — `status` previews BOTH refusal paths *(maintainer, 2026-08-21)*
+
+A1's own premise was that `save` has **two** refusal paths and no way to ask *what would it commit,
+and would it succeed*. What A1 built anticipates one: with a `.cco/.netrc` present, `status` lists it
+as `A .netrc` and closes with `→ cco project save`, and the save then refuses on the 2-pass scan. The
+preview promises a save that will fail.
+
+`status` therefore runs the scan over the set it would commit and reports the outcome. D10 is
+unchanged and governs it: **report, never enforce, rc 0** — a preview that dies is a preview nobody
+can use to find out why their save would die. Same words as the refusal, from the same source, per
+D11's rule that the remedy may never name a different set than the one that refused.
+
+### D15 — a barrier satisfied because `.cco/` is wholly ignored is not satisfied *(maintainer, 2026-08-21)*
+
+When the repository's root `.gitignore` ignores `.cco/` in its entirety, every class probe reports
+*ignored*, the barrier passes, `git add -- .cco` stages nothing, and the verb reports
+`ℹ <repo>/.cco is already up to date — nothing to save` while `status` reports it clean and never
+committed. Measured. The config is **never saved**, and both verbs affirm that all is well — the
+worst available outcome, because it is silent, total, and indistinguishable from success.
+
+The barrier passed for a reason that has nothing to do with protection, so the passing is void. The
+discriminator is a **non-secret** path: if the probes pass *and* `.cco/project.yml` is also ignored,
+the coverage is vacuous. That state **refuses**, naming the root `.gitignore` as the file to fix —
+and `status` reports it at rc 0, per D10.
+
+This is P2 of ADR-0059 in a new guise: a barrier whose pass condition can be satisfied by an unrelated
+rule is not a barrier. It fails silently, which is the only failure mode this project treats as
+disqualifying.
