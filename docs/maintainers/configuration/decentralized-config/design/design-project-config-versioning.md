@@ -7,6 +7,10 @@
 > **Built 2026-08-21.** The mechanism below is what shipped; §7 records the choices the build had to
 > make and why. Tests live in `tests/test_project_save.sh` (T1…T17), `tests/test_operator_shim.sh`
 > (T18…T22) and `tests/test_invariants.sh` (INV-GIF).
+>
+> ⚠ **Amendment A2 (D13…D15) is designed but NOT yet built** — 2026-08-22. It corrects how §2.4's
+> barrier is *measured*, extends §5b.3 to both refusal paths, and adds §6.2c (AT1…AT9). Everything
+> marked *A2* below is the contract to build to, not a description of what runs.
 
 ## 1. What is being built
 
@@ -20,7 +24,7 @@ Five verbs, closing the matrix ADR-0038 D2 states and Amendment A1 widens:
 
 The `status` row is Amendment A1, raised during implementation: the write half had
 no preview, and `history` does not supply one — it answers what **was** saved, the
-distance `git log` keeps from `git status`. §8 holds its mechanism.
+distance `git log` keeps from `git status`. §5b holds its mechanism.
 
 ```mermaid
 flowchart TB
@@ -106,9 +110,30 @@ two in step. If it does not, the verb **refuses and names the fix** — it does 
 Rationale is in ADR-0038 D7 (P-C: the file would land in the user's repo, inside the very commit they
 asked for).
 
-Coverage is measured by **asking git** (`git check-ignore` on a probe path per class), never by
-grepping the file for a literal: what protects the user is a rule that matches, however it is spelled
-and wherever in the repo's ignore chain it lives.
+Coverage is measured by **asking git** (`git check-ignore --no-index` on a probe path per class),
+never by grepping the file for a literal: what protects the user is a rule that matches, however it is
+spelled and wherever in the repo's ignore chain it lives.
+
+⚠ **`--no-index` is not optional, and it is not a loosening** (Amendment A2, D13). Without it git
+consults the **index** before the ignore chain, so a file the user committed *before* adding the rule
+reports as **not ignored** — the barrier then refuses and prints, as its remedy, a line that is
+**already in the file**. The save is refused permanently and the instruction cannot be followed. The
+index is not part of the ignore chain; the question this barrier asks is *does a rule exist*, and
+`--no-index` is what asks exactly that.
+
+A **tracked** file that a rule should ignore is reported as a `note` and the save **proceeds**. The
+save is not the event that exposes it — it is already in the repository's history — and the floor
+still holds where it can act: `_secret_scan_staged` reads `git diff --cached`, so tracked **and
+modified** stages, and refuses; tracked and unmodified is not in the commit at all. The note must not
+imply that `git rm --cached` cleans the past: it stops future commits, it does not rewrite made ones.
+
+🔴 **A barrier satisfied because `.cco/` is wholly ignored is not satisfied** (D15). When the
+repository's root `.gitignore` ignores `.cco/` in its entirety, every class probe reports *ignored*,
+the barrier passes, `git add -- .cco` stages **nothing**, and the verb reports `already up to date —
+nothing to save` while `status` reports it clean and never committed. Measured. The config is never
+saved and both verbs affirm success. The discriminator is a **non-secret** path: if the probes pass
+*and* `.cco/project.yml` is also ignored, the coverage is vacuous — that state **refuses**, naming the
+root `.gitignore` as the file to fix.
 
 The 2-pass scan (`_secret_match_filename` + `_secret_match_content`, `*.example` exempt) then runs on
 the staged set regardless, against the **full** pattern list. On a hit: unstage, name the offending
@@ -154,11 +179,18 @@ free:
 | already up to date | `info` | nothing happened and nothing is owed |
 | saved `<repo>/.cco @ <sha>` | `ok` | the outcome |
 | other member repos uncommitted / divergent | `note` | actionable, but not a defect — this is the level D20–D25 exist for |
-| missing `.gitignore` coverage, secret hit, not a git tree | `die` | refusals, each naming its fix |
+| a **tracked** file a `.gitignore` rule should ignore (A2 D13) | `note` | same level, same reason: actionable, and the save still proceeds |
+| missing `.gitignore` coverage, **vacuous** coverage (A2 D15), secret hit, not a git tree | `die` | refusals, each naming its fix |
 
 ⚠ **No `warn`.** A `⚠ warn` gates a launch (ADR-0059 D1); nothing this verb reports is a condition
 that should stop a session from starting. Classifying the multi-repo report as `warn` would make every
 multi-repo project pause at every `cco start`.
+
+This is what fixes A2 D13's level, and it is the reason a **confirmation prompt** was rejected there
+as well: the pause `warn` reaches is `_cco_warn_gate`, whose call sites are the two launches and are
+asserted **by name** in the suite. Reaching it from a verb is an amendment to ADR-0059, not a code
+change — and it would buy nothing, since this verb's output survives on screen rather than being
+overwritten by the TUI, which is the whole reason the gate exists.
 
 ## 3. `cco project history` and `cco config history`
 
@@ -287,6 +319,21 @@ One rule, two levels: `_project_gitignore_gaps` is the pure question,
 `_project_save_assert_gitignore` the refusal, `_project_status_report_gaps` the
 report. Same split as `_reminder_roots_divergent`.
 
+**Both refusal paths, not one** (Amendment A2, D14). A1's own premise was that `save` has *two* ways
+to refuse and no way to ask *what would it commit, and would it succeed*. Reporting only the
+`.gitignore` barrier answers half: with a `.cco/.netrc` present, `status` lists it as `A .netrc` and
+closes with `→ cco project save`, and the save then refuses on the scan — a preview that promises a
+save that will fail.
+
+So `status` runs `_secret_scan_staged`'s question over the set it would commit and reports the
+outcome, in the refusal's own words. D10 governs it unchanged: **report, never enforce, rc 0**. The
+vacuous-coverage state of D15 is reported here on the same terms.
+
+⚠ The scan reads the **staged set**, and §5b.4 forbids this verb from staging anything. The preview
+therefore asks the same question of the set it *computed*, without an index write — the same
+constraint that already made `--full` reach for `git diff --no-index` instead of
+`--intent-to-add`. A `status` that stages to find out is a read verb that writes.
+
 ### 5b.4 A read verb touches nothing
 
 Not HEAD, not the index, not the working tree — pinned by
@@ -354,6 +401,24 @@ mirroring `tests/test_config.sh`'s seeding style.
 | S6 | `--full` on a NEW file | its diff appears (the `--no-index` path) |
 | S7 | `config status` | lists only allowlisted paths — asserted on a **never-saved** store, the only state where the pathspec is load-bearing (§5b.2) |
 
+### 6.2c The barrier's predicate (Amendment A2)
+
+Derived from §2.4 and §5b.3 as amended. Amendment A1's plan is unchanged; these are additions.
+**AT** = *amendment test* — a separate series because these span both verbs, and because a bare `A<n>`
+would collide with roadmap item A1/A2 and with Amendment A1 itself.
+
+| # | Test | Asserts |
+|---|---|---|
+| AT1 | a **tracked** `.cco/secrets.env`, rule present | save **succeeds** (rc 0) and emits the `note`. Discriminates against the index-aware probe: without `--no-index` this refuses |
+| AT2 | the note's wording | it says the file is **already in history** and that `git rm --cached` does not rewrite it — a note that implies otherwise is the defect it replaced |
+| AT3 | tracked **and modified** secret | still **refuses**, on the scan — the floor D13 relies on. Without this, D13's rationale is unpinned |
+| AT4 | root `.gitignore` ignores `.cco/` wholly | **refuses**, names the **root** `.gitignore`. Discriminates against the vacuous pass: today this reports *nothing to save* at rc 0 |
+| AT5 | `status` in the AT4 state | reports the same, **rc 0** (D10), never *clean* |
+| AT6 | `status` with a `.cco/.netrc` present | reports that the save **would refuse** on the scan, rc 0, and still lists the set (D14) |
+| AT7 | `status` in the AT6 state writes nothing | full `git status --porcelain` identical before and after — the scan preview must not stage (§5b.3) |
+| AT8 | ⚠ **the compensating control D7 rests on** | a `.cco/.netrc` under a *scaffold-conformant* `.gitignore` is **refused** by the scan, staged set reset. §7 justifies the narrow floor with exactly this claim and nothing pinned it |
+| AT9 | no `warn` is emitted by any of the above | the level stays `note`/`die` — a `warn` here would gate every launch |
+
 ### 6.3 Shim
 
 | # | Test | Asserts |
@@ -394,6 +459,12 @@ on arrival. The floor is `_SECRET_PROJECT_GITIGNORE_CLASSES` (`lib/secrets.sh`),
 (`tests/test_invariants.sh`) fails if the scaffold ever stops satisfying it. The 2-pass scan is
 unaffected and still runs against the full list, so nothing is unguarded: the floor bars classes
 *before* staging, the scan reads the files.
+
+⚠ That last sentence is a **compensating control, and until Amendment A2 nothing tested it.** INV-GIF
+guards one direction only — scaffold ⊇ floor — which is the drift that would kill the verb, not the
+one that would let a secret through. What carries the narrow floor is the claim that a `.netrc` under
+`.cco/` is caught by the scan and refused; **§6.2c AT8 is that claim, pinned.** A justification whose
+load-bearing half is unmeasured is an assumption wearing a rationale's clothes.
 
 Two implementation shapes worth naming, both measured rather than reasoned:
 
