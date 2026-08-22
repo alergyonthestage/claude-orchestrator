@@ -3179,7 +3179,9 @@ only so the next reader does not re-derive that the `-z` read was the whole fix.
 
 ## FI-77 — the `.claude` authoring axis is invisible to the agent it governs
 
-**Raised**: 2026-08-22, from a maintainer's question. All four facts below are **measured**, not read.
+**Raised**: 2026-08-22, from a maintainer's question. **Scheduled the same day as roadmap entry
+[A9](roadmap.md), immediately after A1** — the position is a decision, not a dependency.
+All four facts below are **measured**, not read.
 
 The **cco** axis (Axis A) is surfaced to the agent twice: a baked managed rule
 (`cco-config-interaction.md`) states the policy, and the session context narrates this session's

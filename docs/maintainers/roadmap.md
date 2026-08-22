@@ -278,7 +278,7 @@ the day it is written.
 ### Block A — quick wins and coherence debts → `0.7.0`
 
 Minor bump, not a patch: it introduces new verbs and a new access knob. Nothing here needs an analysis
-phase; A1 and A2 need a short design, A3 needs none, and **A4's design is already done and accepted**
+phase; A1, A2 and **A9** need a short design, A3 needs none, and **A4's design is already done and accepted**
 ([ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)).
 ✅ **A5 and A8's shared design is done and accepted** (2026-08-13,
 [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1…D15 +
@@ -286,6 +286,9 @@ phase; A1 and A2 need a short design, A3 needs none, and **A4's design is alread
 ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the two amendments the live
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
+
+▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
+after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
 
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
@@ -377,6 +380,63 @@ host-side CLI produced at run time.
 `bin/cco` `_cco_operator_shim`, `lib/reminders.sh` (reminder (b) is the caller already waiting for the
 verb). Integration contract:
 [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md).
+
+#### A9 — the `.claude` authoring axis is invisible to the agent it governs ([FI-77](improvements.md))
+
+▶ **Scheduled 2026-08-22 by the maintainer, immediately after A1** — the position is a decision, not a
+dependency: nothing in A9 needs A1, and A1's cycle simply has to close first.
+
+**A4 built the mechanism; nothing told the agent it exists.** ADR-0057 shipped the `ask` plane and the
+Axis-B resource classes, and the agent that lives under them is never informed of either. This is
+A4's *awareness* residue the way [A7](#a7--the-a4-review-residue-fi-62--fi-66) is its code residue.
+
+⚠ **It is an OMISSION, not staleness — and that decides the shape of the work.** No shipped rule
+asserts anything false about the axis (measured: the four managed rules do not mention it at all). So
+this adds a section; it does not correct wrong text. Anyone scoping it as "fix the stale rules" will
+go looking for text that is not there.
+
+**The asymmetry, measured 2026-08-22.** The **cco** axis reaches the agent twice — a baked managed
+rule (`cco-config-interaction.md`) states the policy, and the session context narrates this session's
+level. The **`.claude` authoring** axis reaches it through **neither**:
+
+| Measured | Value |
+|---|---|
+| derived default at `cco_access=read-project` | trees `Cr=Cp=Cg=Co=ro`; entries `claude_md=ask`, `rules`/`agents`/`skills`=`ro` |
+| effective on `<repo>/.claude` (tree `max()` class) | `CLAUDE.md` → **`ask`**; `rules`, `agents`, `skills` → **`ro`** |
+| managed rules mentioning Axis B | **none** |
+| `lib/session-context.sh` | receives `cco_access`; **`claude_access` is never passed to it** |
+
+🔴 **`ask` covers `CLAUDE.md` ALONE.** The other three classes are `ro`, and `ro` is a **mount**
+property — a **restart**, not a prompt. An agent that assumes the whole tree is askable proposes the
+wrong remedy; one that assumes the whole tree is locked does not propose at all.
+
+**Why it is a defect and not a nice-to-have.** Two shipped rules already instruct the agent to
+*propose* rule changes — `memory-policy.md` (*"proposing the change to the user, not writing
+directly"*) and `documentation.md` (*"propose moving it to a rule, editing rules is the human's
+call"*). The instruction ships without the context that makes it actionable, so the agent cannot tell
+whether the route is a permission prompt, a restart, or nothing. It is `documentation.md`'s own
+operational-artifact test failing: *delete this and does the agent get an operational decision wrong?*
+— yes, and it is already deleted.
+
+**Shape — mirror Axis A, do not invent a form.** Policy in a managed rule (natural home: a section of
+`cco-config-interaction.md`, already access-conditional and already covering the sibling axis);
+this session's values in the session context. Both are the places a reader already looks for the
+other axis, which is most of the argument.
+
+**Open at design time, not now:**
+- Does the session context render Axis B **always**, or only when it differs from the derived default?
+  (The cco axis is always rendered; the symmetry argument says always, the noise argument says not.)
+- Does the rule state the **restart command** for the `ro` classes, and if so with a host path?
+  ⚠ `rules/git-practices.md` forbids host paths in committed artifacts; the path map exists for
+  handing them to the user in-session, not for baking them.
+- Whether `cco whoami`'s *Authoring trees* block stays the only detailed surface.
+
+⚠ **Both targets are BAKED** — `Dockerfile:225` copies `defaults/managed/`, and `lib/` likewise. The
+unit takes a **`cco build`** in its acceptance lane, and the managed-rule half **cannot be verified
+in-session** without it (`docs/maintainers/.../design §6.4` names this same limit for A1).
+
+⚠ **A measuring session cannot use itself as the sample** — the FI-25 mask (`access: {claude: all}`)
+is on in this project deliberately. Call `_claude_derive_triple` directly, or pin `--claude-access`.
 
 #### A2 — Per-project custom Docker image ([FI-49](improvements.md))
 
@@ -893,7 +953,6 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | Item | Why it is not in a block |
 |---|---|
 | [FI-71](improvements.md) — the config-editor design doc describes an access model replaced twice | 📄 **A `documenter` task, and the only one here on a security surface.** ADR-0048 replaced `edit-all` with min-privilege-by-mode, ADR-0049 §8 removed the bespoke Axis-B floor, ADR-0057 added the `CLAUDE.md` prompt — the doc predates all three and overstates the built-in's privilege *in the permissive direction*. Nothing depends on it, which is why it is here rather than in a block; but it is the copy a maintainer reaches through the config-editor's own design tree, so it outranks the rest of this table. ⚠ Re-derive the whole model, not the three flagged lines |
-| [FI-77](improvements.md) — the `.claude` authoring axis is invisible to the agent it governs | 🔴 **The one item here a maintainer should read before scheduling the rest.** Axis A (cco config) reaches the agent through a baked managed rule **and** the session context; Axis B (`.claude` authoring) reaches it through **neither** — measured, including that `lib/session-context.sh` is never passed `claude_access` at all. Meanwhile two shipped rules already instruct the agent to *propose* rule changes, so the instruction ships without the context that makes it actionable. ⚠ The `ask` default covers **`CLAUDE.md` alone**; `rules`/`agents`/`skills` are `ro`, which is a **restart**, not a prompt — so an agent that assumes otherwise proposes the wrong remedy. Shape of the fix is to mirror Axis A, not invent a form; both targets are **baked**, so a `cco build` rides along |
 | [FI-37](improvements.md) — no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`) | Usability, no data loss. ADR-0055 gave the *project* tree a functional-write floor; the repo tree deliberately did not get one, because a repo's native `.claude/` is cross-cutting config shared with everyone who clones it. The fix is a mechanism choice, not a patch |
 | [FI-38](improvements.md) — workflows STATE overlay hygiene | Two policy choices, not bugs: a stub outlives the entry that justified it, and a collision with a later-committed workflow is resolved silently. ⚠ The emitting function runs inside `$( )` and its stdout **is** compose YAML — any notice must go to stderr or be emitted by the caller |
 | [FI-39](improvements.md) — Claude Code memory state cco does not persist | **One ADR covering both halves; do not split it.** (a) per-agent `memory:` is declared on eight agents and evaporates — measured: of four declared scopes only the lead's works, and six pack agents produced **zero bytes** in weeks. (b) `autoMemoryDirectory` — a simplification. ⚠ **Weigh it together with cross-PC state sync, never before**: role memory becomes an object to sync, with its own ownership/conflict/confidentiality questions, and deciding it first means deciding it without its most binding requirement. ⚠ And the fix **cannot be "make `.claude` writable"** — that would buy a low-priority feature by selling the security guarantee named in C2 |

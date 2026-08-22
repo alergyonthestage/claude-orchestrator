@@ -38,7 +38,7 @@ Everything below was **measured on this branch**, not carried over:
 | **Implement A2** | the next session's work — this is the intended entry point |
 | **Merge into `develop`** | the human review point, after A2 is built and green. ⚠ Does the diff touch `.cco/`? **No** — so [FI-20](improvements.md)'s host-only merge rule does not apply. Measure before assuming |
 | **macOS host suite (bash 3.2)** | still owed before `0.7.0`. Nothing has run the full suite on 3.2 since `v0.6.0` |
-| **[FI-77](improvements.md)** | 🔴 **a maintainer's decision** — the `.claude` authoring axis is invisible to the agent it governs. Not a defect of this unit; see *Open questions* |
+| **[A9](roadmap.md)** ([FI-77](improvements.md)) | ▶ **scheduled: the next unit after A1 closes.** The `.claude` authoring axis is invisible to the agent it governs. Needs a short design first |
 | **[FI-73](improvements.md)** | the SIGPIPE sentinel — still a maintainer's call, unchanged |
 
 ⚠ **`feat/claude-view-file-overlays` is rares' branch and is deliberately untouched** — local and
@@ -51,6 +51,9 @@ Implement Amendment A2. The contract is
 and **[the design](configuration/decentralized-config/design/design-project-config-versioning.md)**
 §2.4 (the predicate), §2.6 (the level), §5b.3 (both refusal paths), **§6.2c (AT1…AT9, the test plan)**.
 All three decisions are ruled — do not re-derive them.
+
+▶ **And when A1 closes (A2 built, reviewed, merged), the next unit is [A9](roadmap.md)** — scheduled
+by the maintainer on 2026-08-22. Do not pick the next item off the block by number.
 
 The three code sites, all measured:
 
@@ -86,8 +89,12 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
       Update them at the phase that makes them true
 - [ ] **Merge to `develop`** after A2 is green (human gate), then delete the branch per
       `rules/git-practices.md`
-- [ ] **[FI-77](improvements.md)** — decide whether the `.claude` axis gets a rule + session-context
-      surface. ⚠ Both targets are **baked**, so the unit that takes it also takes a `cco build`
+- [ ] ▶ **[A9](roadmap.md)** ([FI-77](improvements.md)) — **THE NEXT UNIT after A1 closes**, by the
+      maintainer's decision of 2026-08-22. Give the `.claude` authoring axis a managed rule + a
+      session-context surface, mirroring the cco axis. **Short design first** — three questions are
+      open in the roadmap entry. ⚠ It is an **omission, not staleness**: no shipped rule says anything
+      false, so this adds a section rather than correcting text. ⚠ Both targets are **baked**, so the
+      unit takes a `cco build` — and the managed-rule half cannot be verified in-session without it
 - [ ] **[FI-73](improvements.md)** — decide the SIGPIPE sentinel fix
 - [ ] **[FI-74](improvements.md)…[FI-76](improvements.md)** — the review's residue, none blocking
 - [ ] **macOS host suite (bash 3.2)** — owed before the `0.7.0` release
@@ -124,8 +131,8 @@ The two points a reader is most likely to challenge:
 
 ### Open questions needing a human
 
-- 🔴 **[FI-77](improvements.md) — the `.claude` authoring axis is invisible to the agent it governs.**
-  Raised from a maintainer's question and **measured**: the derived default gives trees
+- ✅ **[FI-77](improvements.md) is no longer an open question — it is scheduled as [A9](roadmap.md)**,
+  the next unit after A1. Kept here for the measurements a designer needs: the derived default gives trees
   `Cr=Cp=Cg=Co=ro` with entries `claude_md=ask`, `rules`/`agents`/`skills`=`ro`; **no** managed rule
   mentions Axis B; and `lib/session-context.sh` is never passed `claude_access` at all. So **`ask`
   covers `CLAUDE.md` alone** — the other three are `ro`, a **mount** property, i.e. a restart and not
