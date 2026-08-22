@@ -3145,3 +3145,75 @@ behaviour on a guarded invariant, which is a maintainer's call, and
 ⚠ Verify the fix on the case it must still catch: a real `set -u` violation must go on printing the
 ✗. A trap that silences the sentinel wholesale would trade the bug for the crash-reporting it exists
 to provide.
+
+---
+
+## FI-74 — `cco <group> save --help` is refused at a read level, on both twins
+
+**Raised by**: `/review-implementation` of A1, 2026-08-22. **Not introduced by A1** — the twin
+`cco config save --help` has behaved this way since it shipped, which is what makes it a class rather
+than a defect of the unit.
+
+The operator shim's D7 rule says help is available at every level. The shortcut that implements it
+matches on `$1` only — `case "$sub" in -h|--help)` — so `cco project save --help` (where `--help` is
+`$2`) falls through to the write gate and is refused with exit 2. A user at `read-project` cannot read
+what the verb they may not run would do.
+
+**Class, not instance**: any `<group> <verb> --help` where the group dispatches before the help
+shortcut. Enumerate by running them, do not reason from the source — `tests/helpers.sh` gives an
+operator lane in ~10 lines, and a named list of affected verbs has been a lower bound five times in
+this repo.
+
+## FI-75 — `cco project save -m ""` silently uses the default message
+
+An empty `-m` is indistinguishable from an absent one (`[[ -z "$msg" ]]`), so the commit lands with
+`project config update` and the user is not told their message was discarded. Trivial; recorded
+because the twin will inherit whatever is decided.
+
+## FI-76 — `_status_changed` reads NUL-delimited and renders newline-delimited
+
+`_status_changed` correctly reads with `-z` (verified on a path containing a space) but hands
+`_status_render` a `\n`-delimited list, so a filename containing a newline would break the mark/path
+split and the `grep -c .` count. Extremely remote — a newline in a `.cco/` filename — and recorded
+only so the next reader does not re-derive that the `-z` read was the whole fix.
+
+## FI-77 — the `.claude` authoring axis is invisible to the agent it governs
+
+**Raised**: 2026-08-22, from a maintainer's question. All four facts below are **measured**, not read.
+
+The **cco** axis (Axis A) is surfaced to the agent twice: a baked managed rule
+(`cco-config-interaction.md`) states the policy, and the session context narrates this session's
+level and what it scopes. The **`.claude` authoring** axis (Axis B) has **neither**. The asymmetry is
+the finding.
+
+| Measured | Value |
+|---|---|
+| derived default, `cco_access=read-project` | trees `Cr=Cp=Cg=Co=ro`; entries `claude_md=ask`, `rules`/`agents`/`skills`=`ro` |
+| effective on `<repo>/.claude` (tree `max()` class) | `CLAUDE.md` → **`ask`**; `rules`, `agents`, `skills` → **`ro`** |
+| the four managed rules mentioning Axis B | **none** (`defaults/managed/.claude/rules/`) |
+| `lib/session-context.sh` | takes `cco_access` as a parameter; **`claude_access` is not passed to it at all** |
+
+So `ask` — the level that lets an agent propose a change and have the user approve it in-session —
+covers **`CLAUDE.md` alone**. `rules/`, `agents/` and `skills/` are `ro`, and `ro` is a **mount**
+property: changing it is a restart, not a prompt.
+
+**Why this is a defect and not merely a gap.** Two shipped rules already instruct the agent to
+*propose* rule changes — `memory-policy.md` (*"this means proposing the change to the user, not
+writing directly"*) and the project's `documentation.md` (*"propose moving it to a rule, editing
+rules is the human's call"*). The instruction ships; the context that makes it actionable does not.
+An agent following it cannot tell whether the proposal route is a permission prompt (`CLAUDE.md`), a
+restart (`rules/`), or forbidden — so it either does not propose, proposes the wrong remedy, or
+attempts a write and reads a bare read-only-filesystem errno with nothing connecting it to a policy.
+
+This is `documentation.md`'s own operational-artifact test failing: *delete this and does the agent get
+an operational decision wrong?* — yes, and it is already deleted.
+
+**Shape of the fix** (design owed, nothing decided): mirror Axis A rather than invent a form — the
+policy in a managed rule (the natural home is a section of `cco-config-interaction.md`, which is
+already access-conditional and already covers the sibling axis), this session's values in the session
+context. ⚠ Both are **baked** (`Dockerfile:225` copies `defaults/managed/`; `lib/` likewise), so
+whichever unit takes this also takes a `cco build` in its acceptance lane.
+
+⚠ **This session cannot measure the default from itself** — the FI-25 mask (`access: {claude: all}`
+in `.cco/project.yml`) is on deliberately. The values above come from calling `_claude_derive_triple`
+directly; pin `--claude-access` for any session-level check.
