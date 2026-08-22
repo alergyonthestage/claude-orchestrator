@@ -117,9 +117,10 @@ narrative, the lessons, and the per-stage records live in
   `--no-ff` merges in that order: `6208228` (the five A5/A8 units) and `90c1391` (ADR-0038 + design).
   Both feature branches were deleted locally with `-d` — it did not refuse, and `git log develop..<b>`
   was **0 for both** before the deletion.
-  🔴 **`develop` is UNPUSHED — 40 commits ahead of `origin/develop`.** Push it from the host before
-  anything else. 📝 That count is recorded knowing the rule below invalidates it: it is a snapshot,
-  and `git rev-list --count origin/develop..develop` is the authority.
+  ✅ **`develop` is LEVEL with `origin/develop`** — measured 2026-08-22 (`git rev-list --count
+  origin/develop..develop` = 0). The push happened host-side and that gate is closed;
+  `origin/feat/cli/start-warning-gate` is gone too. The only remote feature branch left is
+  `origin/feat/claude-view-file-overlays`, which is rares' and stays.
   📝 **`origin/feat/cli/start-warning-gate` still exists on the remote** and is the one merged branch
   left to delete there — outward-facing, so it is asked rather than assumed.
   ⚠ **`feat/claude-view-file-overlays` is NOT ours and is deliberately untouched** — rares' branch,
@@ -313,8 +314,26 @@ argument that turned D2 from one read verb into two. The matrix is now **2×3**.
 lands in the user's own log among code commits, where the twin's bare `config update` would be
 ambiguous); `history`'s default limit **`-n 10`**.
 
-▶ **Next: `/review-implementation` over the whole branch**, then the merge gate. Nothing else is
-owed inside the unit.
+✅ **REVIEWED 2026-08-21/22** (`/review-implementation`) — verdict *fixed-in-place*: faithful to
+D1…D12, §6's plan mapped to real tests voice by voice, suite `1749 passed, 7 failed, 1756` with the 7
+the known host-only set. One objective defect fixed (a mirror comment naming a function the branch had
+factored away). Three residual nits are **not** this unit's: [FI-74](improvements.md) …
+[FI-76](improvements.md).
+
+⭐ **Amendment A2 (D13…D15) came OUT of that review** — designed 2026-08-22, **not yet built**. The
+review measured two states where `git check-ignore` answers a different question than D7 asks, and
+they fail in **opposite** directions: a **tracked** file reports not-ignored, so the barrier refuses
+forever with a remedy already in the file (**false refusal**); a root `.gitignore` swallowing `.cco/`
+whole makes every probe pass, after which nothing is staged and both verbs report success (**false
+pass — silent and total**). D13 fixes the predicate (`--no-index`) and rules the tracked file a
+`note`, not a refusal and **not** a confirmation prompt; D14 extends `status` to both refusal paths,
+which was Amendment A1's own stated premise; D15 refuses vacuous coverage. Contract: ADR-0038
+Amendment A2 + design §2.4/§2.6/§5b.3/**§6.2c (AT1…AT9)**.
+
+▶ **Next: implement A2 on the same branch**, then the merge gate — one review covers the unit, the
+way Amendment A1 was already absorbed mid-flight. ⚠ **AT8 is owed regardless of the rest**: it pins the
+compensating control §7 already leans on (a `.netrc` under `.cco/` is caught by the scan), which
+carried the narrow gitignore floor with nothing measuring it.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
@@ -874,6 +893,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | Item | Why it is not in a block |
 |---|---|
 | [FI-71](improvements.md) — the config-editor design doc describes an access model replaced twice | 📄 **A `documenter` task, and the only one here on a security surface.** ADR-0048 replaced `edit-all` with min-privilege-by-mode, ADR-0049 §8 removed the bespoke Axis-B floor, ADR-0057 added the `CLAUDE.md` prompt — the doc predates all three and overstates the built-in's privilege *in the permissive direction*. Nothing depends on it, which is why it is here rather than in a block; but it is the copy a maintainer reaches through the config-editor's own design tree, so it outranks the rest of this table. ⚠ Re-derive the whole model, not the three flagged lines |
+| [FI-77](improvements.md) — the `.claude` authoring axis is invisible to the agent it governs | 🔴 **The one item here a maintainer should read before scheduling the rest.** Axis A (cco config) reaches the agent through a baked managed rule **and** the session context; Axis B (`.claude` authoring) reaches it through **neither** — measured, including that `lib/session-context.sh` is never passed `claude_access` at all. Meanwhile two shipped rules already instruct the agent to *propose* rule changes, so the instruction ships without the context that makes it actionable. ⚠ The `ask` default covers **`CLAUDE.md` alone**; `rules`/`agents`/`skills` are `ro`, which is a **restart**, not a prompt — so an agent that assumes otherwise proposes the wrong remedy. Shape of the fix is to mirror Axis A, not invent a form; both targets are **baked**, so a `cco build` rides along |
 | [FI-37](improvements.md) — no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`) | Usability, no data loss. ADR-0055 gave the *project* tree a functional-write floor; the repo tree deliberately did not get one, because a repo's native `.claude/` is cross-cutting config shared with everyone who clones it. The fix is a mechanism choice, not a patch |
 | [FI-38](improvements.md) — workflows STATE overlay hygiene | Two policy choices, not bugs: a stub outlives the entry that justified it, and a collision with a later-committed workflow is resolved silently. ⚠ The emitting function runs inside `$( )` and its stdout **is** compose YAML — any notice must go to stderr or be emitted by the caller |
 | [FI-39](improvements.md) — Claude Code memory state cco does not persist | **One ADR covering both halves; do not split it.** (a) per-agent `memory:` is declared on eight agents and evaporates — measured: of four declared scopes only the lead's works, and six pack agents produced **zero bytes** in weeks. (b) `autoMemoryDirectory` — a simplification. ⚠ **Weigh it together with cross-PC state sync, never before**: role memory becomes an object to sync, with its own ownership/conflict/confidentiality questions, and deciding it first means deciding it without its most binding requirement. ⚠ And the fix **cannot be "make `.claude` writable"** — that would buy a low-priority feature by selling the security guarantee named in C2 |
