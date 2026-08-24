@@ -333,10 +333,11 @@ pass — silent and total**). D13 fixes the predicate (`--no-index`) and rules t
 which was Amendment A1's own stated premise; D15 refuses vacuous coverage. Contract: ADR-0038
 Amendment A2 + design §2.4/§2.6/§5b.3/**§6.2c (AT1…AT9)**.
 
-✅ **A2 IMPLEMENTED 2026-08-24** on the same branch, two commits (the predicate; then the preview).
+✅ **A2 IMPLEMENTED 2026-08-24** on the same branch, three commits (the predicate; the preview; the
+status-side ruling below).
 **AT1…AT9 are all written and green**, and the oracle was shown to discriminate before the fix: 7 of
-the 10 new tests failed first, AT4 reproducing the false pass verbatim (`already up to date — nothing
-to save`, rc 0). Suite **`1759 passed, 7 failed, 1766 total`** — **+10 tests, zero regressions**, and
+the first 10 new tests failed first, AT4 reproducing the false pass verbatim (`already up to date —
+nothing to save`, rc 0). Suite **`1761 passed, 7 failed, 1768 total`** — **+12 tests, zero regressions**, and
 the 7 verified **name for name** as the known host-only set (6 `test_as_*` +
 `test_paths_symlink_safe_tool_root`). A2 touches **no baked file**, so it owes no `cco build`.
 The four changed `lib/` files and the test file parse under **real bash 3.2** (`bash:3.2` via the

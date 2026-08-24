@@ -1278,7 +1278,7 @@ Examples:
 that you had **already staged** — is left exactly as it was: not committed, not unstaged. That
 is the whole point of the verb, and the reason you can run it mid-task.
 
-Before anything is staged, two barriers run:
+Before anything is staged, three barriers run:
 
 | Barrier | What happens |
 |---|---|
