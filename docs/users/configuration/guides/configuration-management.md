@@ -87,14 +87,25 @@ git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by 
 you had already staged — is left untouched, so you can save the config in the middle
 of a task without disturbing it. Run it from anywhere inside the repo.
 
-Two things it deliberately refuses rather than fixes for you:
+Things it deliberately refuses rather than fixes for you:
 
 - **a missing or insufficient `.cco/.gitignore`** — it names the lines to add, but
   does not write them. That file is a versioned file in *your* repository, and
   authoring it would put a change you did not ask for inside the commit you did.
+- **a root `.gitignore` that ignores `.cco/` entirely** — there the barrier above is
+  satisfied by an accident: every secret class is "covered" because *everything* is,
+  and a save would commit nothing at all while reporting success. cco names the root
+  file to fix. Your `.cco/.gitignore` is not the problem and stays as it is.
 - **a secret-shaped file under `.cco/`** — the same 2-pass scan `cco config save`
   runs (filename and content, `*.example` exempt). The refusal unstages `.cco/` and
   nothing else.
+
+Coverage is decided by asking git whether a **rule exists**, so a directory-wide
+pattern or one inherited from elsewhere in your ignore chain counts. A file you had
+already **committed** before adding the rule is not a refusal: git tracks it whatever
+the rule says, so the save reports it and **proceeds** — it is already in your
+history, and this commit is not what put it there. `git rm --cached` stops future
+commits from carrying it; it does not rewrite the ones already made.
 
 In a multi-repo project the save covers the repo you ran it in, then tells you which
 other member repos still have an uncommitted `.cco/` — and, separately, whether the
@@ -102,9 +113,10 @@ members have **drifted apart** in content, which is a `cco sync` question rather
 a commit one.
 
 `cco project status` is the preview: it lists exactly what `save` would commit — not what
-`git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. If the
-`.gitignore` barrier is incomplete it tells you there, at exit 0, instead of making you discover it
-by having a save refused.
+`git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. It also
+answers the second half of the question — *would it succeed* — by reporting **either** refusal above
+before the list, at exit 0, instead of making you discover it by having a save refused. When one
+would fire, the closing `→ cco project save` hint is withheld.
 
 `cco project history` is path-filtered, so it shows every commit that touched
 `.cco/` — including commits that also touched code, and commits made by hand long
@@ -134,7 +146,8 @@ cco config pull                        # pull on another machine
 `.claude/`, the global `setup*.sh`/`mcp-packages.txt`/`languages`) — never
 `git add -A` — and runs a 2-pass secret scan. Commits are **explicit and semantic**
 (no auto-commit). A non-fast-forward `cco config pull` aborts and tells you to resolve
-in your IDE, as ordinary git.
+in your IDE, as ordinary git. `cco config status` previews both halves the same way its
+project twin does: what would be committed, and whether the secret scan would refuse it.
 
 `cco config validate [--fix]` sanitizes orphaned internal state after a manual
 deletion (detect/report, prune only on confirm) — never automatic.

@@ -1485,12 +1485,21 @@ entries:
       stages **only** `.cco/**` and commits it: anything else that is dirty, or
       that you had already staged, is left exactly as it was, so you can save the
       config in the middle of a task. Run it from anywhere inside the repo, with
-      `-m` for the message. Two things it refuses rather than fixing for you: a
+      `-m` for the message. Three things it refuses rather than fixing for you: a
       `.cco/.gitignore` that is missing or does not cover the secret patterns (it
       names the lines to add, but that file is a versioned file in your repository
-      and writing it would put an unrequested change in the commit you asked for),
-      and a secret-shaped file staged under `.cco/` — the same two-pass scan
-      `cco config save` runs, with `*.example` exempt. In a multi-repo project it
+      and writing it would put an unrequested change in the commit you asked for);
+      a **root** `.gitignore` that ignores `.cco/` entirely, where that first check
+      is satisfied by an accident and a save would commit nothing at all while
+      reporting success — cco names the root file to fix, and leaves your
+      `.cco/.gitignore` alone; and a secret-shaped file staged under `.cco/` — the
+      same two-pass scan `cco config save` runs, with `*.example` exempt. What the
+      first check asks is whether an ignore **rule exists**, so a directory-wide
+      pattern counts, and a file you had already committed before adding the rule
+      is not a refusal: git tracks it whatever the rule says, so the save reports it
+      and proceeds — it is already in your history, and `git rm --cached` stops
+      future commits from carrying it without rewriting the ones already made. In a
+      multi-repo project it
       also tells you which other member repos still have an uncommitted `.cco/`,
       and separately whether the members have drifted apart in content, which is a
       `cco sync` question rather than a commit one.
@@ -1511,11 +1520,14 @@ entries:
       it lists is **exactly what `save` would commit**, which is not what
       `git status` would show you: files git ignores are absent, everything outside
       `.cco/` is absent however dirty your tree is, and on the personal store only
-      the allowlisted config appears. If the `.cco/.gitignore` barrier is missing or
-      incomplete, `status` says so and still answers — at exit 0, in the same words
-      the refusal would use, so you find out before a save is refused rather than
-      after. A clean config names its last save, so "nothing to do" never reads the
-      same as "never saved".
+      the allowlisted config appears. And it answers the other half — *would saving
+      work* — for **both** ways a save can be refused: the `.gitignore` barrier, and
+      the secret scan, run over the very set it just listed. It says so and still
+      answers, at exit 0, in the same words the refusal would use, so you find out
+      before a save is refused rather than after; when one would fire, the closing
+      `→ cco project save` hint is withheld rather than pointing you at a command
+      destined to fail. A clean config names its last save, so "nothing to do" never
+      reads the same as "never saved".
       In a session, `project save` needs an edit-project (or wider) level and
       `project status` / `project history` are free at any level; the `config`
       readers need read-global, because at read-project the personal store is not

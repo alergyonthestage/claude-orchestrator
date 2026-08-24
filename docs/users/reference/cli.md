@@ -1283,7 +1283,15 @@ Before anything is staged, two barriers run:
 | Barrier | What happens |
 |---|---|
 | `.cco/.gitignore` missing, or not ignoring `secrets.env` / `*.env` / `*.key` / `*.pem` / `.credentials.json` | **refuses** and prints the lines to add. cco does **not** write that file — it is a versioned file in *your* repository, and authoring it would put an unrequested change inside the commit you asked for |
+| your repository's **root** `.gitignore` ignores `.cco/` in its entirety | **refuses**, and names that root file. Every class above is "covered" there for a reason that has nothing to do with protection — and a save would commit *nothing at all*, silently. Your `.cco/.gitignore` stays as it is; the rule to remove is the one at the repo root |
 | a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path |
+
+Coverage is decided by **asking git whether a rule exists**, not by reading the file — so a
+directory-wide pattern, or one inherited from anywhere in your ignore chain, counts. A file you had
+already **committed** before adding the rule is a different case: git tracks it regardless of the
+rule, so `save` reports it as a `note` and **proceeds**. It is already in your history, and the save
+is not what put it there. `git rm --cached <path>` stops future commits from carrying it — it does
+**not** rewrite the commits already made.
 
 A repo that is not under git is refused too: cco does not `git init` a repository it does not own.
 
@@ -1323,9 +1331,12 @@ What it lists is **exactly what `save` would commit**, which is not the same as 
 would show you: files git ignores are absent (save skips them too), and so is everything outside
 `.cco/`, however dirty your working tree is.
 
-If the `.cco/.gitignore` barrier is missing or incomplete, `status` **says so and still answers**,
-at exit 0 — it is the fastest way to find out *why* a save would be refused, in the same words the
-refusal uses. It never writes that file for you either.
+If a save would be **refused**, `status` says so and **still answers**, at exit 0 — it is the fastest
+way to find out *why*, in the same words the refusal uses, and it never writes anything for you. It
+covers **both** refusal paths: the `.cco/.gitignore` barrier (missing, incomplete, or satisfied only
+because your root `.gitignore` swallows `.cco/` whole) **and** the secret scan, run over the very set
+listed below it. When either would refuse, the closing `→ cco project save` hint is withheld —
+a preview that pointed you at a command destined to fail would be worse than none.
 
 A clean config names its last save, so you can tell "nothing to do" from "never saved":
 
@@ -1844,8 +1855,10 @@ Examples:
 
 Only the **allowlisted** config is listed — `packs/`, `templates/`, `.claude/`, the global
 `setup*.sh` / `mcp-packages.txt` / `languages` and `secrets.env.example`. A stray file you dropped
-in `~/.cco` is not shown, because `cco config save` would not commit it. **In a session** this verb
-needs `read-global` or wider, for the same reason as `cco config history` below.
+in `~/.cco` is not shown, because `cco config save` would not commit it. It also runs the **secret
+scan** over that set and tells you if the save would be refused by it, at exit 0, withholding the
+`→ cco config save` hint in that case. **In a session** this verb needs `read-global` or wider, for
+the same reason as `cco config history` below.
 
 #### `cco config history [-n <count>] [--full]`
 
