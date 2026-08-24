@@ -4,7 +4,7 @@
 # Provides:
 #   Loading:   load_secrets_file(), load_global_secrets()
 #   Scanning:  _secret_match_filename(), _secret_match_content(),
-#              _secret_scan_staged(), _secret_gitignore_probe()
+#              _secret_scan_paths(), _secret_scan_staged(), _secret_gitignore_probe()
 #              _SECRET_FILENAME_PATTERNS, _SECRET_CONTENT_PATTERNS,
 #              _SECRET_PROJECT_GITIGNORE_CLASSES
 #   Deprecated: migrate_memory_to_claude_state() [use migrations/project/001],
@@ -110,9 +110,33 @@ _secret_match_content() {
     return 1
 }
 
-# 2-pass secret scan (filename, then content) over the currently STAGED files of
-# <git_root>, optionally narrowed to <pathspec>; *.example is exempt (FR-S3).
+# The 2-pass question itself (filename, then content), over an explicit list of
+# <git_root>-relative paths read from STDIN; *.example is exempt (FR-S3).
 # Echoes "<path>\t(why)" on the FIRST hit and returns 1 (block); returns 0 clean.
+#
+# It is separated from "which files are staged" because the two SAVE verbs are not
+# the only callers any more: `cco project status` / `cco config status` must preview
+# this refusal (ADR-0038 A2 D14), and a read verb may not stage to find out. Both
+# therefore ask the same question of a set they computed — same function, same
+# words, no second copy of the pattern matching to drift.
+# Usage: <paths on stdin> | _secret_scan_paths <git_root>
+_secret_scan_paths() {
+    local root="$1" f hit
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        [[ "$f" == *.example ]] && continue
+        if hit=$(_secret_match_filename "$f" 2>/dev/null) && [[ -n "$hit" ]]; then
+            printf '%s\t(filename matches %s)\n' "$f" "$hit"; return 1
+        fi
+        if [[ -f "$root/$f" ]] && hit=$(_secret_match_content "$root/$f" 2>/dev/null) && [[ -n "$hit" ]]; then
+            printf '%s\t(content matches at line %s)\n' "$f" "${hit%%:*}"; return 1
+        fi
+    done
+    return 0
+}
+
+# The same question over the currently STAGED files of <git_root>, optionally
+# narrowed to <pathspec>. This is the gate both `save` verbs run before committing.
 #
 # ONE scanner for both save gates — `cco config save` (~/.cco, the whole store) and
 # `cco project save` (<repo>/.cco, path-scoped). It lives here, beside the pattern
@@ -123,20 +147,11 @@ _secret_match_content() {
 # going to commit — the twin can omit it only because it owns its whole tree.
 # Usage: _secret_scan_staged <git_root> [<pathspec>]
 _secret_scan_staged() {
-    local root="$1" spec="${2:-}" f hit
+    local root="$1" spec="${2:-}"
     local -a sel=()
     [[ -n "$spec" ]] && sel=( -- "$spec" )
-    while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        [[ "$f" == *.example ]] && continue
-        if hit=$(_secret_match_filename "$f" 2>/dev/null) && [[ -n "$hit" ]]; then
-            printf '%s\t(filename matches %s)\n' "$f" "$hit"; return 1
-        fi
-        if [[ -f "$root/$f" ]] && hit=$(_secret_match_content "$root/$f" 2>/dev/null) && [[ -n "$hit" ]]; then
-            printf '%s\t(content matches at line %s)\n' "$f" "${hit%%:*}"; return 1
-        fi
-    done < <(git -C "$root" diff --cached --name-only ${sel[@]+"${sel[@]}"} 2>/dev/null)
-    return 0
+    git -C "$root" diff --cached --name-only ${sel[@]+"${sel[@]}"} 2>/dev/null \
+        | _secret_scan_paths "$root"
 }
 
 # Load secrets from a specific file into an array of -e flags

@@ -396,10 +396,17 @@ cmd_project_status() {
         return 0
     fi
 
+    # D14 — the SECOND refusal path, previewed over the very set listed below. A1
+    # anticipated only the barrier, so a `.cco/.netrc` rendered as `A .netrc`
+    # followed by `→ cco project save` — a preview promising a save that refuses.
+    local leak=""
+    leak=$(printf '%s\n' "$changed" | _status_paths ".cco/" | _secret_scan_paths "$root") || true
+
     local n; n=$(printf '%s\n' "$changed" | grep -c .)
-    if [[ -n "$gaps" ]]; then
+    if [[ -n "$gaps" || -n "$leak" ]]; then
         printf '%s/.cco — %s file(s) to save, but %s would refuse:\n' "$repo" "$n" "'cco project save'"
-        _project_status_report_gaps "$repo" "$gaps"
+        [[ -n "$gaps" ]] && _project_status_report_gaps "$repo" "$gaps"
+        [[ -n "$leak" ]] && _project_status_report_leak "$repo" "$leak"
         printf '\n'
     else
         printf '%s/.cco — %s file(s) to save:\n' "$repo" "$n"
@@ -407,11 +414,21 @@ cmd_project_status() {
 
     printf '%s\n' "$changed" | _status_render "$root" ".cco/" "$_STATUS_FULL"
 
-    if [[ -z "$gaps" ]]; then
+    if [[ -z "$gaps" && -z "$leak" ]]; then
         printf '\n  → cco project save\n'
     fi
     _project_config_report_members "$root"
     return 0
+}
+
+# The scan report, in the refusal's own words (D14 / §5b.3) — same finding, same
+# remedy, rc 0. A preview that paraphrased would send the user hunting for a
+# message that does not exist.
+_project_status_report_leak() {
+    local repo="$1" leak="$2"
+    printf '  a secret-like file would be staged under %s/.cco:\n' "$repo"
+    printf '    %s\n' "$leak"
+    printf '  Move the secret into %s/.cco/secrets.env (gitignored) and try again.\n' "$repo"
 }
 
 # The barrier report, in the SAME words `save` refuses with — a preview that

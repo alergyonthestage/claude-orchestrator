@@ -20,7 +20,8 @@
 # or by `cco sync` is the normal case.
 #
 # Provides: _history_parse_args(), _history_render(), _history_has_commits(),
-#   _history_group_label(), _status_parse_args(), _status_changed(), _status_render()
+#   _history_group_label(), _status_parse_args(), _status_changed(), _status_paths(),
+#   _status_render()
 # Dependencies: colors.sh (die)
 
 # The default number of commits shown (ADR-0038 Open / design §7). Fits a terminal
@@ -194,6 +195,25 @@ _status_changed() {
         [[ -n "$strip" ]] && p="${p#"$strip"}"
         printf '%s\t%s\n' "$mark" "$p"
     done < <(git -C "$root" status --porcelain -z -uall --no-renames ${sel[@]+"${sel[@]}"} 2>/dev/null)
+}
+
+# The paths of a `_status_changed` set, restored to <git_root>-relative form — the
+# shape `_secret_scan_paths` reads. This is what lets `status` preview the SECOND
+# refusal path (ADR-0038 A2 D14) without staging: the scan gate reads the index, and
+# §5b.4 forbids this verb from writing to it, so the preview asks the same question
+# of the set it just computed.
+#
+# ⚠ Deletions are kept, not filtered. `save`'s own scan reads `git diff --cached
+# --name-only`, which lists them too — and a preview that scanned a different set
+# than the refusal would be the drift D11 exists to prevent.
+# Usage: _status_paths <strip-prefix>   [stdin: changed lines]
+_status_paths() {
+    local strip="$1" mark rel
+    while IFS=$'\t' read -r mark rel; do
+        [[ -z "$mark" ]] && continue
+        printf '%s%s\n' "$strip" "$rel"
+    done
+    return 0
 }
 
 # Render the changed set to STDOUT (it is data, so it pipes). With <full> true each

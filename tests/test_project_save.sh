@@ -690,6 +690,40 @@ test_project_status_reports_the_vacuous_barrier_and_never_says_clean() {
     assert_output_not_contains "is clean" || return 1
 }
 
+# AT6 — `status` previews the SECOND refusal path too (D14). A .cco/.netrc is not
+# in the gitignore floor, so the barrier passes and A1's status closed with
+# "→ cco project save" — promising a save that then refuses on the scan.
+test_project_status_previews_the_secret_scan_refusal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'machine example.com login u password p\n' > "$r/.cco/.netrc"
+
+    _ps_cco_in "$r" project status || return 1      # rc 0 IS the assertion
+    assert_output_contains "would refuse" || return 1
+    assert_output_contains ".netrc" || return 1
+    # D14: it still lists the set it would commit — one invocation, both halves.
+    assert_output_contains "project.yml" || return 1
+    # A preview that promises a save that will fail is the defect A2 names.
+    assert_output_not_contains "→ cco project save" || return 1
+}
+
+# AT7 — the scan reads the STAGED set; §5b.4 forbids this verb from staging. The
+# preview must therefore ask the same question of the set it computed, with no
+# index write. A status that stages to find out is a read verb that writes.
+test_project_status_scan_preview_stages_nothing() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'machine example.com login u password p\n' > "$r/.cco/.netrc"
+    git -C "$r" add -- src.txt                      # the user's own staging must survive
+
+    local porcelain_before; porcelain_before=$(git -C "$r" status --porcelain)
+    _ps_cco_in "$r" project status --full || return 1
+    assert_equals "$porcelain_before" "$(git -C "$r" status --porcelain)" \
+        "the scan preview must not stage anything" || return 1
+}
+
 # AT8 — the compensating control §7 rests on, and nothing tested. The floor is
 # DELIBERATELY narrower than _SECRET_FILENAME_PATTERNS (it is what cco's own
 # scaffold writes), and what carries that choice is the claim that the 2-pass scan
@@ -738,4 +772,21 @@ test_project_save_amendment_a2_emits_no_warn() {
     assert_output_not_contains "⚠" || return 1
     _ps_cco_in "$c" project status || return 1
     assert_output_not_contains "⚠" || return 1
+}
+
+# The twin, by D9's own argument: `cco config save` has the same scan refusal and
+# the same preview that did not anticipate it. A verb that exists for one store and
+# not the other is the gap A1 D9 refused to leave open.
+test_config_status_previews_the_secret_scan_refusal() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$HOME/.cco/.claude"
+    printf '# global\n' > "$HOME/.cco/.claude/CLAUDE.md"
+    printf 'machine example.com login u password p\n' > "$HOME/.cco/.claude/.netrc"
+
+    run_cco config status || return 1               # rc 0 IS the assertion
+    assert_output_contains "would refuse" || return 1
+    assert_output_contains ".netrc" || return 1
+    assert_output_contains ".claude/CLAUDE.md" || return 1
+    assert_output_not_contains "→ cco config save" || return 1
 }

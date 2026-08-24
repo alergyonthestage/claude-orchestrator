@@ -176,10 +176,28 @@ _config_status() {
         return 0
     fi
 
+    # D14 (A2) — preview the refusal path this store HAS. `_config_save`'s first
+    # barrier writes itself, so the scan is its only way to refuse; leaving it
+    # unpreviewed here would rebuild, on the personal store, exactly the gap A1 D9
+    # refused to leave open on one store and not the other.
+    #
+    # ⚠ The scan gate reads the index, and a read verb may not write to it — so it
+    # is asked of the set computed above, never of a staged one.
+    local leak=""
+    leak=$(printf '%s\n' "$changed" | _status_paths "" | _secret_scan_paths "$cfg") || true
+
     local n; n=$(printf '%s\n' "$changed" | grep -c .)
-    printf '~/.cco — %s file(s) to save:\n' "$n"
+    if [[ -n "$leak" ]]; then
+        printf '~/.cco — %s file(s) to save, but %s would refuse:\n' "$n" "'cco config save'"
+        printf '  a secret-like file would be staged:\n'
+        printf '    %s\n' "$leak"
+        printf '  Move the secret into ~/.cco/secrets.env (gitignored) and try again.\n'
+        printf '\n'
+    else
+        printf '~/.cco — %s file(s) to save:\n' "$n"
+    fi
     printf '%s\n' "$changed" | _status_render "$cfg" "" "$_STATUS_FULL"
-    printf '\n  → cco config save\n'
+    [[ -z "$leak" ]] && printf '\n  → cco config save\n'
     return 0
 }
 
