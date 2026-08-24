@@ -583,3 +583,159 @@ test_config_status_clean_after_save() {
     assert_output_contains "is clean" || return 1
     assert_output_contains "first global" || return 1
 }
+
+# ── Amendment A2 — the barrier's predicate (design §6.2c, AT1…AT9) ───
+#
+# A2 corrects D7 itself, not the build: `git check-ignore` answers "would git
+# ignore this path right now", D7 asks "does a rule protect this class". The two
+# diverge in two states, in OPPOSITE directions — a false refusal when the file is
+# tracked, a false PASS when the root .gitignore swallows .cco/ whole. Both are
+# asserted here, because fixing only the one that annoys leaves the one that
+# silently loses the user's config.
+
+# Commit <repo>/.cco INCLUDING a secrets.env the rule covers — the state a user
+# reaches by committing their config before adding the ignore rule. `-f` is what
+# makes it tracked despite the rule, exactly as a hand-made commit would.
+_ps_track_ignored_secret() {
+    local root="$1"
+    printf 'TOKEN=realvalue\n' > "$root/.cco/secrets.env"
+    git -C "$root" add -f -- .cco >/dev/null 2>&1
+    git -C "$root" commit -q -m "config committed by hand, secrets.env included" >/dev/null 2>&1
+}
+
+# AT1 — a TRACKED file the rule covers must not refuse the save (D13). Without
+# `--no-index` git consults the index first, reports it as not-ignored, and the
+# refusal prints as its remedy a line that is already in the file: unfollowable,
+# and permanent.
+test_project_save_tracked_ignored_file_does_not_refuse() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    printf '# more\n' >> "$r/.cco/claude/rules/style.md"
+
+    _ps_cco_in "$r" project save -m "tweak the rules" || return 1   # rc 0 IS the assertion
+    assert_output_contains "saved app/.cco" || return 1
+    # It is reported — at `note`, and the save proceeds.
+    assert_output_contains "note:" || return 1
+    assert_output_contains "secrets.env" || return 1
+}
+
+# AT2 — the note must not trade one false belief for another. `git rm --cached`
+# stops future commits; it does NOT rewrite the ones already made, and a note that
+# implied otherwise would be the defect it replaced.
+test_project_save_tracked_note_does_not_promise_a_clean_past() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    printf '# more\n' >> "$r/.cco/claude/rules/style.md"
+
+    _ps_cco_in "$r" project save -m "tweak" || return 1
+    assert_output_contains "already in" || return 1
+    assert_output_contains "history" || return 1
+    assert_output_contains "git rm --cached" || return 1
+    assert_output_contains "does not rewrite" || return 1
+}
+
+# AT3 — the floor D13 leans on. Tracked AND MODIFIED stages, so the scan sees it
+# and refuses: no NEW secret content passes. Without this test D13's rationale is
+# an assertion nothing measures.
+test_project_save_tracked_and_modified_secret_still_refuses() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    printf 'TOKEN=a-brand-new-value\n' > "$r/.cco/secrets.env"      # tracked AND modified
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a tracked-and-modified secret must still refuse" || return 1
+    assert_output_contains "refusing to save" || return 1
+    assert_output_contains "secrets.env" || return 1
+    assert_empty "$(git -C "$r" diff --cached --name-only -- .cco)" \
+        "the refusal must leave nothing staged under .cco" || return 1
+}
+
+# AT4 — the false PASS (D15). A root .gitignore that swallows .cco/ makes every
+# probe report "ignored", the barrier passes, `git add` stages nothing, and the
+# verb says "nothing to save" at rc 0. The config is never saved and both verbs
+# affirm success — silent, total, indistinguishable from working.
+test_project_save_refuses_when_root_gitignore_swallows_cco() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf '.cco/\n' > "$r/.gitignore"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a vacuously satisfied barrier must refuse, not report success" || return 1
+    assert_output_not_contains "nothing to save" || return 1
+    # The fix is in the ROOT .gitignore, and the refusal must name that file.
+    assert_output_contains "app/.gitignore" || return 1
+    assert_output_contains "ignores .cco/" || return 1
+    assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
+}
+
+# AT5 — `status` in the AT4 state. D10 is unchanged: report, never enforce, rc 0.
+# And it must never say "clean" — "clean" claims the config is saved, which is the
+# precise falsehood D15 exists to stop.
+test_project_status_reports_the_vacuous_barrier_and_never_says_clean() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf '.cco/\n' > "$r/.gitignore"
+
+    _ps_cco_in "$r" project status || return 1      # rc 0 IS the assertion
+    assert_output_contains "app/.gitignore" || return 1
+    assert_output_contains "ignores .cco/" || return 1
+    assert_output_not_contains "is clean" || return 1
+}
+
+# AT8 — the compensating control §7 rests on, and nothing tested. The floor is
+# DELIBERATELY narrower than _SECRET_FILENAME_PATTERNS (it is what cco's own
+# scaffold writes), and what carries that choice is the claim that the 2-pass scan
+# catches the rest. INV-GIF guards only scaffold ⊇ floor — the direction that would
+# kill the verb, not the one that would leak.
+test_project_save_scan_catches_a_class_the_gitignore_floor_omits() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app     # scaffold-conformant .gitignore
+    printf 'machine example.com login u password p\n' > "$r/.cco/.netrc"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" ".netrc is outside the floor, so only the scan can catch it" || return 1
+    assert_output_contains ".netrc" || return 1
+    assert_empty "$(git -C "$r" diff --cached --name-only -- .cco)" \
+        "the refusal must reset the staged set" || return 1
+    assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
+}
+
+# AT9 — the level stays `note`/`die` throughout. A `warn` gates a launch
+# (ADR-0059 D1), so one emitted here would make every affected project pause at
+# every `cco start` over a save-time observation.
+test_project_save_amendment_a2_emits_no_warn() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    # (a) the tracked-file note
+    local a="$tmp/a"; _ps_repo "$a" demo a
+    _ps_track_ignored_secret "$a"
+    printf '# more\n' >> "$a/.cco/claude/rules/style.md"
+    _ps_cco_in "$a" project save -m "x" || return 1
+    assert_output_not_contains "⚠" || return 1
+
+    # (b) the vacuous-coverage refusal
+    local b="$tmp/b"; _ps_repo "$b" demo b
+    printf '.cco/\n' > "$b/.gitignore"
+    _ps_cco_in "$b" project save -m "x" || true
+    assert_output_not_contains "⚠" || return 1
+    _ps_cco_in "$b" project status || return 1
+    assert_output_not_contains "⚠" || return 1
+
+    # (c) the scan, refused and previewed
+    local c="$tmp/c"; _ps_repo "$c" demo c
+    printf 'machine example.com login u password p\n' > "$c/.cco/.netrc"
+    _ps_cco_in "$c" project save -m "x" || true
+    assert_output_not_contains "⚠" || return 1
+    _ps_cco_in "$c" project status || return 1
+    assert_output_not_contains "⚠" || return 1
+}
