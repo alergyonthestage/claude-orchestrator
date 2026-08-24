@@ -1526,8 +1526,10 @@ entries:
       answers, at exit 0, in the same words the refusal would use, so you find out
       before a save is refused rather than after; when one would fire, the closing
       `→ cco project save` hint is withheld rather than pointing you at a command
-      destined to fail. A clean config names its last save, so "nothing to do" never
-      reads the same as "never saved".
+      destined to fail. A file you had committed before adding the rule that covers
+      it is reported below the list — not a refusal, so the hint stays; `status` is
+      simply where you meet it. A clean config names its last save, so "nothing to
+      do" never reads the same as "never saved".
       In a session, `project save` needs an edit-project (or wider) level and
       `project status` / `project history` are free at any level; the `config`
       readers need read-global, because at read-project the personal store is not

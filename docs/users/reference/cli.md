@@ -1338,6 +1338,10 @@ because your root `.gitignore` swallows `.cco/` whole) **and** the secret scan, 
 listed below it. When either would refuse, the closing `→ cco project save` hint is withheld —
 a preview that pointed you at a command destined to fail would be worse than none.
 
+A **tracked** file that a rule covers is reported here too, below the list. That one is not a
+refusal — the hint stays and the save works — it is simply where you find out, without having to run
+a save to be told.
+
 A clean config names its last save, so you can tell "nothing to do" from "never saved":
 
 ```

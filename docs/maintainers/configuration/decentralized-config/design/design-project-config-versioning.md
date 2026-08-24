@@ -473,7 +473,7 @@ already held, it did not fix anything.
 | Choice | Value |
 |---|---|
 | does D14's scan preview reach `cco config status` too | **yes** |
-| does `status` also surface D13's tracked-file `note` | **no** — left save-side, flagged for the maintainer |
+| does `status` also surface D13's tracked-file finding | **yes** — *maintainer, 2026-08-24* — on **stdout**, not as a `note` |
 
 The first is §5b's own scope: that section is titled for **both** verbs, and `_config_save` has
 exactly one refusal path (its first barrier writes itself), so previewing the scan on one store and
@@ -482,9 +482,20 @@ not the other rebuilds the very asymmetry A1 D9 refused to leave open. The mecha
 staged-set caller — both `status` verbs ask it of the set they computed, never of the index, which is
 what §5b.4 requires.
 
-The second is **not** decided here: D13's note is neither *what would be committed* nor *would it
-succeed*, so it does not obviously belong in a preview, and §6.2c's AT series asserts it save-side
-only. Adding it would be a decision nobody has made.
+The second was raised as an open question and **ruled by the maintainer**: `status` is the surface
+read *before* deciding, so it is where the user should meet a tracked covered file without having to
+run a save to find out. Two consequences the build had to get right:
+
+- **The level is not `save`'s.** §5b.5 keeps facts about **this** repo inside the answer on stdout and
+  sends only the cross-repo ones to stderr — so `save` emits a `note`, `status` prints the same words
+  into its own output. One finding, two deliveries: `_project_tracked_ignored_message` is the text,
+  and it has exactly one definition, the split `_project_gitignore_gaps` already makes.
+- **It is computed AFTER the vacuous return.** In the D15 state every file under `.cco/` probes as
+  ignored, so the finding would name the entire config — noise manufactured by the broken root rule,
+  not a fact about those files. Pinned by
+  `test_project_status_does_not_list_every_file_as_tracked_when_coverage_is_vacuous`.
+
+It is **not** a refusal, so the closing `→ cco project save` hint stays.
 
 Two implementation shapes worth naming, both measured rather than reasoned:
 

@@ -116,7 +116,9 @@ a commit one.
 `git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. It also
 answers the second half of the question — *would it succeed* — by reporting **either** refusal above
 before the list, at exit 0, instead of making you discover it by having a save refused. When one
-would fire, the closing `→ cco project save` hint is withheld.
+would fire, the closing `→ cco project save` hint is withheld. A **tracked** file that a rule covers
+is reported below the list instead: that one is not a refusal, so the hint stays — `status` is just
+where you meet it, rather than finding out from a save.
 
 `cco project history` is path-filtered, so it shows every commit that touched
 `.cco/` — including commits that also touched code, and commits made by hand long

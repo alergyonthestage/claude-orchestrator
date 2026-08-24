@@ -790,3 +790,50 @@ test_config_status_previews_the_secret_scan_refusal() {
     assert_output_contains ".claude/CLAUDE.md" || return 1
     assert_output_not_contains "→ cco config save" || return 1
 }
+
+# The maintainer's ruling of 2026-08-24, on the one question A2's design left open:
+# D13's tracked-file finding belongs in `status` too — that is the surface read
+# BEFORE deciding, so it is where the user meets the file without running a save.
+#
+# ⚠ On stdout, as part of the answer, NOT as a `note` on stderr: §5b.5 puts facts
+# about THIS repo in the answer and keeps only cross-repo ones on stderr. The
+# assertion below is therefore on stdout alone — capturing 2>&1 would pass on a
+# stderr `note` and measure nothing.
+test_project_status_reports_a_tracked_ignored_file_on_stdout() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    printf '# more\n' >> "$r/.cco/claude/rules/style.md"
+
+    local out; out=$(cd "$r" && bash "$REPO_ROOT/bin/cco" project status 2>/dev/null) || return 1
+    case "$out" in
+        *"secrets.env is tracked"*) : ;;
+        *) fail "status must report the tracked covered file on stdout; got: $out"; return 1 ;;
+    esac
+    case "$out" in
+        *"git rm --cached"*) : ;;
+        *) fail "the status wording must carry the same caveat save's does"; return 1 ;;
+    esac
+    # It is not a refusal: the save still succeeds, so the hint must survive.
+    case "$out" in
+        *"→ cco project save"*) : ;;
+        *) fail "a tracked covered file does not refuse, so the hint must stay"; return 1 ;;
+    esac
+}
+
+# The vacuous state is the one place the finding must NOT be listed: there every
+# file under .cco/ probes as ignored, so the report would name the whole config —
+# noise manufactured by the broken root rule, not a fact about those files.
+test_project_status_does_not_list_every_file_as_tracked_when_coverage_is_vacuous() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_cco_in "$r" project save -m "initial" || return 1
+    printf '.cco/\n' > "$r/.gitignore"
+
+    _ps_cco_in "$r" project status || return 1
+    assert_output_contains "app/.gitignore" || return 1
+    assert_output_not_contains "is tracked even though" || return 1
+    assert_output_not_contains "tracked files under" || return 1
+}

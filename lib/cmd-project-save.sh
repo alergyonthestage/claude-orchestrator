@@ -189,20 +189,22 @@ _project_tracked_ignored() {
     return 0
 }
 
-# Report that state, and ONLY that state — the save proceeds (D13). It is not the
+# That state as TEXT, with no presentation attached — empty when there is none.
+# The finding is one; how it is delivered is not: `save` emits it as a `note`
+# (design §2.6), `status` prints it into its own answer on stdout, because §5b.5
+# keeps facts about THIS repo in the answer and only cross-repo ones on stderr.
+# Same one-rule-two-levels split `_project_gitignore_gaps` already makes — a second
+# copy of the wording is the drift this unit keeps closing.
+#
+# It reports that state and ONLY that state — the save proceeds (D13). It is not the
 # event that exposes the file: it is already in the repository's history, and the
 # floor still holds where it can act, because a tracked file that is also MODIFIED
 # gets staged and the 2-pass scan refuses it.
 #
-# ⚠ Level `note`, never `warn` (design §2.6): a `warn` gates a launch. And no
-# confirmation prompt — a tracked file STAYS tracked until the user acts, so a
-# prompt would fire on every save forever, which is how a real refusal is trained
-# into reflex.
-#
 # ⚠ The wording must not imply that untracking cleans the past, or it trades one
 # false belief for another: `git rm --cached` stops future commits, it does not
 # rewrite the ones already made.
-_project_report_tracked_ignored() {
+_project_tracked_ignored_message() {
     local root="$1" repo="$2"
     local -a tracked=(); local p
     while IFS= read -r p; do
@@ -213,12 +215,22 @@ _project_report_tracked_ignored() {
 
     local tail_msg="'git rm --cached' stops future commits from carrying it, but it does not rewrite the commits already made."
     if [[ ${#tracked[@]} -eq 1 ]]; then
-        note "$repo/${tracked[0]} is tracked even though a .gitignore rule covers it — it is already in this repo's history. $tail_msg"
+        printf '%s\n' "$repo/${tracked[0]} is tracked even though a .gitignore rule covers it — it is already in this repo's history. $tail_msg"
     else
         local list=""; local t
         for t in "${tracked[@]}"; do list="${list}${list:+, }$t"; done
-        note "${#tracked[@]} tracked files under $repo/.cco are covered by a .gitignore rule ($list) — they are already in this repo's history. $tail_msg"
+        printf '%s\n' "${#tracked[@]} tracked files under $repo/.cco are covered by a .gitignore rule ($list) — they are already in this repo's history. $tail_msg"
     fi
+    return 0
+}
+
+# The save-side delivery. ⚠ Level `note`, never `warn` (design §2.6): a `warn` gates
+# a launch. And no confirmation prompt — a tracked file STAYS tracked until the user
+# acts, so a prompt would fire on every save forever, which is how a real refusal is
+# trained into reflex.
+_project_report_tracked_ignored() {
+    local msg; msg=$(_project_tracked_ignored_message "$1" "$2")
+    [[ -n "$msg" ]] && note "$msg"
     return 0
 }
 
@@ -381,6 +393,16 @@ cmd_project_status() {
         return 0
     fi
 
+    # D13's tracked-file finding, in the surface the user reads BEFORE deciding.
+    # Computed after the vacuous return above on purpose: there every file under
+    # .cco/ probes as ignored, so the list would name the whole config — noise
+    # manufactured by the broken root rule, not a finding about these files.
+    #
+    # ⚠ stdout, not `note`: §5b.5 keeps facts about THIS repo inside the answer and
+    # sends only the cross-repo ones to stderr. Same finding as `save`'s, same
+    # words, different level — which is the split this verb makes everywhere.
+    local tracked_msg; tracked_msg=$(_project_tracked_ignored_message "$root" "$repo")
+
     if [[ -z "$changed" ]]; then
         local last; last=$(_status_last_saved "$root" ".cco")
         if [[ -n "$last" ]]; then
@@ -392,6 +414,7 @@ cmd_project_status() {
         # Still worth saying: a barrier that is already broken will refuse the FIRST
         # save the user makes, and the clean case is when they can fix it for free.
         [[ -n "$gaps" ]] && _project_status_report_gaps "$repo" "$gaps"
+        [[ -n "$tracked_msg" ]] && printf '  %s\n' "$tracked_msg"
         _project_config_report_members "$root"
         return 0
     fi
@@ -413,6 +436,11 @@ cmd_project_status() {
     fi
 
     printf '%s\n' "$changed" | _status_render "$root" ".cco/" "$_STATUS_FULL"
+
+    # Below the list, not above it: it is a standing property of the repository,
+    # not a verdict on this save — and unlike the two reports above it changes
+    # nothing about whether the save succeeds.
+    [[ -n "$tracked_msg" ]] && printf '\n  %s\n' "$tracked_msg"
 
     if [[ -z "$gaps" && -z "$leak" ]]; then
         printf '\n  → cco project save\n'

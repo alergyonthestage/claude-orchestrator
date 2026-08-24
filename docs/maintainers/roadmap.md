@@ -348,10 +348,16 @@ on first run**, i.e. it pins behaviour that already held rather than fixing anyt
 
 ⭐ **D14 was applied to `cco config status` as well**, which §6.2c does not name. `_config_save`'s
 first barrier writes itself, so the scan is its only refusal path; previewing it on one store and not
-the other would rebuild the exact asymmetry A1 D9 refused to leave open. 📝 **One question A2 does not
-settle and this build did not invent an answer to**: whether `project status` should also surface
-D13's tracked-file `note`. It is neither "what would be committed" nor "would it succeed", so it was
-left save-side only — the maintainer's call, not a defect.
+the other would rebuild the exact asymmetry A1 D9 refused to leave open.
+
+✅ **The one question A2's design left open is RULED (maintainer, 2026-08-24)**: `project status`
+**does** surface D13's tracked-file finding — `status` is the surface read before deciding, so it is
+where the user should meet the file without running a save. ⚠ Not as a `note`: §5b.5 keeps facts about
+*this* repo inside the answer on **stdout**, so `save` emits the `note` and `status` prints the same
+words, from one definition. And it is computed **after** the D15 return — in the vacuous state every
+file under `.cco/` probes as ignored, so the finding would name the whole config. Both are pinned by
+tests, the first asserting **stdout alone** (capturing `2>&1` would pass on a stderr `note` and
+measure nothing).
 
 ▶ **Next: the merge gate** — one review covers the unit, the way Amendment A1 was already absorbed
 mid-flight.
