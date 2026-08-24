@@ -323,7 +323,7 @@ the known host-only set. One objective defect fixed (a mirror comment naming a f
 factored away). Three residual nits are **not** this unit's: [FI-74](improvements.md) …
 [FI-76](improvements.md).
 
-⭐ **Amendment A2 (D13…D15) came OUT of that review** — designed 2026-08-22, **not yet built**. The
+⭐ **Amendment A2 (D13…D15) came OUT of that review** — designed 2026-08-22, ✅ **BUILT 2026-08-24**. The
 review measured two states where `git check-ignore` answers a different question than D7 asks, and
 they fail in **opposite** directions: a **tracked** file reports not-ignored, so the barrier refuses
 forever with a remedy already in the file (**false refusal**); a root `.gitignore` swallowing `.cco/`
@@ -333,10 +333,28 @@ pass — silent and total**). D13 fixes the predicate (`--no-index`) and rules t
 which was Amendment A1's own stated premise; D15 refuses vacuous coverage. Contract: ADR-0038
 Amendment A2 + design §2.4/§2.6/§5b.3/**§6.2c (AT1…AT9)**.
 
-▶ **Next: implement A2 on the same branch**, then the merge gate — one review covers the unit, the
-way Amendment A1 was already absorbed mid-flight. ⚠ **AT8 is owed regardless of the rest**: it pins the
-compensating control §7 already leans on (a `.netrc` under `.cco/` is caught by the scan), which
-carried the narrow gitignore floor with nothing measuring it.
+✅ **A2 IMPLEMENTED 2026-08-24** on the same branch, two commits (the predicate; then the preview).
+**AT1…AT9 are all written and green**, and the oracle was shown to discriminate before the fix: 7 of
+the 10 new tests failed first, AT4 reproducing the false pass verbatim (`already up to date — nothing
+to save`, rc 0). Suite **`1759 passed, 7 failed, 1766 total`** — **+10 tests, zero regressions**, and
+the 7 verified **name for name** as the known host-only set (6 `test_as_*` +
+`test_paths_symlink_safe_tool_root`). A2 touches **no baked file**, so it owes no `cco build`.
+The four changed `lib/` files and the test file parse under **real bash 3.2** (`bash:3.2` via the
+Docker socket, one invocation per file — `bash -n` reads only the first — with three controls proving
+the oracle rejects). ⚠ That is a **lint**: the macOS host *suite* on 3.2 is still owed before `0.7.0`. ⚠ **AT8 was owed regardless of the rest** and is now pinned: a `.netrc` under a
+scaffold-conformant `.gitignore` is refused by the scan and the staged set reset — the compensating
+control §7 leans on, which carried the narrow gitignore floor with nothing measuring it. It **passed
+on first run**, i.e. it pins behaviour that already held rather than fixing anything.
+
+⭐ **D14 was applied to `cco config status` as well**, which §6.2c does not name. `_config_save`'s
+first barrier writes itself, so the scan is its only refusal path; previewing it on one store and not
+the other would rebuild the exact asymmetry A1 D9 refused to leave open. 📝 **One question A2 does not
+settle and this build did not invent an answer to**: whether `project status` should also surface
+D13's tracked-file `note`. It is neither "what would be committed" nor "would it succeed", so it was
+left save-side only — the maintainer's call, not a defect.
+
+▶ **Next: the merge gate** — one review covers the unit, the way Amendment A1 was already absorbed
+mid-flight.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo

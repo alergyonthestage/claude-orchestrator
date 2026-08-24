@@ -464,7 +464,27 @@ unaffected and still runs against the full list, so nothing is unguarded: the fl
 guards one direction only — scaffold ⊇ floor — which is the drift that would kill the verb, not the
 one that would let a secret through. What carries the narrow floor is the claim that a `.netrc` under
 `.cco/` is caught by the scan and refused; **§6.2c AT8 is that claim, pinned.** A justification whose
-load-bearing half is unmeasured is an assumption wearing a rationale's clothes.
+load-bearing half is unmeasured is an assumption wearing a rationale's clothes. ✅ AT8 exists and
+passes — and it **passed on its first run**, which is the honest reading: it pins behaviour that
+already held, it did not fix anything.
+
+### A2's build settled two more (2026-08-24)
+
+| Choice | Value |
+|---|---|
+| does D14's scan preview reach `cco config status` too | **yes** |
+| does `status` also surface D13's tracked-file `note` | **no** — left save-side, flagged for the maintainer |
+
+The first is §5b's own scope: that section is titled for **both** verbs, and `_config_save` has
+exactly one refusal path (its first barrier writes itself), so previewing the scan on one store and
+not the other rebuilds the very asymmetry A1 D9 refused to leave open. The mechanism is a split of
+`_secret_scan_staged` into `_secret_scan_paths` (the 2-pass question, over paths on stdin) and the
+staged-set caller — both `status` verbs ask it of the set they computed, never of the index, which is
+what §5b.4 requires.
+
+The second is **not** decided here: D13's note is neither *what would be committed* nor *would it
+succeed*, so it does not obviously belong in a preview, and §6.2c's AT series asserts it save-side
+only. Adding it would be a decision nobody has made.
 
 Two implementation shapes worth naming, both measured rather than reasoned:
 
