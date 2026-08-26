@@ -144,6 +144,10 @@ message template.
 the amended commit is already pushed the resolution is a force-push that cco will not perform. The
 verb would be able to create a state it cannot resolve. Anyone who genuinely wants to amend has git.
 
+> ⚠ **2026-08-26 (A4)** — an **empty** `-m` is now refused rather than silently replaced by the
+> default. The surface is unchanged; what changed is that `-m ""` and no `-m` at all are no longer
+> the same request.
+
 ### D6 — `history` shows a compact summary, with `--full` for the diff *(maintainer, 2026-08-20)*
 
 The default output is one line per commit carrying **date, author, message, and which parts of the
@@ -375,6 +379,11 @@ launch (ADR-0059 D1); nothing this verb observes should stop a session from star
 `_cco_have_tty` / `CCO_NONINTERACTIVE` / `CCO_ASSUME_YES` contract a second time — which ADR-0059
 names as how this suite acquires a silent hang.)*
 
+> ⚠ **2026-08-26 (A4 D21)** — read the sentence above about what the floor can act on **literally**:
+> the scan answers for content **entering** the commit. It does **not** answer for a path being
+> **deleted**, and until A4 it did — refusing the one action that removes a secret from the config.
+> A reader who reaches this decision without D21 will rebuild that refusal.
+
 ### D14 — `status` previews BOTH refusal paths *(maintainer, 2026-08-21)*
 
 A1's own premise was that `save` has **two** refusal paths and no way to ask *what would it commit,
@@ -484,3 +493,84 @@ commits, it does not rewrite the ones already made.
 
 ⚠ The test is `git cat-file -e HEAD:<path>`, **not** `git ls-files`: `save` has already staged by the
 time it refuses, so the index would report a brand-new file as tracked too.
+
+> ⚠ **2026-08-26 (A4 D21)** — this branch is correct and stays, but it was **unreachable from the
+> state that needed it most**: when the user *deleted* the tracked secret, the save refused before the
+> remedy could help, and the refusal's own `git reset` undid the `git rm --cached` it prescribes. The
+> remedy did not change; what changed is that the save no longer refuses there.
+
+### A4 — 2026-08-26: the same defect, two states further out, and one verb that could not be asked
+
+Raised by **`/review-implementation`** over the whole finished cycle — six verbs, both stores —
+rather than over the A3 delta. That scope is what found these: A1's review produced A2, A2's produced
+A3, and each pass looked only at the delta in front of it, so a defect present since A1 was never in
+anyone's frame.
+
+Two of the three are **A3's own through-line** — *a message that claims more than its mechanism
+proves, and a remedy the user cannot follow* — in states A3 did not look at. The third is the
+`P-B` parity rule broken inside the reviewed surface.
+
+| # | Measured, with a discriminating control | Why it is the same defect |
+|---|---|---|
+| `.cco/` **one directory below** the git top-level | `✓ saved svc/.cco @ 7504a11`, and `git show HEAD:svc/.cco/…/leak.md` prints `API_KEY=sk-ant-…`. The flat control refuses. | a `✓` over a committed secret — verbatim the D15 measurement, one *topology* over |
+| a save that **deletes** `.cco/secrets.env` | refused as *"a secret-like file is staged"*; its remedy prescribes `git rm --cached`, and the refusal's own `git reset` restores the index entry — the follow-up commit says `no changes added to commit` | a remedy the verb itself makes unreachable — verbatim D13 |
+| `cco config save --help` | `✗ Unknown option: --help` — the only verb of the six without the arm, so the house gate probe could not be run on it at all | the two stores drifted into different spellings (P-B) |
+
+#### D20 — the project verbs anchor on the git top-level, not the unit dir *(maintainer, 2026-08-26)*
+
+`.cco/project.yml` may sit in a **subdirectory** of the repository that versions it — a service inside
+a monorepo, a repo adopted below its root — and nothing ever required the two to coincide. The
+maintainer's ruling is to **support that topology**, not to refuse it: `save` works from any path.
+
+The mechanism is one asymmetry that had gone unnoticed. **Pathspecs are cwd-relative**, so `git -C
+<unit dir> … -- .cco` selected the right files; but **every git OUTPUT path** — `status --porcelain`,
+`diff --cached --name-only`, `ls-files`, `show --name-only`, and `check-ignore -v`'s *source* — is
+reported relative to the **top-level**. Joining those onto the unit dir failed silently, three ways:
+
+- the secret scan's **content pass was skipped for every file**, on **both** save gates, because
+  `[[ -f "$root/$f" ]]` was false — only the filename pass survived;
+- `status --full` printed **no diffs at all** — half the verb, silently dead;
+- D13's tracked finding could never fire, and D6's changed-parts column degraded to raw paths.
+
+One resolver now answers with the top-level, the `.cco` path **relative to it**, and the repo name to
+print. At the top level the prefix is empty, so every message is byte-identical to before — which is
+why the existing tests pass unchanged, and also **why they could never have caught this**: a test
+written only at the top level cannot see the defect. The pair is pinned flat **and** nested.
+
+#### D21 — a deletion is not a leak *(maintainer, 2026-08-26)*
+
+`git diff --cached --name-only` lists a deleted path exactly like an added one, so the filename pass
+refused the single most desirable action a user can take. D13's own rationale already drew the line —
+*neither path lets **new** secret content through, which is the only thing `save` is in a position to
+prevent* — and a path being removed carries no content into the commit. The content pass never saw a
+deleted file anyway (`[[ -f ]]` is false), so what changes is the **filename pass, for deletions only**.
+
+Both **gates** filter with `--diff-filter=d`, and both **previews** filter identically: a preview that
+scanned a different set than the refusal is the drift D11 exists to prevent, in whichever direction it
+moves. The deletion is still **listed** as `D <file>` — what is dropped is the scan's set, not the
+user's view of the commit.
+
+⚠ It holds on **both stores** or on neither. On `~/.cco` the refusal's reset is the *bare* `git reset`,
+so there the false refusal also unstaged everything else.
+
+#### D22 — `cco config save` answers `--help`, like its five siblings *(maintainer, 2026-08-26)*
+
+It died on `--help`, which is the drift P-B forbids between the two stores. It had a second cost that
+is not cosmetic: the house gate probe **drives `<verb> --help`** and requires a usage line back —
+precisely so a verb with no handler fails the probe instead of passing vacuously — so this one verb's
+access gate could only ever be asked *negatively*. It is now asserted positively at `edit-all` too.
+
+#### Realignments this review made that needed no decision
+
+Recorded so a later reader does not mistake them for drift. Each was an objective defect against a
+document already approved, or a test whose oracle did not discriminate.
+
+| What | Against |
+|---|---|
+| `status` in the `excluded` state now **lists the rest of the config** | §5b.3, verbatim: it reports the barrier *"and still lists what would be committed"*. The early return made the message say "part of the config" and never name the other part |
+| `save` reports D4's member facts on the **`already up to date`** path | `status` already did on its clean path; that is the state in which believing the whole project is saved is likeliest |
+| the personal store's leak remedy is printed from **one** place | the project half factored `_project_secret_remedy` for exactly this reason; this was a second inline copy of the same sentence |
+| an **empty** `-m` is refused, on both stores | D5 fixes the write surface at `-m`; silently substituting the default records a message the user did not write, in *their* git log |
+| the content pass no longer goes **silent** where `file(1)` is absent | it returned "clean" on both gates; `grep -I` answers the same question with a tool the scan already needs |
+| AT9's oracle measures the **emitter's shape**, not the `⚠` glyph | an indented `⚠` is an existing house idiom, so the glyph oracle measured the idiom as much as the emitter — AT9 passed only because its scenarios missed that branch. It is now also exercised on the branch that prints it |
+| the missing-barrier test asserts **its own** refusal | `.gitignore` appears in nearly every refusal this verb emits, so it could not tell that refusal from any other |

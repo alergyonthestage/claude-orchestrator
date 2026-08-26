@@ -54,9 +54,28 @@ own**. Every difference below descends from that one fact.
 cco project save [-m <message>]
 ```
 
-`-m` and nothing else (ADR-0038 D5). Invocation is **cwd-first**: the repo is resolved with
-`_resolve_find_unit_dir` (`lib/cmd-resolve.sh:61`), which walks up from `$(pwd -P)` to the nearest
-ancestor holding `.cco/project.yml` — the same anchor `cco project add` uses.
+`-m` and nothing else (ADR-0038 D5), and an **empty** `-m` is refused rather than replaced by the
+default (A4). Invocation is **cwd-first**: the repo is resolved with `_resolve_find_unit_dir`
+(`lib/cmd-resolve.sh:61`), which walks up from `$(pwd -P)` to the nearest ancestor holding
+`.cco/project.yml` — the same anchor `cco project add` uses.
+
+🔴 **THAT UNIT DIR IS NOT NECESSARILY THE GIT TOP-LEVEL** (A4 D20). `.cco/project.yml` may sit in a
+subdirectory of the repository that versions it — a service inside a monorepo, a repo adopted below
+its root — and the two halves of git disagree about which one paths are relative to:
+
+| | Relative to |
+|---|---|
+| a **pathspec** (`-- .cco`, `check-ignore <path>`) | the **cwd**, i.e. wherever `git -C` points |
+| every **output path** — `status --porcelain`, `diff --cached --name-only`, `ls-files`, `show --name-only`, and `check-ignore -v`'s **source** | the **top-level**, always |
+
+So all three verbs resolve the unit dir into three values, once, and use those everywhere:
+`_PROJECT_GITROOT` (`rev-parse --show-toplevel`) is the cwd of every git call; `_PROJECT_SPEC`
+(`rev-parse --show-prefix` + `.cco`) is every pathspec, every strip prefix and every path printed;
+`_PROJECT_REPO` (the top-level's basename) is the display prefix, so `<repo>/<spec>` is openable.
+
+⚠ The prefix is **git's own answer**, never string arithmetic on two paths that can differ by a
+symlink. At the top level it is empty, so `$_PROJECT_SPEC` is `.cco` and every message is unchanged —
+which is also why a test written only at the top level cannot measure any of this (§6.2e).
 
 ### 2.2 The sequence
 
@@ -79,7 +98,8 @@ flowchart TD
 
 ### 2.3 What is staged, and what is not
 
-Staging is explicit and path-scoped — `git add -- .cco/` — and **never** `git add -A`. This is the
+Staging is explicit and path-scoped — `git add -- <spec>`, where `<spec>` is `.cco` relative to the
+git top-level (§2.1) — and **never** `git add -A`. This is the
 second barrier of the twin, and it is the one that transfers unchanged: whatever else is dirty in the
 user's working tree is not touched, which is the entire ergonomic point of the verb.
 
@@ -223,7 +243,10 @@ Default output is one line per commit (ADR-0038 D6): **date · short sha · auth
 parts of the config changed**. `--full` adds the diff. `-n` overrides the default limit.
 
 The *which parts changed* column is what earns the verb over `git log --oneline`. It is derived from
-the commit's changed paths, collapsed to config-meaningful groups rather than printed file by file:
+the commit's changed paths, collapsed to config-meaningful groups rather than printed file by file.
+⚠ An ungrouped entry reports its **config-relative path**, not its bare basename: the path says
+*where* it is as well as what it is called, and two `settings.json` under different trees would
+otherwise render identically.
 
 | Changed path | Reported as |
 |---|---|
@@ -231,8 +254,8 @@ the commit's changed paths, collapsed to config-meaningful groups rather than pr
 | `.cco/claude/rules/**` | `claude/rules` |
 | `.cco/claude/agents/**` | `claude/agents` |
 | `.cco/claude/skills/**` | `claude/skills` |
-| `.cco/claude/CLAUDE.md`, `settings.json` | the file name |
-| `.cco/setup.sh`, `mcp-packages.txt`, … | the file name |
+| `.cco/claude/CLAUDE.md`, `settings.json` | its config-relative path (`claude/CLAUDE.md`) |
+| `.cco/setup.sh`, `mcp-packages.txt`, … | its config-relative path |
 
 ### 3.2 Where each one reads
 
@@ -329,7 +352,10 @@ dangerous one, and the case that exposes it is not the common one.
 
 `save` refuses on a missing or insufficient `.cco/.gitignore` (D7). `status` prints
 the same finding, **in the same words**, at **rc 0**, and still lists what would be
-committed. A preview that dies is one nobody can use to find out why their save
+committed. ⚠ *Still lists* is literal and reaches the `excluded` branch too (A4): that branch
+returned before the listing, so its own message said *"part of the config could not be committed"*
+and never named the other part. It now names it, with no count line and no `→ cco project save` —
+nothing there claims the save would succeed. A preview that dies is one nobody can use to find out why their save
 would die — and paraphrasing the refusal would send the user hunting for a message
 that does not exist.
 
@@ -353,6 +379,14 @@ save that will fail.
 So `status` runs `_secret_scan_staged`'s question over the set it would commit and reports the
 outcome, in the refusal's own words. D10 governs it unchanged: **report, never enforce, rc 0**. The
 vacuous-coverage state of D15 is reported here on the same terms.
+
+⚠ **The scan answers for content ENTERING the commit, never for a path leaving it** (A4 D21).
+`git diff --cached --name-only` lists a deleted path exactly like an added one, so the filename pass
+refused the one action that removes a secret from the config — and the refusal's own `git reset`
+restored the index entry its remedy told the user to drop. Both gates filter with `--diff-filter=d`;
+both previews drop `D` entries from the set they hand the scan. The deletion is still **listed** as
+`D <file>`: what is filtered is the scan's set, not the user's view of the commit. Same set on both
+sides is D11, in whichever direction it moves.
 
 ⚠ The scan reads the **staged set**, and §5b.4 forbids this verb from staging anything. The preview
 therefore asks the same question of the set it *computed*, without an index write — the same
@@ -468,6 +502,27 @@ second one.
 | AR8 | scan refusal on an **untracked** `.cco/.netrc` | the *move* remedy stays — it is the right one there |
 | AR9 | ⚠ the essentials **post-condition**, called DIRECTLY | refuses on an index missing an essential. It is unreachable through the CLI while the barrier holds, so a CLI test would credit it with the barrier's pass — measured: neutralising it changed nothing in the suite until this test existed |
 
+### 6.2e The whole-cycle review's three rulings (Amendment A4)
+
+Derived from A4 D20…D22. **AS** = *amendment-scope test*, a fourth series — the first whose subject is
+a **topology** rather than a state.
+
+| # | Test | Asserts |
+|---|---|---|
+| AS1 | a secret under a `.cco/` **one directory below** the git top-level | **refuses**, `content matches`, nothing committed. Before A4: `✓ saved`, with the key readable in `git show HEAD:…` |
+| AS2 | `save` on that same nested unit | reports `saved mono/svc/.cco`, commits `svc/.cco/project.yml`, and still commits **nothing** outside `.cco/` |
+| AS3 | `status --full` on the nested unit | lists the **config-relative** path and prints the diff. Before A4 the `--full` half printed nothing at all |
+| AS4 | `save` after **deleting** a tracked `.cco/secrets.env` | **succeeds**, and the deletion is in `HEAD`. rc 0 alone is not the assertion — a save that committed nothing would pass it |
+| AS5 | `status` in the AS4 state | does **not** preview a refusal, and still lists `D secrets.env` |
+| AS6 | the same deletion on **`~/.cco`** | succeeds there too. The rule holds on both gates or on neither — and on the personal store the false refusal's reset was the *bare* one |
+| AS7 | `cco config save --help` through the gate probe | admits at `edit-all` **and** returns a usage line. The probe drives `<verb> --help` precisely so a verb with no handler fails rather than passing vacuously |
+| AS8 | the content pass with `file(1)` absent from `PATH` | still finds a secret in a text file, still excludes a binary. It answered "clean" on both gates before |
+
+⚠ **AS1–AS3 are the NESTED half of a discriminating pair**; the flat halves are T3 and T13, and both
+passed on the broken code. That is why three reviews did not see D20: *a test written only at the top
+level cannot measure the difference between a pathspec and an output path.* Every entry above is
+pinned by a mutation — reverting the fix fails exactly its own test and nothing else.
+
 ### 6.3 Shim
 
 | # | Test | Asserts |
@@ -554,3 +609,19 @@ Two implementation shapes worth naming, both measured rather than reasoned:
   works on an unborn HEAD too.
 - **The refusal's reset is scoped as well**: `git reset -q -- .cco`, never the twin's bare
   `git reset`, which would discard staging the user did themselves as the side effect of a refusal.
+
+### A4's build settled one more (2026-08-26)
+
+The whole-cycle review's fixes needed one shape choice, and it is the one a future reader is most
+likely to undo: **which value the shared renderers receive as their `<git_root>`.**
+
+`config-read.sh` and `secrets.sh` already documented that parameter as the **git root** — and the
+project verbs had always passed the **unit dir**. At the top level the two coincide, so the mismatch
+was invisible and the documentation looked satisfied. The fix is therefore not in the renderers: they
+were right. It is in the three `cmd_project_*` bodies, which now pass `_PROJECT_GITROOT` and a
+top-level-relative pathspec (§2.1), and `config-read.sh` is **unchanged**.
+
+⚠ **The consequence to keep in mind when touching any of this**: a helper in `cmd-project-save.sh`
+that takes `root` means the **git top-level**, and the `.cco` it acts on is `$spec`, never the
+literal. A new call site that reaches for `basename "$root"` or a bare `.cco` reintroduces D20
+silently — and, at the top level, every test will still pass.
