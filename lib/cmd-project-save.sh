@@ -85,15 +85,22 @@ of the config changed. The personal store's twin is 'cco config history'.
 EOF
 }
 
-# D7 barrier, as a PURE QUESTION with no verdict attached. Echoes:
-#   ""              the barrier holds
-#   "missing"       there is no `<repo>/.cco/.gitignore` at all
-#   "vacuous"       every probe passes only because .cco/ is wholly ignored (A2 D15)
-#   "<cls>, <cls>"  it exists but does not ignore these classes
+# The files a committed `<repo>/.cco/` is USELESS WITHOUT (A2 review, 2026-08-24):
+# `project.yml` is the project's identity and the cwd-first anchor, and
+# `.gitignore` is the D7 barrier every future clone inherits. A save that drops
+# either is not a correct save, however cleanly it reports.
+_PROJECT_SAVE_ESSENTIAL=( project.yml .gitignore )
+
+# D7 barrier, as a PURE QUESTION with no verdict attached. Echoes zero or more
+# findings, ONE PER LINE — the caller renders them all:
 #
-# `save` turns this into a refusal (D7); `status` into a report (A1 D10) — one rule,
-# two levels, the same split `_reminder_roots_divergent` makes. A second copy of the
-# check inside `status` would be exactly the drift this unit keeps closing elsewhere.
+#   missing            there is no `<repo>/.cco/.gitignore` at all
+#   classes <c>, <c>   it exists but does not ignore these classes
+#   excluded <p>, <p>  an ignore rule keeps these ESSENTIAL files out of the commit
+#
+# `save` turns these into a refusal (D7); `status` into a report (A1 D10) — one
+# rule, two levels, the same split `_reminder_roots_divergent` makes. A second copy
+# of the check inside `status` would be exactly the drift this unit keeps closing.
 #
 # Coverage is measured by ASKING GIT (`git check-ignore`), not by grepping the file
 # for a literal: a rule that matches is what protects the user, however it is
@@ -106,61 +113,140 @@ EOF
 # the instruction cannot be followed. The question this barrier asks is *does a rule
 # exist*, and the index is not part of the ignore chain.
 #
-# 🔴 A pass is VOID when it was bought by an unrelated rule (D15). If the repository's
-# root .gitignore ignores `.cco/` entirely, all four class probes report *ignored*
-# and the barrier passes — while `git add -- .cco` stages nothing and the config is
-# never saved, silently. The discriminator is a NON-SECRET path: `.cco/project.yml`
-# is ignored too only in that state, never by a .gitignore that merely protects.
-_project_gitignore_gaps() {
-    local root="$1"
-    [[ -f "$root/.cco/.gitignore" ]] || { printf 'missing\n'; return 0; }
-    local cls probe missing=""
-    for cls in "${_SECRET_PROJECT_GITIGNORE_CLASSES[@]}"; do
-        probe=$(_secret_gitignore_probe "$cls")
-        git -C "$root" check-ignore -q --no-index ".cco/$probe" 2>/dev/null && continue
-        missing="${missing}${missing:+, }$cls"
-    done
-    if [[ -z "$missing" ]] \
-       && git -C "$root" check-ignore -q --no-index ".cco/project.yml" 2>/dev/null; then
-        printf 'vacuous\n'; return 0
+# 🔴 `excluded` IS D15, WIDENED TO WHAT IT CAN ACTUALLY PROVE (A2 review). D15 keyed
+# on `.cco/project.yml` being ignored and concluded "`.cco/` is ignored ENTIRELY".
+# Measured: a root `.gitignore` of merely `*.yml` satisfies that key while git still
+# stages two files — so the refusal named a rule that did not exist, which is the
+# unfollowable remedy D13 exists to abolish. What the probe proves is narrower and
+# sufficient: *some* rule drops an essential file, so the commit would be partial.
+# It is also WIDER in reach — measured, a root rule of just `.cco/.gitignore` let a
+# save report success while committing a config whose barrier never landed, leaving
+# every clone unprotected. Refusing when `.cco/` is wholly ignored is deliberate and
+# stays: that is the documented path for a solo adopter who does not want their cco
+# config in git, and for them the save must abort rather than half-succeed.
+#
+# ⚠ The three findings are INDEPENDENT (A2 review). Returning early on `missing`
+# sent the user to create `.cco/.gitignore` and only then meet the second refusal —
+# two round trips for one broken state, each remedy correct and neither sufficient.
+_project_gitignore_findings() {
+    local root="$1" out=""
+    if [[ -f "$root/.cco/.gitignore" ]]; then
+        local cls probe uncovered=""
+        for cls in "${_SECRET_PROJECT_GITIGNORE_CLASSES[@]}"; do
+            probe=$(_secret_gitignore_probe "$cls")
+            git -C "$root" check-ignore -q --no-index ".cco/$probe" 2>/dev/null && continue
+            uncovered="${uncovered}${uncovered:+, }$cls"
+        done
+        [[ -n "$uncovered" ]] && out="${out}classes ${uncovered}"$'\n'
+    else
+        out="${out}missing"$'\n'
     fi
-    printf '%s\n' "$missing"
+
+    local ess excluded=""
+    for ess in "${_PROJECT_SAVE_ESSENTIAL[@]}"; do
+        [[ -e "$root/.cco/$ess" ]] || continue
+        git -C "$root" check-ignore -q --no-index ".cco/$ess" 2>/dev/null || continue
+        excluded="${excluded}${excluded:+, }$ess"
+    done
+    [[ -n "$excluded" ]] && out="${out}excluded ${excluded}"$'\n'
+
+    printf '%s' "$out"
 }
 
-# The vacuous-coverage remedy, printed from ONE place so `save`'s refusal and
-# `status`'s report can never name a different fix (D11).
-_project_gitignore_vacuous_lines() {
-    local repo="$1"
-    printf '  Remove the rule that ignores .cco/ from %s/.gitignore — the repository ROOT one, not the config'"'"'s own.\n' "$repo"
-    printf '  %s/.cco/.gitignore is what keeps secrets out of the commit, and it stays exactly as it is.\n' "$repo"
+# The rule that ACTUALLY fires on <rel>, as "<pattern> (<source>:<line>)" — empty
+# when none does. This is what makes the `excluded` refusal followable: it names the
+# line the user has to go and change, instead of asserting one that may not exist.
+#
+# `check-ignore -v` prints "<source>:<line>:<pattern>\t<path>"; the pattern is
+# peeled from the LEFT, because a pattern may itself contain a colon.
+_project_ignore_rule_for() {
+    local root="$1" rel="$2" repo="$3" v lhs src line pattern
+    v=$(git -C "$root" check-ignore -v --no-index "$rel" 2>/dev/null) || return 0
+    [[ -n "$v" ]] || return 0
+    lhs="${v%%$'\t'*}"
+    src="${lhs%%:*}"; lhs="${lhs#*:}"
+    line="${lhs%%:*}"; pattern="${lhs#*:}"
+    # git reports the source relative to the repo root; prefixing the repo name is
+    # what makes it a path the user can open, and disambiguates the root
+    # `.gitignore` from a nested one.
+    printf '%s (%s/%s:%s)\n' "$pattern" "$repo" "$src" "$line"
 }
 
-# The save-side verdict on that question: refuse, and name the fix (D7). Runs BEFORE
-# anything is staged — it is what makes the save safe to run at all.
+# The `excluded` remedy, printed from ONE place so `save`'s refusal and `status`'s
+# report can never name a different fix (D11).
+_project_excluded_lines() {
+    local root="$1" repo="$2" list="$3"
+    local ess rule
+    printf '  %s cannot be committed, so %s/.cco would be saved incomplete:\n' "$list" "$repo"
+    for ess in $(printf '%s' "$list" | tr ',' ' '); do
+        rule=$(_project_ignore_rule_for "$root" ".cco/$ess" "$repo")
+        [[ -n "$rule" ]] && printf '    .cco/%s is ignored by the rule %s\n' "$ess" "$rule"
+    done
+    printf '  Remove or narrow that rule, then retry. If you are deliberately keeping .cco/ out of git,\n'
+    printf '  that is a supported choice — but then there is nothing for %s to save.\n' "'cco project save'"
+}
+
+# The save-side verdict on those findings: refuse, and name every fix at once (D7).
+# Runs BEFORE anything is staged — it is what makes the save safe to run at all.
 _project_save_assert_gitignore() {
-    local root="$1" gaps
-    gaps=$(_project_gitignore_gaps "$root")
-    [[ -z "$gaps" ]] && return 0
+    local root="$1" findings
+    findings=$(_project_gitignore_findings "$root")
+    [[ -z "$findings" ]] && return 0
     local repo; repo=$(basename "$root")
 
-    # D15 — the fix is in a DIFFERENT file from the other two branches, and the
-    # class list below would name the wrong one. Left to the old code path this
-    # state does not refuse at all: it reports "nothing to save" at rc 0.
-    if [[ "$gaps" == vacuous ]]; then
-        error "refusing to save — $repo/.gitignore ignores .cco/ entirely, so this save would commit nothing at all."
-        _project_gitignore_vacuous_lines "$repo" >&2
-        die "The .cco/.gitignore coverage check passes here only because the whole directory is ignored, and that is not protection (ADR-0038 D15)."
-    fi
+    error "refusing to save — $repo/.cco cannot be committed correctly as things stand:"
+    _project_render_findings "$root" "$repo" "$findings" >&2
+    # The closer depends on WHICH findings stand: P-C's "cco does not author that
+    # file" answers `missing`/`classes`, where a file must be written. It is simply
+    # false for `excluded`, where the files exist and an ignore rule is the problem.
+    case "$findings" in
+        missing*|*classes*) die "cco does not write that file for you — it is a versioned file in YOUR repository (ADR-0038 D7)." ;;
+        *) die "Nothing was committed." ;;
+    esac
+}
 
-    if [[ "$gaps" == missing ]]; then
-        error "refusing to save — $repo/.cco/.gitignore is missing."
-        echo "  Without it, a secret dropped under .cco/ would be committed. Create it with:" >&2
-    else
-        error "refusing to save — $repo/.cco/.gitignore does not ignore: $gaps"
-        echo "  Add the missing lines to $repo/.cco/.gitignore, then retry:" >&2
-    fi
-    _project_save_gitignore_lines >&2
-    die "cco does not write that file for you — it is a versioned file in YOUR repository (ADR-0038 D7)."
+# ONE renderer for the findings, shared by the refusal and the preview: `save` sends
+# it to stderr under an `error`, `status` prints it into its own stdout answer. A
+# paraphrase on either side would send the user hunting for a message that does not
+# exist (D11 / A1 D10).
+_project_render_findings() {
+    local root="$1" repo="$2" findings="$3" line kind rest
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        kind="${line%% *}"; rest="${line#* }"
+        case "$kind" in
+            missing)
+                printf '  %s/.cco/.gitignore is missing — without it a secret dropped under .cco/ would be committed. Add:\n' "$repo"
+                _project_save_gitignore_lines ;;
+            classes)
+                printf '  %s/.cco/.gitignore does not ignore: %s. Add:\n' "$repo" "$rest"
+                _project_save_gitignore_lines ;;
+            excluded)
+                _project_excluded_lines "$root" "$repo" "$rest" ;;
+        esac
+    done <<EOF
+$findings
+EOF
+    return 0
+}
+
+# The post-condition of a correct save: every essential file is in the index the
+# commit will be built from. `git add -- .cco` has already run, so a file that is
+# absent here is one git refused to stage — and committing anyway would ship a
+# `<repo>/.cco` that is missing its identity or its barrier, reporting success.
+_project_save_assert_essentials() {
+    local root="$1" repo="$2" ess absent=""
+    for ess in "${_PROJECT_SAVE_ESSENTIAL[@]}"; do
+        [[ -e "$root/.cco/$ess" ]] || continue
+        git -C "$root" ls-files --error-unmatch -- ".cco/$ess" >/dev/null 2>&1 && continue
+        absent="${absent}${absent:+, }$ess"
+    done
+    [[ -z "$absent" ]] && return 0
+
+    git -C "$root" reset -q -- .cco >/dev/null 2>&1 || true
+    error "refusing to save — $repo/.cco would be committed without: $absent"
+    _project_excluded_lines "$root" "$repo" "$absent" >&2
+    die "A save that drops the config's own $absent is not a save worth reporting as one."
 }
 
 # The lines the refusal above tells the user to add — printed from the SAME array
@@ -193,7 +279,7 @@ _project_tracked_ignored() {
 # The finding is one; how it is delivered is not: `save` emits it as a `note`
 # (design §2.6), `status` prints it into its own answer on stdout, because §5b.5
 # keeps facts about THIS repo in the answer and only cross-repo ones on stderr.
-# Same one-rule-two-levels split `_project_gitignore_gaps` already makes — a second
+# Same one-rule-two-levels split `_project_gitignore_findings` already makes — a second
 # copy of the wording is the drift this unit keeps closing.
 #
 # It reports that state and ONLY that state — the save proceeds (D13). It is not the
@@ -313,6 +399,17 @@ cmd_project_save() {
     # here, it is the "nothing to save" case the next test reports properly.
     git -C "$root" add -- .cco >/dev/null 2>&1 || true
 
+    # PROVE the save is correct rather than infer it (maintainer, 2026-08-24). The
+    # barrier above asks which rules exist; this asks the outcome — is each
+    # essential file actually IN the index this commit is built from. It is a
+    # post-condition, so it also covers the "nothing to save" exit below: measured,
+    # a root rule of just `.cco/.gitignore` produced `✓ saved` on a config whose
+    # barrier never landed, and a clone of it starts unprotected.
+    #
+    # ⚠ Unreachable while the barrier holds, and that is the point: if it ever
+    # fires, the barrier has a hole and the message says so instead of committing.
+    _project_save_assert_essentials "$root" "$repo"
+
     if git -C "$root" diff --cached --quiet -- .cco 2>/dev/null; then
         info "$repo/.cco is already up to date — nothing to save"
         return 0
@@ -379,24 +476,27 @@ cmd_project_status() {
     fi
 
     local changed; changed=$(_status_changed "$root" ".cco/" ".cco")
-    local gaps; gaps=$(_project_gitignore_gaps "$root")
+    local findings; findings=$(_project_gitignore_findings "$root")
+    local excluded=false
+    case "$findings" in *excluded*) excluded=true ;; esac
 
-    # D15 — answered FIRST, because in this state git reports nothing changed
-    # (everything under .cco/ is ignored) and the clean branch below would print
-    # "is clean", affirming exactly the silent failure the barrier just caught.
-    # AT5: it must never say clean here.
-    if [[ "$gaps" == vacuous ]]; then
-        printf '%s/.cco — %s would refuse, and nothing at all would be committed:\n' \
+    # An `excluded` finding is answered FIRST and on its own terms: in that state
+    # git reports nothing changed for the files it drops, so the clean branch below
+    # would print "is clean" — affirming the exact silent failure just caught.
+    # ⚠ AT5, widened by the A2 review: "clean" claims the config is saved, and it
+    # must not appear while ANY finding stands, not merely in the adjacent state.
+    if [[ "$excluded" == true ]]; then
+        printf '%s/.cco — %s would refuse, and part of the config could not be committed:\n' \
             "$repo" "'cco project save'"
-        _project_status_report_gaps "$repo" "$gaps"
+        _project_render_findings "$root" "$repo" "$findings"
         _project_config_report_members "$root"
         return 0
     fi
 
     # D13's tracked-file finding, in the surface the user reads BEFORE deciding.
-    # Computed after the vacuous return above on purpose: there every file under
-    # .cco/ probes as ignored, so the list would name the whole config — noise
-    # manufactured by the broken root rule, not a finding about these files.
+    # Computed after the return above on purpose: where an ignore rule drops the
+    # config's own files, every path under .cco/ probes as ignored and the list
+    # would name the whole config — noise made by the broken rule, not a finding.
     #
     # ⚠ stdout, not `note`: §5b.5 keeps facts about THIS repo inside the answer and
     # sends only the cross-repo ones to stderr. Same finding as `save`'s, same
@@ -404,16 +504,20 @@ cmd_project_status() {
     local tracked_msg; tracked_msg=$(_project_tracked_ignored_message "$root" "$repo")
 
     if [[ -z "$changed" ]]; then
-        local last; last=$(_status_last_saved "$root" ".cco")
-        if [[ -n "$last" ]]; then
-            printf '%s/.cco is clean — nothing to save (last saved %s)\n' "$repo" "$last"
+        # ⚠ "clean" only when nothing is wrong. A broken barrier means the FIRST
+        # save will refuse, and saying "clean" first tells the user the opposite.
+        if [[ -n "$findings" ]]; then
+            printf '%s/.cco has nothing to commit, but %s would refuse:\n' "$repo" "'cco project save'"
+            _project_render_findings "$root" "$repo" "$findings"
         else
-            printf '%s/.cco is clean, and has never been committed — %s records its first version\n' \
-                "$repo" "'cco project save'"
+            local last; last=$(_status_last_saved "$root" ".cco")
+            if [[ -n "$last" ]]; then
+                printf '%s/.cco is clean — nothing to save (last saved %s)\n' "$repo" "$last"
+            else
+                printf '%s/.cco is clean, and has never been committed — %s records its first version\n' \
+                    "$repo" "'cco project save'"
+            fi
         fi
-        # Still worth saying: a barrier that is already broken will refuse the FIRST
-        # save the user makes, and the clean case is when they can fix it for free.
-        [[ -n "$gaps" ]] && _project_status_report_gaps "$repo" "$gaps"
         [[ -n "$tracked_msg" ]] && printf '  %s\n' "$tracked_msg"
         _project_config_report_members "$root"
         return 0
@@ -426,10 +530,10 @@ cmd_project_status() {
     leak=$(printf '%s\n' "$changed" | _status_paths ".cco/" | _secret_scan_paths "$root") || true
 
     local n; n=$(printf '%s\n' "$changed" | grep -c .)
-    if [[ -n "$gaps" || -n "$leak" ]]; then
+    if [[ -n "$findings" || -n "$leak" ]]; then
         printf '%s/.cco — %s file(s) to save, but %s would refuse:\n' "$repo" "$n" "'cco project save'"
-        [[ -n "$gaps" ]] && _project_status_report_gaps "$repo" "$gaps"
-        [[ -n "$leak" ]] && _project_status_report_leak "$repo" "$leak"
+        [[ -n "$findings" ]] && _project_render_findings "$root" "$repo" "$findings"
+        [[ -n "$leak" ]] && _project_status_report_leak "$root" "$repo" "$leak"
         printf '\n'
     else
         printf '%s/.cco — %s file(s) to save:\n' "$repo" "$n"
@@ -442,7 +546,7 @@ cmd_project_status() {
     # nothing about whether the save succeeds.
     [[ -n "$tracked_msg" ]] && printf '\n  %s\n' "$tracked_msg"
 
-    if [[ -z "$gaps" && -z "$leak" ]]; then
+    if [[ -z "$findings" && -z "$leak" ]]; then
         printf '\n  → cco project save\n'
     fi
     _project_config_report_members "$root"
@@ -453,28 +557,10 @@ cmd_project_status() {
 # remedy, rc 0. A preview that paraphrased would send the user hunting for a
 # message that does not exist.
 _project_status_report_leak() {
-    local repo="$1" leak="$2"
+    local root="$1" repo="$2" leak="$3"
     printf '  a secret-like file would be staged under %s/.cco:\n' "$repo"
     printf '    %s\n' "$leak"
     printf '  Move the secret into %s/.cco/secrets.env (gitignored) and try again.\n' "$repo"
-}
-
-# The barrier report, in the SAME words `save` refuses with — a preview that
-# paraphrased the refusal would send the user looking for a different message.
-_project_status_report_gaps() {
-    local repo="$1" gaps="$2"
-    if [[ "$gaps" == vacuous ]]; then
-        printf '  %s/.gitignore ignores .cco/ entirely, so every coverage probe passes for a reason that has nothing to do with protection.\n' "$repo"
-        _project_gitignore_vacuous_lines "$repo"
-        return 0
-    fi
-    if [[ "$gaps" == missing ]]; then
-        printf '  %s/.cco/.gitignore is missing — without it a secret dropped under .cco/ would be committed.\n' "$repo"
-    else
-        printf '  %s/.cco/.gitignore does not ignore: %s\n' "$repo" "$gaps"
-    fi
-    printf '  Add these lines to %s/.cco/.gitignore (cco does not write that file for you — it is yours):\n' "$repo"
-    _project_save_gitignore_lines
 }
 
 cmd_project_history() {

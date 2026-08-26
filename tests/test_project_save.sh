@@ -669,9 +669,11 @@ test_project_save_refuses_when_root_gitignore_swallows_cco() {
     local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
     assert_rc 1 "$rc" "a vacuously satisfied barrier must refuse, not report success" || return 1
     assert_output_not_contains "nothing to save" || return 1
-    # The fix is in the ROOT .gitignore, and the refusal must name that file.
-    assert_output_contains "app/.gitignore" || return 1
-    assert_output_contains "ignores .cco/" || return 1
+    # The refusal must name the ESSENTIAL file that would be dropped and the RULE
+    # that drops it, at a path the user can open (A2 review): asserting a claim
+    # about ".cco/ entirely" is what the old message got wrong.
+    assert_output_contains "project.yml" || return 1
+    assert_output_contains "app/.gitignore:1" || return 1
     assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
 }
 
@@ -685,8 +687,8 @@ test_project_status_reports_the_vacuous_barrier_and_never_says_clean() {
     printf '.cco/\n' > "$r/.gitignore"
 
     _ps_cco_in "$r" project status || return 1      # rc 0 IS the assertion
-    assert_output_contains "app/.gitignore" || return 1
-    assert_output_contains "ignores .cco/" || return 1
+    assert_output_contains "project.yml" || return 1
+    assert_output_contains "app/.gitignore:1" || return 1
     assert_output_not_contains "is clean" || return 1
 }
 
@@ -833,7 +835,107 @@ test_project_status_does_not_list_every_file_as_tracked_when_coverage_is_vacuous
     printf '.cco/\n' > "$r/.gitignore"
 
     _ps_cco_in "$r" project status || return 1
-    assert_output_contains "app/.gitignore" || return 1
+    assert_output_contains "app/.gitignore:1" || return 1
     assert_output_not_contains "is tracked even though" || return 1
     assert_output_not_contains "tracked files under" || return 1
+}
+
+# ── A2 review, ruled by the maintainer 2026-08-24 ────────────────────
+
+# The refusal must never assert more than its probe proves. Measured before the
+# fix: a root `.gitignore` of merely `*.yml` produced "ignores .cco/ entirely, so
+# this save would commit nothing at all" and told the user to remove a rule that
+# is NOT IN THE FILE — while git would in fact have staged two files. That is the
+# unfollowable remedy D13 exists to abolish, reappearing one line below it.
+test_project_save_names_the_rule_that_actually_fires() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf '*.yml\n' > "$r/.gitignore"          # nothing about .cco/ at all
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "an ignore rule that drops project.yml must refuse" || return 1
+    # It names the real rule, at a path that can be opened.
+    assert_output_contains "*.yml" || return 1
+    assert_output_contains "app/.gitignore:1" || return 1
+    # And it does NOT claim the thing it cannot prove.
+    assert_output_not_contains "entirely" || return 1
+    assert_output_not_contains "commit nothing at all" || return 1
+    assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
+}
+
+# The gap the maintainer's "prove the save is correct" requirement exists for, and
+# which NOTHING caught before: a root rule naming only `.cco/.gitignore` leaves all
+# five class probes satisfied (check-ignore still reads the file) and project.yml
+# committable — so the save reported success while committing a config whose
+# BARRIER never landed. Every clone of it then starts unprotected.
+test_project_save_refuses_to_commit_a_config_without_its_barrier() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf '.cco/.gitignore\n' > "$r/.gitignore"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a config committed without its .gitignore is not a correct save" || return 1
+    assert_output_contains ".gitignore" || return 1
+    assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
+}
+
+# Both problems in ONE invocation. Before the ruling the `missing` finding returned
+# early, so the user created `.cco/.gitignore` as instructed and only THEN met the
+# second refusal — two round trips for one broken state.
+test_project_save_reports_every_finding_in_one_pass() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    rm -f "$r/.cco/.gitignore"
+    printf '.cco/\n' > "$r/.gitignore"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "the composite state must refuse" || return 1
+    assert_output_contains "is missing" || return 1        # finding 1
+    assert_output_contains "project.yml" || return 1       # finding 2, same output
+}
+
+# …and `status` must not call that state "clean". It has nothing to COMMIT, which
+# is not the same as being saved — the word AT5 forbids in the adjacent state must
+# not appear here either.
+test_project_status_never_says_clean_while_a_finding_stands() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    rm -f "$r/.cco/.gitignore"
+    printf '.cco/\n' > "$r/.gitignore"
+
+    _ps_cco_in "$r" project status || return 1     # rc 0 IS the assertion (D10)
+    assert_output_not_contains "is clean" || return 1
+    assert_output_contains "is missing" || return 1
+    assert_output_contains "project.yml" || return 1
+}
+
+# ⚠ Called DIRECTLY, not through the CLI, and that is the point. It is a
+# POST-CONDITION guard: while the barrier ahead of it holds, no invocation can
+# reach it — so a test that drove `cco project save` would exercise the barrier and
+# credit this assertion with a pass it never earned. Measured: neutralising the
+# guard changed nothing in the whole suite, which is the definition of untested.
+# What it defends against is a FUTURE hole in the barrier, and the only honest way
+# to pin that is to put it in the state such a hole would produce.
+test_project_save_essentials_guard_refuses_an_incomplete_index() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf '.cco/\n' > "$r/.gitignore"       # git will stage nothing under .cco/
+    git -C "$r" add -- .cco >/dev/null 2>&1 || true
+
+    local rc=0 out
+    out=$(
+        source "$REPO_ROOT/lib/colors.sh"
+        source "$REPO_ROOT/lib/cmd-project-save.sh"
+        _project_save_assert_essentials "$r" app 2>&1
+    ) || rc=$?
+    assert_rc 1 "$rc" "an index missing an essential file must refuse the commit" || return 1
+    case "$out" in
+        *"without: project.yml"*) : ;;
+        *) fail "the guard must name what would be missing; got: $out"; return 1 ;;
+    esac
 }
