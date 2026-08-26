@@ -396,8 +396,17 @@ control.
 ### ▶ Where A1 stands: reviewed, fixed, at the merge gate *(2026-08-26)*
 
 **Implementation COMPLETE, and the whole-cycle review is DONE and its rulings BUILT.** A1 plus
-**four** amendments, 8 commits added on 2026-08-26, unmerged, **no baked file touched** (so **no
-`cco build`**).
+**four** amendments, 8 commits added on 2026-08-26, unmerged.
+
+🔴 **THIS CYCLE DOES OWE A `cco build`, and earlier records said the opposite.** Measured against
+`Dockerfile` — the image bakes `bin/`, `lib/`, `templates/`, `docs/users`, `changelog.yml` and
+`defaults/managed/` (lines 201–225) — and the branch changes **all but one** of those, including
+`defaults/managed/.claude/rules/cco-config-interaction.md`. The earlier "no baked file touched" was
+true only of the **A2+A3 delta**, and the conclusion drawn from it did not hold for the cycle. ⚠ The
+consequence is not cosmetic: an in-session agent's `cco project save` runs the **image-baked** copy,
+so none of A4's fixes reach a running session until the image is rebuilt. The host CLI is unaffected
+— users run their installed `bin/cco`, which is why the changelog correctly says no rebuild is needed
+*for the commands themselves*.
 
 The review the maintainer scoped — one pass over the finished `save`/`status`/`history` cycle, six
 verbs, both stores, rather than over the A3 delta — ended the pattern that had grown the unit by one
