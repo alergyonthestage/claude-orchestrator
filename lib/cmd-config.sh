@@ -7,6 +7,8 @@
 # auto-commit in v1. Sync transports already-made commits, never fabricates them.
 #
 #   cco config save [-m <msg>]   stage the allowlisted set + secret-scan + commit
+#   cco config status [--full]   what save WOULD commit (ADR-0038 A1; never writes)
+#   cco config history [-n N]    read that history back (ADR-0038 D2, --full for diffs)
 #   cco config push              push to the (private) remote — advisory warning
 #   cco config pull              fast-forward pull; non-FF -> abort + notify
 #   cco config validate [--fix]  orphan-sanitization of id-keyed internal state
@@ -21,8 +23,10 @@
 # preview-first `--fix`) is implemented here (_config_validate, ADR-0021 §5 /
 # design §9 P5 — the lifecycle/delete-cascade work).
 #
-# Provides: cmd_config(), _config_validate()
-# Dependencies: colors.sh, utils.sh, secrets.sh (_secret_match_*),
+# Provides: cmd_config(), _config_validate(), _config_history(), _config_status()
+# Dependencies: colors.sh, utils.sh, secrets.sh (_secret_scan_staged — the ONE
+#   scanner both save gates share; the project twin passes a pathspec, this one
+#   scans the whole store), config-read.sh (_history_/_status_ helpers for the read verbs),
 #   paths.sh (_cco_{config,state,data,cache}_dir, _cco_remotes_{,token_}file),
 #   index.sh (_index_list_paths/projects, _index_get_path/_index_get_project_repos,
 #   _index_remove_path/_index_remove_project), tags.sh (_tags_all/_tags_forget),
@@ -60,30 +64,51 @@ _config_ensure_gitignore() {
 EOF
 }
 
-# 2-pass secret scan over the currently STAGED files (filename + content); *.example
-# is exempt (FR-S3). Echoes the offending path on the first hit, returns 1 (block).
-_config_scan_staged() {
-    local cfg="$1" f hit
-    while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        [[ "$f" == *.example ]] && continue
-        if hit=$(_secret_match_filename "$f" 2>/dev/null) && [[ -n "$hit" ]]; then
-            printf '%s\t(filename matches %s)\n' "$f" "$hit"; return 1
-        fi
-        if [[ -f "$cfg/$f" ]] && hit=$(_secret_match_content "$cfg/$f" 2>/dev/null) && [[ -n "$hit" ]]; then
-            printf '%s\t(content matches at line %s)\n' "$f" "${hit%%:*}"; return 1
-        fi
-    done < <(git -C "$cfg" diff --cached --name-only 2>/dev/null)
-    return 0
+_config_save_usage() {
+    cat <<'EOF'
+Usage: cco config save [-m <message>]
+
+Commit your personal ~/.cco store — the allowlisted config only — with a secret
+scan. Explicit and manual: cco never auto-commits.
+
+Options:
+  -m, --message <msg>    Commit message (default: "config update")
+
+Only the allowlisted entries are staged (.claude, packs, templates, setup files,
+the secrets skeleton) — never `git add -A`, so a stray file in ~/.cco is left
+alone. Your real secrets.env stays gitignored. Preview it with 'cco config
+status'; read it back with 'cco config history'. The project twin is
+'cco project save'.
+EOF
+}
+
+# The remedy for a secret hit on the personal store, printed from ONE place so
+# `save`'s refusal and `status`'s preview can never name a different fix (D11).
+# The project half factored `_project_secret_remedy` for exactly this reason; this
+# text was a second, inline copy of the same sentence — identical today.
+_config_secret_remedy() {
+    printf 'Move the secret into ~/.cco/secrets.env (gitignored) and try again.\n'
 }
 
 _config_save() {
     local msg=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -m|--message) [[ $# -lt 2 ]] && die "-m requires a commit message."; msg="$2"; shift 2 ;;
-            -*) die "Unknown option: $1. Run 'cco config --help'." ;;
-            *)  die "Unexpected argument: $1." ;;
+            # ⚠ Not optional politeness. Every other verb in this matrix answers
+            # `--help`, and the house gate probe (assert_gate_allows) DRIVES
+            # `<verb> --help` — so without this arm the verb could not be probed
+            # at all, and P-B's "the two stores must not drift into different
+            # spellings" was visibly broken inside the reviewed surface.
+            --help|-h) _config_save_usage; return 0 ;;
+            # ⚠ Tested on the ARGUMENT: after the loop, `-m ""` and no `-m` are
+            # indistinguishable and the default silently replaced it. Same rule as
+            # the project twin — the two stores do not drift (P-B).
+            -m|--message)
+                [[ $# -lt 2 ]] && die "-m requires a commit message."
+                [[ -z "$2" ]] && die "-m requires a non-empty commit message."
+                msg="$2"; shift 2 ;;
+            -*) die "Unknown option: $1. Run 'cco config save --help'." ;;
+            *)  die "Unexpected argument: $1. 'cco config save' takes options only." ;;
         esac
     done
 
@@ -117,17 +142,138 @@ _config_save() {
 
     # Secret scan the staged set; abort (and unstage) on a leak.
     local leak
-    if ! leak=$(_config_scan_staged "$cfg"); then
+    if ! leak=$(_secret_scan_staged "$cfg"); then
         git -C "$cfg" reset -q >/dev/null 2>&1 || true
         error "refusing to save — a secret-like file is staged:"
         printf '  %s\n' "$leak" >&2
-        die "Move the secret into ~/.cco/secrets.env (gitignored) and try again."
+        die "$(_config_secret_remedy)"
     fi
 
     [[ -z "$msg" ]] && msg="config update"
     git -C "$cfg" commit -q -m "$msg" >/dev/null 2>&1 || die "git commit failed in ~/.cco."
     local sha; sha=$(git -C "$cfg" rev-parse --short HEAD 2>/dev/null)
     ok "saved ~/.cco @ ${sha} — ${msg}"
+}
+
+_config_status_usage() {
+    cat <<'EOF'
+Usage: cco config status [--full]
+
+Show what 'cco config save' would commit from your personal ~/.cco store. Nothing
+is written, staged or changed.
+
+Options:
+      --full             Also show the diff of each change
+
+Each line is a file and its fate in that commit: M modified, A new, D deleted.
+Only the allowlisted config is listed — a stray file in ~/.cco is not shown,
+because save would not commit it either. What was already saved is
+'cco config history'.
+EOF
+}
+
+# The preview for the PERSONAL store (ADR-0038 A1). Its pathspecs are the allowlist,
+# not the whole tree — A1 D11: a preview is worth having only if it reproduces its
+# own save's rule about what gets committed, and `_config_save` stages
+# `_CONFIG_ALLOWLIST` and nothing else. A plain `git status` on ~/.cco would name
+# files this verb's twin would never commit.
+_config_status() {
+    _status_parse_args config "$@"
+    if [[ "$_STATUS_HELP" == true ]]; then _config_status_usage; return 0; fi
+
+    local cfg; cfg=$(_cco_config_dir)
+    # ⚠ Not reachable from the host: J0 (_cco_first_run, lib/migrate.sh) git-inits
+    # ~/.cco on EVERY host command, so a store without .git cannot survive to here.
+    # Kept for the container, where the store is a MOUNT and may arrive without one —
+    # and because the alternative is worse: _status_changed on a non-git tree returns
+    # nothing, which would render as "clean", and "clean" claims the config is saved.
+    # The host suite therefore covers the never-saved state, not this branch.
+    if [[ ! -d "$cfg/.git" ]]; then
+        printf '~/.cco is not versioned yet — %s records its first version\n' "'cco config save'"
+        return 0
+    fi
+
+    # Exactly the set `_config_save` stages: allowlisted AND present.
+    local -a specs=(); local entry
+    for entry in "${_CONFIG_ALLOWLIST[@]}"; do
+        [[ -e "$cfg/$entry" ]] && specs+=("$entry")
+    done
+    if [[ ${#specs[@]} -eq 0 ]]; then
+        printf '~/.cco holds no config to save yet\n'
+        return 0
+    fi
+
+    local changed; changed=$(_status_changed "$cfg" "" ${specs[@]+"${specs[@]}"})
+    if [[ -z "$changed" ]]; then
+        local last; last=$(_status_last_saved "$cfg")
+        if [[ -n "$last" ]]; then
+            printf '~/.cco is clean — nothing to save (last saved %s)\n' "$last"
+        else
+            printf '~/.cco is clean, and has never been committed — %s records its first version\n' "'cco config save'"
+        fi
+        return 0
+    fi
+
+    # D14 (A2) — preview the refusal path this store HAS. `_config_save`'s first
+    # barrier writes itself, so the scan is its only way to refuse; leaving it
+    # unpreviewed here would rebuild, on the personal store, exactly the gap A1 D9
+    # refused to leave open on one store and not the other.
+    #
+    # ⚠ The scan gate reads the index, and a read verb may not write to it — so it
+    # is asked of the set computed above, never of a staged one.
+    local leak=""
+    leak=$(printf '%s\n' "$changed" | _status_paths "" | _secret_scan_paths "$cfg") || true
+
+    local n; n=$(printf '%s\n' "$changed" | grep -c .)
+    if [[ -n "$leak" ]]; then
+        printf '~/.cco — %s file(s) to save, but %s would refuse:\n' "$n" "'cco config save'"
+        printf '  a secret-like file would be staged:\n'
+        printf '    %s\n' "$leak"
+        printf '  %s\n' "$(_config_secret_remedy)"
+        printf '\n'
+    else
+        printf '~/.cco — %s file(s) to save:\n' "$n"
+    fi
+    printf '%s\n' "$changed" | _status_render "$cfg" "" "$_STATUS_FULL"
+    [[ -z "$leak" ]] && printf '\n  → cco config save\n'
+    return 0
+}
+
+_config_history_usage() {
+    cat <<'EOF'
+Usage: cco config history [-n <count>] [--full]
+
+Show how your personal ~/.cco store changed over time — you never need to know
+where it lives or what git command reads it.
+
+Options:
+  -n, --max-count <n>    How many commits to show (default: 10)
+      --full             Also show each commit's diff
+
+Each line reports the date, the commit, the author, the message, and which parts
+of the config changed. The project twin is 'cco project history'.
+EOF
+}
+
+# The read half for the PERSONAL store (ADR-0038 D2). No pathspec and no strip
+# prefix: the whole of ~/.cco *is* the config, unlike <repo>/.cco which is a
+# subtree of a repo full of unrelated commits.
+#
+# This is the side the user is least able to construct the git command for — the
+# store's path is not one they would guess — which is why D2 added the verb for
+# BOTH stores rather than only the project one.
+_config_history() {
+    _history_parse_args config "$@"
+    if [[ "$_HISTORY_HELP" == true ]]; then _config_history_usage; return 0; fi
+
+    local cfg; cfg=$(_cco_config_dir)
+    # Never a die on an absent history (design §3.3): a store not yet versioned is
+    # a normal state, and `cco config save` is what git-inits it.
+    if [[ ! -d "$cfg/.git" ]] || ! _history_has_commits "$cfg"; then
+        info "~/.cco has no saved history yet — run 'cco config save' to record its first version"
+        return 0
+    fi
+    _history_render "$cfg" "" "" "$_HISTORY_N" "$_HISTORY_FULL"
 }
 
 # True iff ~/.cco has a remote named origin.
@@ -596,13 +742,15 @@ cmd_config() {
     case "$sub" in
         ""|--help|-h|help)
             cat <<'EOF'
-Usage: cco config <save|push|pull|validate> [options]
+Usage: cco config <save|status|history|push|pull|validate> [options]
 
 Version and sync your personal ~/.cco global config store (packs, templates,
 global .claude config). Explicit, manual commits — cco never auto-commits.
 
 Commands:
   save [-m <msg>]         Stage the allowlisted config + secret-scan + commit
+  status [--full]         Show what save would commit (nothing is changed)
+  history [-n N] [--full] Show how ~/.cco changed over time
   push                    Push to your (private) remote
   pull                    Fast-forward pull from your remote (non-FF aborts)
   validate [--dry-run | --fix [-y]]
@@ -614,9 +762,11 @@ EOF
             return 0
             ;;
         save) _config_save "$@" ;;
+        status)  _config_status "$@" ;;
+        history) _config_history "$@" ;;
         push) _config_push "$@" ;;
         pull) _config_pull "$@" ;;
         validate) _config_validate "$@" ;;
-        *) die "Unknown 'cco config' command: $sub. Use save, push, pull, or validate." ;;
+        *) die "Unknown 'cco config' command: $sub. Use save, status, history, push, pull, or validate." ;;
     esac
 }

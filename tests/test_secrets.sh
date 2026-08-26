@@ -174,3 +174,41 @@ test_secrets_global_secrets_uses_config_bucket() {
         fail "Expected GLOBAL_SECRET=top_secret in result, got: $joined"
     fi
 }
+
+# ── the content pass must not go silent where file(1) is absent ──────
+#
+# ⚠ It used to: `file … | grep -q text || return 1` answers "not text" when the
+# command does not exist, so the CONTENT half of the 2-pass scan returned clean on
+# BOTH save gates — a silent pass, and the kind that reads as working (review
+# 2026-08-26). Defense-in-depth only, since the filename pass is unaffected.
+#
+# `file` is removed from PATH by building a PATH that holds only what the function
+# needs — not by shadowing it with a shell function, which `command -v` still finds.
+test_secret_content_pass_survives_a_missing_file_command() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _source_secrets_lib
+
+    local bin="$tmpdir/bin"; mkdir -p "$bin"
+    local t
+    for t in grep cut head sed; do
+        local real; real=$(command -v "$t") || { fail "$t not on PATH — the probe cannot be built"; return 1; }
+        ln -s "$real" "$bin/$t"
+    done
+    printf 'api_key=sk-ant-0123456789abcdef0123\n' > "$tmpdir/leak.md"
+
+    # Discrimination first: the probe must really have hidden `file`, or the test
+    # measures the ordinary branch and passes for the wrong reason.
+    if PATH="$bin" command -v file >/dev/null 2>&1; then
+        fail "the probe did not hide file(1) — it would pass vacuously"; return 1
+    fi
+
+    local hit=""
+    hit=$(PATH="$bin" _secret_match_content "$tmpdir/leak.md") || hit=""
+    [[ -n "$hit" ]] || { fail "a secret in a text file must still be found when file(1) is absent"; return 1; }
+
+    # …and a binary file is still excluded, which is what file(1) was there for.
+    printf 'PRIVATE_KEY\000\001\002binary\n' > "$tmpdir/blob.bin"
+    local bhit=""
+    bhit=$(PATH="$bin" _secret_match_content "$tmpdir/blob.bin") || bhit=""
+    [[ -z "$bhit" ]] || { fail "a binary file must stay out of the content pass, got: $bhit"; return 1; }
+}

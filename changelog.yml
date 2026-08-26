@@ -1471,3 +1471,88 @@ entries:
       `[1-1]`, and typing that back was rejected as invalid. It now prints the
       tokens themselves: `[1] [2] reuse that path`.
       No rebuild needed: all three run host-side in the CLI.
+
+  - id: 67
+    date: "2026-08-21"
+    type: additive
+    title: "cco project save/status/history — version a project's own config, see what is unsaved, and read either store's history back"
+    description: >
+      **`cco project save`.** Your project's config lives in `<repo>/.cco/` and is
+      versioned by the repo's own git — which meant committing it by hand, picking
+      it out from whatever else your working tree happened to be holding. The
+      personal store has had `cco config save` for exactly this since the start;
+      the in-repo side never got its twin. It has one now. `cco project save`
+      stages **only** `.cco/**` and commits it: anything else that is dirty, or
+      that you had already staged, is left exactly as it was, so you can save the
+      config in the middle of a task. Run it from anywhere inside the repo, with
+      `-m` for the message. Three things it refuses rather than fixing for you: a
+      `.cco/.gitignore` that is missing or does not cover the secret patterns (it
+      names the lines to add, but that file is a versioned file in your repository
+      and writing it would put an unrequested change in the commit you asked for);
+      an ignore rule anywhere that would keep `project.yml` or `.cco/.gitignore`
+      itself out of the commit — a save that drops your config's identity, or the
+      barrier every clone of it inherits, is not a save, and cco names the rule that
+      actually fires, with its pattern, file and line, so you can go and change it
+      (keeping `.cco/` out of git on purpose is a supported choice — it just means
+      there is nothing to save); and a secret-shaped file staged under `.cco/` — the
+      same two-pass scan `cco config save` runs, with `*.example` exempt, and if the
+      offending path is one you had already committed it offers `git rm --cached`
+      rather than telling you to move it somewhere it already is. All of them are
+      reported in one go, so you never fix one and meet the next on the retry. What
+      the first check asks is whether an ignore **rule exists**, so a directory-wide
+      pattern counts, and a file you had already committed before adding the rule
+      is not a refusal: git tracks it whatever the rule says, so the save reports it
+      and proceeds — it is already in your history, and `git rm --cached` stops
+      future commits from carrying it without rewriting the ones already made. In a
+      multi-repo project it
+      also tells you which other member repos still have an uncommitted `.cco/`,
+      and separately whether the members have drifted apart in content, which is a
+      `cco sync` question rather than a commit one.
+      **`cco project history` and `cco config history`.** Asking how your config
+      changed used to mean knowing git, knowing the pathspec, and — for `~/.cco` —
+      knowing where the store even lives. Both stores now answer for themselves:
+      one line per commit with the date, the author, the message, and **which
+      parts of the config changed** (`project.yml`, `claude/rules`, …), `-n` to
+      change how many, `--full` to add the diff. The project one is path-filtered
+      rather than marked, so it shows every commit that touched `.cco/` —
+      including commits that also touched code, and commits made by hand long
+      before this verb existed. A store you have never saved is told so, not
+      treated as an error.
+      **`cco project status` and `cco config status`.** Before you save, the other
+      question: what have I actually changed, and would saving it work? Both stores
+      answer it, writing nothing at all — one line per file with its fate in that
+      commit (`M` modified, `A` new, `D` deleted), and `--full` for the diffs. What
+      it lists is **exactly what `save` would commit**, which is not what
+      `git status` would show you: files git ignores are absent, everything outside
+      `.cco/` is absent however dirty your tree is, and on the personal store only
+      the allowlisted config appears. And it answers the other half — *would saving
+      work* — for **both** ways a save can be refused: the `.gitignore` barrier, and
+      the secret scan, run over the very set it just listed. It says so and still
+      answers, at exit 0, in the same words the refusal would use, so you find out
+      before a save is refused rather than after; when one would fire, the closing
+      `→ cco project save` hint is withheld rather than pointing you at a command
+      destined to fail. A file you had committed before adding the rule that covers
+      it is reported below the list — not a refusal, so the hint stays; `status` is
+      simply where you meet it. It never calls a config clean while any of that
+      stands — having nothing to commit is not the same as being saved — and with
+      `--full` it withholds the diff of a file it has just flagged as secret-like,
+      printing the pattern that matched instead of the contents it warned you about
+      (`*.example` skeletons excepted: they exist to be read). A clean config names
+      its last save, so "nothing to do" never reads the same as "never saved".
+      In a session, `project save` needs an edit-project (or wider) level and
+      `project status` / `project history` are free at any level; the `config`
+      readers need read-global, because at read-project the personal store is not
+      mounted for them to read.
+      Two shapes the verbs handle that you would not think to test for. Your
+      `.cco/` does not have to sit at the top of the repository — a service inside
+      a monorepo, or a repo adopted below its root, works the same, and paths are
+      reported from the repository root so you can open them. And deleting a secret
+      is not treated as staging one: removing `.cco/secrets.env` and saving is the
+      right thing to do, so it succeeds rather than being refused with advice you
+      cannot follow. An empty `-m` is refused rather than quietly replaced by the
+      default message, on both stores, and `cco config save --help` answers like
+      every other verb.
+      No rebuild needed for the commands themselves — they run host-side in the
+      CLI. The baked agent rule that pointed at this verb before it existed is
+      updated in the image, so `cco build` refreshes what in-session agents are
+      told.

@@ -1252,6 +1252,148 @@ token store never crosses into a session (see §3.2).
 
 ---
 
+### 3.13d `cco project save` / `cco project status` / `cco project history`
+
+**Version this repo's `<repo>/.cco/` config, see what is not saved yet, and read the history back** —
+without needing to know git, the pathspec, or where the config lives. `status` answers *what have I
+not saved*, `history` answers *what did I save* — the same distance `git status` keeps from
+`git log`. The twins for the personal store are `cco config save` / `status` / `history` (§3.21).
+
+Run either from anywhere inside the repo; cco walks up to the directory that holds
+`.cco/project.yml`. That directory does **not** have to be the top of the repository — a service
+inside a monorepo, or a repo adopted below its root, works the same way, and every path these verbs
+print is relative to the repository root so you can open it.
+
+#### `cco project save [-m <msg>]`
+
+```
+Usage: cco project save [-m <message>]
+
+Options:
+  -m, --message <msg>    Commit message (default: "project config update")
+
+Examples:
+  cco project save
+  cco project save -m "tighten the review rules"
+```
+
+`-m ""` is refused rather than quietly replaced by the default — the message lands in *your* git log,
+among your code commits, so cco does not write one you did not.
+
+**Only `.cco/**` is staged and committed.** Whatever else is dirty in your working tree — or
+that you had **already staged** — is left exactly as it was: not committed, not unstaged. That
+is the whole point of the verb, and the reason you can run it mid-task.
+
+Before anything is staged, three barriers run:
+
+| Barrier | What happens |
+|---|---|
+| `.cco/.gitignore` missing, or not ignoring `secrets.env` / `*.env` / `*.key` / `*.pem` / `.credentials.json` | **refuses** and prints the lines to add. cco does **not** write that file — it is a versioned file in *your* repository, and authoring it would put an unrequested change inside the commit you asked for |
+| an ignore rule anywhere keeps `.cco/project.yml` or `.cco/.gitignore` out of the commit | **refuses**, and names **the rule that actually fires** — its pattern, and the file and line it lives on. A save that drops your config's identity, or the barrier every clone of it inherits, is not a save; and if you are deliberately keeping `.cco/` out of git, that is a supported choice, but then there is nothing to save |
+| a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path. If that path is one you had already committed, the fix it offers is `git rm --cached` — untracking it — rather than moving it somewhere it already is |
+
+⚠ **Deleting a secret is not staging one.** The scan asks what this commit would *add*, so a save
+whose only change is that you removed `.cco/secrets.env` **succeeds** — that is the outcome you
+wanted, and refusing it would have sent you after a fix you had already made.
+
+All of them are reported **in one go**, so you never fix one and discover the next on the retry.
+Coverage is decided by **asking git whether a rule exists**, not by reading the file — so a
+directory-wide pattern, or one inherited from anywhere in your ignore chain, counts. A file you had
+already **committed** before adding the rule is a different case: git tracks it regardless of the
+rule, so `save` reports it as a `note` and **proceeds**. It is already in your history, and the save
+is not what put it there. `git rm --cached <path>` stops future commits from carrying it — it does
+**not** rewrite the commits already made.
+
+A repo that is not under git is refused too: cco does not `git init` a repository it does not own.
+
+In a **multi-repo project**, the save covers the repo you ran it in and then tells you what it
+did not cover — which other member repos still have an uncommitted `.cco/`, and (separately)
+whether the members carry **divergent** config content, which is a `cco sync` question rather
+than a commit one. The two are reported apart because a repo can be committed *and* divergent.
+
+#### `cco project status [--full]`
+
+**What would `cco project save` commit, and would it succeed?** Nothing is written, staged or
+changed — run it as often as you like.
+
+```
+Usage: cco project status [--full]
+
+Options:
+      --full             Also show the diff of each change
+
+Examples:
+  cco project status
+  cco project status --full
+```
+
+Each line is a file and its fate in that commit — `M` modified, `A` new, `D` deleted:
+
+```
+app/.cco — 3 file(s) to save:
+  M  project.yml
+  A  claude/rules/naming.md
+  D  claude/rules/style.md
+
+  → cco project save
+```
+
+What it lists is **exactly what `save` would commit**, which is not the same as what `git status`
+would show you: files git ignores are absent (save skips them too), and so is everything outside
+`.cco/`, however dirty your working tree is.
+
+If a save would be **refused**, `status` says so and **still answers**, at exit 0 — it is the fastest
+way to find out *why*, in the same words the refusal uses, and it never writes anything for you. It
+covers **both** refusal paths: the `.cco/.gitignore` barrier (missing, incomplete, or satisfied only
+because your root `.gitignore` swallows `.cco/` whole) **and** the secret scan, run over the very set
+listed below it. When either would refuse, the closing `→ cco project save` hint is withheld —
+a preview that pointed you at a command destined to fail would be worse than none.
+
+A **tracked** file that a rule covers is reported here too, below the list. That one is not a
+refusal — the hint stays and the save works — it is simply where you find out, without having to run
+a save to be told.
+
+`status` never reports a config as **clean** while any of this stands: having nothing to commit is not
+the same as being saved, and the difference is exactly what you came to the command for.
+
+With `--full`, the diff of a file flagged as secret-like is **withheld** — you get one line naming the
+pattern that matched instead. A preview that tells you a file is a secret and then prints it has
+published the very thing it warned about. `*.example` skeletons are exempt: they exist to be read.
+
+A clean config names its last save, so you can tell "nothing to do" from "never saved":
+
+```
+app/.cco is clean — nothing to save (last saved 2026-08-21 57b0f1a tighten the review rules)
+```
+
+#### `cco project history [-n <count>] [--full]`
+
+```
+Usage: cco project history [-n <count>] [--full]
+
+Options:
+  -n, --max-count <n>    How many commits to show (default: 10)
+      --full             Also show each commit's diff
+
+Examples:
+  cco project history
+  cco project history -n 30
+  cco project history -n 1 --full
+```
+
+One line per commit — date, commit, author, message, and **which parts of the config changed**
+(`project.yml`, `claude/rules`, …), which is what saves you a second trip to git.
+
+The history is **path-filtered, not marked**: it shows every commit that touched `.cco/`,
+including commits that also touched code and commits made by hand long before this verb existed.
+A project that has never committed its config is told so, at exit 0 — an empty history is a
+normal state, not an error.
+
+**In a session**: `project save` needs an `edit-project` (or wider) session; `project status` and
+`project history` are available at every level.
+
+---
+
 ### 3.14 `cco project validate [name]`
 
 **Share-readiness validation**: check that a project's config is safe to share via its repo
@@ -1688,8 +1830,9 @@ Examples:
 
 > **Removed**: `cco project install` and `cco project publish` no longer exist. To share a
 > project, push its repo (the `<repo>/.cco/` rides the remote); to bootstrap a repo without a
-> committed `.cco/`, use `cco init`, `cco init --migrate`, or `cco project import`. To version
-> and multi-PC-sync your **personal** `~/.cco` store, use `cco config save/push/pull` (§3.21).
+> committed `.cco/`, use `cco init`, `cco init --migrate`, or `cco project import`. To version a
+> project's own `<repo>/.cco/`, use `cco project save` (§3.13d); to version and multi-PC-sync
+> your **personal** `~/.cco` store, use `cco config save/push/pull` (§3.21).
 
 ---
 
@@ -1698,7 +1841,8 @@ Examples:
 Version and multi-PC-sync your **personal** global store (`~/.cco/` — `.claude/`,
 `packs/`, `templates/`). `~/.cco` is **always** a git-init'd working tree; only the remote is
 opt-in. This replaces the removed `cco vault` surface. (Project config in `<repo>/.cco/` rides
-each repo's **own** git remote with your normal git flow — `cco config` does not touch it.)
+each repo's **own** git remote — `cco config` does not touch it; its twin is `cco project save`,
+§3.13d.)
 
 #### `cco config save [-m <msg>]`
 
@@ -1708,15 +1852,61 @@ and manual** (no auto-commit). The allowlist commits only `packs/`, `templates/`
 `git add -A`); the 2-pass secret scan refuses real secrets and exempts `*.example`.
 
 ```
-Usage: cco config save [-m <msg>]
+Usage: cco config save [-m <message>]
 
 Options:
-  -m <msg>             Commit message (auto-generated if omitted)
+  -m, --message <msg>  Commit message (default: "config update")
 
 Examples:
   cco config save
   cco config save -m "Add react-guidelines pack"
+  cco config save --help
 ```
+
+As on the project twin, `-m ""` is refused rather than replaced by the default, and deleting a
+secret is not treated as staging one — removing a committed `*.env` and saving **succeeds**.
+
+#### `cco config status [--full]`
+
+The same preview for the personal store: what `cco config save` would commit, writing nothing. Same
+output and same `--full` as `cco project status` (§3.13d).
+
+```
+Usage: cco config status [--full]
+
+Examples:
+  cco config status
+  cco config status --full
+```
+
+Only the **allowlisted** config is listed — `packs/`, `templates/`, `.claude/`, the global
+`setup*.sh` / `mcp-packages.txt` / `languages` and `secrets.env.example`. A stray file you dropped
+in `~/.cco` is not shown, because `cco config save` would not commit it. It also runs the **secret
+scan** over that set and tells you if the save would be refused by it, at exit 0, withholding the
+`→ cco config save` hint in that case. **In a session** this verb needs `read-global` or wider, for
+the same reason as `cco config history` below.
+
+#### `cco config history [-n <count>] [--full]`
+
+Read the `~/.cco` history back. Same surface and same output as `cco project history` (§3.13d) —
+one line per commit with the parts of the config that changed — but over the personal store,
+which has no pathspec because the whole store *is* the config.
+
+```
+Usage: cco config history [-n <count>] [--full]
+
+Options:
+  -n, --max-count <n>    How many commits to show (default: 10)
+      --full             Also show each commit's diff
+
+Examples:
+  cco config history
+  cco config history -n 1 --full
+```
+
+A store you have never saved is reported as such, at exit 0. **In a session** this verb needs
+`read-global` or wider: at `read-project` only the packs your project references are mounted
+under `~/.cco/packs/`, so the store's git is not there to read.
 
 #### `cco config push` / `cco config pull`
 

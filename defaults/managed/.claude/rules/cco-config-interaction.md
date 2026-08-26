@@ -47,10 +47,12 @@ Only when `cco_access` is an edit level may you modify cco config. Then:
   its repo) or the personal store `~/.cco` — so you never commit unrelated or
   unintended changes.
 - **Commit atomically.** One logical config change per commit; leave the tree in
-  a working state. Use `cco config save` for the personal store `~/.cco`. For a
-  project's committed `<repo>/.cco/`, commit with the repo's own git (a dedicated
-  `cco project save` is forthcoming; until it lands, use git directly or hand the
-  user the commit to run on the host).
+  a working state. Use `cco config save` for the personal store `~/.cco` and
+  `cco project save` for a project's committed `<repo>/.cco/`. Each stages only
+  its own config and secret-scans it, so neither can sweep unrelated working-tree
+  changes into the commit. Read either back with `cco config history` /
+  `cco project history` (the project one is free at any level; `config history`
+  needs `read-global`, since at `read-project` `~/.cco` is not mounted as a store).
 - **Keep committed config machine-agnostic.** `project.yml` carries logical names
   + coordinates (`url` / `ref` / `variant`), never real host paths. Validate YAML
   after edits (`cco project validate`, `cco pack|template validate`).

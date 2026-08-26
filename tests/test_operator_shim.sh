@@ -136,6 +136,13 @@ test_operator_config_save_edit_project_needs_edit_global() {
     lane_cco edit-all config save -m x
     [[ "$OP_OUT" != *"needs G=rw"* ]] \
         || fail "'config save' at edit-all should pass the write gate, got: $OP_OUT"
+
+    # The same gate asked POSITIVELY, with the house probe. It was unusable on this
+    # verb until `config save` grew a `--help` arm: the probe drives `<verb> --help`
+    # and requires a usage line back, precisely so a verb with no handler fails here
+    # instead of passing vacuously (review 2026-08-26). It is the only one of the six
+    # verbs in this matrix that could not be probed.
+    assert_gate_allows edit-all config save || return 1
     return 0
 }
 
@@ -750,5 +757,62 @@ test_operator_blocks_remote_remove_and_rename() {
     # the wording family is the one the token verbs already speak
     [[ "$OP_OUT" == *"secrets stay off the container"* ]] \
         || fail "the refusal must keep the 'secrets stay off the container' family: $OP_OUT"
+    return 0
+}
+
+# ── ADR-0038 D8 — the three new config verbs' classification ─────────
+#
+# Each of the three is gated differently, and none of the three gates follows from
+# the others. Asserted as PAIRS (refused at one level, admitted at the next) so the
+# level argument is load-bearing rather than decorative — a gate that admitted
+# every level would pass a one-sided test.
+
+# T18 / T19 — `project save` writes the CURRENT project's config tree → Pc=rw.
+#
+# ⚠ The gate is POLICY, not mechanism (ADR-0038 D8): committing a READ-ONLY `.cco/`
+# actually SUCCEEDS — `git add -- .cco/` returns 0 because git reads the worktree
+# and writes to `.git/`, which is rw. So nothing in the filesystem enforces this
+# and nothing else would catch its removal. This test is the only thing standing
+# between the decision and a future reader who "fixes" it from the mount table.
+test_operator_project_save_needs_edit_project() {
+    lane_cco read-project project save -m x
+    assert_refused "$OP_RC" "$OP_OUT" "needs Pc=rw" || return 1
+    assert_gate_allows edit-project project save || return 1
+    return 0
+}
+
+# T20 — `project history` reads the repo's OWN git, like show|validate|coords.
+# Free at every read level: there is nothing personal-global about it.
+test_operator_project_history_is_free_at_read_project() {
+    assert_gate_allows read-project project history || return 1
+    return 0
+}
+
+# T21 / T22 — `config history` needs read-global.
+#
+# Measured, not chosen: at read-project `~/.cco` is not mounted as a STORE — only
+# the referenced pack is bound under `~/.cco/packs/`. There is no `.git` there, so
+# the verb cannot answer and would degrade into a false "no history yet". Exact
+# precedent: `template show|validate`.
+test_operator_config_history_needs_read_global() {
+    lane_cco read-project config history
+    assert_refused "$OP_RC" "$OP_OUT" "read-global scope" || return 1
+    assert_gate_allows read-global config history || return 1
+    return 0
+}
+
+# A1 D12 — the `status` pair is classified exactly like the `history` pair, from the
+# same measurement: `project status` reads the repo's own git (and writes nothing at
+# all), `config status` cannot answer at read-project, where ~/.cco is not mounted
+# as a store. Asserted as pairs so the level argument stays load-bearing.
+test_operator_project_status_is_free_at_read_project() {
+    assert_gate_allows read-project project status || return 1
+    return 0
+}
+
+test_operator_config_status_needs_read_global() {
+    lane_cco read-project config status
+    assert_refused "$OP_RC" "$OP_OUT" "read-global scope" || return 1
+    assert_gate_allows read-global config status || return 1
     return 0
 }
