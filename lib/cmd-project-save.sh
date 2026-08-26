@@ -432,7 +432,14 @@ cmd_project_save() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --help|-h) _project_save_usage; return 0 ;;
-            -m|--message) [[ $# -lt 2 ]] && die "-m requires a commit message."; msg="$2"; shift 2 ;;
+            # ⚠ The empty test is on the ARGUMENT, not on `$msg` after the loop:
+            # there, `-m ""` and no `-m` at all are indistinguishable, and the
+            # default silently replaced a message the user meant to write — in
+            # THEIR git log, among their code commits.
+            -m|--message)
+                [[ $# -lt 2 ]] && die "-m requires a commit message."
+                [[ -z "$2" ]] && die "-m requires a non-empty commit message."
+                msg="$2"; shift 2 ;;
             -*) die "Unknown option: $1. Run 'cco project save --help'." ;;
             *)  die "Unexpected argument: $1. 'cco project save' takes no positional arguments — it saves the repo you run it from." ;;
         esac
@@ -468,6 +475,11 @@ cmd_project_save() {
 
     if git -C "$root" diff --cached --quiet -- "$spec" 2>/dev/null; then
         info "$repo/$spec is already up to date — nothing to save"
+        # D4 belongs here too, and arguably most: "already up to date" is the state
+        # in which believing the WHOLE project is saved is likeliest, and this verb
+        # commits one repo either way. `status` already reports it on its clean
+        # path; the save reporting it only after a commit was the drift.
+        _project_config_report_members "$unit"
         return 0
     fi
 
@@ -548,6 +560,15 @@ cmd_project_status() {
         printf '%s/%s — %s would refuse, and part of the config could not be committed:\n' \
             "$repo" "$spec" "'cco project save'"
         _project_render_findings "$root" "$spec" "$repo" "$findings"
+        # …and the OTHER part is named. §5b.3 is explicit — status reports the
+        # barrier "and still lists what would be committed" — while this branch
+        # returned before the listing, so the message said "part of the config"
+        # and never answered which part (review 2026-08-26). No count line and no
+        # `→ cco project save`: nothing here claims the save would succeed.
+        if [[ -n "$changed" ]]; then
+            printf '  The rest of the config, which this rule does not drop:\n'
+            printf '%s\n' "$changed" | _status_render "$root" "$spec/" "$_STATUS_FULL"
+        fi
         _project_config_report_members "$unit"
         return 0
     fi

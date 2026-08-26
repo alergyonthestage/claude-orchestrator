@@ -82,6 +82,14 @@ status'; read it back with 'cco config history'. The project twin is
 EOF
 }
 
+# The remedy for a secret hit on the personal store, printed from ONE place so
+# `save`'s refusal and `status`'s preview can never name a different fix (D11).
+# The project half factored `_project_secret_remedy` for exactly this reason; this
+# text was a second, inline copy of the same sentence — identical today.
+_config_secret_remedy() {
+    printf 'Move the secret into ~/.cco/secrets.env (gitignored) and try again.\n'
+}
+
 _config_save() {
     local msg=""
     while [[ $# -gt 0 ]]; do
@@ -92,7 +100,13 @@ _config_save() {
             # at all, and P-B's "the two stores must not drift into different
             # spellings" was visibly broken inside the reviewed surface.
             --help|-h) _config_save_usage; return 0 ;;
-            -m|--message) [[ $# -lt 2 ]] && die "-m requires a commit message."; msg="$2"; shift 2 ;;
+            # ⚠ Tested on the ARGUMENT: after the loop, `-m ""` and no `-m` are
+            # indistinguishable and the default silently replaced it. Same rule as
+            # the project twin — the two stores do not drift (P-B).
+            -m|--message)
+                [[ $# -lt 2 ]] && die "-m requires a commit message."
+                [[ -z "$2" ]] && die "-m requires a non-empty commit message."
+                msg="$2"; shift 2 ;;
             -*) die "Unknown option: $1. Run 'cco config save --help'." ;;
             *)  die "Unexpected argument: $1. 'cco config save' takes options only." ;;
         esac
@@ -132,7 +146,7 @@ _config_save() {
         git -C "$cfg" reset -q >/dev/null 2>&1 || true
         error "refusing to save — a secret-like file is staged:"
         printf '  %s\n' "$leak" >&2
-        die "Move the secret into ~/.cco/secrets.env (gitignored) and try again."
+        die "$(_config_secret_remedy)"
     fi
 
     [[ -z "$msg" ]] && msg="config update"
@@ -215,7 +229,7 @@ _config_status() {
         printf '~/.cco — %s file(s) to save, but %s would refuse:\n' "$n" "'cco config save'"
         printf '  a secret-like file would be staged:\n'
         printf '    %s\n' "$leak"
-        printf '  Move the secret into ~/.cco/secrets.env (gitignored) and try again.\n'
+        printf '  %s\n' "$(_config_secret_remedy)"
         printf '\n'
     else
         printf '~/.cco — %s file(s) to save:\n' "$n"

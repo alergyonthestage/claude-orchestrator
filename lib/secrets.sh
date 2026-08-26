@@ -97,7 +97,16 @@ _secret_gitignore_probe() {
 _secret_match_content() {
     local file="$1"
     [[ ! -f "$file" ]] && return 1
-    file "$file" 2>/dev/null | grep -q "text" || return 1
+    # Text files only. ⚠ Where `file(1)` is ABSENT this returned 1 unconditionally —
+    # a content pass that answers "clean" on BOTH save gates, silently (review
+    # 2026-08-26). `grep -I` asks the same question with a tool the scan already
+    # needs: it treats a binary file as non-matching, so `grep -Iq .` is false for
+    # exactly the files `file` would have excluded.
+    if command -v file >/dev/null 2>&1; then
+        file "$file" 2>/dev/null | grep -q "text" || return 1
+    else
+        grep -Iq . "$file" 2>/dev/null || return 1
+    fi
     local pattern
     for pattern in "${_SECRET_CONTENT_PATTERNS[@]}"; do
         local match_line

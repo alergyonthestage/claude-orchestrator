@@ -346,7 +346,8 @@ test_project_save_report_is_a_note_not_a_warn() {
 
     _ps_cco_in "$tmp/dev/app" project save -m "app config" || return 1
     assert_output_contains "note:" || return 1
-    assert_output_not_contains "⚠" || return 1
+    # The emitter's shape, not the glyph — see `_ps_no_warn_emitted`.
+    _ps_no_warn_emitted || return 1
 }
 
 # ── T13 — the history is PATH-FILTERED, not trailer-marked (D3) ──────
@@ -767,6 +768,26 @@ test_project_save_scan_catches_a_class_the_gitignore_floor_omits() {
     assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
 }
 
+# True when nothing in CCO_OUTPUT was emitted by `warn()`.
+#
+# ⚠ THE GLYPH ALONE IS NOT THE ORACLE (review 2026-08-26). `_project_secret_remedy`
+# prints an INDENTED `⚠` of its own — an existing house idiom, not a level
+# violation — so `assert_output_not_contains "⚠"` measures the idiom as much as the
+# emitter, and AT9 passed only because its three scenarios miss that branch. What
+# `warn()` writes is `${YELLOW}⚠${NC} …` at the START of a line; every idiomatic use
+# is indented. That shape is the discriminating question.
+#
+# ⚠ The ESC is built with `printf`, never spelled `\x1b` in a sed script: BSD sed
+# does not read that escape, and the check would silently strip nothing.
+_ps_no_warn_emitted() {
+    local esc; esc=$(printf '\033')
+    if printf '%s\n' "$CCO_OUTPUT" | sed "s/${esc}\[[0-9;]*m//g" | grep -q '^⚠'; then
+        fail "a warn was emitted — a warn gates every 'cco start' (ADR-0059 D1)"
+        return 1
+    fi
+    return 0
+}
+
 # AT9 — the level stays `note`/`die` throughout. A `warn` gates a launch
 # (ADR-0059 D1), so one emitted here would make every affected project pause at
 # every `cco start` over a save-time observation.
@@ -779,23 +800,26 @@ test_project_save_amendment_a2_emits_no_warn() {
     _ps_track_ignored_secret "$a"
     printf '# more\n' >> "$a/.cco/claude/rules/style.md"
     _ps_cco_in "$a" project save -m "x" || return 1
-    assert_output_not_contains "⚠" || return 1
+    _ps_no_warn_emitted || return 1
 
     # (b) the vacuous-coverage refusal
     local b="$tmp/b"; _ps_repo "$b" demo b
     printf '.cco/\n' > "$b/.gitignore"
     _ps_cco_in "$b" project save -m "x" || true
-    assert_output_not_contains "⚠" || return 1
+    _ps_no_warn_emitted || return 1
     _ps_cco_in "$b" project status || return 1
-    assert_output_not_contains "⚠" || return 1
+    _ps_no_warn_emitted || return 1
 
-    # (c) the scan, refused and previewed
+    # (c) the scan, refused and previewed. ⚠ The TRACKED branch of the remedy is
+    # deliberately the one exercised here: it is what prints the indented `⚠`, so
+    # it is the scenario the old glyph oracle could not have survived.
     local c="$tmp/c"; _ps_repo "$c" demo c
-    printf 'machine example.com login u password p\n' > "$c/.cco/.netrc"
+    _ps_track_ignored_secret "$c"
+    printf 'TOKEN=a-brand-new-value\n' > "$c/.cco/secrets.env"
     _ps_cco_in "$c" project save -m "x" || true
-    assert_output_not_contains "⚠" || return 1
+    _ps_no_warn_emitted || return 1
     _ps_cco_in "$c" project status || return 1
-    assert_output_not_contains "⚠" || return 1
+    _ps_no_warn_emitted || return 1
 }
 
 # The twin, by D9's own argument: `cco config save` has the same scan refusal and
@@ -922,7 +946,9 @@ test_project_save_refuses_to_commit_a_config_without_its_barrier() {
 
     local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
     assert_rc 1 "$rc" "a config committed without its .gitignore is not a correct save" || return 1
-    assert_output_contains ".gitignore" || return 1
+    # ⚠ Not a bare ".gitignore": that token is in almost every refusal this verb
+    # emits, so it cannot tell THIS refusal from any other one (review 2026-08-26).
+    assert_output_contains "would be saved incomplete" || return 1
     assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
 }
 
