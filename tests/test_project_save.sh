@@ -913,6 +913,65 @@ test_project_status_never_says_clean_while_a_finding_stands() {
     assert_output_contains "project.yml" || return 1
 }
 
+# `--full` must not print the contents of a file it has just called secret-like.
+# Measured before the fix: the password appeared 24 lines under the warning.
+test_project_status_full_withholds_the_diff_of_a_secret_file() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'machine example.com login bob password SUPERSECRET123\n' > "$r/.cco/.netrc"
+
+    _ps_cco_in "$r" project status --full || return 1
+    assert_output_contains "diff withheld" || return 1
+    assert_output_not_contains "SUPERSECRET123" || return 1
+    # The rest of --full still works: a normal file is still diffed.
+    assert_output_contains "diff --git" || return 1
+}
+
+# ⚠ The exemption that keeps the withholding from hiding the one file whose whole
+# job is to be committed and read. `*.example` is exempt in the scan (FR-S3); if it
+# were not exempt here, the skeleton users are told to copy would be unreadable.
+test_project_status_full_still_diffs_the_example_skeleton() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'TOKEN=put-yours-here\n' > "$r/.cco/secrets.env.example"
+
+    _ps_cco_in "$r" project status --full || return 1
+    assert_output_contains "put-yours-here" || return 1
+    assert_output_not_contains "diff withheld" || return 1
+}
+
+# The remedy must be followable in the state D13 made reachable: when the offending
+# path IS .cco/secrets.env, "move the secret into .cco/secrets.env" names where it
+# already is. A tracked one needs the untrack instead.
+test_project_save_secret_remedy_untracks_an_already_committed_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    printf 'TOKEN=a-brand-new-value\n' > "$r/.cco/secrets.env"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a tracked-and-modified secret must still refuse" || return 1
+    assert_output_contains "git rm --cached" || return 1
+    # The circular instruction must be gone in this state.
+    assert_output_not_contains "Move the secret into" || return 1
+}
+
+# …and the untracked case keeps the remedy that IS right for it.
+test_project_save_secret_remedy_moves_an_untracked_path() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    printf 'machine example.com login u password p\n' > "$r/.cco/.netrc"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "an untracked secret must refuse" || return 1
+    assert_output_contains "Move the secret into" || return 1
+    assert_output_not_contains "git rm --cached" || return 1
+}
+
 # ⚠ Called DIRECTLY, not through the CLI, and that is the point. It is a
 # POST-CONDITION guard: while the barrier ahead of it holds, no invocation can
 # reach it — so a test that drove `cco project save` would exercise the barrier and

@@ -423,7 +423,10 @@ cmd_project_save() {
         git -C "$root" reset -q -- .cco >/dev/null 2>&1 || true
         error "refusing to save — a secret-like file is staged under $repo/.cco:"
         printf '  %s\n' "$leak" >&2
-        die "Move the secret into $repo/.cco/secrets.env (gitignored) and try again."
+        # The reset above restored the index to HEAD, so the remedy's tracked test
+        # reads the same answer it would have before staging.
+        _project_secret_remedy "$root" "$repo" "${leak%%$'\t'*}" >&2
+        die "Nothing was committed."
     fi
 
     [[ -z "$msg" ]] && msg="$_PROJECT_SAVE_DEFAULT_MSG"
@@ -560,7 +563,28 @@ _project_status_report_leak() {
     local root="$1" repo="$2" leak="$3"
     printf '  a secret-like file would be staged under %s/.cco:\n' "$repo"
     printf '    %s\n' "$leak"
-    printf '  Move the secret into %s/.cco/secrets.env (gitignored) and try again.\n' "$repo"
+    _project_secret_remedy "$root" "$repo" "${leak%%$'\t'*}"
+}
+
+# The remedy for a secret hit, which is NOT one sentence (A2 review). When the
+# offending path is `.cco/secrets.env` itself, "move the secret into
+# <repo>/.cco/secrets.env" tells the user to move it where it already is — a state
+# D13 made reachable, by letting the barrier pass on a tracked file so the scan can
+# finally see it. What that user needs is the untrack, not a move.
+#
+# ⚠ The question is whether the path is in HEAD, not in the index: `save` has
+# already run `git add -- .cco` by the time it refuses, so `git ls-files` would
+# report a brand-new file as tracked too.
+_project_secret_remedy() {
+    local root="$1" repo="$2" path="$3"
+    if [[ -n "$path" ]] && git -C "$root" cat-file -e "HEAD:$path" 2>/dev/null; then
+        printf '  %s is already committed, so every save records a new value of it. Untrack it with\n' "$path"
+        printf "    git rm --cached -- %s\n" "$path"
+        printf '  and commit that; keep the real value in %s/.cco/secrets.env, which is gitignored.\n' "$repo"
+        printf '  ⚠ Untracking stops FUTURE commits — it does not rewrite the ones already made.\n'
+    else
+        printf '  Move the secret into %s/.cco/secrets.env (gitignored) and try again.\n' "$repo"
+    fi
 }
 
 cmd_project_history() {

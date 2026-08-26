@@ -22,7 +22,8 @@
 # Provides: _history_parse_args(), _history_render(), _history_has_commits(),
 #   _history_group_label(), _status_parse_args(), _status_changed(), _status_paths(),
 #   _status_render()
-# Dependencies: colors.sh (die)
+# Dependencies: colors.sh (die), secrets.sh (_secret_match_filename/_secret_match_content —
+#   `--full` must not print the contents of a file it just called secret-like)
 
 # The default number of commits shown (ADR-0038 Open / design §7). Fits a terminal
 # without scrolling and is what `-n` exists to change.
@@ -224,12 +225,32 @@ _status_paths() {
 # Usage: _status_render <git_root> <strip-prefix> <full:true|false>   [stdin: changed lines]
 _status_render() {
     local root="$1" strip="$2" full="$3"
-    local mark rel path
+    local mark rel path hit
     while IFS=$'\t' read -r mark rel; do
         [[ -z "$mark" ]] && continue
         printf '  %s  %s\n' "$mark" "$rel"
         [[ "$full" == true ]] || continue
         path="${strip}${rel}"
+        # ⚠ A preview that names a file "secret-like" and then prints its contents
+        # four lines below has told the user nothing it did not also publish (A2
+        # review, measured on a `.cco/.netrc`: the password appeared in the diff).
+        # A NEW file is diffed against /dev/null, so `--full` renders it whole.
+        #
+        # The question is asked per file rather than reused from the scan, because
+        # the scan stops at its FIRST hit while every listed file is rendered here.
+        # `*.example` is exempt on the same terms as the scan (FR-S3): a skeleton
+        # exists to be read, and withholding its diff would hide the one file whose
+        # whole purpose is to be committed and inspected.
+        if [[ "$rel" != *.example ]]; then
+            if hit=$(_secret_match_filename "$path" 2>/dev/null) && [[ -n "$hit" ]]; then
+                printf '      diff withheld — %s matches the secret pattern %s\n' "$rel" "$hit"
+                continue
+            fi
+            if [[ -f "$root/$path" ]] && hit=$(_secret_match_content "$root/$path" 2>/dev/null) && [[ -n "$hit" ]]; then
+                printf '      diff withheld — %s matches a secret content pattern at line %s\n' "$rel" "${hit%%:*}"
+                continue
+            fi
+        fi
         if git -C "$root" cat-file -e "HEAD:$path" 2>/dev/null; then
             git -C "$root" diff HEAD -- "$path" 2>/dev/null
         else
