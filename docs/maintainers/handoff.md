@@ -5,15 +5,17 @@
 
 ## Where we are
 
-**A1's cycle is REVIEWED, FIXED and VERIFIED. One gate is left, and it is the merge.**
+**A1's cycle is CLOSED — reviewed, fixed, verified and MERGED.** What is left is not a gate on the
+work but two operations `develop` owes: a **push** (host-only) and a **`cco build`**.
 
 ```mermaid
 flowchart LR
     DEV["develop 90c1391"] --> A1["A1 + A2 + A3<br/>built ✅"]
     A1 --> REV["whole-cycle review<br/>REVIEW NEEDED:<br/>1 fix in place · 2 blockers ✅"]
     REV --> A4["Amendment A4 · D20-D22<br/>ruled + built + verified ✅"]
-    A4 --> M{{"merge into develop<br/>⬅ you are here"}}
-    M --> BUILD["cco build<br/>⚠ this cycle DOES owe one"]
+    A4 --> M["merged into develop<br/>ab97482 ✅"]
+    M --> P{{"push · cco build<br/>⬅ you are here, both HOST"}}
+    P --> A9["A9 / FI-77<br/>the next unit"]
 ```
 
 The review the maintainer scoped — **one pass over the finished cycle**, six verbs, both stores —
@@ -28,7 +30,8 @@ Everything below was **measured on this branch**, not carried over:
 |---|---|
 | Suite (container) | **`Results: 1778 passed, 7 failed, 1785 total`**, the `Results:` line present **once**. The 7 are the [known host-only set](roadmap.md), verified name for name: 6 `test_as_*` + `test_paths_symlink_safe_tool_root` |
 | Test count | **+8 over the branch's 1777** — one per fix, each pinned by a mutation that fails exactly its own test |
-| Branch | `feat/config/save-and-history`, **41 ahead of `develop`**, clean tree, **not merged** |
+| Merge | **`ab97482`** (`--no-ff`, 39 commits), branch deleted with `-d`. ⭐ `git diff feat/config/save-and-history develop` was **empty** — the merged tree IS the tree the suite measured, so nothing was accepted on an unmeasured tree |
+| `develop` vs `origin/develop` | **40 ahead** — the push is a **host** step; `git ls-remote` is not reachable from a session |
 | bash 3.2 | every changed file parses under real `bash:3.2` (Docker socket), with a negative control returning rc 2 |
 | Baked files | 🔴 **TOUCHED — this cycle DOES owe a `cco build`.** See below |
 | macOS host suite | `1775 passed, 2 failed, 1777 total`, `Results:` present once ⇒ **no 3.2 parse abort**. The 2 are **[FI-78](improvements.md)**, not A1 |
@@ -63,8 +66,8 @@ the broken code. The new pair is flat **and** nested (design §6.2e).
 
 | Gate | What unblocks it |
 |---|---|
-| ▶ **Merge into `develop`** | the human review point. The review is clean, the suite is green, the host suite is green for A1. ⚠ Measure before assuming: does the diff touch `.cco/`? **No** — so [FI-20](improvements.md)'s host-only merge rule does not apply |
-| ▶ **`cco build`** | after the merge. Not optional for this cycle (above). Nothing in-session reflects A4 until it runs |
+| ▶ **Push `develop`** | a **host** step. `cd <repo> && git push origin develop` |
+| ▶ **`cco build`** | not optional for this cycle (above). Nothing **in-session** reflects A4 until it runs — the host CLI already does |
 | **[FI-78](improvements.md)** | the two macOS test-portability failures. **Not A1's** — they are in the already-merged A5+A8 warn-gate cycle. ⚠ Not measurable from the container: bash 3.2 is reachable over the Docker socket, BSD `awk`/`mktemp` are not. Still owed before `0.7.0` |
 | **[A9](roadmap.md)** ([FI-77](improvements.md)) | ▶ **the next unit once A1 closes.** Needs a short design first, and a `cco build` |
 | **[FI-73](improvements.md)** | the SIGPIPE sentinel — a maintainer's call, unchanged |
@@ -77,8 +80,8 @@ identical at `43c2c33`.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] ▶ **The merge gate** — approved → merge to `develop`, then delete the branch per
-      `rules/git-practices.md`, then **`cco build`**
+- [ ] ▶ **Push `develop`** and run **`cco build`** — both host steps; the merge and the branch
+      cleanup are done
 - [ ] ▶ **[A9](roadmap.md)** ([FI-77](improvements.md)) — the next unit. Short design first; three
       questions are open in the roadmap entry. Both targets are **baked**
 - [ ] **[FI-78](improvements.md)** — the two macOS test-portability failures, host-verified only
