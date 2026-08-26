@@ -290,6 +290,9 @@ run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (
 ▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
 after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
 
+▶ **A1 is BUILT and at its last gate** (2026-08-26): one review over the whole `save`/`status`/
+`history` cycle, then the merge — see the entry below. **A9 starts when A1 closes**, not before.
+
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
 ✅ **DESIGN DONE AND ACCEPTED 2026-08-20** —
@@ -389,9 +392,28 @@ the known host-only set name for name. Five independent mutations were run and a
 passed before AR9 existed). The five changed files parse under **real bash 3.2**, with a negative
 control.
 
-▶ **Next: the merge gate** — one review covers the unit, the way Amendment A1 was already absorbed
-mid-flight. ⚠ **A3's own code postdates that review**, which is the same shape that produced A2 and
-then A3; whether it takes another pass is the maintainer's call.
+### ▶ Where A1 stands, and the one gate before the merge *(maintainer, 2026-08-26)*
+
+**Implementation is COMPLETE** — A1 plus all three amendments, 25 commits ahead of `develop`, clean
+tree, unmerged, no baked file touched (so **no `cco build`**).
+
+⚠ **The unit grew by one amendment per review, three times**: A1's review produced A2, A2's review
+produced A3, and **A3's code is unreviewed**. That is a pattern, not a coincidence — each pass looked
+only at the delta in front of it. The maintainer's ruling ends it:
+
+> **ONE `/review-implementation` over the WHOLE `save` / `status` / `history` cycle — six verbs, both
+> stores — judging correctness, absence of bugs, coherence, adherence to the approved design, and
+> completeness. A3 gets particular attention as the unreviewed part, but the pass is NOT scoped to it.**
+> Approved → the merge gate opens. Defects → a fix session, not a merge.
+
+| Store | write | read: not saved yet | read: what was saved |
+|---|---|---|---|
+| `~/.cco` | `cco config save` | `cco config status` | `cco config history` |
+| `<repo>/.cco` | `cco project save` | `cco project status` | `cco project history` |
+
+The surface, the contract and the entry point are in
+[the handoff](handoff.md); the **macOS host suite on bash 3.2** runs in parallel on the maintainer's
+machine and its result folds into the same review — it is still owed before `0.7.0`.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
