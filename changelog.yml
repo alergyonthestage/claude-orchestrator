@@ -1489,12 +1489,17 @@ entries:
       `.cco/.gitignore` that is missing or does not cover the secret patterns (it
       names the lines to add, but that file is a versioned file in your repository
       and writing it would put an unrequested change in the commit you asked for);
-      a **root** `.gitignore` that ignores `.cco/` entirely, where that first check
-      is satisfied by an accident and a save would commit nothing at all while
-      reporting success — cco names the root file to fix, and leaves your
-      `.cco/.gitignore` alone; and a secret-shaped file staged under `.cco/` — the
-      same two-pass scan `cco config save` runs, with `*.example` exempt. What the
-      first check asks is whether an ignore **rule exists**, so a directory-wide
+      an ignore rule anywhere that would keep `project.yml` or `.cco/.gitignore`
+      itself out of the commit — a save that drops your config's identity, or the
+      barrier every clone of it inherits, is not a save, and cco names the rule that
+      actually fires, with its pattern, file and line, so you can go and change it
+      (keeping `.cco/` out of git on purpose is a supported choice — it just means
+      there is nothing to save); and a secret-shaped file staged under `.cco/` — the
+      same two-pass scan `cco config save` runs, with `*.example` exempt, and if the
+      offending path is one you had already committed it offers `git rm --cached`
+      rather than telling you to move it somewhere it already is. All of them are
+      reported in one go, so you never fix one and meet the next on the retry. What
+      the first check asks is whether an ignore **rule exists**, so a directory-wide
       pattern counts, and a file you had already committed before adding the rule
       is not a refusal: git tracks it whatever the rule says, so the save reports it
       and proceeds — it is already in your history, and `git rm --cached` stops
@@ -1528,8 +1533,12 @@ entries:
       `→ cco project save` hint is withheld rather than pointing you at a command
       destined to fail. A file you had committed before adding the rule that covers
       it is reported below the list — not a refusal, so the hint stays; `status` is
-      simply where you meet it. A clean config names its last save, so "nothing to
-      do" never reads the same as "never saved".
+      simply where you meet it. It never calls a config clean while any of that
+      stands — having nothing to commit is not the same as being saved — and with
+      `--full` it withholds the diff of a file it has just flagged as secret-like,
+      printing the pattern that matched instead of the contents it warned you about
+      (`*.example` skeletons excepted: they exist to be read). A clean config names
+      its last save, so "nothing to do" never reads the same as "never saved".
       In a session, `project save` needs an edit-project (or wider) level and
       `project status` / `project history` are free at any level; the `config`
       readers need read-global, because at read-project the personal store is not

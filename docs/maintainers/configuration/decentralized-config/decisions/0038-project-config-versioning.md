@@ -351,6 +351,11 @@ A **tracked** secret is still reported, as a `note`, and the save proceeds:
   another: `git rm --cached` stops future commits, it does not rewrite the ones already made. The
   message says so.
 
+> ⚠ **2026-08-24 ([A3, D19](#d19--the-secret-remedy-branches-on-whether-the-path-is-already-tracked))**:
+> letting the barrier pass on a tracked file makes the SCAN reachable for `.cco/secrets.env`, where the
+> scan's own remedy — *"move the secret into `<repo>/.cco/secrets.env`"* — names where it already is.
+> D19 branches that remedy. A2 opened this path; it did not create the wording.
+
 **Level: `note`, never `warn`** — §2.6 of the design, unchanged and load-bearing. A `⚠ warn` gates a
 launch (ADR-0059 D1); nothing this verb observes should stop a session from starting.
 
@@ -384,6 +389,13 @@ D11's rule that the remedy may never name a different set than the one that refu
 
 ### D15 — a barrier satisfied because `.cco/` is wholly ignored is not satisfied *(maintainer, 2026-08-21)*
 
+> ⚠ **AMENDED 2026-08-24 by [Amendment A3, D16](#a3--2026-08-24-a2s-own-barrier-repeated-the-defect-a2-removed).**
+> The key below is kept; its **conclusion is not**. *"`.cco/` is ignored in its entirety"* is not what
+> `.cco/project.yml` being ignored proves — measured, a root `.gitignore` of merely `*.yml` satisfies
+> the key while git still stages two files, so the refusal named a rule that did not exist. Implement
+> D16, not the paragraph below, or you will rebuild the unfollowable remedy D13 exists to abolish.
+
+
 When the repository's root `.gitignore` ignores `.cco/` in its entirety, every class probe reports
 *ignored*, the barrier passes, `git add -- .cco` stages nothing, and the verb reports
 `ℹ <repo>/.cco is already up to date — nothing to save` while `status` reports it clean and never
@@ -398,3 +410,77 @@ and `status` reports it at rc 0, per D10.
 This is P2 of ADR-0059 in a new guise: a barrier whose pass condition can be satisfied by an unrelated
 rule is not a barrier. It fails silently, which is the only failure mode this project treats as
 disqualifying.
+
+### A3 — 2026-08-24: A2's own barrier repeated the defect A2 removed
+
+Raised by **`/review-implementation`** against the built A2, from four measurements. A2's code was
+faithful to D13/D14/D15 as written; what A3 corrects is what those decisions turned out to assert.
+
+The through-line is one failure and it is D13's own: **a message that claims more than its mechanism
+proves, and a remedy the user cannot follow.** D13 removed one instance of it and D15's refusal
+reintroduced another, one screen away.
+
+| # | Measured | Why it is the same defect |
+|---|---|---|
+| a root `.gitignore` of merely `*.yml` | refuses with *"ignores `.cco/` entirely… would commit nothing at all"*, and *"remove the rule that ignores .cco/"* — while git stages **two** files and **that rule does not exist** | a remedy naming a line that is not in the file — verbatim D13 |
+| a root rule of just `.cco/.gitignore` | the save reports **`✓ saved`** on a config whose **barrier never landed**; every clone starts unprotected | a silent, total failure that both verbs affirm — verbatim D15 |
+| root swallows `.cco/` **and** `.cco/.gitignore` is missing | `status` says **"is clean"** over 4 unsaveable files; `save`'s two remedies arrive one round trip apart | "clean" claims the config is saved — the falsehood D15 exists to stop |
+| `status --full` on a `.cco/.netrc` | prints `a secret-like file would be staged`, then the password **24 lines below** | the verb publishes what it just called a secret |
+
+#### D16 — the barrier reports what it can prove, and `save` proves the outcome *(maintainer, 2026-08-24)*
+
+D15's key — *`.cco/project.yml` is also ignored* — is kept, because the harm it detects is real. Its
+**conclusion** is not: that key does not prove `.cco/` is ignored in its entirety, and no finite set
+of probes could. The finding is renamed to what it establishes — **an ignore rule keeps an essential
+file out of the commit, so the save would be partial** — and it names the **rule that actually
+fires**, via `git check-ignore -v --no-index`, at a path the user can open.
+
+It is widened on two axes, both from measurement:
+
+- **From one path to an ESSENTIAL SET** — `project.yml` (identity, and the cwd-first anchor) and
+  `.gitignore` (the D7 barrier every clone inherits). The second is what caught the `✓ saved` above.
+- **From prediction to post-condition** — after `git add -- .cco`, `save` asserts each essential is in
+  the index the commit is built from. Unreachable while the barrier holds, and that is its purpose:
+  it converts a future hole in the barrier into a refusal instead of a wrong commit. ⚠ It is
+  therefore **untestable through the CLI**, and is pinned by a direct call — a guard nothing can
+  reach is a guard nothing has measured.
+
+⚠ **Refusing when `.cco/` is ignored wholesale stays, and is not a fallback.** It is the documented
+path for a solo adopter who deliberately keeps their cco config out of git; for them the save must
+**abort**, never half-succeed. The refusal says so in as many words, so the state does not read as an
+error to be worked around.
+
+#### D17 — the findings are independent, and "clean" is not available while one stands
+
+Returning early on `missing` sent the user to create `.cco/.gitignore` and only then meet the second
+refusal: two round trips for one broken state, each remedy correct and neither sufficient. All
+findings are computed and rendered together, by **one** renderer that `save` sends to stderr and
+`status` prints to stdout.
+
+And `status` must not say **"is clean"** while any finding stands. Nothing to *commit* is not the same
+as *saved*, and AT5 already forbade the word in the adjacent state — the composite state slipped
+through only because of the early return this decision removes.
+
+#### D18 — `--full` withholds the diff of a file it has just called secret-like
+
+A preview that names a file secret and prints its contents four lines below has published exactly what
+it warned about. The diff is replaced by one line naming the pattern that matched. **`*.example` is
+exempt**, on the same terms as the scan (FR-S3): a skeleton exists to be read, and withholding it
+would hide the one file whose purpose is to be committed and inspected.
+
+⚠ The question is asked **per file**, not reused from the scan: the scan stops at its first hit, while
+every listed file is rendered. This reaches `cco config status` too, which shares the renderer.
+
+*(This behaviour predates A2 — A1's `--full` already diffed the file. A2 is what made the verb know it
+was a secret in the same run, so the inconsistency is A2's to close.)*
+
+#### D19 — the secret remedy branches on whether the path is already tracked
+
+*"Move the secret into `<repo>/.cco/secrets.env`"* names where the file already is when the offending
+path **is** `secrets.env`. That state is reachable **because of D13**: before it, a tracked secret was
+stopped by the false barrier refusal and never reached the scan. A tracked path is told to
+`git rm --cached` it instead, with the same caveat D13's note carries — untracking stops future
+commits, it does not rewrite the ones already made.
+
+⚠ The test is `git cat-file -e HEAD:<path>`, **not** `git ls-files`: `save` has already staged by the
+time it refuses, so the index would report a brand-new file as tracked too.

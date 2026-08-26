@@ -360,8 +360,38 @@ file under `.cco/` probes as ignored, so the finding would name the whole config
 tests, the first asserting **stdout alone** (capturing `2>&1` would pass on a stderr `note` and
 measure nothing).
 
+⭐ **Amendment A3 (D16…D19) came out of A2's OWN review** — raised 2026-08-24, ruled by the maintainer
+the same day, built immediately. The through-line is one defect and it is **D13's own**: *a message
+that claims more than its mechanism proves, and a remedy the user cannot follow.* D13 removed one
+instance; D15's refusal reintroduced another one screen away. All four measured:
+
+| Measured | Class |
+|---|---|
+| root `.gitignore` of merely `*.yml` → *"ignores `.cco/` entirely… would commit nothing"* + *"remove the rule that ignores .cco/"*, while git stages **2 files** and **that rule does not exist** | the unfollowable remedy, verbatim D13 |
+| root rule of just `.cco/.gitignore` → **`✓ saved`** on a config whose **barrier never landed**; every clone starts unprotected | the silent total failure, verbatim D15 |
+| root swallows `.cco/` **and** `.cco/.gitignore` missing → `status` says **"is clean"** over 4 unsaveable files; the two remedies arrive a round trip apart | "clean" claims the config is saved |
+| `status --full` on a `.cco/.netrc` → the password printed **24 lines below** its own warning | the verb publishes what it just called a secret |
+
+**D16** keeps D15's key and drops its conclusion — no finite probe set proves *"entirely"* — naming the
+rule that **actually fires**, widening to an **essential set** (`project.yml` + `.gitignore`), and
+adding a **post-condition** `save` asserts after staging. ⚠ Refusing when `.cco/` is wholly ignored
+**stays and is deliberate**: it is the supported path for a solo adopter keeping cco config out of
+git, and there the save must abort, not half-succeed. **D17** renders all findings together and bars
+the word *clean* while any stands. **D18** withholds the diff of a flagged file (`*.example` exempt).
+**D19** branches the secret remedy on tracked → `git rm --cached`.
+
+⭐ **The post-condition was untested until it was pinned deliberately** — neutralising it changed
+nothing in the whole suite, because the barrier ahead of it makes it unreachable from the CLI. AR9
+calls it directly. A guard nothing can reach is a guard nothing has measured.
+
+Suite after A3: **`1770 passed, 7 failed, 1777 total`** — **+9 tests, zero regressions**, the 7 again
+the known host-only set name for name. Five independent mutations were run and all five now fail (one
+passed before AR9 existed). The five changed files parse under **real bash 3.2**, with a negative
+control.
+
 ▶ **Next: the merge gate** — one review covers the unit, the way Amendment A1 was already absorbed
-mid-flight.
+mid-flight. ⚠ **A3's own code postdates that review**, which is the same shape that produced A2 and
+then A3; whether it takes another pass is the maintainer's call.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo

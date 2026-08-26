@@ -92,15 +92,19 @@ Things it deliberately refuses rather than fixes for you:
 - **a missing or insufficient `.cco/.gitignore`** — it names the lines to add, but
   does not write them. That file is a versioned file in *your* repository, and
   authoring it would put a change you did not ask for inside the commit you did.
-- **a root `.gitignore` that ignores `.cco/` entirely** — there the barrier above is
-  satisfied by an accident: every secret class is "covered" because *everything* is,
-  and a save would commit nothing at all while reporting success. cco names the root
-  file to fix. Your `.cco/.gitignore` is not the problem and stays as it is.
+- **an ignore rule that keeps an essential file out of the commit** — `project.yml`
+  (your config's identity) or `.cco/.gitignore` (the barrier every clone inherits).
+  There the check above can be satisfied by accident: a rule that ignores `.cco/`
+  wholesale "covers" every secret class because it covers everything, and the save
+  would commit nothing while reporting success. cco names **the rule that actually
+  fires** — pattern, file and line — so you can go and change it. Keeping `.cco/` out
+  of git on purpose is a supported choice; it just means there is nothing to save.
 - **a secret-shaped file under `.cco/`** — the same 2-pass scan `cco config save`
   runs (filename and content, `*.example` exempt). The refusal unstages `.cco/` and
   nothing else.
 
-Coverage is decided by asking git whether a **rule exists**, so a directory-wide
+All of these are reported **together**, so you never fix one and meet the next on the
+retry. Coverage is decided by asking git whether a **rule exists**, so a directory-wide
 pattern or one inherited from elsewhere in your ignore chain counts. A file you had
 already **committed** before adding the rule is not a refusal: git tracks it whatever
 the rule says, so the save reports it and **proceeds** — it is already in your
@@ -114,11 +118,13 @@ a commit one.
 
 `cco project status` is the preview: it lists exactly what `save` would commit — not what
 `git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. It also
-answers the second half of the question — *would it succeed* — by reporting **either** refusal above
-before the list, at exit 0, instead of making you discover it by having a save refused. When one
+answers the second half of the question — *would it succeed* — by reporting **any** of the refusals
+above before the list, at exit 0, instead of making you discover it by having a save refused. When one
 would fire, the closing `→ cco project save` hint is withheld. A **tracked** file that a rule covers
 is reported below the list instead: that one is not a refusal, so the hint stays — `status` is just
-where you meet it, rather than finding out from a save.
+where you meet it, rather than finding out from a save. It never calls a config **clean** while any
+of this stands, and with `--full` it withholds the diff of a file it just flagged as secret-like
+(`*.example` skeletons excepted — they exist to be read).
 
 `cco project history` is path-filtered, so it shows every commit that touched
 `.cco/` — including commits that also touched code, and commits made by hand long

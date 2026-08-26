@@ -1283,9 +1283,10 @@ Before anything is staged, three barriers run:
 | Barrier | What happens |
 |---|---|
 | `.cco/.gitignore` missing, or not ignoring `secrets.env` / `*.env` / `*.key` / `*.pem` / `.credentials.json` | **refuses** and prints the lines to add. cco does **not** write that file — it is a versioned file in *your* repository, and authoring it would put an unrequested change inside the commit you asked for |
-| your repository's **root** `.gitignore` ignores `.cco/` in its entirety | **refuses**, and names that root file. Every class above is "covered" there for a reason that has nothing to do with protection — and a save would commit *nothing at all*, silently. Your `.cco/.gitignore` stays as it is; the rule to remove is the one at the repo root |
-| a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path |
+| an ignore rule anywhere keeps `.cco/project.yml` or `.cco/.gitignore` out of the commit | **refuses**, and names **the rule that actually fires** — its pattern, and the file and line it lives on. A save that drops your config's identity, or the barrier every clone of it inherits, is not a save; and if you are deliberately keeping `.cco/` out of git, that is a supported choice, but then there is nothing to save |
+| a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path. If that path is one you had already committed, the fix it offers is `git rm --cached` — untracking it — rather than moving it somewhere it already is |
 
+All of them are reported **in one go**, so you never fix one and discover the next on the retry.
 Coverage is decided by **asking git whether a rule exists**, not by reading the file — so a
 directory-wide pattern, or one inherited from anywhere in your ignore chain, counts. A file you had
 already **committed** before adding the rule is a different case: git tracks it regardless of the
@@ -1341,6 +1342,13 @@ a preview that pointed you at a command destined to fail would be worse than non
 A **tracked** file that a rule covers is reported here too, below the list. That one is not a
 refusal — the hint stays and the save works — it is simply where you find out, without having to run
 a save to be told.
+
+`status` never reports a config as **clean** while any of this stands: having nothing to commit is not
+the same as being saved, and the difference is exactly what you came to the command for.
+
+With `--full`, the diff of a file flagged as secret-like is **withheld** — you get one line naming the
+pattern that matched instead. A preview that tells you a file is a secret and then prints it has
+published the very thing it warned about. `*.example` skeletons are exempt: they exist to be read.
 
 A clean config names its last save, so you can tell "nothing to do" from "never saved":
 

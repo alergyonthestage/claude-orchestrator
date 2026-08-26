@@ -8,9 +8,9 @@
 > make and why. Tests live in `tests/test_project_save.sh` (T1…T17), `tests/test_operator_shim.sh`
 > (T18…T22) and `tests/test_invariants.sh` (INV-GIF).
 >
-> ⚠ **Amendment A2 (D13…D15) is designed but NOT yet built** — 2026-08-22. It corrects how §2.4's
-> barrier is *measured*, extends §5b.3 to both refusal paths, and adds §6.2c (AT1…AT9). Everything
-> marked *A2* below is the contract to build to, not a description of what runs.
+> ✅ **Amendment A2 (D13…D15) built 2026-08-24**, and **Amendment A3 (D16…D19)** with it — A3 is what
+> `/review-implementation` found in A2's own build: the barrier repeated, one screen away, the
+> unfollowable-remedy defect D13 had just removed. Everything below describes what runs.
 
 ## 1. What is being built
 
@@ -127,13 +127,31 @@ still holds where it can act: `_secret_scan_staged` reads `git diff --cached`, s
 modified** stages, and refuses; tracked and unmodified is not in the commit at all. The note must not
 imply that `git rm --cached` cleans the past: it stops future commits, it does not rewrite made ones.
 
-🔴 **A barrier satisfied because `.cco/` is wholly ignored is not satisfied** (D15). When the
-repository's root `.gitignore` ignores `.cco/` in its entirety, every class probe reports *ignored*,
-the barrier passes, `git add -- .cco` stages **nothing**, and the verb reports `already up to date —
-nothing to save` while `status` reports it clean and never committed. Measured. The config is never
-saved and both verbs affirm success. The discriminator is a **non-secret** path: if the probes pass
-*and* `.cco/project.yml` is also ignored, the coverage is vacuous — that state **refuses**, naming the
-root `.gitignore` as the file to fix.
+🔴 **An ignore rule that keeps an ESSENTIAL file out of the commit refuses** (D15, as amended by
+**A3 D16**). The state D15 found: the root `.gitignore` ignores `.cco/` in its entirety, every class
+probe reports *ignored*, the barrier passes, `git add -- .cco` stages **nothing**, and the verb
+reports `already up to date — nothing to save` while `status` reports it clean and never committed —
+the config never saved, both verbs affirming success.
+
+⚠ **The probe proves less than D15 concluded, and reaches further than D15 looked** — both measured:
+
+- *"`.cco/` is ignored entirely"* is **not** what `.cco/project.yml` being ignored establishes. A root
+  `.gitignore` of merely `*.yml` satisfies the key while git still stages two files, so the refusal
+  named a rule that **is not in the file**. The finding therefore states what it can prove — *an
+  ignore rule drops an essential file, so the save would be partial* — and names the rule that
+  **actually fires**, from `git check-ignore -v --no-index`, at a path the user can open.
+- The essential set is **`project.yml` and `.gitignore`**, not one path. A root rule of just
+  `.cco/.gitignore` left every class probe satisfied and `project.yml` committable, so the save
+  reported **`✓ saved`** on a config whose **barrier never landed** — and every clone of it starts
+  unprotected.
+
+`save` then **proves** the outcome rather than predicting it: after `git add -- .cco`, each essential
+must be in the index the commit is built from. That assertion is unreachable while the barrier holds
+— which is its purpose, and why it is pinned by a direct call rather than through the CLI.
+
+⚠ **Refusing when `.cco/` is wholly ignored stays, deliberately.** It is the supported path for a solo
+adopter keeping their cco config out of git; there the save must **abort**, not half-succeed, and the
+message says so rather than reading as an error to route around.
 
 The 2-pass scan (`_secret_match_filename` + `_secret_match_content`, `*.example` exempt) then runs on
 the staged set regardless, against the **full** pattern list. On a hit: unstage, name the offending
@@ -315,9 +333,16 @@ committed. A preview that dies is one nobody can use to find out why their save
 would die — and paraphrasing the refusal would send the user hunting for a message
 that does not exist.
 
-One rule, two levels: `_project_gitignore_gaps` is the pure question,
-`_project_save_assert_gitignore` the refusal, `_project_status_report_gaps` the
-report. Same split as `_reminder_roots_divergent`.
+One rule, two levels: `_project_gitignore_findings` is the pure question,
+`_project_save_assert_gitignore` the refusal, and **one** renderer —
+`_project_render_findings` — which `save` sends to stderr and `status` prints to
+stdout (A3 D17). Same split as `_reminder_roots_divergent`.
+
+⚠ **Never the word "clean" while a finding stands** (A3 D17). Nothing to *commit* is not *saved*: in
+the composite state — the root swallows `.cco/` **and** `.cco/.gitignore` is missing — git reports
+nothing changed, and the clean branch affirmed exactly the silent failure the barrier had caught. All
+findings are also rendered **together**, by one renderer: returning early on `missing` sent the user to
+create the file and only then meet the second refusal, two round trips for one broken state.
 
 **Both refusal paths, not one** (Amendment A2, D14). A1's own premise was that `save` has *two* ways
 to refuse and no way to ask *what would it commit, and would it succeed*. Reporting only the
@@ -344,6 +369,13 @@ This is why `--full` diffs **new** files with `git diff --no-index -- /dev/null
 <path>` rather than the obvious `git add --intent-to-add`: `git diff HEAD` cannot
 show an untracked file, and staging one to make it visible is precisely the write
 this verb may not perform.
+
+🔴 **And `--full` withholds the diff of a file it has just called secret-like** (A3 D18). Measured: a
+`.cco/.netrc` rendered `a secret-like file would be staged` and then its password 24 lines below — the
+preview publishing what it warned about. One line naming the matched pattern replaces the diff. The
+question is asked **per file**, not reused from the scan, because the scan stops at its first hit while
+every listed file is rendered; and **`*.example` is exempt** on the scan's own terms (FR-S3), since a
+skeleton exists to be read. Shared renderer, so this reaches `cco config status` as well.
 
 ### 5b.5 Output goes to stdout
 
@@ -419,6 +451,23 @@ would collide with roadmap item A1/A2 and with Amendment A1 itself.
 | AT8 | ⚠ **the compensating control D7 rests on** | a `.cco/.netrc` under a *scaffold-conformant* `.gitignore` is **refused** by the scan, staged set reset. §7 justifies the narrow floor with exactly this claim and nothing pinned it |
 | AT9 | no `warn` is emitted by any of the above | the level stays `note`/`die` — a `warn` here would gate every launch |
 
+### 6.2d The review's four rulings (Amendment A3)
+
+Derived from A3 D16…D19. **AR** = *amendment-review test*, a third series for the same reason AT was a
+second one.
+
+| # | Test | Asserts |
+|---|---|---|
+| AR1 | root `.gitignore` is merely `*.yml` | refuses, names the rule **`*.yml`** and `<repo>/.gitignore:1`, and does **not** claim *entirely* / *commit nothing at all*. Discriminates against the message A2 shipped |
+| AR2 | root rule is just `.cco/.gitignore` | **refuses** — before A3 this reported `✓ saved` on a config whose barrier never landed |
+| AR3 | root swallows `.cco/` **and** `.cco/.gitignore` is missing | **both** findings in one invocation. Discriminates against the early return that cost a round trip |
+| AR4 | `status` in the AR3 state | never says **"is clean"**, rc 0 (D10). AT5 widened from the adjacent state to *any* standing finding |
+| AR5 | `status --full` on a `.cco/.netrc` | prints `diff withheld`, and **not** the secret's content, while a normal file is still diffed |
+| AR6 | `status --full` on `secrets.env.example` | the skeleton **is** still diffed — the FR-S3 exemption, without which the one file meant to be read is hidden |
+| AR7 | scan refusal on a **tracked** `.cco/secrets.env` | the remedy is `git rm --cached`, and the circular *"move the secret into …"* is gone |
+| AR8 | scan refusal on an **untracked** `.cco/.netrc` | the *move* remedy stays — it is the right one there |
+| AR9 | ⚠ the essentials **post-condition**, called DIRECTLY | refuses on an index missing an essential. It is unreachable through the CLI while the barrier holds, so a CLI test would credit it with the barrier's pass — measured: neutralising it changed nothing in the suite until this test existed |
+
 ### 6.3 Shim
 
 | # | Test | Asserts |
@@ -489,7 +538,7 @@ run a save to find out. Two consequences the build had to get right:
 - **The level is not `save`'s.** §5b.5 keeps facts about **this** repo inside the answer on stdout and
   sends only the cross-repo ones to stderr — so `save` emits a `note`, `status` prints the same words
   into its own output. One finding, two deliveries: `_project_tracked_ignored_message` is the text,
-  and it has exactly one definition, the split `_project_gitignore_gaps` already makes.
+  and it has exactly one definition, the split `_project_gitignore_findings` already makes.
 - **It is computed AFTER the vacuous return.** In the D15 state every file under `.cco/` probes as
   ignored, so the finding would name the entire config — noise manufactured by the broken root rule,
   not a fact about those files. Pinned by
