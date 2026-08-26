@@ -1543,6 +1543,15 @@ entries:
       `project status` / `project history` are free at any level; the `config`
       readers need read-global, because at read-project the personal store is not
       mounted for them to read.
+      Two shapes the verbs handle that you would not think to test for. Your
+      `.cco/` does not have to sit at the top of the repository — a service inside
+      a monorepo, or a repo adopted below its root, works the same, and paths are
+      reported from the repository root so you can open them. And deleting a secret
+      is not treated as staging one: removing `.cco/secrets.env` and saving is the
+      right thing to do, so it succeeds rather than being refused with advice you
+      cannot follow. An empty `-m` is refused rather than quietly replaced by the
+      default message, on both stores, and `cco config save --help` answers like
+      every other verb.
       No rebuild needed for the commands themselves — they run host-side in the
       CLI. The baked agent rule that pointed at this verb before it existed is
       updated in the image, so `cco build` refreshes what in-session agents are
