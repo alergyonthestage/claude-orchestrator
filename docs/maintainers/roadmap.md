@@ -411,9 +411,12 @@ only at the delta in front of it. The maintainer's ruling ends it:
 | `~/.cco` | `cco config save` | `cco config status` | `cco config history` |
 | `<repo>/.cco` | `cco project save` | `cco project status` | `cco project history` |
 
-The surface, the contract and the entry point are in
-[the handoff](handoff.md); the **macOS host suite on bash 3.2** runs in parallel on the maintainer's
-machine and its result folds into the same review — it is still owed before `0.7.0`.
+The surface to review is `lib/cmd-project-save.sh`, `lib/cmd-config.sh`, `lib/config-read.sh` and
+`lib/secrets.sh`, against `tests/test_project_save.sh` (53), `tests/test_operator_shim.sh` (the access
+classification of all six verbs), `INV-GIF` in `tests/test_invariants.sh`, and `tests/test_reminders.sh`
+(the D4 multi-repo report). The contract is ADR-0038 D1…D19 and the design's §2.4, §2.6, §5b and
+§6.1–§6.2d. The **macOS host suite on bash 3.2** runs in parallel on the maintainer's machine and its
+result folds into the same review — it is still owed before `0.7.0`.
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
