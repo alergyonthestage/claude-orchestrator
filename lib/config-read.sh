@@ -204,14 +204,18 @@ _status_changed() {
 # §5b.4 forbids this verb from writing to it, so the preview asks the same question
 # of the set it just computed.
 #
-# ⚠ Deletions are kept, not filtered. `save`'s own scan reads `git diff --cached
-# --name-only`, which lists them too — and a preview that scanned a different set
-# than the refusal would be the drift D11 exists to prevent.
+# ⚠ DELETIONS ARE DROPPED, and the reason is the refusal's, not this verb's
+# (ADR-0038 A4 D21): `save`'s scan skips them with `--diff-filter=d`, because a
+# path being removed carries no content into the commit — so a preview that kept
+# them would announce a refusal that will not happen. The listing above still
+# SHOWS the deletion as `D <file>`; what is filtered is only the set handed to the
+# scan. Same set on both sides is the D11 rule, in whichever direction it moves.
 # Usage: _status_paths <strip-prefix>   [stdin: changed lines]
 _status_paths() {
     local strip="$1" mark rel
     while IFS=$'\t' read -r mark rel; do
         [[ -z "$mark" ]] && continue
+        [[ "$mark" == D ]] && continue
         printf '%s%s\n' "$strip" "$rel"
     done
     return 0

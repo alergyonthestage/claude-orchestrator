@@ -145,12 +145,27 @@ _secret_scan_paths() {
 # The PATHSPEC is what lets one function serve both. Without it the project verb
 # would scan the user's unrelated staged work and refuse over a file it was never
 # going to commit — the twin can omit it only because it owns its whole tree.
+#
+# 🔴 `--diff-filter=d` EXCLUDES DELETIONS, AND IT IS NOT AN OPTIONAL NARROWING
+# (ADR-0038 A4 D21). `diff --cached --name-only` lists a deleted path exactly like
+# an added one, so the filename pass refused the ONE action that removes a secret
+# from the config: the user deletes `.cco/secrets.env`, and the save answers "a
+# secret-like file is staged". Worse, the refusal's own `git reset` restored the
+# index entry the remedy told them to remove, so the verb could not be used to
+# reach the state it demanded. D13's rationale already drew this line — *neither
+# path lets NEW secret content through, which is the only thing `save` is in a
+# position to prevent* — and a path being removed carries no content into the
+# commit. The content pass never saw them either (`[[ -f ]]` is false on a deleted
+# file), so what changes here is the filename pass, and only for deletions.
+#
+# ⚠ Both PREVIEWS filter the same way (`_status_paths`). A preview that scanned a
+# different set than the refusal is the drift D11 exists to prevent.
 # Usage: _secret_scan_staged <git_root> [<pathspec>]
 _secret_scan_staged() {
     local root="$1" spec="${2:-}"
     local -a sel=()
     [[ -n "$spec" ]] && sel=( -- "$spec" )
-    git -C "$root" diff --cached --name-only ${sel[@]+"${sel[@]}"} 2>/dev/null \
+    git -C "$root" diff --cached --name-only --diff-filter=d ${sel[@]+"${sel[@]}"} 2>/dev/null \
         | _secret_scan_paths "$root"
 }
 

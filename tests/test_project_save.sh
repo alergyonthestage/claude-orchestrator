@@ -1101,3 +1101,45 @@ test_project_status_renders_diffs_below_the_git_root() {
     # with the strip prefix never matching, the whole `--full` half printed nothing.
     assert_output_contains "+a new line" || return 1
 }
+
+# ── A4 D21 — a deletion is not a leak ────────────────────────────────
+#
+# The state D13 deliberately makes reachable: `.cco/secrets.env` is tracked from a
+# hand-made commit. The user then does the single most desirable thing — deletes it
+# — and `save` answered "a secret-like file is staged", because `diff --cached
+# --name-only` lists a deleted path exactly like an added one. Worse, the refusal's
+# own `git reset` restored the index entry its remedy told the user to remove, so
+# the verb could not be used to reach the state it demanded.
+
+test_project_save_allows_removing_a_committed_secret() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    rm -f "$r/.cco/secrets.env"
+
+    local rc=0; _ps_cco_in "$r" project save -m "drop the secret" || rc=$?
+    assert_rc 0 "$rc" "removing a secret must not be refused as staging one" || return 1
+    # rc 0 alone would pass on a save that committed nothing: the deletion has to
+    # have LANDED, or the verb merely stopped complaining.
+    if git -C "$r" cat-file -e "HEAD:.cco/secrets.env" 2>/dev/null; then
+        fail "the deletion must be committed, not merely allowed"; return 1
+    fi
+}
+
+# The preview half of the same rule (D11): status and save answer for the same set,
+# in whichever direction it moves. A preview still announcing a refusal here would
+# send the user to fix something that is no longer going to happen.
+test_project_status_does_not_preview_a_refusal_for_a_deletion() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    _ps_track_ignored_secret "$r"
+    rm -f "$r/.cco/secrets.env"
+
+    _ps_cco_in "$r" project status || return 1      # rc 0 IS part of the assertion
+    assert_output_not_contains "would refuse" || return 1
+    # The deletion is still LISTED — what the rule drops is the scan's set, not the
+    # user's view of what the commit will contain.
+    assert_output_contains "D  secrets.env" || return 1
+}
