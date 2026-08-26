@@ -290,9 +290,10 @@ run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (
 ▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
 after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
 
-▶ **A1 is BUILT and REVIEWED; its one remaining gate is the merge** (2026-08-26). The whole-cycle
-review produced Amendment A4 (D20…D22), all three built — see the entry below. **A9 starts when A1
-closes**, not before.
+✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
+merged tree verified **identical** to the branch tip the suite measured. ▶ **A9 is now the current
+unit.** ⚠ Two things `develop` still owes: the **push** (a host step — this session cannot reach the
+remote) and a **`cco build`** (see A1's entry).
 
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
@@ -427,8 +428,14 @@ maintainer and are built as
 byte-identical, so *a test written only at the top level cannot see it*. Every A4 fix is pinned by a
 mutation, and the nested pair discriminates (§6.2e).
 
-▶ **Open gates**: the **merge into `develop`** — the human review point — and the **macOS host suite**
-result below. Nothing else on A1.
+✅ **CLOSED 2026-08-26** — merged at `ab97482` (`--no-ff`, 39 commits), branch `feat/config/save-and-history`
+deleted with `-d`. Measured before the merge: `Results: 1778 passed, 7 failed, 1785 total`, the
+`Results:` line present **once**, the 7 the known host-only set verified name for name; and after it,
+`git diff feat/config/save-and-history develop` **empty** — the merged tree is the tree the suite
+measured, so nothing was re-run on a different tree.
+
+▶ **Still owed on `develop`**: the **push** (host step — the remote is not reachable from a session)
+and the **`cco build`** below. The macOS host-suite failures are [FI-78](improvements.md), not A1.
 
 **macOS host suite (bash 3.2), run 2026-08-26**: `Results: 1775 passed, 2 failed, 1777 total`, the
 `Results:` line present **once** ⇒ **no bash 3.2 parse abort**, which was the risk to fear. ⚠ The
