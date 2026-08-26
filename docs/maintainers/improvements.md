@@ -3164,11 +3164,14 @@ shortcut. Enumerate by running them, do not reason from the source — `tests/he
 operator lane in ~10 lines, and a named list of affected verbs has been a lower bound five times in
 this repo.
 
-## FI-75 — `cco project save -m ""` silently uses the default message
+## FI-75 — `cco project save -m ""` silently uses the default message ✅ CLOSED 2026-08-26
 
-An empty `-m` is indistinguishable from an absent one (`[[ -z "$msg" ]]`), so the commit lands with
-`project config update` and the user is not told their message was discarded. Trivial; recorded
-because the twin will inherit whatever is decided.
+An empty `-m` was indistinguishable from an absent one (`[[ -z "$msg" ]]`), so the commit landed with
+`project config update` and the user was not told their message was discarded.
+
+✅ **Closed by ADR-0038 Amendment A4** (the whole-cycle review's realignments): an empty `-m` is
+refused, on **both** stores — the twin inherited it in the same commit. ⚠ The test is on the
+**argument**, not on `$msg` after the parse loop; there the two cases are still indistinguishable.
 
 ## FI-76 — `_status_changed` reads NUL-delimited and renders newline-delimited
 
@@ -3219,3 +3222,27 @@ whichever unit takes this also takes a `cco build` in its acceptance lane.
 ⚠ **This session cannot measure the default from itself** — the FI-25 mask (`access: {claude: all}`
 in `.cco/project.yml`) is on deliberately. The values above come from calling `_claude_derive_triple`
 directly; pin `--claude-access` for any session-level check.
+
+
+## FI-78 — two macOS-only suite failures, both test-portability defects in the warn-gate cycle
+
+Surfaced by the **macOS host suite on bash 3.2**, 2026-08-26 (`Results: 1775 passed, 2 failed, 1777
+total`). ⚠ **The `Results:` line is present once**, so the suite did not abort — the bash 3.2 parse
+risk is clear. Both failures are in `tests/test_warn_capture.sh`, i.e. the **A5+A8 warn-gate cycle,
+already merged**; neither is A1's, and both are defects of the **test**, not of the product.
+
+| Test | Mechanism |
+|---|---|
+| `test_warn_capture_buffer_lives_outside_the_confined_buckets` | the oracle is a **lexical** prefix match on `${TMPDIR:-/tmp}`, but macOS returns the buffer path **resolved** (`/private/var/folders/…/T/cco-warn.XXXXXX`). The buffer *is* under TMPDIR; the comparison is what cannot see it |
+| `test_warn_gate_is_reached_only_through_the_two_launch_paths` | `_wg_line_of` passes `'if \$dry_run; then'` to **awk** via `-v`. macOS's one-true-awk handles `\$` differently from gawk, so `$` becomes an **ERE anchor** mid-pattern, nothing matches, and the helper returns `0` |
+
+**Shape of the fix** (nothing decided): for the first, compare the **physical directory identity**
+(`cd "$(dirname "$buf")" && pwd -P` against the same for `$TMPDIR`) rather than a string prefix —
+⚠ **not** `realpath`, which this repo has already ruled out for bash 3.2 + BSD (FI-27). For the
+second, stop passing a regex through `-v` and match with a shell `case` or a fixed-string `grep -F`.
+
+🔴 **Neither is measurable from the container.** bash 3.2 itself is reachable over the Docker socket
+(`bash:3.2`), but **BSD `awk` and BSD `mktemp` are not** — so a fix written here is unverified until
+the maintainer re-runs the host suite. Say so rather than claiming green.
+
+⚠ Still owed before `0.7.0`: the host suite is a release gate, and it is not green.

@@ -290,8 +290,9 @@ run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (
 ▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
 after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
 
-▶ **A1 is BUILT and at its last gate** (2026-08-26): one review over the whole `save`/`status`/
-`history` cycle, then the merge — see the entry below. **A9 starts when A1 closes**, not before.
+▶ **A1 is BUILT and REVIEWED; its one remaining gate is the merge** (2026-08-26). The whole-cycle
+review produced Amendment A4 (D20…D22), all three built — see the entry below. **A9 starts when A1
+closes**, not before.
 
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
@@ -392,31 +393,43 @@ the known host-only set name for name. Five independent mutations were run and a
 passed before AR9 existed). The five changed files parse under **real bash 3.2**, with a negative
 control.
 
-### ▶ Where A1 stands, and the one gate before the merge *(maintainer, 2026-08-26)*
+### ▶ Where A1 stands: reviewed, fixed, at the merge gate *(2026-08-26)*
 
-**Implementation is COMPLETE** — A1 plus all three amendments, 25 commits ahead of `develop`, clean
-tree, unmerged, no baked file touched (so **no `cco build`**).
+**Implementation COMPLETE, and the whole-cycle review is DONE and its rulings BUILT.** A1 plus
+**four** amendments, 8 commits added on 2026-08-26, unmerged, **no baked file touched** (so **no
+`cco build`**).
 
-⚠ **The unit grew by one amendment per review, three times**: A1's review produced A2, A2's review
-produced A3, and **A3's code is unreviewed**. That is a pattern, not a coincidence — each pass looked
-only at the delta in front of it. The maintainer's ruling ends it:
+The review the maintainer scoped — one pass over the finished `save`/`status`/`history` cycle, six
+verbs, both stores, rather than over the A3 delta — ended the pattern that had grown the unit by one
+amendment per review three times. It returned **REVIEW NEEDED**: one defect fixed in place and **two
+blockers**, both of them A3's own through-line (*a message that claims more than its mechanism proves,
+and a remedy the user cannot follow*) in states A3 never looked at. All three were ruled by the
+maintainer and are built as
+**[Amendment A4](configuration/decentralized-config/decisions/0038-project-config-versioning.md#a4--2026-08-26-the-same-defect-two-states-further-out-and-one-verb-that-could-not-be-asked)**
+(D20…D22), plus seven realignments that needed no decision:
 
-> **ONE `/review-implementation` over the WHOLE `save` / `status` / `history` cycle — six verbs, both
-> stores — judging correctness, absence of bugs, coherence, adherence to the approved design, and
-> completeness. A3 gets particular attention as the unreviewed part, but the pass is NOT scoped to it.**
-> Approved → the merge gate opens. Defects → a fix session, not a merge.
+| Ruling | What it closes |
+|---|---|
+| **D20** — anchor on the git top-level, not the unit dir | a secret under a `.cco/` **below** the repo root was committed under `✓ saved`; `status --full` printed nothing at all. Pathspecs are cwd-relative, every git *output* path is top-level-relative |
+| **D21** — a deletion is not a leak | the save that **removes** a secret was refused, and the refusal's own reset undid the `git rm --cached` it prescribed. Both stores |
+| **D22** — `cco config save --help` | the only verb of the six without the arm, so its access gate could only be asked negatively |
 
-| Store | write | read: not saved yet | read: what was saved |
-|---|---|---|---|
-| `~/.cco` | `cco config save` | `cco config status` | `cco config history` |
-| `<repo>/.cco` | `cco project save` | `cco project status` | `cco project history` |
+⭐ **Why three reviews missed D20**: at the top level the prefix is empty and every message is
+byte-identical, so *a test written only at the top level cannot see it*. Every A4 fix is pinned by a
+mutation, and the nested pair discriminates (§6.2e).
 
-The surface to review is `lib/cmd-project-save.sh`, `lib/cmd-config.sh`, `lib/config-read.sh` and
-`lib/secrets.sh`, against `tests/test_project_save.sh` (53), `tests/test_operator_shim.sh` (the access
-classification of all six verbs), `INV-GIF` in `tests/test_invariants.sh`, and `tests/test_reminders.sh`
-(the D4 multi-repo report). The contract is ADR-0038 D1…D19 and the design's §2.4, §2.6, §5b and
-§6.1–§6.2d. The **macOS host suite on bash 3.2** runs in parallel on the maintainer's machine and its
-result folds into the same review — it is still owed before `0.7.0`.
+▶ **Open gates**: the **merge into `develop`** — the human review point — and the **macOS host suite**
+result below. Nothing else on A1.
+
+**macOS host suite (bash 3.2), run 2026-08-26**: `Results: 1775 passed, 2 failed, 1777 total`, the
+`Results:` line present **once** ⇒ **no bash 3.2 parse abort**, which was the risk to fear. ⚠ The
+expectation of `1770/7` written previously was wrong: those 7 fail **in the container**, not on the
+host. The two real failures are **test-portability defects in the A5+A8 warn-gate cycle, already
+merged — not A1**: a lexical `$TMPDIR` prefix match against a path macOS returns resolved
+(`/private/var/…`), and a `\$` in an awk `-v` pattern that the macOS one-true-awk turns into an ERE
+anchor. ⚠ **Neither is measurable from the container** (bash 3.2 is reachable over the Docker socket;
+BSD `awk`/`mktemp` are not), so a fix has to be re-run on the host. Tracked as
+[FI-78](improvements.md).
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
