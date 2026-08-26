@@ -35,6 +35,28 @@ _ps_repo() {
     git init -q "$root" 2>/dev/null
 }
 
+# The topology `_ps_repo` cannot build: `.cco/` in a SUBDIRECTORY of the repository
+# that versions it — a service inside a monorepo, or a repo adopted below its root.
+# Nothing about the unit differs; only its distance from the git top-level does.
+#
+# ⚠ `git init` runs on the TOP, never on the unit dir: initialising the unit would
+# make it its own top-level and quietly rebuild the flat case, which is how this
+# whole family of tests would pass without measuring anything.
+# Usage: _ps_repo_nested <gitroot> <subdir> <project-name> <repo-name>
+_ps_repo_nested() {
+    local top="$1" sub="$2" project="$3" repo="$4"
+    local unit="$top/$sub"
+    mkdir -p "$unit/.cco/claude/rules"
+    {
+        printf 'name: %s\nrepos:\n' "$project"
+        printf '  - name: %s\n' "$repo"
+    } > "$unit/.cco/project.yml"
+    _ps_gitignore "$unit"
+    printf '# style\n' > "$unit/.cco/claude/rules/style.md"
+    printf 'code\n'    > "$top/src.txt"          # OUTSIDE .cco — never committed
+    git init -q "$top" 2>/dev/null
+}
+
 # Run bin/cco with a working directory (cwd-first resolution is part of the
 # contract, so it cannot be faked). Sets CCO_OUTPUT; returns cco's exit code.
 # Usage: _ps_cco_in <dir> <argv...>
@@ -1013,11 +1035,69 @@ test_project_save_essentials_guard_refuses_an_incomplete_index() {
     out=$(
         source "$REPO_ROOT/lib/colors.sh"
         source "$REPO_ROOT/lib/cmd-project-save.sh"
-        _project_save_assert_essentials "$r" app 2>&1
+        _project_save_assert_essentials "$r" .cco app 2>&1
     ) || rc=$?
     assert_rc 1 "$rc" "an index missing an essential file must refuse the commit" || return 1
     case "$out" in
         *"without: project.yml"*) : ;;
         *) fail "the guard must name what would be missing; got: $out"; return 1 ;;
     esac
+}
+
+# ── The unit dir is not always the git top-level ─────────────────────
+#
+# Every git OUTPUT path (`status --porcelain`, `diff --cached --name-only`,
+# `ls-files`, `show --name-only`) is reported relative to the TOP-LEVEL, while
+# pathspecs are cwd-relative. Anchoring the verbs on the unit dir made the two
+# disagree the moment they were not the same directory, and every failure was
+# SILENT — a `✓ saved` over a committed secret, and a `--full` that printed nothing.
+#
+# ⚠ These are the NESTED half of a discriminating pair; the flat halves are T3
+# (`…_blocks_secret_content_and_resets`) and T13. Both flat halves passed on the
+# broken code, which is precisely why the defect survived three reviews: a test
+# written only at the top level cannot see it.
+
+test_project_save_scans_content_below_the_git_root() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local top="$tmp/mono"; _ps_repo_nested "$top" svc demo app
+    # Content, not filename: the filename pass matches on suffix and survived the
+    # defect. The CONTENT pass is the half that silently did nothing.
+    printf 'api_key=sk-ant-0123456789abcdef0123\n' > "$top/svc/.cco/claude/rules/leak.md"
+
+    local rc=0; _ps_cco_in "$top/svc" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a secret under a nested .cco/ must refuse the save, exactly as a flat one does" || return 1
+    assert_output_contains "content matches" || return 1
+    assert_equals "" "$(git -C "$top" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
+}
+
+test_project_save_names_the_nested_path_it_saved() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local top="$tmp/mono"; _ps_repo_nested "$top" svc demo app
+
+    _ps_cco_in "$top/svc" project save -m "initial" || return 1
+    # The path reported must be the one the reader can open from the repo's parent.
+    assert_output_contains "saved mono/svc/.cco" || return 1
+
+    local files; files=$(_ps_head_files "$top")
+    echo "$files" | grep -qF "svc/.cco/project.yml" || { fail "the nested config must be committed"; return 1; }
+    if echo "$files" | grep -qF "src.txt"; then
+        fail "a file outside .cco/ must never be committed, nested or not"; return 1
+    fi
+}
+
+test_project_status_renders_diffs_below_the_git_root() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local top="$tmp/mono"; _ps_repo_nested "$top" svc demo app
+    _ps_cco_in "$top/svc" project save -m "initial" || return 1
+    printf 'a new line\n' >> "$top/svc/.cco/claude/rules/style.md"
+
+    _ps_cco_in "$top/svc" project status --full || return 1
+    # The listing strips to the CONFIG-relative path, exactly as it does when flat…
+    assert_output_contains "claude/rules/style.md" || return 1
+    # …and `--full` actually prints the diff. This is the assertion that failed:
+    # with the strip prefix never matching, the whole `--full` half printed nothing.
+    assert_output_contains "+a new line" || return 1
 }

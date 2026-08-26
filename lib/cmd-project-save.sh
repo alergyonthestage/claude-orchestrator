@@ -53,6 +53,49 @@ _project_unit_root() {
     _resolve_find_unit_dir 2>/dev/null || printf ''
 }
 
+# Turn that unit dir into the three values every verb in this file needs, because
+# THE UNIT DIR IS NOT ALWAYS THE GIT TOP-LEVEL: `.cco/project.yml` may sit in a
+# subdirectory of the repository that versions it (a service inside a monorepo, a
+# repo adopted below its root). On success, sets:
+#
+#   _PROJECT_GITROOT  the git top-level — the cwd of EVERY git call here
+#   _PROJECT_SPEC     .cco RELATIVE TO THAT ROOT (`.cco`, or `svc/.cco`) — every
+#                     pathspec, every strip prefix, every path printed to the user
+#   _PROJECT_REPO     basename of the git top-level — the display prefix, so
+#                     "<repo>/<spec>" is a path the reader can actually open
+#
+# Returns 1 when <unit> is not inside a work tree; the caller dies with its own
+# message, and the three values degrade to the unit dir's own name and a bare
+# `.cco` so that message still reads correctly.
+#
+# 🔴 WHY NOT `git -C <unit dir>` WITH A BARE `.cco` PATHSPEC, WHICH IS WHAT THIS
+# REPLACED. Pathspecs are cwd-relative, so that half was right — but every git
+# OUTPUT path (`status --porcelain`, `diff --cached --name-only`, `ls-files`,
+# `show --name-only`, and `check-ignore -v`'s SOURCE) is reported relative to the
+# TOP-LEVEL, never to cwd. Joining those onto the unit dir failed silently:
+# measured, a secret under a nested `.cco/` was committed under `✓ saved`, because
+# `[[ -f "$root/$f" ]]` in the scan's content pass was false for every file, and
+# `status --full` printed no diffs at all. Anchoring both halves on the top-level
+# is what makes them agree.
+#
+# ⚠ The prefix is git's own answer (`rev-parse --show-prefix`), not string
+# arithmetic on two paths that can differ by a symlink.
+#
+# At the top level the prefix is empty, so `$_PROJECT_SPEC` is `.cco` and every
+# path and message this file prints is byte-identical to what it was before.
+_project_resolve_unit() {
+    local unit="$1" top prefix
+    _PROJECT_GITROOT=""; _PROJECT_SPEC=".cco"; _PROJECT_REPO=$(basename "$unit")
+    git -C "$unit" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+    top=$(git -C "$unit" rev-parse --show-toplevel 2>/dev/null) || return 1
+    [[ -n "$top" ]] || return 1
+    prefix=$(git -C "$unit" rev-parse --show-prefix 2>/dev/null) || prefix=""
+    _PROJECT_GITROOT="$top"
+    _PROJECT_SPEC="${prefix}.cco"
+    _PROJECT_REPO=$(basename "$top")
+    return 0
+}
+
 _project_save_usage() {
     cat <<'EOF'
 Usage: cco project save [-m <message>]
@@ -129,12 +172,12 @@ _PROJECT_SAVE_ESSENTIAL=( project.yml .gitignore )
 # sent the user to create `.cco/.gitignore` and only then meet the second refusal —
 # two round trips for one broken state, each remedy correct and neither sufficient.
 _project_gitignore_findings() {
-    local root="$1" out=""
-    if [[ -f "$root/.cco/.gitignore" ]]; then
+    local root="$1" spec="$2" out=""
+    if [[ -f "$root/$spec/.gitignore" ]]; then
         local cls probe uncovered=""
         for cls in "${_SECRET_PROJECT_GITIGNORE_CLASSES[@]}"; do
             probe=$(_secret_gitignore_probe "$cls")
-            git -C "$root" check-ignore -q --no-index ".cco/$probe" 2>/dev/null && continue
+            git -C "$root" check-ignore -q --no-index "$spec/$probe" 2>/dev/null && continue
             uncovered="${uncovered}${uncovered:+, }$cls"
         done
         [[ -n "$uncovered" ]] && out="${out}classes ${uncovered}"$'\n'
@@ -144,8 +187,8 @@ _project_gitignore_findings() {
 
     local ess excluded=""
     for ess in "${_PROJECT_SAVE_ESSENTIAL[@]}"; do
-        [[ -e "$root/.cco/$ess" ]] || continue
-        git -C "$root" check-ignore -q --no-index ".cco/$ess" 2>/dev/null || continue
+        [[ -e "$root/$spec/$ess" ]] || continue
+        git -C "$root" check-ignore -q --no-index "$spec/$ess" 2>/dev/null || continue
         excluded="${excluded}${excluded:+, }$ess"
     done
     [[ -n "$excluded" ]] && out="${out}excluded ${excluded}"$'\n'
@@ -166,9 +209,10 @@ _project_ignore_rule_for() {
     lhs="${v%%$'\t'*}"
     src="${lhs%%:*}"; lhs="${lhs#*:}"
     line="${lhs%%:*}"; pattern="${lhs#*:}"
-    # git reports an IN-REPO source relative to the repo root, so prefixing the repo
-    # name is what makes it a path the user can open and disambiguates the root
-    # `.gitignore` from a nested one.
+    # git reports an IN-REPO source relative to the TOP-LEVEL — measured: from a
+    # subdirectory it still says `.gitignore`, meaning the root one. So the prefix
+    # that makes it openable is the TOP-LEVEL's own name, which is what `$repo` is;
+    # it also disambiguates the root `.gitignore` from a nested one.
     #
     # 🔴 IT IS NOT ALWAYS IN-REPO. A rule inherited from `core.excludesFile` (the
     # user's global gitignore) is reported as an ABSOLUTE path, and prefixing that
@@ -185,12 +229,12 @@ _project_ignore_rule_for() {
 # The `excluded` remedy, printed from ONE place so `save`'s refusal and `status`'s
 # report can never name a different fix (D11).
 _project_excluded_lines() {
-    local root="$1" repo="$2" list="$3"
+    local root="$1" spec="$2" repo="$3" list="$4"
     local ess rule
-    printf '  %s cannot be committed, so %s/.cco would be saved incomplete:\n' "$list" "$repo"
+    printf '  %s cannot be committed, so %s/%s would be saved incomplete:\n' "$list" "$repo" "$spec"
     for ess in $(printf '%s' "$list" | tr ',' ' '); do
-        rule=$(_project_ignore_rule_for "$root" ".cco/$ess" "$repo")
-        [[ -n "$rule" ]] && printf '    .cco/%s is ignored by the rule %s\n' "$ess" "$rule"
+        rule=$(_project_ignore_rule_for "$root" "$spec/$ess" "$repo")
+        [[ -n "$rule" ]] && printf '    %s/%s is ignored by the rule %s\n' "$spec" "$ess" "$rule"
     done
     printf '  Remove or narrow that rule, then retry. If you are deliberately keeping .cco/ out of git,\n'
     printf '  that is a supported choice — but then there is nothing for %s to save.\n' "'cco project save'"
@@ -199,13 +243,12 @@ _project_excluded_lines() {
 # The save-side verdict on those findings: refuse, and name every fix at once (D7).
 # Runs BEFORE anything is staged — it is what makes the save safe to run at all.
 _project_save_assert_gitignore() {
-    local root="$1" findings
-    findings=$(_project_gitignore_findings "$root")
+    local root="$1" spec="$2" repo="$3" findings
+    findings=$(_project_gitignore_findings "$root" "$spec")
     [[ -z "$findings" ]] && return 0
-    local repo; repo=$(basename "$root")
 
-    error "refusing to save — $repo/.cco cannot be committed correctly as things stand:"
-    _project_render_findings "$root" "$repo" "$findings" >&2
+    error "refusing to save — $repo/$spec cannot be committed correctly as things stand:"
+    _project_render_findings "$root" "$spec" "$repo" "$findings" >&2
     # The closer depends on WHICH findings stand: P-C's "cco does not author that
     # file" answers `missing`/`classes`, where a file must be written. It is simply
     # false for `excluded`, where the files exist and an ignore rule is the problem.
@@ -220,19 +263,19 @@ _project_save_assert_gitignore() {
 # paraphrase on either side would send the user hunting for a message that does not
 # exist (D11 / A1 D10).
 _project_render_findings() {
-    local root="$1" repo="$2" findings="$3" line kind rest
+    local root="$1" spec="$2" repo="$3" findings="$4" line kind rest
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         kind="${line%% *}"; rest="${line#* }"
         case "$kind" in
             missing)
-                printf '  %s/.cco/.gitignore is missing — without it a secret dropped under .cco/ would be committed. Add:\n' "$repo"
+                printf '  %s/%s/.gitignore is missing — without it a secret dropped under .cco/ would be committed. Add:\n' "$repo" "$spec"
                 _project_save_gitignore_lines ;;
             classes)
-                printf '  %s/.cco/.gitignore does not ignore: %s. Add:\n' "$repo" "$rest"
+                printf '  %s/%s/.gitignore does not ignore: %s. Add:\n' "$repo" "$spec" "$rest"
                 _project_save_gitignore_lines ;;
             excluded)
-                _project_excluded_lines "$root" "$repo" "$rest" ;;
+                _project_excluded_lines "$root" "$spec" "$repo" "$rest" ;;
         esac
     done <<EOF
 $findings
@@ -245,17 +288,17 @@ EOF
 # absent here is one git refused to stage — and committing anyway would ship a
 # `<repo>/.cco` that is missing its identity or its barrier, reporting success.
 _project_save_assert_essentials() {
-    local root="$1" repo="$2" ess absent=""
+    local root="$1" spec="$2" repo="$3" ess absent=""
     for ess in "${_PROJECT_SAVE_ESSENTIAL[@]}"; do
-        [[ -e "$root/.cco/$ess" ]] || continue
-        git -C "$root" ls-files --error-unmatch -- ".cco/$ess" >/dev/null 2>&1 && continue
+        [[ -e "$root/$spec/$ess" ]] || continue
+        git -C "$root" ls-files --error-unmatch -- "$spec/$ess" >/dev/null 2>&1 && continue
         absent="${absent}${absent:+, }$ess"
     done
     [[ -z "$absent" ]] && return 0
 
-    git -C "$root" reset -q -- .cco >/dev/null 2>&1 || true
-    error "refusing to save — $repo/.cco would be committed without: $absent"
-    _project_excluded_lines "$root" "$repo" "$absent" >&2
+    git -C "$root" reset -q -- "$spec" >/dev/null 2>&1 || true
+    error "refusing to save — $repo/$spec would be committed without: $absent"
+    _project_excluded_lines "$root" "$spec" "$repo" "$absent" >&2
     die "A save that drops the config's own $absent is not a save worth reporting as one."
 }
 
@@ -278,8 +321,8 @@ _project_save_gitignore_lines() {
 # ⚠ `check-ignore --stdin` exits 1 when NOTHING matches, which under `set -o
 # pipefail` fails the whole pipeline. That is the ordinary case, not an error.
 _project_tracked_ignored() {
-    local root="$1"
-    git -C "$root" ls-files -z -- .cco 2>/dev/null \
+    local root="$1" spec="$2"
+    git -C "$root" ls-files -z -- "$spec" 2>/dev/null \
         | git -C "$root" check-ignore -z --no-index --stdin 2>/dev/null \
         | tr '\0' '\n' || true
     return 0
@@ -301,12 +344,12 @@ _project_tracked_ignored() {
 # false belief for another: `git rm --cached` stops future commits, it does not
 # rewrite the ones already made.
 _project_tracked_ignored_message() {
-    local root="$1" repo="$2"
+    local root="$1" spec="$2" repo="$3"
     local -a tracked=(); local p
     while IFS= read -r p; do
         [[ -z "$p" ]] && continue
         tracked+=("$p")
-    done < <(_project_tracked_ignored "$root")
+    done < <(_project_tracked_ignored "$root" "$spec")
     [[ ${#tracked[@]} -eq 0 ]] && return 0
 
     local tail_msg="'git rm --cached' stops future commits from carrying it, but it does not rewrite the commits already made."
@@ -315,7 +358,7 @@ _project_tracked_ignored_message() {
     else
         local list=""; local t
         for t in "${tracked[@]}"; do list="${list}${list:+, }$t"; done
-        printf '%s\n' "${#tracked[@]} tracked files under $repo/.cco are covered by a .gitignore rule ($list) — they are already in this repo's history. $tail_msg"
+        printf '%s\n' "${#tracked[@]} tracked files under $repo/$spec are covered by a .gitignore rule ($list) — they are already in this repo's history. $tail_msg"
     fi
     return 0
 }
@@ -325,7 +368,7 @@ _project_tracked_ignored_message() {
 # acts, so a prompt would fire on every save forever, which is how a real refusal is
 # trained into reflex.
 _project_report_tracked_ignored() {
-    local msg; msg=$(_project_tracked_ignored_message "$1" "$2")
+    local msg; msg=$(_project_tracked_ignored_message "$1" "$2" "$3")
     [[ -n "$msg" ]] && note "$msg"
     return 0
 }
@@ -343,9 +386,12 @@ _project_report_tracked_ignored() {
 #
 # ⚠ Level is `note`, never `warn` (design §2.6). A `warn` escalates the `cco start`
 # pause; nothing reported here should make a multi-repo project stop at every launch.
+# ⚠ Unlike everything else in this file, <unit> here is the UNIT DIR, not the git
+# top-level: this section reads `.cco/project.yml` off the filesystem and compares
+# member ROOTS from the index. Neither question is a git path question.
 _project_config_report_members() {
-    local root="$1"
-    local yml="$root/.cco/project.yml"
+    local unit="$1"
+    local yml="$unit/.cco/project.yml"
     [[ -f "$yml" ]] || return 0
 
     local -a roots=()
@@ -359,7 +405,7 @@ _project_config_report_members() {
     # (1) Other members whose own .cco/ is uncommitted — this verb committed one repo.
     local r dirty="" ndirty=0
     for r in "${roots[@]}"; do
-        [[ "$r" == "$root" ]] && continue
+        [[ "$r" == "$unit" ]] && continue
         [[ -d "$r/.cco" ]] || continue
         if _reminder_git_dirty "$r" ".cco"; then
             dirty="${dirty}${dirty:+, }$(basename "$r")"
@@ -392,22 +438,22 @@ cmd_project_save() {
         esac
     done
 
-    local root; root=$(_project_unit_root)
-    [[ -n "$root" ]] || die "not inside a cco project — 'cco project save' commits the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml, or run 'cco init' to scaffold one."
-    local repo; repo=$(basename "$root")
+    local unit; unit=$(_project_unit_root)
+    [[ -n "$unit" ]] || die "not inside a cco project — 'cco project save' commits the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml, or run 'cco init' to scaffold one."
 
-    git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-        || die "$repo is not a git repository, so its .cco/ cannot be versioned. cco does not 'git init' a repository it does not own — run 'git init' in $root yourself, then retry."
+    _project_resolve_unit "$unit" \
+        || die "$_PROJECT_REPO is not a git repository, so its .cco/ cannot be versioned. cco does not 'git init' a repository it does not own — run 'git init' in $unit yourself, then retry."
+    local root="$_PROJECT_GITROOT" spec="$_PROJECT_SPEC" repo="$_PROJECT_REPO"
 
-    _project_save_assert_gitignore "$root"
+    _project_save_assert_gitignore "$root" "$spec" "$repo"
     # Reported BEFORE the "nothing to save" exit below: it is a standing state of
     # the repository, true whether or not this invocation has anything to commit.
-    _project_report_tracked_ignored "$root" "$repo"
+    _project_report_tracked_ignored "$root" "$spec" "$repo"
 
     # Explicit, path-scoped staging — NEVER `git add -A`. A `.cco/` whose every file
     # is ignored makes `git add` exit 1 with an advice block; that is not an error
     # here, it is the "nothing to save" case the next test reports properly.
-    git -C "$root" add -- .cco >/dev/null 2>&1 || true
+    git -C "$root" add -- "$spec" >/dev/null 2>&1 || true
 
     # PROVE the save is correct rather than infer it (maintainer, 2026-08-24). The
     # barrier above asks which rules exist; this asks the outcome — is each
@@ -418,10 +464,10 @@ cmd_project_save() {
     #
     # ⚠ Unreachable while the barrier holds, and that is the point: if it ever
     # fires, the barrier has a hole and the message says so instead of committing.
-    _project_save_assert_essentials "$root" "$repo"
+    _project_save_assert_essentials "$root" "$spec" "$repo"
 
-    if git -C "$root" diff --cached --quiet -- .cco 2>/dev/null; then
-        info "$repo/.cco is already up to date — nothing to save"
+    if git -C "$root" diff --cached --quiet -- "$spec" 2>/dev/null; then
+        info "$repo/$spec is already up to date — nothing to save"
         return 0
     fi
 
@@ -429,25 +475,25 @@ cmd_project_save() {
     # so a secret staged elsewhere in the user's tree neither refuses this save nor
     # gets reported as if this verb were about to commit it.
     local leak
-    if ! leak=$(_secret_scan_staged "$root" ".cco"); then
-        git -C "$root" reset -q -- .cco >/dev/null 2>&1 || true
-        error "refusing to save — a secret-like file is staged under $repo/.cco:"
+    if ! leak=$(_secret_scan_staged "$root" "$spec"); then
+        git -C "$root" reset -q -- "$spec" >/dev/null 2>&1 || true
+        error "refusing to save — a secret-like file is staged under $repo/$spec:"
         printf '  %s\n' "$leak" >&2
         # The reset above restored the index to HEAD, so the remedy's tracked test
         # reads the same answer it would have before staging.
-        _project_secret_remedy "$root" "$repo" "${leak%%$'\t'*}" >&2
+        _project_secret_remedy "$root" "$spec" "$repo" "${leak%%$'\t'*}" >&2
         die "Nothing was committed."
     fi
 
     [[ -z "$msg" ]] && msg="$_PROJECT_SAVE_DEFAULT_MSG"
     # The pathspec on the COMMIT is what keeps an unrelated pre-staged file out of
     # it (measured): it stays staged and uncommitted, exactly as the user left it.
-    git -C "$root" commit -q -m "$msg" -- .cco >/dev/null 2>&1 \
+    git -C "$root" commit -q -m "$msg" -- "$spec" >/dev/null 2>&1 \
         || die "git commit failed in $root — resolve it there and retry."
     local sha; sha=$(git -C "$root" rev-parse --short HEAD 2>/dev/null)
-    ok "saved $repo/.cco @ ${sha} — ${msg}"
+    ok "saved $repo/$spec @ ${sha} — ${msg}"
 
-    _project_config_report_members "$root"
+    _project_config_report_members "$unit"
     return 0
 }
 
@@ -479,17 +525,17 @@ cmd_project_status() {
     _status_parse_args project "$@"
     if [[ "$_STATUS_HELP" == true ]]; then _project_status_usage; return 0; fi
 
-    local root; root=$(_project_unit_root)
-    [[ -n "$root" ]] || die "not inside a cco project — 'cco project status' reads the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml."
-    local repo; repo=$(basename "$root")
+    local unit; unit=$(_project_unit_root)
+    [[ -n "$unit" ]] || die "not inside a cco project — 'cco project status' reads the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml."
 
-    if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        printf '%s/.cco cannot be versioned yet — %s is not a git repository. Run '"'"'git init'"'"' there, then '"'"'cco project save'"'"'.\n' "$repo" "$repo"
+    if ! _project_resolve_unit "$unit"; then
+        printf '%s/.cco cannot be versioned yet — %s is not a git repository. Run '"'"'git init'"'"' there, then '"'"'cco project save'"'"'.\n' "$_PROJECT_REPO" "$_PROJECT_REPO"
         return 0
     fi
+    local root="$_PROJECT_GITROOT" spec="$_PROJECT_SPEC" repo="$_PROJECT_REPO"
 
-    local changed; changed=$(_status_changed "$root" ".cco/" ".cco")
-    local findings; findings=$(_project_gitignore_findings "$root")
+    local changed; changed=$(_status_changed "$root" "$spec/" "$spec")
+    local findings; findings=$(_project_gitignore_findings "$root" "$spec")
     local excluded=false
     case "$findings" in *excluded*) excluded=true ;; esac
 
@@ -499,10 +545,10 @@ cmd_project_status() {
     # ⚠ AT5, widened by the A2 review: "clean" claims the config is saved, and it
     # must not appear while ANY finding stands, not merely in the adjacent state.
     if [[ "$excluded" == true ]]; then
-        printf '%s/.cco — %s would refuse, and part of the config could not be committed:\n' \
-            "$repo" "'cco project save'"
-        _project_render_findings "$root" "$repo" "$findings"
-        _project_config_report_members "$root"
+        printf '%s/%s — %s would refuse, and part of the config could not be committed:\n' \
+            "$repo" "$spec" "'cco project save'"
+        _project_render_findings "$root" "$spec" "$repo" "$findings"
+        _project_config_report_members "$unit"
         return 0
     fi
 
@@ -514,25 +560,25 @@ cmd_project_status() {
     # ⚠ stdout, not `note`: §5b.5 keeps facts about THIS repo inside the answer and
     # sends only the cross-repo ones to stderr. Same finding as `save`'s, same
     # words, different level — which is the split this verb makes everywhere.
-    local tracked_msg; tracked_msg=$(_project_tracked_ignored_message "$root" "$repo")
+    local tracked_msg; tracked_msg=$(_project_tracked_ignored_message "$root" "$spec" "$repo")
 
     if [[ -z "$changed" ]]; then
         # ⚠ "clean" only when nothing is wrong. A broken barrier means the FIRST
         # save will refuse, and saying "clean" first tells the user the opposite.
         if [[ -n "$findings" ]]; then
-            printf '%s/.cco has nothing to commit, but %s would refuse:\n' "$repo" "'cco project save'"
-            _project_render_findings "$root" "$repo" "$findings"
+            printf '%s/%s has nothing to commit, but %s would refuse:\n' "$repo" "$spec" "'cco project save'"
+            _project_render_findings "$root" "$spec" "$repo" "$findings"
         else
-            local last; last=$(_status_last_saved "$root" ".cco")
+            local last; last=$(_status_last_saved "$root" "$spec")
             if [[ -n "$last" ]]; then
-                printf '%s/.cco is clean — nothing to save (last saved %s)\n' "$repo" "$last"
+                printf '%s/%s is clean — nothing to save (last saved %s)\n' "$repo" "$spec" "$last"
             else
-                printf '%s/.cco is clean, and has never been committed — %s records its first version\n' \
-                    "$repo" "'cco project save'"
+                printf '%s/%s is clean, and has never been committed — %s records its first version\n' \
+                    "$repo" "$spec" "'cco project save'"
             fi
         fi
         [[ -n "$tracked_msg" ]] && printf '  %s\n' "$tracked_msg"
-        _project_config_report_members "$root"
+        _project_config_report_members "$unit"
         return 0
     fi
 
@@ -540,19 +586,19 @@ cmd_project_status() {
     # anticipated only the barrier, so a `.cco/.netrc` rendered as `A .netrc`
     # followed by `→ cco project save` — a preview promising a save that refuses.
     local leak=""
-    leak=$(printf '%s\n' "$changed" | _status_paths ".cco/" | _secret_scan_paths "$root") || true
+    leak=$(printf '%s\n' "$changed" | _status_paths "$spec/" | _secret_scan_paths "$root") || true
 
     local n; n=$(printf '%s\n' "$changed" | grep -c .)
     if [[ -n "$findings" || -n "$leak" ]]; then
-        printf '%s/.cco — %s file(s) to save, but %s would refuse:\n' "$repo" "$n" "'cco project save'"
-        [[ -n "$findings" ]] && _project_render_findings "$root" "$repo" "$findings"
-        [[ -n "$leak" ]] && _project_status_report_leak "$root" "$repo" "$leak"
+        printf '%s/%s — %s file(s) to save, but %s would refuse:\n' "$repo" "$spec" "$n" "'cco project save'"
+        [[ -n "$findings" ]] && _project_render_findings "$root" "$spec" "$repo" "$findings"
+        [[ -n "$leak" ]] && _project_status_report_leak "$root" "$spec" "$repo" "$leak"
         printf '\n'
     else
-        printf '%s/.cco — %s file(s) to save:\n' "$repo" "$n"
+        printf '%s/%s — %s file(s) to save:\n' "$repo" "$spec" "$n"
     fi
 
-    printf '%s\n' "$changed" | _status_render "$root" ".cco/" "$_STATUS_FULL"
+    printf '%s\n' "$changed" | _status_render "$root" "$spec/" "$_STATUS_FULL"
 
     # Below the list, not above it: it is a standing property of the repository,
     # not a verdict on this save — and unlike the two reports above it changes
@@ -562,7 +608,7 @@ cmd_project_status() {
     if [[ -z "$findings" && -z "$leak" ]]; then
         printf '\n  → cco project save\n'
     fi
-    _project_config_report_members "$root"
+    _project_config_report_members "$unit"
     return 0
 }
 
@@ -570,10 +616,10 @@ cmd_project_status() {
 # remedy, rc 0. A preview that paraphrased would send the user hunting for a
 # message that does not exist.
 _project_status_report_leak() {
-    local root="$1" repo="$2" leak="$3"
-    printf '  a secret-like file would be staged under %s/.cco:\n' "$repo"
+    local root="$1" spec="$2" repo="$3" leak="$4"
+    printf '  a secret-like file would be staged under %s/%s:\n' "$repo" "$spec"
     printf '    %s\n' "$leak"
-    _project_secret_remedy "$root" "$repo" "${leak%%$'\t'*}"
+    _project_secret_remedy "$root" "$spec" "$repo" "${leak%%$'\t'*}"
 }
 
 # The remedy for a secret hit, which is NOT one sentence (A2 review). When the
@@ -586,14 +632,14 @@ _project_status_report_leak() {
 # already run `git add -- .cco` by the time it refuses, so `git ls-files` would
 # report a brand-new file as tracked too.
 _project_secret_remedy() {
-    local root="$1" repo="$2" path="$3"
+    local root="$1" spec="$2" repo="$3" path="$4"
     if [[ -n "$path" ]] && git -C "$root" cat-file -e "HEAD:$path" 2>/dev/null; then
         printf '  %s is already committed, so every save records a new value of it. Untrack it with\n' "$path"
         printf "    git rm --cached -- %s\n" "$path"
-        printf '  and commit that; keep the real value in %s/.cco/secrets.env, which is gitignored.\n' "$repo"
+        printf '  and commit that; keep the real value in %s/%s/secrets.env, which is gitignored.\n' "$repo" "$spec"
         printf '  ⚠ Untracking stops FUTURE commits — it does not rewrite the ones already made.\n'
     else
-        printf '  Move the secret into %s/.cco/secrets.env (gitignored) and try again.\n' "$repo"
+        printf '  Move the secret into %s/%s/secrets.env (gitignored) and try again.\n' "$repo" "$spec"
     fi
 }
 
@@ -601,21 +647,22 @@ cmd_project_history() {
     _history_parse_args project "$@"
     if [[ "$_HISTORY_HELP" == true ]]; then _project_history_usage; return 0; fi
 
-    local root; root=$(_project_unit_root)
-    [[ -n "$root" ]] || die "not inside a cco project — 'cco project history' reads the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml."
-    local repo; repo=$(basename "$root")
+    local unit; unit=$(_project_unit_root)
+    [[ -n "$unit" ]] || die "not inside a cco project — 'cco project history' reads the <repo>/.cco/ of the repo you run it from. cd into a repo that has .cco/project.yml."
 
     # An absent history is a normal state, never a die (design §3.3) — a project
     # that has not committed its config yet, or a repo not under git at all, gets
     # told what to run, at rc 0.
-    if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        info "$repo is not a git repository, so its .cco/ has no history yet — 'git init' it, then 'cco project save'"
+    if ! _project_resolve_unit "$unit"; then
+        info "$_PROJECT_REPO is not a git repository, so its .cco/ has no history yet — 'git init' it, then 'cco project save'"
         return 0
     fi
-    if ! _history_has_commits "$root" ".cco"; then
-        info "$repo/.cco has never been committed — run 'cco project save' to record its first version"
+    local root="$_PROJECT_GITROOT" spec="$_PROJECT_SPEC" repo="$_PROJECT_REPO"
+
+    if ! _history_has_commits "$root" "$spec"; then
+        info "$repo/$spec has never been committed — run 'cco project save' to record its first version"
         return 0
     fi
 
-    _history_render "$root" ".cco" ".cco/" "$_HISTORY_N" "$_HISTORY_FULL"
+    _history_render "$root" "$spec" "$spec/" "$_HISTORY_N" "$_HISTORY_FULL"
 }
