@@ -85,7 +85,9 @@ git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by 
 
 `cco project save` stages **only** `.cco/**`. Anything else that is dirty — or that
 you had already staged — is left untouched, so you can save the config in the middle
-of a task without disturbing it. Run it from anywhere inside the repo.
+of a task without disturbing it. Run it from anywhere inside the repo; your `.cco/`
+does not have to sit at the top of it, so a service inside a monorepo works the same
+way.
 
 Things it deliberately refuses rather than fixes for you:
 
@@ -101,7 +103,8 @@ Things it deliberately refuses rather than fixes for you:
   of git on purpose is a supported choice; it just means there is nothing to save.
 - **a secret-shaped file under `.cco/`** — the same 2-pass scan `cco config save`
   runs (filename and content, `*.example` exempt). The refusal unstages `.cco/` and
-  nothing else.
+  nothing else. ⚠ It asks what the commit would **add**: *removing* a secret is the
+  outcome you wanted, so a save whose only change is that deletion succeeds.
 
 All of these are reported **together**, so you never fix one and meet the next on the
 retry. Coverage is decided by asking git whether a **rule exists**, so a directory-wide

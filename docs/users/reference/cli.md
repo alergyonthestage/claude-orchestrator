@@ -1259,7 +1259,10 @@ without needing to know git, the pathspec, or where the config lives. `status` a
 not saved*, `history` answers *what did I save* — the same distance `git status` keeps from
 `git log`. The twins for the personal store are `cco config save` / `status` / `history` (§3.21).
 
-Run either from anywhere inside the repo; cco walks up to the root that holds `.cco/project.yml`.
+Run either from anywhere inside the repo; cco walks up to the directory that holds
+`.cco/project.yml`. That directory does **not** have to be the top of the repository — a service
+inside a monorepo, or a repo adopted below its root, works the same way, and every path these verbs
+print is relative to the repository root so you can open it.
 
 #### `cco project save [-m <msg>]`
 
@@ -1274,6 +1277,9 @@ Examples:
   cco project save -m "tighten the review rules"
 ```
 
+`-m ""` is refused rather than quietly replaced by the default — the message lands in *your* git log,
+among your code commits, so cco does not write one you did not.
+
 **Only `.cco/**` is staged and committed.** Whatever else is dirty in your working tree — or
 that you had **already staged** — is left exactly as it was: not committed, not unstaged. That
 is the whole point of the verb, and the reason you can run it mid-task.
@@ -1285,6 +1291,10 @@ Before anything is staged, three barriers run:
 | `.cco/.gitignore` missing, or not ignoring `secrets.env` / `*.env` / `*.key` / `*.pem` / `.credentials.json` | **refuses** and prints the lines to add. cco does **not** write that file — it is a versioned file in *your* repository, and authoring it would put an unrequested change inside the commit you asked for |
 | an ignore rule anywhere keeps `.cco/project.yml` or `.cco/.gitignore` out of the commit | **refuses**, and names **the rule that actually fires** — its pattern, and the file and line it lives on. A save that drops your config's identity, or the barrier every clone of it inherits, is not a save; and if you are deliberately keeping `.cco/` out of git, that is a supported choice, but then there is nothing to save |
 | a secret-shaped file staged under `.cco/` (filename *or* content; `*.example` exempt) | **refuses**, unstages `.cco/` only, and names the offending path. If that path is one you had already committed, the fix it offers is `git rm --cached` — untracking it — rather than moving it somewhere it already is |
+
+⚠ **Deleting a secret is not staging one.** The scan asks what this commit would *add*, so a save
+whose only change is that you removed `.cco/secrets.env` **succeeds** — that is the outcome you
+wanted, and refusing it would have sent you after a fix you had already made.
 
 All of them are reported **in one go**, so you never fix one and discover the next on the retry.
 Coverage is decided by **asking git whether a rule exists**, not by reading the file — so a
@@ -1842,15 +1852,19 @@ and manual** (no auto-commit). The allowlist commits only `packs/`, `templates/`
 `git add -A`); the 2-pass secret scan refuses real secrets and exempts `*.example`.
 
 ```
-Usage: cco config save [-m <msg>]
+Usage: cco config save [-m <message>]
 
 Options:
-  -m <msg>             Commit message (auto-generated if omitted)
+  -m, --message <msg>  Commit message (default: "config update")
 
 Examples:
   cco config save
   cco config save -m "Add react-guidelines pack"
+  cco config save --help
 ```
+
+As on the project twin, `-m ""` is refused rather than replaced by the default, and deleting a
+secret is not treated as staging one — removing a committed `*.env` and saving **succeeds**.
 
 #### `cco config status [--full]`
 
