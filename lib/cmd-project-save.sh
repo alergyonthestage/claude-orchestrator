@@ -166,10 +166,20 @@ _project_ignore_rule_for() {
     lhs="${v%%$'\t'*}"
     src="${lhs%%:*}"; lhs="${lhs#*:}"
     line="${lhs%%:*}"; pattern="${lhs#*:}"
-    # git reports the source relative to the repo root; prefixing the repo name is
-    # what makes it a path the user can open, and disambiguates the root
+    # git reports an IN-REPO source relative to the repo root, so prefixing the repo
+    # name is what makes it a path the user can open and disambiguates the root
     # `.gitignore` from a nested one.
-    printf '%s (%s/%s:%s)\n' "$pattern" "$repo" "$src" "$line"
+    #
+    # 🔴 IT IS NOT ALWAYS IN-REPO. A rule inherited from `core.excludesFile` (the
+    # user's global gitignore) is reported as an ABSOLUTE path, and prefixing that
+    # yields `<repo>//home/you/.gitignore_global:1` — a file that does not exist.
+    # That is exactly the unfollowable remedy D16 exists to abolish, so an absolute
+    # source is printed as git gave it: it is already a path the user can open.
+    if [[ "$src" == /* ]]; then
+        printf '%s (%s:%s)\n' "$pattern" "$src" "$line"
+    else
+        printf '%s (%s/%s:%s)\n' "$pattern" "$repo" "$src" "$line"
+    fi
 }
 
 # The `excluded` remedy, printed from ONE place so `save`'s refusal and `status`'s

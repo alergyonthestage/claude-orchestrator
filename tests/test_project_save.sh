@@ -864,6 +864,29 @@ test_project_save_names_the_rule_that_actually_fires() {
     assert_equals "" "$(git -C "$r" log --oneline 2>/dev/null)" "nothing may be committed" || return 1
 }
 
+# The same refusal, when the rule does NOT live in the repo. `check-ignore -v`
+# reports an in-repo source relative to the repo root, but a rule inherited from
+# `core.excludesFile` comes back as an ABSOLUTE path — and prefixing the repo name
+# onto it produced `app//home/you/.gitignore_global:1`, a file that does not exist.
+# That is D16's own requirement broken ("at a path the user can open") and the
+# unfollowable-remedy class this cycle keeps closing, one source of rules over.
+#
+# ⚠ The discriminating assertion is the NEGATIVE one: the broken form CONTAINS the
+# correct path as a substring, so `assert_output_contains` alone passes on it.
+test_project_save_names_a_global_ignore_rule_at_a_path_that_exists() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    local r="$tmp/app"; _ps_repo "$r" demo app
+    # The rule is nowhere in the repo — it is in the user's global gitignore.
+    printf '*.yml\n' > "$HOME/.gitignore_global"
+    git config --global core.excludesFile "$HOME/.gitignore_global"
+
+    local rc=0; _ps_cco_in "$r" project save -m "x" || rc=$?
+    assert_rc 1 "$rc" "a global ignore rule that drops project.yml must refuse" || return 1
+    assert_output_contains "$HOME/.gitignore_global:1" || return 1
+    assert_output_not_contains "app/$HOME/.gitignore_global" || return 1
+}
+
 # The gap the maintainer's "prove the save is correct" requirement exists for, and
 # which NOTHING caught before: a root rule naming only `.cco/.gitignore` leaves all
 # five class probes satisfied (check-ignore still reads the file) and project.yml
