@@ -136,6 +136,13 @@ test_operator_config_save_edit_project_needs_edit_global() {
     lane_cco edit-all config save -m x
     [[ "$OP_OUT" != *"needs G=rw"* ]] \
         || fail "'config save' at edit-all should pass the write gate, got: $OP_OUT"
+
+    # The same gate asked POSITIVELY, with the house probe. It was unusable on this
+    # verb until `config save` grew a `--help` arm: the probe drives `<verb> --help`
+    # and requires a usage line back, precisely so a verb with no handler fails here
+    # instead of passing vacuously (review 2026-08-26). It is the only one of the six
+    # verbs in this matrix that could not be probed.
+    assert_gate_allows edit-all config save || return 1
     return 0
 }
 

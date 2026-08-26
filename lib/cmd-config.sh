@@ -64,13 +64,37 @@ _config_ensure_gitignore() {
 EOF
 }
 
+_config_save_usage() {
+    cat <<'EOF'
+Usage: cco config save [-m <message>]
+
+Commit your personal ~/.cco store — the allowlisted config only — with a secret
+scan. Explicit and manual: cco never auto-commits.
+
+Options:
+  -m, --message <msg>    Commit message (default: "config update")
+
+Only the allowlisted entries are staged (.claude, packs, templates, setup files,
+the secrets skeleton) — never `git add -A`, so a stray file in ~/.cco is left
+alone. Your real secrets.env stays gitignored. Preview it with 'cco config
+status'; read it back with 'cco config history'. The project twin is
+'cco project save'.
+EOF
+}
+
 _config_save() {
     local msg=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            # ⚠ Not optional politeness. Every other verb in this matrix answers
+            # `--help`, and the house gate probe (assert_gate_allows) DRIVES
+            # `<verb> --help` — so without this arm the verb could not be probed
+            # at all, and P-B's "the two stores must not drift into different
+            # spellings" was visibly broken inside the reviewed surface.
+            --help|-h) _config_save_usage; return 0 ;;
             -m|--message) [[ $# -lt 2 ]] && die "-m requires a commit message."; msg="$2"; shift 2 ;;
-            -*) die "Unknown option: $1. Run 'cco config --help'." ;;
-            *)  die "Unexpected argument: $1." ;;
+            -*) die "Unknown option: $1. Run 'cco config save --help'." ;;
+            *)  die "Unexpected argument: $1. 'cco config save' takes options only." ;;
         esac
     done
 
