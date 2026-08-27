@@ -295,9 +295,11 @@ scheduled immediately after A1 and now follows the pair.
 
 ✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
 merged tree verified **identical** to the branch tip the suite measured. ✅ **A1 owes nothing** — the
-push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 then A10 are now the
-current units** — both opened 2026-08-27 after the `cco build` incident, with the analysis approved
-the same day.
+push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is BUILT AND TESTED 2026-08-27**
+(suite 1787/7 of 1794, the 7 the known host-only set) and is **not closed**: its image `LABEL` is
+unverifiable without a `cco build`, and the merge is still the human gate. ▶ **A10 is the next unit**
+— both were opened 2026-08-27 after the `cco build` incident, with the analysis approved the same
+day.
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -766,6 +768,32 @@ worktree isolation*) stays a separate, larger unit and is now pulled by real dem
 
 ▶ **Opened and scheduled 2026-08-27, before A10** — it is A10's measuring instrument, so it ships
 first. Ruled at A10's direction gate.
+
+✅ **BUILT AND TESTED 2026-08-27**, both halves, on `feat/devmode/dev-execution-mode`:
+`592526a` (the `cco CLI` identity block on `whoami`'s host branch) and `80b9c10`
+(`LABEL cco.build-ref="$CCO_BUILD_REF"`, `Dockerfile:230`). Living docs and `changelog.yml` (id 68)
+updated in `5de68f6` + `5d271e7`. Tests: **9 new**, written independently from the contract —
+8 in `tests/test_whoami.sh` (a new file: the host branch had no coverage at all) and 1 in
+`tests/test_build.sh`. Each was proven to **fail before the fix**; the one that cannot fail before it
+(a negative test, that the block stays off the in-container branch) was proven by **mutation**
+instead. Full suite **1787 passed / 7 failed / 1794** — the 7 are the documented host-only set,
+**identical name for name**, no new failure.
+
+🔴 **NOT CLOSED — two gates, and they are different in kind.**
+
+- **The `LABEL` is unverified and cannot be verified without a build.** Both halves are baked. The
+  acceptance step is `./bin/cco build` **from the clone**, then
+  `docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'`
+  — **never** `docker run`, whose stdout does not cross from a session ([FI-82](improvements.md)).
+  What the suite pins is the Dockerfile's *declaration* (the `LABEL` exists, interpolates
+  `$CCO_BUILD_REF`, and sits after the `ARG` — a label before the ARG bakes an empty value silently).
+  That the value **arrives in the built image** is a claim no hermetic test can make.
+- **The merge**, which is the human gate. The branch is unmerged and unpushed.
+
+⚠ **The three residues below were deliberately NOT built**, being user-perceivable and outside the
+ruled shape: `whoami`'s host branch does **not** read the image label, `cco start` does **not** warn
+on a CLI↔image divergence, and the `IMAGE_NAME` tag is not surfaced. A11 makes the handshake
+**computable**; it does not compute it. Whether any of the three is wanted is undecided.
 
 **Measured**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone ⇒ a
 **non-discriminating oracle**, and any acceptance test built on it is a false pass by construction.
