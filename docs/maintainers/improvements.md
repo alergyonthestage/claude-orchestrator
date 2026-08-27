@@ -3275,12 +3275,23 @@ migration `017`, across **148 commits** and **+3246** lines under `lib/`+`bin/`+
 `cco --version` prints the identical string from both and **is a non-discriminating oracle**. Any
 acceptance test built on it is a false pass by construction. The oracles that *do* discriminate are
 `_cco_install_provenance` (one internal consumer, no user surface) and
-`docker run --rm claude-orchestrator:latest cat /opt/cco/BUILD` (`branch@sha` vs `unknown`) — which
+`docker run --rm --entrypoint cat claude-orchestrator:latest /opt/cco/BUILD` (`branch@sha` vs
+`unknown`; ⚠ **`--entrypoint` is load-bearing** — without it `Dockerfile:233`'s entrypoint takes the
+words as argv and launches Claude Code instead, and only the `branch@sha` half has actually been
+executed — analysis §12.1) — which
 is why [FI-80](#fi-80--no-verb-answers-which-cco-am-i-running-from-where) lands first.
 
 **Ruled at the direction gate (2026-08-27)**: the npm binary **stays installed** — both CLIs must
 coexist, and the cheap collapse (a `CONTRIBUTING.md` change + a PATH-shadowing check) is explicitly
 rejected, not passed over.
+
+🔴 **Host probes run the same day corrected one premise** (analysis §12.1): `which -a cco` printed
+the **same path twice** — one binary through a **duplicated PATH entry**, not two installs. **The
+clone has no name on PATH at all.** So the coexistence just ruled is a state **to create**, not one
+to disambiguate; the ergonomic complaint is *the clone has no name*, not *which one wins*; and any
+design leaning on "detect the other install and warn" has, today, **nothing to detect** — the
+detection is for a state the design itself introduces. The two `--version` and two `whoami` probes
+**confirmed** their in-container measurements byte for byte.
 
 **Open for design** (analysis §11.1): whether the WS-6 "CONFIG stays shared" call is reopened
 (⚠ reopening changes a **pinned** test, `tests/test_dev_sandbox.sh:75-86`) · the scope of dev
@@ -3373,3 +3384,50 @@ silent until a role is asked to do the thing its grant forbids.
 
 **Effort**: Low to fix, Med to decide the duplication question. **Type**: shipped defect + config
 coherence.
+
+## FI-82 — inside a session, `docker run` returns rc 0 with EMPTY stdout; only the exit code crosses
+
+**Status**: 🔴 Measured 2026-08-27 while running [FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared)'s
+host probes. **A measurement trap, not a feature request** — nothing is broken for the workloads
+that already use the idiom correctly, but any *new* check written the obvious way is a false pass.
+
+**Measured**, in-container, against the cco image **and** third-party `bash:3.2`, with `cat`, with
+`echo`, and with an explicit `-a stdout`:
+
+| Form | rc | stdout |
+|---|---|---|
+| `docker run --rm --entrypoint cat <img> /opt/cco/BUILD` | 0 | **empty** |
+| `docker run --rm --entrypoint echo <img> HELLO` | 0 | **empty** |
+| `docker run --rm bash:3.2 echo WORLD` | 0 | **empty** |
+| `docker run --rm --entrypoint false <img>` | **1** | — |
+| `docker run --rm --entrypoint true <img>` | **0** | — |
+
+⇒ **The rc channel is intact; the stdout channel is not.** The failure presents in the single most
+convincing shape this repo tracks: **rc 0 and nothing to look at.**
+
+**Why it matters beyond this unit**:
+
+- Any in-session verification that **captures `docker run` output** measures nothing and passes.
+  Belongs in the false-success class alongside the forms in
+  [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
+- It **explains** why the bash-3.2 lint idiom recorded in `CLAUDE.md` (*Conventions*) is **rc-based**
+  (`bash -n`, discriminating by exit status): that is the only channel that crosses. The idiom is
+  correct — but the *reason* it is correct was never written down, so the next person to reach for
+  `docker run … && grep` has nothing warning them off.
+- ⇒ **The `/opt/cco/BUILD` probe is host-only**, in every form. Not "the analyst happened to be in a
+  container" — it cannot be run from a session at all.
+
+📝 **Second, adjacent trap re-confirmed**: the proxy refuses past **10 containers** with
+`cco-docker-proxy: operation denied — max container limit reached (10)` at rc **125** — *docker's*
+code, not the command's. Reached while running the probes above, which is why the bash-3.2 lint's
+**negative control could not be run** in that session ⇒ the lint was *unverified there*, not
+verified. A naive `|| fail` reads 125 as "the command failed"; a naive `&& pass` never sees it.
+
+**Shape of the fix** (nothing decided, and it may be *documentation only*): first establish whether
+the swallowed stdout is the proxy, the daemon connection, or the absence of a TTY — **it was not
+diagnosed**, only measured. Then decide whether the operational rule belongs in `CLAUDE.md`'s
+*Conventions* beside the bash-3.2 entry it explains. ⚠ Not done here: `CLAUDE.md` is a
+user-configured project instruction file.
+
+**Effort**: Low to document, unknown to diagnose. **Type**: measurement trap / agent-facing
+correctness.

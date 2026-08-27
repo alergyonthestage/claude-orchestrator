@@ -244,10 +244,18 @@ inherits a latent defect the day any verb gains passthrough args.
   `/opt/cco/BUILD` (written by `Dockerfile:221-222` from `_cco_build_ref`) has **one** reader:
   `lib/cmd-whoami.sh:102`, in-container only. The `Dockerfile` sets no `LABEL`, so there is no
   host-side inspect surface either. A usable oracle exists but is unwired —
-  `docker run --rm claude-orchestrator:latest cat /opt/cco/BUILD` yields `branch@shortsha` for
-  a clone build and the literal `unknown` for an npm build (`lib/cmd-build.sh:26-29`: no
-  `.git` in the context → `unknown`). Unlike `cco --version`, that asymmetry **does**
-  discriminate.
+  `docker run --rm --entrypoint cat claude-orchestrator:latest /opt/cco/BUILD` yields
+  `branch@shortsha` for a clone build and the literal `unknown` for an npm build
+  (`lib/cmd-build.sh:26-29`: no `.git` in the context → `unknown`). Unlike `cco --version`,
+  that asymmetry **does** discriminate.
+  ⚠ **Correction, 2026-08-27** — this line first read `docker run --rm
+  claude-orchestrator:latest cat /opt/cco/BUILD`, **without `--entrypoint`, and that command
+  does not read the file.** `Dockerfile:233` sets `ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]`,
+  so the trailing words are passed as *arguments to the entrypoint*, which ends at
+  `exec gosu claude claude --dangerously-skip-permissions "$@"` — i.e. it launches Claude Code
+  with `cat` and the path as its argv. Run on the host it installed Claude Code and printed
+  *"Not logged in · Please run /login"*, output a reader can mistake for a working probe
+  because it is long and looks like work. See §12.1.
 
 ## 6. Q4 — Shared CONFIG: what actually breaks
 
@@ -410,9 +418,11 @@ to CONFIG and the image tag. This section supplies facts, not a choice.
 - **Oracles — the false-pass surface.** `cco --version` is **measured non-discriminating**.
   `which cco` answers PATH order, not the `REPO_ROOT` reached after the readlink loop.
   `_cco_install_provenance` **does** discriminate but has one internal consumer and no user
-  surface. `docker … cat /opt/cco/BUILD` **does** discriminate (`branch@sha` vs `unknown`).
-  Any acceptance test for this work must be revert-checked against a binary of each
-  provenance, or it passes on both.
+  surface. `docker run --entrypoint cat … /opt/cco/BUILD` **does** discriminate
+  (`branch@sha` vs `unknown`) — ⚠ **but only its `branch@sha` half has been executed**
+  (§12.1); the `unknown` half is still read off `lib/cmd-build.sh:26-29`, **asserted, not
+  measured**, because no npm-provenance build has been made. Any acceptance test for this
+  work must be revert-checked against a binary of each provenance, or it passes on both.
 - **Platform constraints that bind all four.** bash 3.2 + BSD userland on the macOS host;
   framework tree read-only at runtime; host-only; no host path in committed artifacts.
 
@@ -467,8 +477,60 @@ Three probes, all read-only, are owed before design:
 1. `which -a cco` — how many cco binaries are on PATH, and in what order.
 2. `cco whoami` and `cco --version` from **each** install — confirms §2's non-discriminating
    `--version` on the real machine and shows what the host branch currently reports.
-3. `docker run --rm claude-orchestrator:latest cat /opt/cco/BUILD` — which tree built the
-   image that is on the machine right now (`branch@sha` ⇒ clone, `unknown` ⇒ npm).
+3. `docker run --rm --entrypoint cat claude-orchestrator:latest /opt/cco/BUILD` — which tree
+   built the image that is on the machine right now (`branch@sha` ⇒ clone, `unknown` ⇒ npm).
+   ⚠ `--entrypoint` is load-bearing; see §12.1.
+
+### 12.1 Probe results — run on the host, 2026-08-27
+
+The three probes were run the same day. **Two premises are confirmed, one is corrected, and
+the probe set itself produced three findings it was not looking for.** This section is a dated
+addition; nothing above it was rewritten except the two command citations, each marked.
+
+**Confirmed as measured in-container:**
+
+| Probe | Result |
+|---|---|
+| `cco --version` vs `./bin/cco --version` | **`cco 0.6.0` from both** — the non-discriminating oracle holds on the real machine, not only by inference |
+| `cco whoami` vs `./bin/cco whoami` | **byte-identical**: `ℹ Not in a cco session (host context) — cco runs unrestricted here.` No `REPO_ROOT`, no provenance, no version, from either. **A11's premise is now measured** |
+
+🔴 **Corrected premise — there are NOT two installs on the machine.** `which -a cco` printed
+`/Users/.../node/v22.14.0/bin/cco` **twice — the same path**, i.e. one binary reached through a
+**duplicated PATH entry**, not two installs. The clone has **no name on PATH at all**; it is
+reachable only by path. Consequences for the design:
+
+- The coexistence ruled at the direction gate is a state **to create**, not one to disambiguate.
+  Nothing on this machine currently shadows anything.
+- The ergonomic complaint is sharper than *"which one wins"*: **the clone has no name**, so
+  every invocation of it is positional and cwd-dependent. That is the thing to remove.
+- ⚠ Any design that leans on "detect the other install and warn" has, today, **nothing to
+  detect**. The detection is for a state the design itself introduces.
+
+🔴 **Found by the probes, not sought: `docker run` STDOUT IS SWALLOWED INSIDE A SESSION, WHILE
+`rc` SURVIVES.** Measured in-container against both the cco image and third-party `bash:3.2`,
+with `cat`, with `echo`, and with an explicit `-a stdout`: **every form returned rc 0 and empty
+output.** The rc channel is intact — `--entrypoint false` → **1**, `--entrypoint true` → **0**.
+
+- ⇒ **Any in-session check that captures `docker run` output is a false pass by construction**,
+  and it presents as the most convincing shape there is: rc 0 and nothing to look at.
+- ⇒ It explains why this repo's bash-3.2 idiom (`CLAUDE.md`, *Conventions*) is **rc-based**
+  (`bash -n`, discriminating by exit status): that is the only channel that crosses the proxy.
+- ⇒ **The `/opt/cco/BUILD` probe is host-only.** §12's framing — *the analysis ran in-container
+  so no host property was observed* — is narrower than the real constraint: that probe could
+  not have been run from here **at all**, in any form.
+
+📝 **The proxy's container limit is 10, and it refuses with rc 125 — docker's own code, not the
+command's.** Reached while running the probes above, which is why the bash-3.2 lint's **negative
+control could not be run this session**; the lint is therefore *unverified here*, not verified.
+A naive `|| fail` reads 125 as "the command failed" and a naive `&& pass` never sees it.
+
+✅ **`cco build` was run from the clone the same day** and closes A1's outstanding gate. The
+build log shows `RUN printf '%s\n' "feat/devmode/dev-execution-mode@cc6ba5b" > /opt/cco/BUILD`,
+and the in-session `cat /opt/cco/BUILD` returns the same string — so the session that recorded
+this is running that image. ⭐ **That is the `branch@sha` half of the oracle, executed rather
+than asserted.** ⚠ Building from that branch is equivalent to building from `develop`:
+`git diff --name-only develop..HEAD` listed only files under `docs/maintainers/`, none of them
+baked.
 
 ## 13. Relevant files
 
