@@ -3445,3 +3445,85 @@ user-configured project instruction file.
 
 **Effort**: Low to document, unknown to diagnose. **Type**: measurement trap / agent-facing
 correctness.
+
+## FI-83 — an interactive trust prompt stalls a delegated run, and the lead cannot even say so
+
+**Status**: 🔴 Observed 2026-08-27 by the maintainer, during [A11](roadmap.md)'s implementation.
+**The class is autonomy-mode blockers**: work the user has delegated stops on an interactive gate
+the user has, in substance, already answered — and stops **silently**, because the blocked party is
+a subagent whose prompt the lead does not surface.
+
+**What happened.** The lead spawned two subagents (`implementer` + `tester`). Both were held at a
+*"do you trust this folder"* dialog until the maintainer answered it by hand. Until then the lead
+reported the agents as *running*; the delegated work had not started. The stall is the measurement —
+no reproduction was attempted, and **the trigger was not diagnosed** (see *Unmeasured*).
+
+**Measured — the gate is not the one cco already governs.**
+
+- **Workspace trust is a directory-scoped startup gate, distinct from permission prompts.** Per the
+  official docs it gates hooks, `statusLine` (`code-claude/llms-full.txt:35382`), a project skill's
+  `allowed-tools` (`:33577`) and plugin-skills (`:33336`), per-server `.mcp.json` approval (`:5992`),
+  `autoMemoryDirectory` (`:31656`), `gcpAuthRefresh` (`:17067`), `headersHelper` (`:21896`) and
+  `/goal` (`:16956`).
+- 🔴 **`--dangerously-skip-permissions` does not cover it.** The docs describe that flag as bypassing
+  *permission* prompts "other than explicit ask rules" (`:8295`) and never name the trust gate; the
+  session that hit this prompt **was already running with the flag** (`Dockerfile:233` →
+  `claude --dangerously-skip-permissions`). ⇒ Measured, not deduced: the flag is not the answer.
+- **The documented remedy is interactive and per-directory** — *"run `claude` in your project
+  directory at least once to accept the workspace trust dialog"* (`:29217`).
+- ⭐ **A documented non-interactive channel exists**: *"Non-interactive runs with `-p` skip the trust
+  check"* (`:39503`, stated of `--worktree`). Whether it is reachable for a cco session is unknown —
+  a cco session is interactive by construction.
+- ⚠ **`--worktree` exits with an error when trust is not accepted** (`:39503`). This matters here
+  because `skills/implement` prescribes *"a dedicated worktree/branch"* per implementer and the Agent
+  tool offers `isolation: "worktree"` — both create directories that have never been trusted.
+- **Acceptance should persist**: `~/.claude.json` is machine-local STATE bind-mounted per project —
+  `lib/cmd-start.sh:2218` maps `${state_root}/claude.json` → `/home/claude/.claude.json`, `:2872-2874`
+  ensures the host file exists, `lib/cmd-new.sh:140` seeds a `:ro` copy. ⇒ the cost should be
+  **once per project state root**, not per session. Unverified — see *Unmeasured*.
+- **`defaults/managed/managed-settings.json` carries no trust key today** (grepped: no match).
+- 🔴 **The session cannot read its own trust state.** A read of `/home/claude/.claude.json` from
+  inside this session was **denied**. ⇒ the lead cannot introspect *why* a delegate is stalled, so it
+  cannot report the stall either — which is why the symptom presents as "the agents are running".
+
+**Unmeasured — say so, do not assume.**
+
+- **Which directory the prompt named, and therefore what triggered it.** Three candidates, none
+  confirmed: a new directory (a worktree the skill or `isolation: "worktree"` created) · a **separate
+  `claude` process** (this session's teammate mode is `tmux`) whose cwd differs · a pre-warmed worker
+  resolving another directory's settings (the upstream changelog records exactly that class at
+  `:3712`). ⚠ **In this instance the agents were spawned in-process with no worktree isolation**, so
+  the worktree hypothesis — the one that looks obvious — is the least supported of the three.
+- Whether the acceptance just given persists into the next session, as the STATE mount implies.
+- Whether the `-p` trust-skip is reachable at all from a cco-launched session.
+
+**Direction to evaluate** (nothing decided; per the 2026-07-16 convention, re-derive the bound first).
+
+1. **Measure the trigger before designing anything.** One cheap run: spawn a single subagent, record
+   the exact prompt text and the directory it names. Every option below aims somewhere different, and
+   today we would be aiming at a guess.
+2. If the trigger is a **directory cco or the skill created**, the question is whether to stop
+   creating untrusted directories for subagents, or to pre-accept the ones cco itself made.
+3. If it is a **fresh `claude` process** (tmux teammates), the fix lives in how that process is
+   launched, not in the trust store.
+4. **Pre-accepting trust at `cco start` is the blunt instrument, and it is a security decision, not a
+   formality.** ⚠ The natural argument for it — *cco already governs access safely through mounts,
+   `ask` and `:ro`* — covers **filesystem exposure only**. Trust additionally gates **shell-executing
+   settings supplied by the repo itself**: `<repo>/.claude/settings.json`, a repo skill's
+   `allowed-tools`, `statusLine`, `.mcp.json` servers. cco mounts those `:ro` **to the agent**, which
+   stops the agent from *editing* them and does nothing to stop Claude Code from *executing* them.
+   Pre-accepting trust therefore means **cco vouches, on the user's behalf, that a cloned repo's hooks
+   may run** — a guarantee the ADR-0047 boundary does not cover. Maintainer's call, and it wants an
+   ADR. A narrower shape that keeps the guarantee: pre-accept **only directories cco itself created**
+   under an already-trusted repo, never a repo directory on first mount.
+5. **Third option, orthogonal to all of the above: make the stall legible instead of removing the
+   gate.** The docs note that a prompt hit while away pauses the session until answered, and that a
+   channel with the permission-relay capability can forward it (`:8295`). Even without a relay, the
+   lead being able to say *"delegate blocked on a trust dialog for `<dir>`"* is worth more than a
+   silent hang — and it is blocked today by the `~/.claude.json` read refusal measured above.
+
+**Relation to [FI-61](#fi-61)**: both are *the harness changed the session's gating under us*. FI-61
+is watch-not-work with no reproduction; this one has a reproduction path (item 1) and a live cost.
+
+**Effort**: Low to measure the trigger. Unknown to fix. ⚠ Option 4 is an **ADR**, not a patch.
+**Type**: autonomy-mode blocker / agent-facing correctness; option 4 is a security surface.
