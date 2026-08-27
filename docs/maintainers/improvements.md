@@ -3580,3 +3580,55 @@ security cost:
 
 **Effort**: unchanged for the fix; the diagnosis step (item 1 above) is now **done in part** — what
 remains is capturing the dialog's own text, which costs one spawned teammate in a fresh directory.
+
+## FI-84 — the first-run legacy-vault archive makes every fresh-HOME test pay 13s on this checkout
+
+**Status**: 📝 Measured 2026-08-27 while writing [A11](roadmap.md)'s tests. **Not a shipped defect** —
+the mechanism is correct by design and its user cost is once. Recorded because the *suite* cost is
+large, invisible, and local to a maintainer's own checkout, which is the shape that gets rediscovered
+as "this test is mysteriously slow".
+
+**Measured**: `cco whoami` on the host takes **~13s** from this repo root (3/3 runs, ~13s of *user*
+CPU — work, not I/O wait), against ~1s from a checkout without the artifact. The cause is not a
+traversal in `whoami`: every `cco` invocation with a fresh `$HOME` finds this checkout's untracked
+**454MB `user-config/`** and archives it —
+`ℹ Legacy vault detected — archiving before migration…` → a `vault-<ts>.tar.gz` under
+`<state>/cco/backups/`.
+
+**The mechanism, read at source** (`lib/migrate.sh`):
+
+- `_cco_first_run` calls `_cco_backup_legacy_vault` for **every verb except `help`** (`:329-331`) —
+  read-only introspection included (`whoami`, `list`, `docs`).
+- It fires only on a **git-versioned** vault (`[[ -d "$vault/.git" ]] || return 0`, `:122`), which is
+  what this checkout's `user-config/` is and what a clean checkout has none of.
+- It is **idempotent per STATE root** (`:135-146`): a marker plus an authoritative
+  "a verified archive already exists" guard, the second deliberately decoupled from the first so a
+  wiped marker cannot trigger a re-archive.
+
+⇒ The toll is **once per fresh STATE root**, not per command. A real user pays it once and the
+archive is the safety net it is meant to be. A **test suite** creates a fresh `$HOME` per test, so on
+this checkout each such test pays it in full: `test_whoami`'s five real-tree cases alone write
+~2.3GB of throwaway tarballs per run, and **every other test that gives cco a fresh HOME pays the
+same toll** — this was found through `whoami` but is in no way specific to it.
+
+**What is NOT wrong here** — say it explicitly, so nobody "fixes" it:
+
+- Not an A11 regression. A pre-fix tree (`64f1581`) built to mirror this repo root entry-for-entry is
+  equally slow (13.4s / 13.1s / 12.8s).
+- Not a defect in the archive. Backing the vault up *before* anything else touches it is the whole
+  point of the net, and the idempotency guards are the careful kind.
+- The tests were left **faithful** rather than shaped around the artifact. Making a test fast by
+  teaching it about a local directory is how a suite stops measuring the product.
+
+**The open question, and it is a small one**: whether a **read-only** verb should trigger a 454MB
+write at all, or whether the archive belongs at the first *writer*. ⚠ This sits in the neighbourhood
+[FI-16](#fi-16-fail-loud-state-guards-for-mixed-cco-versions) already flagged — *"check whether the
+gate belongs before `_cco_first_run`'s own bootstrap/self-heal steps, which already mutate state at
+that point"* — so decide the two together rather than patching this one.
+
+▶ **The maintainer's own action, unrelated to any code change**: relocating the 454MB `user-config/`
+out of the checkout removes the toll from every test on this machine today. It is gitignored local
+state, so nothing in the repo depends on where it lives.
+
+**Effort**: zero to relieve locally (move the directory). Low to change the call site, but **do not
+change it alone** — see the FI-16 coupling. **Type**: suite cost / design question.
