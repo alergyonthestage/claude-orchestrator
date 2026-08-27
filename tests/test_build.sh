@@ -211,3 +211,49 @@ test_dockerfile_persists_build_ref() {
     assert_file_contains "$REPO_ROOT/Dockerfile" "ARG CCO_BUILD_REF"
     assert_file_contains "$REPO_ROOT/Dockerfile" "/opt/cco/BUILD"
 }
+
+# A11 / FI-80, half 2: the image must ALSO carry the build ref as an OCI label.
+# Inside a cco session `docker run` returns rc 0 with EMPTY stdout (only the exit code
+# crosses — FI-82) while `docker image inspect` returns real output, so the label is the
+# only container-free identity channel that answers from BOTH the host and a session:
+#   docker image inspect claude-orchestrator:latest \
+#     --format '{{index .Config.Labels "cco.build-ref"}}'
+# Static, for the same reason as its sibling above: the real build cannot run
+# hermetically. Namespace is `cco.` — the one the container labels already publish
+# (lib/utils.sh) — not a second one.
+test_dockerfile_labels_the_build_ref_after_its_arg() {
+    local df="$REPO_ROOT/Dockerfile"
+    # Line numbers are read WITHOUT a pipeline: the status of `grep | head` is head's,
+    # so a grep that matched nothing would report success and leave an empty value.
+    local label_hit arg_hit from_hit label_ln arg_ln from_ln
+    label_hit=$(grep -nE '^[[:space:]]*LABEL[[:space:]].*cco\.build-ref' "$df" || true)
+    [[ -n "$label_hit" ]] \
+        || fail "Dockerfile must declare LABEL cco.build-ref" || return 1
+    label_hit=${label_hit%%$'\n'*}
+    label_ln=${label_hit%%:*}
+
+    # It must INTERPOLATE the arg. A literal value would bake this build's ref into
+    # every future image.
+    [[ "$label_hit" == *'$CCO_BUILD_REF'* || "$label_hit" == *'${CCO_BUILD_REF}'* ]] \
+        || fail "LABEL cco.build-ref must interpolate \$CCO_BUILD_REF, got: $label_hit" || return 1
+
+    arg_hit=$(grep -nE '^[[:space:]]*ARG[[:space:]]+CCO_BUILD_REF' "$df" || true)
+    [[ -n "$arg_hit" ]] || fail "Dockerfile must declare ARG CCO_BUILD_REF" || return 1
+    arg_hit=${arg_hit%%$'\n'*}
+    arg_ln=${arg_hit%%:*}
+
+    # THE failure this static test exists to catch: a LABEL placed before the ARG is
+    # accepted by the builder and silently bakes an EMPTY value.
+    [[ $arg_ln -lt $label_ln ]] \
+        || fail "LABEL cco.build-ref must come AFTER ARG CCO_BUILD_REF (arg=$arg_ln, label=$label_ln) — before it, the interpolation resolves to empty" || return 1
+
+    # Same reason, same failure: an ARG is stage-scoped, so a LABEL in a later stage
+    # than its ARG also interpolates to empty. Both must sit in the final stage.
+    from_hit=$(grep -nE '^FROM[[:space:]]' "$df" || true)
+    [[ -n "$from_hit" ]] || fail "fixture broken: no FROM line in the Dockerfile" || return 1
+    from_ln=$(printf '%s\n' "$from_hit" | tail -1)
+    from_ln=${from_ln%%:*}
+    [[ $arg_ln -gt $from_ln && $label_ln -gt $from_ln ]] \
+        || fail "ARG ($arg_ln) and LABEL ($label_ln) must both be in the final stage (last FROM at $from_ln) — an ARG does not cross stages" || return 1
+    return 0
+}
