@@ -295,9 +295,9 @@ scheduled immediately after A1 and now follows the pair.
 
 ✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
 merged tree verified **identical** to the branch tip the suite measured. ✅ **A1 owes nothing** — the
-push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is BUILT AND TESTED 2026-08-27**
-(suite 1787/7 of 1794, the 7 the known host-only set) and is **not closed**: its image `LABEL` is
-unverifiable without a `cco build`, and the merge is still the human gate. ▶ **A10 is the next unit**
+push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is BUILT, TESTED AND HOST-VERIFIED 2026-08-27**
+(suite 1787/7 of 1794, the 7 the known host-only set; the image label read back as
+`feat/devmode/dev-execution-mode@e0c93a8`). **Only the merge is still owed** — the human gate. ▶ **A10 is the next unit**
 — both were opened 2026-08-27 after the `cco build` incident, with the analysis approved the same
 day.
 
@@ -779,16 +779,18 @@ updated in `5de68f6` + `5d271e7`. Tests: **9 new**, written independently from t
 instead. Full suite **1787 passed / 7 failed / 1794** — the 7 are the documented host-only set,
 **identical name for name**, no new failure.
 
-🔴 **NOT CLOSED — two gates, and they are different in kind.**
+✅ **The `LABEL` is VERIFIED on the host, 2026-08-27** — the gate no hermetic test could close.
+`./bin/cco build` from the clone, then
+`docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'`
+→ **`feat/devmode/dev-execution-mode@e0c93a8`**, the branch tip at build time. The value is not
+merely present: it **discriminates**, carrying the exact ref. ⭐ This is the first identity channel
+that answers *which code is this image* **without running a container** — the reason A11 carried the
+label at all ([FI-82](improvements.md): `docker run`'s stdout does not cross from a session).
+⚠ The suite pins only the *declaration* (the `LABEL` exists, interpolates `$CCO_BUILD_REF`, sits
+after the `ARG` — one before it bakes an empty value silently); that the value **arrives in the
+built image** stays a host step, by construction, at every future build.
 
-- **The `LABEL` is unverified and cannot be verified without a build.** Both halves are baked. The
-  acceptance step is `./bin/cco build` **from the clone**, then
-  `docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'`
-  — **never** `docker run`, whose stdout does not cross from a session ([FI-82](improvements.md)).
-  What the suite pins is the Dockerfile's *declaration* (the `LABEL` exists, interpolates
-  `$CCO_BUILD_REF`, and sits after the `ARG` — a label before the ARG bakes an empty value silently).
-  That the value **arrives in the built image** is a claim no hermetic test can make.
-- **The merge**, which is the human gate. The branch is unmerged and unpushed.
+🔴 **ONE gate left: the merge**, which is the human one. The branch is unmerged and unpushed.
 
 ⚠ **The three residues below were deliberately NOT built**, being user-perceivable and outside the
 ruled shape: `whoami`'s host branch does **not** read the image label, `cco start` does **not** warn
