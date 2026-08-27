@@ -158,17 +158,16 @@ rebuild to get new versions. The channel/version preference is the config knob
 `cco build --no-cache` resets the install cache so the next start reinstalls fresh.
 
 **The image records the source ref it was built from, in two places.** It is written to
-`/opt/cco/BUILD` inside the image, which is what `cco whoami`'s `image built from` line
-reads in-session (§3.5c) — but that channel needs a running container, and from inside a
-cco session `docker run` returns exit 0 with empty stdout, so it can't be read there. The
-same ref is also set as an image label, readable without starting a container from either
-the host or a session:
+`/opt/cco/BUILD` inside the image — the file `cco whoami`'s `image built from` line reads
+in-session (§3.5c) — so reading it any other way means starting a container. The same ref
+is also set as an image label, which needs no container at all:
 
 ```
 docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'
 ```
 
-Use `docker image inspect` for this — not `docker run`.
+Prefer `docker image inspect`: it answers without starting anything, and it is the form
+that works from inside a cco session as well as from the host.
 
 ---
 
