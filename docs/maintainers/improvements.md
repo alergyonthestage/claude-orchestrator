@@ -3318,3 +3318,58 @@ CLI↔image handshake. The other half is host-side image introspection: `/opt/cc
 `Dockerfile` sets no `LABEL`, so the host cannot ask the image what built it without running it.
 
 **Effort**: Low.
+
+## FI-81 — `defaults/global/` ships an `/analyze` that cannot write its own artifact, and it wins over the pack's
+
+**Status**: 🔴 Measured 2026-08-27, in this repo's own session. **Shipped defect**, not a local
+config accident: the broken pair is in `defaults/global/`, which `cco init` copies into every user's
+`~/.cco/.claude/`. Also a **live instance of [FI-32](#fi-32) / [A3](roadmap.md)** — the cross-scope
+collision warning — with a measured cost.
+
+**What happened**: `/analyze` was invoked for [FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared).
+The forked agent produced a complete analysis and then **could not persist it** — it had no `Write`
+and no Bash redirect. It surfaced the blocker honestly and handed the content back, costing a full
+round trip. The lead wrote the file instead.
+
+**The collision, measured.** Two `/analyze` skills are registered at once (the session's own skill
+listing shows `/analyze` **twice**):
+
+| Registered at | `agent:` | `allowed-tools:` | Wins? |
+|---|---|---|---|
+| `~/.claude/skills/analyze/` (user level, seeded from `defaults/global/`) | `Explore` | `Read, Grep, Glob, Bash` — **no `Write`** | 🔴 **yes** |
+| `/workspace/.claude/skills/analyze/` (the `core-dev-framework` pack) | `analyst` | `Read, Grep, Glob, Bash, Write, WebFetch, WebSearch` | no |
+
+The oracle that identifies the winner is the **description** rendered in the session's skill list: it
+is `defaults/global`'s (*"…for codebase exploration and requirements understanding"*), not the pack's
+(*"…writes its analysis as a draft under `<domain>/analysis/` and returns a summary"*). ⚠ The two
+skills' `name:` is identical, so nothing in the listing itself says a choice was made.
+
+**The same split in the agent**: `defaults/global/.claude/agents/analyst.md` declares
+`disallowedTools: Write, Edit`; the pack's declares `tools: … Write …` with `disallowedTools: Edit`
+and a description that says *"writes only its own analysis artifact"*.
+
+🔴 **Why it is a defect and not a preference**: the pack's own `rules/workflow.md` imposes the
+obligation — *"Every role persists its own artifact, read-only ones included: 'read-only' means does
+not modify existing code or documents, not writes nothing"* — and closes with *"a gate cannot name a
+path nobody could write."* So `defaults/global/` ships a skill+agent pair that **structurally cannot
+satisfy a rule shipped beside it**. Every `/analyze` in a project whose user-level copy is the stale
+one pays the same round trip.
+
+⚠ **It does not self-heal.** `defaults/global/` is copied once at `cco init` and never overwritten
+(user-owned). An existing user keeps the broken copy until they run `cco update --sync` — i.e. this
+is the **opinionated-change** lane of `rules/update-system.md`, not an additive one.
+
+**Not fixed here, deliberately**: skills and agents are user-owned config, and `defaults/global/` is
+shipped framework content. Both need the maintainer's approval. **Shape of the fix** (nothing
+decided): bring `defaults/global/`'s `analyze` skill and `analyst` agent up to the pack's contract
+(`agent: analyst`, `Write` allowed, `disallowedTools: Edit`), then decide whether `defaults/global/`
+should ship a duplicate of a pack-owned skill **at all** — a second copy of one concept is what
+`rules/documentation.md`'s *one concept, one file* exists to prevent, and it is what produced this
+collision.
+
+⭐ **The lesson worth keeping even after the fix**: an agent's tool grant and the rule that obliges it
+to write are in **different files, and nothing checks them against each other.** The failure mode is
+silent until a role is asked to do the thing its grant forbids.
+
+**Effort**: Low to fix, Med to decide the duplication question. **Type**: shipped defect + config
+coherence.
