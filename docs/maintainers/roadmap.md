@@ -295,10 +295,17 @@ maintainer's, not a dependency. A11 precedes A10 because it is A10's measuring i
 scheduled immediately after A1 and now follows the pair.
 
 ✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
-merged tree verified **identical** to the branch tip the suite measured. ⚠ `develop` still owes a
-**`cco build`** (see A1's entry); the push is done (`develop` level with `origin/develop` at
-`ed69492`). ▶ **A11 then A10 are now the current units** — both opened 2026-08-27 after the
-`cco build` incident, with the analysis approved the same day.
+merged tree verified **identical** to the branch tip the suite measured. ✅ **A1 owes nothing** — the
+push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 then A10 are now the
+current units** — both opened 2026-08-27 after the `cco build` incident, with the analysis approved
+the same day.
+
+📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
+deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
+[roadmap-history.md](roadmap-history.md) — *the branch appears among the merged* — **can never fire
+again** (`git branch --merged develop` lists only `develop` and `main`). Moving it is now a
+maintainer's call, not an automatic step; it is recorded in the handoff's task list rather than done
+silently.
 
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
@@ -439,8 +446,12 @@ deleted with `-d`. Measured before the merge: `Results: 1778 passed, 7 failed, 1
 `git diff feat/config/save-and-history develop` **empty** — the merged tree is the tree the suite
 measured, so nothing was re-run on a different tree.
 
-▶ **Still owed on `develop`**: the **push** (host step — the remote is not reachable from a session)
-and the **`cco build`** below. The macOS host-suite failures are [FI-78](improvements.md), not A1.
+✅ **Both closed 2026-08-27**: the **push** (`develop` level with `origin/develop` at `ed69492`) and
+the **`cco build`**, run from the clone — `/opt/cco/BUILD` reads
+`feat/devmode/dev-execution-mode@cc6ba5b`, in the build log and in the session that verified it.
+⚠ Building from that branch is equivalent to building from `develop`: `git diff --name-only
+develop..<branch>` listed only files under `docs/maintainers/`, none of them baked. **A1 owes
+nothing.** The macOS host-suite failures are [FI-78](improvements.md), not A1.
 
 **macOS host suite (bash 3.2), run 2026-08-26**: `Results: 1775 passed, 2 failed, 1777 total`, the
 `Results:` line present **once** ⇒ **no bash 3.2 parse abort**, which was the risk to fear. ⚠ The
