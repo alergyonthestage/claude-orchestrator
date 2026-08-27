@@ -3246,3 +3246,75 @@ second, stop passing a regex through `-v` and match with a shell `case` or a fix
 the maintainer re-runs the host suite. Say so rather than claiming green.
 
 ⚠ Still owed before `0.7.0`: the host suite is a release gate, and it is not green.
+## FI-79 — the dev execution mode: what `--dev-sandbox` isolates, and what it leaves shared
+
+**Status**: ▶ Analysis done and approved 2026-08-27 —
+[`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md).
+Scheduled as **A10** in Block A. Design not started. **Promotes and re-scopes** the *Developer-mode
+residue* backlog line in the roadmap, which scoped the remainder as **ergonomics**; the measurements
+say it is **correctness**.
+
+**Surfaced** 2026-08-27: the maintainer ran `cco build` from the **npm-distributed CLI** instead of
+the clone's `./bin/cco`. Third instance of the FI-16 class (2026-07-15, 2026-07-16, this one).
+
+**What already ships**: `--dev-sandbox` / `--dev-sandbox-seed` (ADR-0052 §7, WS-6 annotation),
+`lib/paths.sh:584-650` + `bin/cco:141-153`. It redirects STATE/DATA/CACHE. This is **not** a
+re-invention — it is the half the WS-6 annotation deliberately left out, plus an axis nobody costed.
+
+**The three measured gaps** (full evidence in the analysis):
+
+| Gap | Measure |
+|---|---|
+| **The image tag is the code identity of the in-session cco** | `Dockerfile:201-211` bakes `bin/`+`lib/` into `/opt/cco` and symlinks `/usr/local/bin/cco`; a normal session mounts **no host `lib/`**. `IMAGE_NAME` is hardcoded at `bin/cco:37` with no override — so both binaries `-t` the same global tag and overwrite each other. **8** consumers + **7** doc surfaces, incl. `FROM claude-orchestrator:latest` in the custom-image guide: the tag is a published user contract |
+| **No coexistence story** | `CONTRIBUTING.md:12-35` offers two setups, both **substitutive** (`npm link` overwrites the global shim). Nothing prevents two installs and **nothing detects** them |
+| **The migration target/marker split** | `_run_migrations` runs with the **target** shared and the **marker** sandboxed — `lib/update.sh:138` (target `~/.cco/.claude`) and `:432` (target the user's **repo**, so the mutation gets committed), marker `_cco_global_meta()` in STATE. Worst reachable writer: `cco init --force` → `rm -rf` of the real `~/.cco/.claude` (`lib/cmd-init.sh:198`) re-seeded from the **dev tree** |
+
+🔴 **The version gate cannot protect against this and it is not a near-miss — it is dormant.**
+Measured: npm `latest` and the clone are both `0.6.0`, both `CCO_INDEX_VERSION=2`, both max
+migration `017`, across **148 commits** and **+3246** lines under `lib/`+`bin/`+`templates/`. So
+`cco --version` prints the identical string from both and **is a non-discriminating oracle**. Any
+acceptance test built on it is a false pass by construction. The oracles that *do* discriminate are
+`_cco_install_provenance` (one internal consumer, no user surface) and
+`docker run --rm claude-orchestrator:latest cat /opt/cco/BUILD` (`branch@sha` vs `unknown`) — which
+is why [FI-80](#fi-80--no-verb-answers-which-cco-am-i-running-from-where) lands first.
+
+**Ruled at the direction gate (2026-08-27)**: the npm binary **stays installed** — both CLIs must
+coexist, and the cheap collapse (a `CONTRIBUTING.md` change + a PATH-shadowing check) is explicitly
+rejected, not passed over.
+
+**Open for design** (analysis §11.1): whether the WS-6 "CONFIG stays shared" call is reopened
+(⚠ reopening changes a **pinned** test, `tests/test_dev_sandbox.sh:75-86`) · the scope of dev
+identity (buckets · image tag · container/network names · CONFIG) · whether a tag axis pre-empts
+`packaging-distribution.md` §4's deferred `:<package.version>` tagging · in-container legality
+(today the analogous flag is **silently swallowed** there) · which lifecycle verbs are in scope.
+
+⚠ **Naming-namespace collision to sequence, not discover late**: dev mode's tag axis, Block **B1**
+(`cco build` inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace.
+
+**Effort**: Med. **Type**: correctness + maintainer tooling.
+
+## FI-80 — no verb answers "which cco am I running, from where"
+
+**Status**: ▶ Ruled at FI-79's direction gate (2026-08-27) to land **first, as its own unit** —
+scheduled as **A11**, before A10. Design not started.
+
+**Why it is first**: it is the prerequisite oracle for testing **any** dev-mode option without a
+false pass, and it is useful on its own the moment two installs exist.
+
+**Measured today**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone
+(`_cco_print_version`, `bin/cco:294-302`) ⇒ non-discriminating. `which cco` answers PATH order, not
+the `REPO_ROOT` the readlink loop actually reaches. `cco whoami`'s host branch
+(`lib/cmd-whoami.sh:50-70`) prints *"Not in a cco session (host context)"* and then only the
+dev-sandbox block if active: **no `REPO_ROOT`, no provenance, no version**.
+`_cco_install_provenance` (`lib/paths.sh:541-550`) **does** classify `npm|brew|clone|unknown` but has
+**exactly one** consumer, `lib/cmd-update.sh:14`, and no user surface.
+
+**Shape as ruled** (nothing further decided): extend `cco whoami`'s host branch with `REPO_ROOT`,
+`_cco_install_provenance` and the version.
+
+**Relation to FI-16**: closes half of the residue FI-16 records at `improvements.md:471` — the
+CLI↔image handshake. The other half is host-side image introspection: `/opt/cco/BUILD`
+(`Dockerfile:221-222`) has **one** reader, `lib/cmd-whoami.sh:102`, **in-container only**, and the
+`Dockerfile` sets no `LABEL`, so the host cannot ask the image what built it without running it.
+
+**Effort**: Low.

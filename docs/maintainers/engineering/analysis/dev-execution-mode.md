@@ -1,11 +1,12 @@
 # Developer execution mode — feasibility & inventory
 
-> **DRAFT — 2026-08-27.** Analysis lens: **feasibility + inventory**. This is *not* a
-> requirements analysis and it does **not** select a solution: it records the measured
-> facts that discriminate between the sketched options, because the choice belongs to the
-> design gate. Promotion of this draft to the approved analysis artifact happens when the
-> maintainer approves the direction (`rules/workflow.md`, *Phase artifacts — gate
-> preconditions*).
+> **APPROVED — 2026-08-27.** Direction approved by the maintainer on the day it was
+> written; this file was promoted from draft at that gate (`rules/workflow.md`, *Phase
+> artifacts — gate preconditions*). Analysis lens: **feasibility + inventory**. This is
+> *not* a requirements analysis and it does **not** select a solution: it records the
+> measured facts that discriminate between the sketched options, because the choice belongs
+> to the design gate. **Two of §11's open questions were ruled at that same gate — see
+> §11.0.**
 >
 > **Builds on**, and does not restart: [ADR-0052 §7 + the WS-6 implementation
 > annotation](../../configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md),
@@ -417,6 +418,27 @@ to CONFIG and the image tag. This section supplies facts, not a choice.
 
 ## 11. Open questions for the design gate
 
+### 11.0 Ruled at the direction gate (maintainer, 2026-08-27)
+
+Two of the questions below were answered when the direction was approved. They are inputs no
+designer could derive, so they are recorded here rather than left to the design gate.
+
+- **Q6 — both CLIs stay.** The npm-distributed cco **remains installed** alongside the clone.
+  Options **A** and **B** therefore stay in play, and the cheap collapse (a `CONTRIBUTING.md`
+  change plus a PATH-shadowing check) is **explicitly rejected**, not passed over. The
+  consequence carried into design: a *complete* dev identity is required — binary, image tag,
+  and a stated position on CONFIG — and §10's bootstrapping fact binds, i.e. **B cannot be
+  used until an npm release carrying the dispatcher ships**.
+- **Q5 — the identity oracle lands FIRST, as its own unit.** *"Which cco am I running, from
+  where"* is not folded into the dev-mode unit: it ships before it, because it is the
+  prerequisite for testing any option without a false pass (§10, *Oracles*). Scope as ruled:
+  extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance` and the
+  version. It also closes half of the FI-16 residue named at `improvements.md:471`.
+
+The remaining questions — 1, 2, 3, 4 and 7 — are unchanged and belong to the design gate.
+
+### 11.1 Still open
+
 1. **Is the WS-6 CONFIG call being reopened?** The migration target/marker split says the
    rationale is incomplete. Reopening costs a pinned test, an ADR annotation, and — because
    `_cco_config_dir` has no seam — either a new resolver override or a `$HOME` redirect.
@@ -428,13 +450,10 @@ to CONFIG and the image tag. This section supplies facts, not a choice.
    tagging?** Someone owns reconciling it with that refinement and with Block B1.
 4. **Should the dev surface be legal in-container?** Today the analogous flag is silently
    swallowed there. Refuse, or ignore-with-notice.
-5. **Is a "which cco am I" verb in scope?** It is the prerequisite oracle for *any* option and
-   for testing without false passes. It could equally land first as a standalone item —
-   extend `cco whoami`'s host branch with `REPO_ROOT` + `_cco_install_provenance` + version.
-6. **Should the npm binary remain installed at all?** A and B assume yes. If the answer is
-   "a maintainer's machine should only ever carry the clone", the problem collapses to a
-   `CONTRIBUTING.md` change plus a PATH-shadowing check. The gate should reject that
-   explicitly rather than by omission.
+5. ~~**Is a "which cco am I" verb in scope?**~~ — **RULED at the direction gate, see §11.0:**
+   it lands first, as its own unit.
+6. ~~**Should the npm binary remain installed at all?**~~ — **RULED at the direction gate, see
+   §11.0:** both CLIs stay; the collapse to a `CONTRIBUTING.md` change is explicitly rejected.
 7. **Which lifecycle verbs are in scope now vs deferred?** §8 lists six gaps; shipping an
    identity without a reaper adds a new orphan class to a project that already tracks one
    (ADR-0045's running-registry reaper).

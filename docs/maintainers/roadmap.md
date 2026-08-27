@@ -287,13 +287,16 @@ ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the 
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
-after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
+▶ **Order inside the block, as of 2026-08-27**: **A1 → A11 → A10 → A9**, then A2 · A3 · A6 · A7.
+⚠ **The numbers are identifiers, not the order** — every position here is a decision of the
+maintainer's, not a dependency. A11 precedes A10 because it is A10's measuring instrument; A9 was
+scheduled immediately after A1 and now follows the pair.
 
 ✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
-merged tree verified **identical** to the branch tip the suite measured. ▶ **A9 is now the current
-unit.** ⚠ Two things `develop` still owes: the **push** (a host step — this session cannot reach the
-remote) and a **`cco build`** (see A1's entry).
+merged tree verified **identical** to the branch tip the suite measured. ⚠ `develop` still owes a
+**`cco build`** (see A1's entry); the push is done (`develop` level with `origin/develop` at
+`ed69492`). ▶ **A11 then A10 are now the current units** — both opened 2026-08-27 after the
+`cco build` incident, with the analysis approved the same day.
 
 #### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
 
@@ -747,6 +750,63 @@ first (the report does not carry it), then **re-derive the whole floor** against
 (`_emit_workflows_overlay`). This is the quick win; the full **worktree design** (Sprint 10, *Git
 worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
 
+#### A11 — no verb answers "which cco am I running, from where" ([FI-80](improvements.md))
+
+▶ **Opened and scheduled 2026-08-27, before A10** — it is A10's measuring instrument, so it ships
+first. Ruled at A10's direction gate.
+
+**Measured**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone ⇒ a
+**non-discriminating oracle**, and any acceptance test built on it is a false pass by construction.
+`which cco` answers PATH order, not the `REPO_ROOT` the readlink loop reaches. `cco whoami`'s host
+branch (`lib/cmd-whoami.sh:50-70`) reports **no `REPO_ROOT`, no provenance, no version**.
+`_cco_install_provenance` (`lib/paths.sh:541-550`) does classify `npm|brew|clone|unknown` but has
+**one** consumer and no user surface.
+
+**Shape as ruled** (nothing further decided): extend `cco whoami`'s host branch with `REPO_ROOT`,
+`_cco_install_provenance` and the version. Closes half of the FI-16 residue at
+`improvements.md:471`; the other half is host-side image introspection (`/opt/cco/BUILD` has one
+reader, in-container only, and the `Dockerfile` sets no `LABEL`).
+
+**Effort**: Low. Needs no design phase of its own beyond the shape above.
+
+#### A10 — the dev execution mode ([FI-79](improvements.md))
+
+▶ **Opened 2026-08-27** after the maintainer ran `cco build` from the npm-distributed CLI instead of
+the clone — the third instance of the FI-16 class. ✅ **Analysis DONE and APPROVED the same day**:
+[`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md). Design
+not started. **This promotes and re-scopes** the *Developer-mode residue* backlog line below, which
+scoped the remainder as **ergonomics**; the measurements say it is **correctness**.
+
+⚠ **Not a re-invention.** `--dev-sandbox` already ships (ADR-0052 §7) and isolates STATE/DATA/CACHE.
+This is the half the WS-6 annotation deliberately left out, plus an axis nobody costed:
+
+| Gap | Measure |
+|---|---|
+| **The image tag is the code identity of the in-session cco** | `Dockerfile:201-211` bakes `bin/`+`lib/` into `/opt/cco`; a normal session mounts **no host `lib/`**. `IMAGE_NAME` is hardcoded (`bin/cco:37`, no override), so both binaries `-t` one global tag and overwrite each other — sandbox or not. 8 consumers + 7 doc surfaces; the tag is a **published user contract** (`FROM claude-orchestrator:latest`) |
+| **No coexistence story** | `CONTRIBUTING.md:12-35` offers two setups, both **substitutive**. Nothing prevents two installs and **nothing detects** them |
+| **Migration target/marker split** | `_run_migrations` runs target-shared / marker-sandboxed: `lib/update.sh:138` (target `~/.cco/.claude`) and `:432` (target the user's **repo** — the mutation gets committed). Worst reachable writer: `cco init --force` → `rm -rf` of the real `~/.cco/.claude` re-seeded from the **dev tree** |
+
+🔴 **The version gate is dormant, not merely bypassed**: npm `latest` and the clone are both `0.6.0`,
+both `CCO_INDEX_VERSION=2`, both max migration `017`, across **148 commits**. The incident is the
+**ungated** class, not a near-miss — do not let a design argue "the gate protects us".
+
+**Ruled at the direction gate (2026-08-27)**: the npm binary **stays installed** — both CLIs must
+coexist, so the cheap collapse (a `CONTRIBUTING.md` change + a PATH-shadowing check) is explicitly
+**rejected**, not passed over. ⚠ Consequence: the dispatcher option **cannot be used until an npm
+release carrying it ships** — the installed `0.6.0` cannot dispatch.
+
+**Open for design** (analysis §11.1): whether the WS-6 *"CONFIG stays shared"* call is reopened
+(⚠ reopening changes a **pinned** test, `tests/test_dev_sandbox.sh:75-86`) · the scope of dev
+identity (buckets · image tag · container/network names · CONFIG) · whether a tag axis pre-empts
+`packaging-distribution.md` §4's deferred `:<package.version>` tagging · in-container legality
+(today the analogous flag is **silently swallowed** there) · which lifecycle verbs are in scope
+(no re-seed, no backup, no reaper, and **no `cco doctor` verb exists at all**).
+
+⚠ **Sequence the naming namespace, do not discover it late**: A10's tag axis, **B1** (`cco build`
+inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace.
+
+⚠ **Both halves are baked** — the unit takes a `cco build` in its acceptance lane.
+
 #### ✅ A8 — the onboarding prompts and the mount-declaration surface — **CLOSED 2026-08-18**
 
 Shipped as U3 of the A5+A8 cycle and **merged into `develop` 2026-08-21** (`6208228`); [FI-68](improvements.md) … [FI-70](improvements.md) all closed. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-a5--a8-cycle-closed-2026-08-18-merged-2026-08-21).
@@ -1069,7 +1129,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | **State sync (cross-PC / cross-team)** | The largest deferred item; needs its own design. Boundary to preserve: git stays the one engine for vault sync and resource sharing; a daemon would own only what git carries badly (append-heavy, machine-local STATE) |
 | #10b — statusline | Show session usage/limit percentage instead of (or beside) the dollar cost; fix stale ctx% after `/compact`; configurable format. Low effort, fits any release |
 | FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
-| **Developer-mode residue** | ✅ **Mostly shipped**: `cco --dev-sandbox` / `--dev-sandbox-seed` isolate STATE/DATA/CACHE and seed them one-shot from the real buckets (`docs/users/reference/cli.md` §3.34). What remains is ergonomics — running the local `bin/` build against an npm-installed cco without typing the path |
+| **Developer-mode residue** | ⏹ **PROMOTED 2026-08-27 out of this list** → **[A10](#a10--the-dev-execution-mode-fi-79)** ([FI-79](improvements.md)), with **[A11](#a11--no-verb-answers-which-cco-am-i-running-from-where-fi-80)** ([FI-80](improvements.md)) ahead of it. 🔴 **This row scoped the remainder as *ergonomics* and that was wrong** — the analysis measured the image tag, the CLI↔image handshake and a migration target/marker split, all **correctness**. Kept as a pointer only; the entry is in Block A |
 | [FI-61](improvements.md) — bypass-permissions mode vanished mid-session, once | 📝 **Watch, not work.** One occurrence, no reproduction, cause unknown. Recorded so a second one is a pattern rather than a rediscovery. If it recurs: A4 now writes a **per-session** `managed-settings.json` overlay (ADR-0057 D9) where there used to be a baked constant — that is the surface deciding permission mode, so rule it in or out first |
 | Name/id validation hardening · `cco config protect` · `cco project internalize` (Case-C) · `cco clean` redesign · the deferred doc splits | Post-v1 backlog, unchanged. Detail in [roadmap-history.md](roadmap-history.md) |
 
