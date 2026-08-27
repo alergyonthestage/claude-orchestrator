@@ -1,138 +1,211 @@
-# Handoff — 2026-08-26 (late)
+# Handoff — 2026-08-27
 
 > **Ephemeral.** The previous handoff was deleted before this was written. It links **out** to the
-> roadmap, ADRs and designs — nothing links back to it.
+> roadmap, ADRs, analyses and improvements — nothing links back to it.
+>
+> Written for a session that remembers **nothing** of the one that produced it. Everything below is
+> either measured and cited, or named as unmeasured.
 
 ## Where we are
 
-**A1's cycle is CLOSED — reviewed, fixed, verified and MERGED.** What is left is not a gate on the
-work but two operations `develop` owes: a **push** (host-only) and a **`cco build`**.
+**Phase: Plan → Implementation.** A1's cycle is fully closed and owes nothing. A new pair of units
+was opened today and their analysis is **approved**: **A11** (the identity oracle) then **A10** (the
+developer execution mode). A11 needs no design phase — its shape is ruled — so the next step is
+implementation, not another gate.
 
 ```mermaid
 flowchart LR
-    DEV["develop 90c1391"] --> A1["A1 + A2 + A3<br/>built ✅"]
-    A1 --> REV["whole-cycle review<br/>REVIEW NEEDED:<br/>1 fix in place · 2 blockers ✅"]
-    REV --> A4["Amendment A4 · D20-D22<br/>ruled + built + verified ✅"]
-    A4 --> M["merged into develop<br/>ab97482 ✅"]
-    M --> P{{"push · cco build<br/>⬅ you are here, both HOST"}}
-    P --> A9["A9 / FI-77<br/>the next unit"]
+    A1["A1 + A2/A3/A4<br/>merged ab97482 ✅<br/>push + cco build done ✅"] --> INC["2026-08-27: cco build<br/>run from the npm CLI,<br/>not the clone"]
+    INC --> AN["analysis approved ✅<br/>engineering/analysis/<br/>dev-execution-mode.md"]
+    AN --> A11["A11 · FI-80<br/>identity oracle<br/>⬅ YOU ARE HERE"]
+    A11 --> A10["A10 · FI-79<br/>dev execution mode<br/>needs /design"]
+    A10 --> A9["A9 · FI-77"]
 ```
 
-The review the maintainer scoped — **one pass over the finished cycle**, six verbs, both stores —
-ended the pattern that had grown the unit by one amendment per review three times. It returned
-**REVIEW NEEDED**: one defect fixed in place, **two blockers** escalated. All three were ruled the
-same day and are built as **[ADR-0038 Amendment A4](configuration/decentralized-config/decisions/0038-project-config-versioning.md)**
-(D20…D22), with seven realignments that needed no decision.
+Order inside Block A, ratified 2026-08-27: **A1 → A11 → A10 → A9**, then A2 · A3 · A6 · A7.
+⚠ **The numbers are identifiers, not the order.**
 
-Everything below was **measured on this branch**, not carried over:
+### State, measured
 
 | Claim | Measured |
 |---|---|
-| Suite (container) | **`Results: 1778 passed, 7 failed, 1785 total`**, the `Results:` line present **once**. The 7 are the [known host-only set](roadmap.md), verified name for name: 6 `test_as_*` + `test_paths_symlink_safe_tool_root` |
-| Test count | **+8 over the branch's 1777** — one per fix, each pinned by a mutation that fails exactly its own test |
-| Merge | **`ab97482`** (`--no-ff`, 39 commits), branch deleted with `-d`. ⭐ `git diff feat/config/save-and-history develop` was **empty** — the merged tree IS the tree the suite measured, so nothing was accepted on an unmeasured tree |
-| `develop` vs `origin/develop` | **40 ahead** — the push is a **host** step; `git ls-remote` is not reachable from a session |
-| bash 3.2 | every changed file parses under real `bash:3.2` (Docker socket), with a negative control returning rc 2 |
-| Baked files | 🔴 **TOUCHED — this cycle DOES owe a `cco build`.** See below |
-| macOS host suite | `1775 passed, 2 failed, 1777 total`, `Results:` present once ⇒ **no 3.2 parse abort**. The 2 are **[FI-78](improvements.md)**, not A1 |
-
-## 🔴 Two records that were WRONG, and are now corrected
-
-Both were carried forward through several handoffs. Do not restore either.
-
-1. **"No baked file touched ⇒ no `cco build`."** False for the cycle. `Dockerfile:201-225` bakes
-   `bin/`, `lib/`, `templates/`, `docs/users`, `changelog.yml` and `defaults/managed/`, and this
-   branch changes **all but one**, including the managed rule `cco-config-interaction.md`. It was
-   true only of the **A2+A3 delta**. ⚠ It matters: an in-session agent's `cco project save` runs the
-   **image-baked** copy, so A4's fixes do not reach a running session until a rebuild. The host CLI is
-   unaffected — which is why the changelog's *"no rebuild needed for the commands themselves"* is
-   right and this is not a contradiction.
-2. **The host suite's expected result was `1770/7`.** That is the **container's** expectation. Those 7
-   fail *in the container*; on the host they pass. The host's real result is `1775/2`.
-
-## Amendment A4 — what was ruled
-
-| # | Ruling | What it closes |
-|---|---|---|
-| **D20** | anchor the project verbs on the **git top-level**, not the unit dir | `.cco/` may sit **below** the repo root. Pathspecs are cwd-relative; every git *output* path is top-level-relative. Measured: a secret under a nested `.cco/` was committed under `✓ saved`, and `status --full` printed nothing at all |
-| **D21** | a **deletion is not a leak** | the save that *removes* a secret was refused, and the refusal's own `git reset` undid the `git rm --cached` it prescribed. Both stores |
-| **D22** | `cco config save --help` | the only verb of the six without the arm, so its access gate could only be asked negatively |
-
-⭐ **Why three reviews missed D20.** At the top level the prefix is empty and every message is
-byte-identical, so **a test written only at the top level cannot see it**. The 54 flat tests passed on
-the broken code. The new pair is flat **and** nested (design §6.2e).
+| Branch | `feat/devmode/dev-execution-mode`, **7 commits ahead of `develop`**, tree clean, **not merged, not pushed** |
+| Image | `cco build` run **from the clone**; `/opt/cco/BUILD` = `feat/devmode/dev-execution-mode@cc6ba5b`, in the build log **and** in the session that checked it |
+| Build equivalence | `git diff --name-only develop..HEAD` lists only `docs/maintainers/**` — **nothing baked**, so building from this branch equals building from `develop` |
+| `develop` vs remote | **level** at `ed69492` |
+| Merged branches | `git branch --merged develop` → only `develop`, `main`. No worktree to clean (`git worktree list` = one entry) |
+| This session's work | documentation only — **no code, no tests changed** |
 
 ## Gates still open
 
 | Gate | What unblocks it |
 |---|---|
-| ▶ **Push `develop`** | a **host** step. `cd <repo> && git push origin develop` |
-| ▶ **`cco build`** | not optional for this cycle (above). Nothing **in-session** reflects A4 until it runs — the host CLI already does |
-| **[FI-78](improvements.md)** | the two macOS test-portability failures. **Not A1's** — they are in the already-merged A5+A8 warn-gate cycle. ⚠ Not measurable from the container: bash 3.2 is reachable over the Docker socket, BSD `awk`/`mktemp` are not. Still owed before `0.7.0` |
-| **[A9](roadmap.md)** ([FI-77](improvements.md)) | ▶ **the next unit once A1 closes.** Needs a short design first, and a `cco build` |
+| ▶ **Implement [A11](roadmap.md)** ([FI-80](improvements.md)) | the next unit. Shape is ruled, no design owed — see *How to resume* |
+| **Merge this branch** | a human gate. Nothing is merged yet; the 7 commits are documentation |
+| **Push this branch** | never pushed. The session could not reach the remote before; verify from the host |
+| **[A10](roadmap.md) design** ([FI-79](improvements.md)) | after A11. **Five** questions open in [analysis §11.1](engineering/analysis/dev-execution-mode.md) |
+| **[FI-78](improvements.md)** | the 2 macOS test-portability failures (warn-gate cycle, not A1). ⚠ **Host-only measurable** — bash 3.2 is reachable over the Docker socket, BSD `awk`/`mktemp` are not. **Owed before `0.7.0`** |
+| **[FI-81](improvements.md)** | fixing the `/analyze` skill needs approval — skills/agents are user-owned config **and** `defaults/global/` is shipped content |
+| **[FI-82](improvements.md)** | the `docker run` stdout swallow is **measured, not diagnosed**; and whether the rule belongs in `CLAUDE.md` is a human call |
 | **[FI-73](improvements.md)** | the SIGPIPE sentinel — a maintainer's call, unchanged |
-| 📝 **the `_secret_scan_staged` pipefail contract** | raised by A2's review as `minor`, **never ruled**, and still not. Under `pipefail` a failing `git diff --cached` (rc 128) makes the function return 128, and the caller prints its refusal with an **empty path**. Fail-closed and unreachable behind `rev-parse --is-inside-work-tree`, but it is a silent contract change to the function **both** save gates share |
+| 📝 **the `_secret_scan_staged` pipefail contract** | raised by A2's review as `minor`, **still never ruled**. Under `pipefail` a failing `git diff --cached` (rc 128) makes the function return 128 and the caller prints its refusal with an **empty path**. Fail-closed and unreachable, but it is a silent contract change to a function **both** save gates share |
+| **A1's roadmap entry → [roadmap-history.md](roadmap-history.md)** | ~450 lines of a ~1260-line roadmap, closed — but its branch was deleted 2026-08-26, so `rules/documentation.md`'s trigger (*the branch appears among the merged*) **can never fire again**. A maintainer's call now, not an automatic step |
+| **[FI-74](improvements.md)** · **[FI-76](improvements.md)** | A1's review residue, none blocking |
+| **[A2](roadmap.md)** · **[A3](roadmap.md)** · **[A6](roadmap.md)** · **[A7](roadmap.md)** | the rest of Block A |
+| **FI-58 leftovers** | ADR-0058's **D3**, **D7** and **D8-as-amended** are unbuilt. ⚠ D8 touches a **baked** file |
+| **[FI-72](improvements.md)** | nothing detects the *next* unclassified `warn` producer |
 
-⚠ **`feat/claude-view-file-overlays` is rares' branch and stays untouched** — local and remote
-identical at `43c2c33`.
+⚠ **`feat/claude-view-file-overlays` is rares' branch and stays untouched.**
+
+## How to resume
+
+**First command**: `git branch --show-current` — host and container share one working tree, so the
+host can move this session's branch under it.
+
+Then **`/implement` A11** ([FI-80](improvements.md); roadmap entry *A11*). Its shape is ruled and has
+**two halves, both in scope**:
+
+1. **CLI half** — extend `cco whoami`'s **host** branch (`lib/cmd-whoami.sh:50-70`) with `REPO_ROOT`,
+   `_cco_install_provenance` (`lib/paths.sh:541-550`) and the version.
+2. **Image half** — a **`LABEL`** on the image carrying the build ref. There is none today
+   (measured: `docker image inspect claude-orchestrator:latest --format '{{json .Config.Labels}}'`
+   → `null`), and `/opt/cco/BUILD` (`Dockerfile:221-222`) has exactly **one** reader,
+   `lib/cmd-whoami.sh:102`, in-container only.
+
+Together they close **all** of the FI-16 residue at `improvements.md:471`, not half of it.
+
+⚠ **Both halves are baked** (`Dockerfile`, `lib/`) ⇒ the acceptance lane takes a **`cco build`**, and
+the label cannot be verified before one. Run the build **from the clone**: `./bin/cco build` — see
+*Context*.
 
 ## Tasks
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] ▶ **Push `develop`** and run **`cco build`** — both host steps; the merge and the branch
-      cleanup are done
-- [ ] ▶ **[A9](roadmap.md)** ([FI-77](improvements.md)) — the next unit. Short design first; three
-      questions are open in the roadmap entry. Both targets are **baked**
-- [ ] **[FI-78](improvements.md)** — the two macOS test-portability failures, host-verified only
-- [ ] **[FI-73](improvements.md)** — decide the SIGPIPE sentinel
-- [ ] **[FI-74](improvements.md)** · **[FI-76](improvements.md)** — A1's review residue, none blocking
-      (**FI-75 is closed** by A4)
-- [ ] **[A2](roadmap.md)** — per-project custom Docker image ([FI-49](improvements.md)). ⭐ Sub-problem 3
-      first: the `setup.sh` docs contradict themselves
-- [ ] **[A3](roadmap.md)** — cross-scope collision warning ([FI-32](improvements.md)) + three open decisions
-- [ ] **[A6](roadmap.md)** — `.claude/worktrees` in the functional-write floor ([FI-56](improvements.md))
-- [ ] **[A7](roadmap.md)** — the A4-ask-plane review residue ([FI-62](improvements.md) … [FI-66](improvements.md))
-- [ ] **FI-58 leftovers** — ADR-0058's **D3**, **D7** and **D8-as-amended** are unbuilt. ⚠ D8 touches a
-      **baked** file
-- [ ] **[FI-72](improvements.md)** — nothing detects the *next* unclassified `warn` producer
+- [ ] ▶ **Implement [A11](roadmap.md)** — both halves above; then `./bin/cco build` and verify the
+      label with `docker image inspect`, **not** `docker run` (see *Context*)
+- [ ] **`/design` [A10](roadmap.md)** — the five questions in
+      [analysis §11.1](engineering/analysis/dev-execution-mode.md)
+- [ ] **Merge and push** this branch — both open
+- [ ] **[FI-78](improvements.md)** — the two macOS failures, host-verified only, owed before `0.7.0`
+- [ ] **[FI-81](improvements.md)** — propose the `/analyze` skill + `analyst` agent fix in
+      `defaults/global/`, and decide whether it should ship a duplicate of a pack-owned skill at all
+- [ ] **[FI-82](improvements.md)** — diagnose *why* `docker run` stdout is swallowed (proxy? daemon
+      connection? no TTY?) before deciding where the rule lives
+- [ ] **Decide**: move A1's ~450-line closed entry into [roadmap-history.md](roadmap-history.md)
+- [ ] **[FI-73](improvements.md)** — the SIGPIPE sentinel
+- [ ] **Rule the `_secret_scan_staged` pipefail contract** — open since A2's review
+- [ ] **[FI-74](improvements.md)** · **[FI-76](improvements.md)** — A1's review residue
+- [ ] **[A2](roadmap.md)** · **[A3](roadmap.md)** · **[A6](roadmap.md)** · **[A7](roadmap.md)** —
+      the rest of Block A. ⭐ A2: start from sub-problem 3, the `setup.sh` docs contradict themselves
+- [ ] **FI-58 leftovers** — D3, D7, D8-as-amended
+- [ ] **[FI-72](improvements.md)** — detect the next unclassified `warn` producer
 
-## 🔑 Non-obvious things the next session would otherwise rediscover
+## Context
 
-- 🔴 **INSIDE `lib/cmd-project-save.sh`, `root` MEANS THE GIT TOP-LEVEL** and the config dir is
-  `$spec`, never a literal `.cco`. A new call site reaching for `basename "$root"` or a bare `.cco`
-  reintroduces D20 **silently**, and at the top level every existing test still passes. The shared
-  renderers in `config-read.sh` were always right — it was the callers that passed the wrong root.
-- ⭐ **A MUTATION THAT PASSES MEANS THE BEHAVIOUR IS UNTESTED.** Every A4 fix was pinned by reverting
-  it and checking that *exactly* its own test fails. Two of them failed nothing at first.
-- ⭐ **THE DISCRIMINATING ASSERTION IS SOMETIMES THE NEGATIVE ONE.** The broken ignore-rule path
-  (`app//home/you/.gitignore_global:1`) *contains* the correct one as a substring, so
-  `assert_output_contains` alone passes on the defect.
-- ⭐ **`assert_output_not_contains "⚠"` IS NOT AN ORACLE FOR "NO WARN".** `_project_secret_remedy`
-  prints an **indented** `⚠` — a house idiom. `warn()` writes the glyph at the **start of a line**.
-  Use `_ps_no_warn_emitted`.
-- ⚠ **`git checkout -- <file>` ON AN UNCOMMITTED FILE DISCARDS THE WHOLE WORK**, not just the
-  mutation you were reverting. Copy the file aside instead.
-- ⚠ **In a test, build the ESC for an ANSI strip with `printf '\033'`** — BSD sed does not read `\x1b`.
-- ⚠ **A manual smoke of these verbs needs the ambient operator env cleared** — `env -u
-  CCO_CONTAINER_OPERATOR -u CCO_ACCESS_TRIPLE -u PROJECT_NAME -u CCO_SESSION_CONTEXT` — and the
-  ADR-0007 guard line filtered out. Do **not** set `CCO_ALLOW_HOST_RESOLVE=1` to silence it.
+### What was decided, and by whom
+
+Four rulings by the maintainer, all on 2026-08-27. They are recorded in the roadmap and in the
+analysis (§11.0); this only says that they happened and what follows from them.
+
+1. **The analysis direction is approved** ⇒ the draft was promoted in place to the approved artifact.
+2. **Both CLIs coexist** — the npm binary stays installed. The cheap collapse (a `CONTRIBUTING.md`
+   change plus a PATH-shadowing check) is **explicitly rejected**, not passed over.
+   ⚠ **Consequence**: the dispatcher option **cannot be used until an npm release carrying it
+   ships** — the installed `0.6.0` cannot dispatch.
+3. **A11 ships before A10**, as its own unit, because it is A10's measuring instrument.
+4. **A11 also carries the image `LABEL`** ⇒ it closes all of FI-16's residue.
+
+No ADR was written: these are scope and sequencing calls inside an approved analysis, not
+architectural decisions. A10's design **will** need one.
+
+### The measurements a design must not argue away
+
+- 🔴 **The ADR-0052 §1 version gate is DORMANT, not bypassed.** npm `latest` and the clone are both
+  `0.6.0`, both `CCO_INDEX_VERSION=2`, both max migration `017`, across **148 commits** and +3246
+  lines under `lib/`+`bin/`+`templates/`. ⇒ **`cco --version` is a NON-DISCRIMINATING oracle** and any
+  acceptance test built on it is a false pass by construction. Do not let a design say *"the gate
+  protects us"*.
+- 🔴 **The clone has no name on PATH.** `which -a cco` printed the **same path twice** — one binary
+  through a duplicated PATH entry, **not two installs**. So the coexistence just ruled is a state
+  **to create**, not one to disambiguate; the ergonomic problem is *the clone has no name*, not
+  *which one wins*; and a design that "detects the other install and warns" has, today, **nothing to
+  detect**.
+- ⭐ **The image tag IS the code identity of the in-session cco.** `Dockerfile:201-211` bakes `bin/`
+  and `lib/` into `/opt/cco` and a normal session mounts **no host `lib/`**. `IMAGE_NAME` is
+  hardcoded at `bin/cco:37` with no override — 8 consumers plus 7 documentation surfaces, including
+  `FROM claude-orchestrator:latest` in the custom-image guide, so the tag is a **published user
+  contract**.
+
+### Traps this session paid for
+
+- 🔴 **Inside a session, `docker run` returns rc 0 with EMPTY stdout; only the exit code crosses.**
+  Measured on the cco image **and** `bash:3.2`, with `cat`, `echo` and an explicit `-a stdout`.
+  `--entrypoint false` → 1, `true` → 0, so the rc channel is intact.
+  ⇒ **any in-session check that captures `docker run` output is a false pass**, in the most
+  convincing shape there is: rc 0 and nothing to look at. It is why this repo's bash-3.2 idiom is
+  **rc-based**. **`docker image inspect` DOES work** in-session (rc 0, real output) — that is the
+  channel to use, and the reason A11 carries a `LABEL`. ([FI-82](improvements.md))
+- 🔴 **`docker run <image> <cmd>` does NOT replace an ENTRYPOINT.** `Dockerfile:233` sets one, so the
+  trailing words become **argv of the entrypoint**, which ends at
+  `exec … claude --dangerously-skip-permissions "$@"`. The wrong form **installs Claude Code and
+  prints "Please run /login"** — long, plausible output that reads like a working probe. Use
+  `--entrypoint cat` before the image, path after.
+- 🔴 **`/analyze` forks to a read-only agent and cannot write its own artifact** — two `/analyze`
+  skills register at once and `defaults/global/`'s (`agent: Explore`, no `Write`) wins over the
+  pack's. **Until it is fixed, the lead must write the analysis file.** The oracle for which one won
+  is the **description** shown in the session's skill listing; the `name:` fields are identical.
+  `/handoff` runs in the lead (no fork) and does not have this problem. ([FI-81](improvements.md))
+- 📝 **The docker proxy refuses past 10 containers with rc 125** — docker's code, not the command's.
+  Reached while probing, which is why the **bash 3.2 lint's negative control could not be run**:
+  that lint is *unverified* in that session, not verified-ok.
 - ⚠ **git in this container needs `safe.directory`**, and `~/.gitconfig` is a read-only bind mount:
   `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/claude-orchestrator git …`
-- ⚠ **THE HOST CAN CHANGE THIS SESSION'S BRANCH UNDER IT** — one working tree, two writers. Run
-  `git branch --show-current` before any write.
-- ⚠ **A suite log's `[PASS]`/`[FAIL]` lines carry ANSI codes.** The **`Results:` line is the only
-  authoritative count, and its absence is itself the failure signal.**
-- ⚠ **The container's `/tmp` filled during a full-suite run and the filesystem went read-only**
-  (2026-08-26). The precursor was test durations exploding ~30x. If that recurs: `cco stop`, prune,
-  `cco start`. The repo is a bind mount, so nothing is lost.
+- ⚠ **The host can change this session's branch under it** — one working tree, two writers.
+
+### Facts that will shape A10's design
+
+- ⚠ `package.json` `files` lists **`"bin/cco"`, not `"bin/"`**, while `Dockerfile:201` does
+  `COPY bin/`. A new `bin/cco-dev` would be **baked into the image but never published**, and
+  `scripts/check-pack-hygiene.sh` is a **denylist** that would not catch it.
+- ⚠ `_cco_config_dir()` (`lib/paths.sh:455-460`) is a literal `$HOME/.cco` with **no override seam**
+  ⇒ isolating CONFIG means a new resolver seam or a `$HOME` redirect. Prior art in-repo:
+  `scripts/cco-sandbox-e2e.sh`, whose own header names the invisible-state trap.
+- ⚠ Reopening the WS-6 *"CONFIG stays shared"* call changes a **pinned** test,
+  `tests/test_dev_sandbox.sh:75-86`.
+- 🔴 `_run_migrations` runs **target-shared / marker-sandboxed** — `lib/update.sh:138` (target
+  `~/.cco/.claude`) and `:432` (target **the user's repo**, so the mutation gets committed). Worst
+  reachable writer: `cco init --force` → `rm -rf` of the real `~/.cco/.claude` (`lib/cmd-init.sh:198`)
+  re-seeded from the **dev** tree.
+- ⚠ `cco --dev-sandbox <verb>` **inside a session is silently consumed and ignored.**
+- ⚠ **There is no `cco doctor` verb at all**, and nothing ever reaps a created sandbox.
+- ⚠ **Naming-namespace collision**: A10's tag axis, Block **B1** (`cco build` inside `cco update`) and
+  **B2** (`cco attach` container naming) all touch one namespace. Sequence it, do not discover it late.
+
+### Open questions needing a human
+
+- The five design questions in [analysis §11.1](engineering/analysis/dev-execution-mode.md).
+- Whether to fix `defaults/global/`'s `/analyze` + `analyst` at all, or stop shipping a duplicate of a
+  pack-owned skill ([FI-81](improvements.md)).
+- Whether A1's closed entry moves to [roadmap-history.md](roadmap-history.md).
+- The `_secret_scan_staged` pipefail contract, open since A2's review.
+
+### Still unmeasured — say so, do not assume
+
+- **The `unknown` half of the `/opt/cco/BUILD` oracle is ASSERTED, not measured.** Only `branch@sha`
+  has been executed; no npm-provenance build has ever been made. An A11 acceptance test must be
+  checked against a binary of **each** provenance or it passes on both.
+- **The bash 3.2 lint was not verified** in the session that wrote this (proxy container limit).
+- **Why `docker run` stdout is swallowed** was measured, never diagnosed.
 
 ## Reference documents
 
-- [roadmap.md](roadmap.md) — the living SSOT; A1's entry carries all four amendments and their measures
-- [improvements.md](improvements.md) — the `FI-*` tracker
-- [ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md) — the contract, D1…D22
-- [design-project-config-versioning.md](configuration/decentralized-config/design/design-project-config-versioning.md)
-  — the mechanism (§2.1 carries D20) and the test plans (§6.2e carries A4)
-- [the whole-cycle review](configuration/decentralized-config/reviews/26-08-2026-save-status-history-cycle-review.md)
-  — the evidence the three rulings were measured against
+- [roadmap.md](roadmap.md) — the living SSOT; Block A carries A11, A10 and the ratified order
+- [improvements.md](improvements.md) — the `FI-*` tracker; FI-79 · FI-80 · FI-81 · FI-82 are new
+- [engineering/analysis/dev-execution-mode.md](engineering/analysis/dev-execution-mode.md) — the
+  approved analysis; **§11.0** the rulings, **§11.1** what is still open, **§12.1** the host probes
+- [ADR-0052 §7](configuration/decentralized-config/decisions/0052-index-integrity-version-gate-and-reconcile.md)
+  — `--dev-sandbox` and the WS-6 annotation A10 must either uphold or reopen
+- [engineering/design/packaging-distribution.md](engineering/design/packaging-distribution.md) — §4
+  parks the image tag, §9 defers the `cco update` split
+- [roadmap-history.md](roadmap-history.md) — where a closed unit's entry goes
