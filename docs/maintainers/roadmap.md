@@ -121,8 +121,10 @@ narrative, the lessons, and the per-stage records live in
   origin/develop..develop` = 0). The push happened host-side and that gate is closed;
   `origin/feat/cli/start-warning-gate` is gone too. The only remote feature branch left is
   `origin/feat/claude-view-file-overlays`, which is rares' and stays.
-  📝 **`origin/feat/cli/start-warning-gate` still exists on the remote** and is the one merged branch
-  left to delete there — outward-facing, so it is asked rather than assumed.
+  ✅ **`origin/feat/cli/start-warning-gate` is GONE** — measured 2026-08-27, `git branch -r` lists
+  only `origin/develop`, `origin/main` and `origin/feat/claude-view-file-overlays`. This row said it
+  *"still exists"* while the row above it, in the same paragraph, already said it had been deleted:
+  ⚠ the contradiction survived because **both sentences were prose, and neither was a measurement**.
   ⚠ **`feat/claude-view-file-overlays` is NOT ours and is deliberately untouched** — rares' branch,
   verified identical local and remote at `43c2c33`, reviewed by the maintainer in a dedicated session.
   It must stay out of every cleanup sweep.
