@@ -66,12 +66,15 @@ _whoami_line_of() {
 # (bin/cco:20-26) precisely so a PATH symlink still finds the tool root — a symlinked
 # fixture would resolve straight back to the real repo and silently test nothing.
 # lib/ IS a symlink (1.5MB, and the code under test is the same code either way).
-# Usage: _whoami_plant_tree <root> <version-for-package.json>
+# An EMPTY <version> plants no package.json at all — the tree cco cannot read a
+# version from.
+# Usage: _whoami_plant_tree <root> <version-for-package.json|"">
 _whoami_plant_tree() {
     local root="$1" version="$2"
     mkdir -p "$root/bin"
     cp "$REPO_ROOT/bin/cco" "$root/bin/cco"
     ln -s "$REPO_ROOT/lib" "$root/lib"
+    [[ -n "$version" ]] || return 0
     printf '{"name":"@claude-orchestrator/cco","version":"%s"}\n' "$version" > "$root/package.json"
 }
 
@@ -125,7 +128,37 @@ test_whoami_host_version_follows_the_running_trees_package_json() {
     return 0
 }
 
+# "When it cannot be read, print the literal `unknown` — never fabricate, never
+# leave the field empty." The empty rendering is the SILENT failure: every other
+# assertion in this file reads it as "the field is there", so only an assertion on
+# the literal catches a refactor that drops the fallback.
+test_whoami_host_version_is_unknown_when_package_json_is_unreadable() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    local root="$tmp/nopkg/cco"
+    _whoami_plant_tree "$root" ""          # no package.json at all
+    [[ ! -e "$root/package.json" ]] \
+        || fail "fixture broken: the tree must have no package.json" || return 1
+
+    _whoami_host "$root/bin/cco" whoami
+    [[ $WA_RC -eq 0 ]] \
+        || fail "a missing package.json must not break whoami, got rc=$WA_RC: $WA_OUT" || return 1
+    local got; got=$(_whoami_field version)
+    [[ "$got" == "unknown" ]] \
+        || fail "an unreadable package.json must render the literal 'unknown', got: '$got'" || return 1
+    return 0
+}
+
 # ── REPO_ROOT: the resolved absolute framework tree ──────────────────
+#
+# The contract's other fallback — REPO_ROOT prints `unknown` if unset — has NO test
+# here, deliberately: no invocation of bin/cco can reach that state, so a test would
+# have to manufacture it and would then be recording confidence nobody measured.
+# bin/cco:27 assigns REPO_ROOT unconditionally from the resolved script location; no
+# `unset REPO_ROOT` and no second assignment exists anywhere in bin/ or lib/; an
+# exported `REPO_ROOT=` is overwritten by that line (measured); and under the file's
+# `set -euo pipefail` a failing `$(cd … && pwd)` aborts the process rather than
+# leaving the variable empty (measured). If REPO_ROOT ever becomes settable from
+# outside, this gap becomes reachable and wants a test.
 
 test_whoami_host_repo_root_is_the_resolved_absolute_tree() {
     _whoami_host "$REPO_ROOT/bin/cco" whoami
