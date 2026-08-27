@@ -29,12 +29,12 @@ Order inside Block A, ratified 2026-08-27: **A1 → A11 → A10 → A9**, then A
 
 | Claim | Measured |
 |---|---|
-| Branch | `feat/devmode/dev-execution-mode`, **7 commits ahead of `develop`**, tree clean, **not merged, not pushed** |
+| Branch | `feat/devmode/dev-execution-mode`, tree clean, **not merged, not pushed**. ⚠ **No commit count is stated here on purpose** — the commit that states one invalidates it, a trap this repo has paid for. Measure: `git rev-list --count develop..HEAD` |
 | Image | `cco build` run **from the clone**; `/opt/cco/BUILD` = `feat/devmode/dev-execution-mode@cc6ba5b`, in the build log **and** in the session that checked it |
-| Build equivalence | `git diff --name-only develop..HEAD` lists only `docs/maintainers/**` — **nothing baked**, so building from this branch equals building from `develop` |
+| Build equivalence | `git diff --name-only develop..HEAD` listed only `docs/maintainers/**` — **nothing baked**, so building from this branch equals building from `develop` |
 | `develop` vs remote | **level** at `ed69492` |
 | Merged branches | `git branch --merged develop` → only `develop`, `main`. No worktree to clean (`git worktree list` = one entry) |
-| This session's work | documentation only — **no code, no tests changed** |
+| This session's work | documentation only — **no code, no tests changed**, so the suite baseline is untouched (`git diff --name-only develop..HEAD` → `docs/maintainers/**` only) |
 
 ## Gates still open
 

@@ -38,7 +38,6 @@
 > when **every** in-reach tree resolves `ro` — the FI-67 failure mode one level down, in text written
 > the same day. **Fixed** (`32f15c8`): the block now names the combination that gets neither rule and
 > why, leaving the *code* gap where it already was, as A1's residue for Block D.
-> ✅ `handoff.md` was stale — rewritten by this `/handoff`.
 > 📄 [FI-71](improvements.md) — `design-config-editor.md` still describes an access model **replaced
 > twice** (ADR-0048, ADR-0049 §8) and overstates the built-in's privilege. Filed, scheduled at the top
 > of *Not in the sequence*, and left to the `documenter`: the doc predates two ADRs, so the three
