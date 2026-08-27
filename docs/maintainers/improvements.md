@@ -3527,3 +3527,56 @@ is watch-not-work with no reproduction; this one has a reproduction path (item 1
 
 **Effort**: Low to measure the trigger. Unknown to fix. ⚠ Option 4 is an **ADR**, not a patch.
 **Type**: autonomy-mode blocker / agent-facing correctness; option 4 is a security surface.
+
+### FI-83 addition, 2026-08-27 — the trigger, measured a few hours later
+
+The note above says the trigger was never diagnosed and lists three candidates. One of them is now
+**measured**, and it is not the one that looked obvious. Left above unedited: what it recorded was
+the state of knowledge at the time, and the wrong-looking candidate list is the lesson.
+
+**Measured**, from the lead session, with `tmux list-panes -a`:
+
+| pane | pid | `cwd` |
+|---|---|---|
+| 1.1 — the **lead** | 97 | `/workspace` |
+| 1.2 · 1.3 · 1.4 — the three **teammates** | 2780 · 33310 · 2840 | `/workspace/claude-orchestrator` |
+
+Two facts fall out, and together they close the mechanism:
+
+1. **A teammate is a separate `claude` process**, not an in-process subagent — the panes run their
+   own binary (`2.1.247`) under their own pid. So each performs its **own startup**, trust gate
+   included. This session's teammate mode is `tmux`; the `Agent` tool was called with **no**
+   `isolation`, which is why the worktree candidate was the weakest one and stayed weak.
+2. 🔴 **The teammates' `cwd` is not the lead's.** The lead sits in `/workspace`, every teammate in
+   `/workspace/claude-orchestrator`. **Workspace trust is directory-scoped** ⇒ the lead's acceptance
+   for `/workspace` grants nothing for the repo directory, and the first process to start there meets
+   an ungated dialog.
+
+**It also predicts what was observed and not designed for**: the `documenter`, spawned ~10 minutes
+after the maintainer accepted, started in the same directory and **did not stall** — consistent with
+the acceptance persisting for that directory (and with `~/.claude.json` being the per-project STATE
+mount recorded above).
+
+⚠ **Still not observed: the directory the dialog actually named.** Nobody captured the prompt text.
+The mechanism above fits every fact in evidence and no other candidate now does — but that specific
+confirming observation is missing, and it is the one that would make this certain rather than
+merely unrefuted.
+
+**What this changes about the fix.** The blunt option (4) above — pre-accept trust for repo
+directories — is no longer the cheapest thing that would work, and it was the one carrying the whole
+security cost:
+
+- ▶ **New, and nearly free: start teammate panes in the lead's own `cwd`.** If the teammates began in
+  `/workspace` there would be no second directory to trust, and **no security surface is touched at
+  all** — nothing is vouched for, a gate is simply not re-encountered. ⚠ Verify first *why* they
+  start in the repo: if a teammate's cwd is deliberate (a repo-scoped agent wants the repo root),
+  this trades one ergonomic property for another and is the maintainer's call, not an obvious win.
+- The narrow form of option 4 is now narrower still and better argued: pre-accept **only the
+  directories cco itself mounts and starts sessions in**, which is a set cco *creates*, not a set it
+  *discovers*.
+- ⚠ **Option 4's security argument is unchanged and still stands** for whatever survives: trust also
+  gates execution of shell-carrying settings the repo supplies, and `:ro` stops the agent editing
+  them, never Claude Code executing them.
+
+**Effort**: unchanged for the fix; the diagnosis step (item 1 above) is now **done in part** — what
+remains is capturing the dialog's own text, which costs one spawned teammate in a fresh directory.
