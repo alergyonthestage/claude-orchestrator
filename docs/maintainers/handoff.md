@@ -41,7 +41,7 @@ Order inside Block A, ratified 2026-08-27: **A1 → A11 → A10 → A9**, then A
 | Gate | What unblocks it |
 |---|---|
 | ▶ **Implement [A11](roadmap.md)** ([FI-80](improvements.md)) | the next unit. Shape is ruled, no design owed — see *How to resume* |
-| **Merge this branch** | a human gate. Nothing is merged yet; the 7 commits are documentation |
+| **Merge this branch** | a human gate. Nothing is merged yet, and every commit on it is documentation |
 | **Push this branch** | never pushed. The session could not reach the remote before; verify from the host |
 | **[A10](roadmap.md) design** ([FI-79](improvements.md)) | after A11. **Five** questions open in [analysis §11.1](engineering/analysis/dev-execution-mode.md) |
 | **[FI-78](improvements.md)** | the 2 macOS test-portability failures (warn-gate cycle, not A1). ⚠ **Host-only measurable** — bash 3.2 is reachable over the Docker socket, BSD `awk`/`mktemp` are not. **Owed before `0.7.0`** |
