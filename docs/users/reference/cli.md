@@ -157,6 +157,19 @@ rebuild to get new versions. The channel/version preference is the config knob
 `cco build --claude-version` is a one-off override for a single build, and
 `cco build --no-cache` resets the install cache so the next start reinstalls fresh.
 
+**The image records the source ref it was built from, in two places.** It is written to
+`/opt/cco/BUILD` inside the image, which is what `cco whoami`'s `image built from` line
+reads in-session (§3.5c) — but that channel needs a running container, and from inside a
+cco session `docker run` returns exit 0 with empty stdout, so it can't be read there. The
+same ref is also set as an image label, readable without starting a container from either
+the host or a session:
+
+```
+docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'
+```
+
+Use `docker image inspect` for this — not `docker run`.
+
 ---
 
 ### 3.2 `cco start <project>`
@@ -849,9 +862,22 @@ every read level; refused only at `cco_access=none`, where `cco` itself is refus
 Usage: cco whoami
 ```
 
-On the **host** there is no session envelope, so it prints one line — *"Not in a cco
-session (host context) — cco runs unrestricted here."* — plus the redirected bucket paths
-when a developer sandbox is active (§3.34).
+On the **host** there is no session envelope, so it opens with one line — *"Not in a cco
+session (host context) — cco runs unrestricted here."* — followed by a `cco CLI` identity
+block, printed **before** the developer-sandbox block (§3.34):
+
+| Field | Contents |
+|-------|----------|
+| `version` | Read from `package.json` at the package root — the same source `cco --version` reads. |
+| `provenance` | `npm` / `brew` / `clone` / `unknown`, derived from where `REPO_ROOT` resolves to. |
+| `REPO_ROOT` | The resolved framework tree (the target of `bin/cco`'s readlink loop). |
+
+This exists because neither existing oracle discriminates which `cco` is actually
+running: `cco --version` returns the same string from an npm install and from a clone,
+and `which cco` reports PATH order, not the tree the script resolved through its
+symlinks. Any field that can't be determined renders the literal `unknown` — `version`
+when `package.json` is missing or unreadable, `provenance` when `REPO_ROOT` matches
+none of npm's, Homebrew's, or a git clone's layout, and `REPO_ROOT` when it isn't set.
 
 **In a session** it prints four blocks and a closing note:
 
