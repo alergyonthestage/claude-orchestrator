@@ -764,12 +764,27 @@ branch (`lib/cmd-whoami.sh:50-70`) reports **no `REPO_ROOT`, no provenance, no v
 `_cco_install_provenance` (`lib/paths.sh:541-550`) does classify `npm|brew|clone|unknown` but has
 **one** consumer and no user surface.
 
-**Shape as ruled** (nothing further decided): extend `cco whoami`'s host branch with `REPO_ROOT`,
-`_cco_install_provenance` and the version. Closes half of the FI-16 residue at
-`improvements.md:471`; the other half is host-side image introspection (`/opt/cco/BUILD` has one
-reader, in-container only, and the `Dockerfile` sets no `LABEL`).
+**Shape as ruled** — **two halves, both in scope** (the second added by the maintainer 2026-08-27):
 
-**Effort**: Low. Needs no design phase of its own beyond the shape above.
+1. **The CLI half** — extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance`
+   and the version.
+2. **The image half — a `LABEL` on the image** carrying the build ref. Today `Dockerfile` sets
+   **none** (measured: `docker image inspect … --format '{{json .Config.Labels}}'` → `null`), and
+   `/opt/cco/BUILD` has exactly one reader, `lib/cmd-whoami.sh:102`, **in-container only**.
+
+⭐ **Why the `LABEL` is the right carrier, and not merely convenient.** Measured 2026-08-27:
+`docker image inspect` returns real output **inside a session** (rc 0, the image id matching the
+build log's manifest), while `docker run`'s stdout is **swallowed there** — rc 0, empty
+([FI-82](improvements.md)). So the label is the **only container-free channel that works from both
+the host and a session**. It also makes the CLI↔image handshake computable *from inside*: an agent
+can compare its own `/opt/cco/BUILD` against `docker image inspect` on the tag and detect that the
+image was rebuilt under it.
+
+Together the two halves close **all** of the FI-16 residue at `improvements.md:471`, not half.
+
+**Effort**: Low. Needs no design phase of its own beyond the shape above. ⚠ Both halves are baked
+(`Dockerfile`, `lib/`) — it takes a `cco build` in its acceptance lane, and the label cannot be
+verified before one.
 
 #### A10 — the dev execution mode ([FI-79](improvements.md))
 

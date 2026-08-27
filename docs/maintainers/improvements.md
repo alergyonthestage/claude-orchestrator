@@ -3320,15 +3320,29 @@ dev-sandbox block if active: **no `REPO_ROOT`, no provenance, no version**.
 `_cco_install_provenance` (`lib/paths.sh:541-550`) **does** classify `npm|brew|clone|unknown` but has
 **exactly one** consumer, `lib/cmd-update.sh:14`, and no user surface.
 
-**Shape as ruled** (nothing further decided): extend `cco whoami`'s host branch with `REPO_ROOT`,
-`_cco_install_provenance` and the version.
+**Shape as ruled** — **two halves, both in scope** (the second added by the maintainer 2026-08-27):
 
-**Relation to FI-16**: closes half of the residue FI-16 records at `improvements.md:471` — the
-CLI↔image handshake. The other half is host-side image introspection: `/opt/cco/BUILD`
-(`Dockerfile:221-222`) has **one** reader, `lib/cmd-whoami.sh:102`, **in-container only**, and the
-`Dockerfile` sets no `LABEL`, so the host cannot ask the image what built it without running it.
+1. **CLI half** — extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance` and
+   the version.
+2. **Image half — a `LABEL` carrying the build ref.** Today there is none: measured
+   `docker image inspect claude-orchestrator:latest --format '{{json .Config.Labels}}'` → **`null`**.
+   `/opt/cco/BUILD` (`Dockerfile:221-222`) has **one** reader, `lib/cmd-whoami.sh:102`,
+   **in-container only**, so nothing can ask the image what built it without running it.
 
-**Effort**: Low.
+⭐ **Why a `LABEL` and not a documented `docker run`**: measured the same day,
+`docker image inspect` returns real output **inside a session** (rc 0; the id matched the build
+log's manifest), while `docker run`'s stdout is **swallowed** there — rc 0, empty
+([FI-82](#fi-82--inside-a-session-docker-run-returns-rc-0-with-empty-stdout-only-the-exit-code-crosses)).
+The label is therefore the **only container-free identity channel that works from both the host and
+a session**, and it makes the handshake computable from inside: an agent can compare its own
+`/opt/cco/BUILD` with `docker image inspect` on the tag and detect that the image was rebuilt under
+it.
+
+**Relation to FI-16**: with both halves, closes **all** of the residue FI-16 records at
+`improvements.md:471` — the CLI↔image version handshake — not half of it.
+
+**Effort**: Low. ⚠ Both halves are baked ⇒ a `cco build` in the acceptance lane; the label is not
+verifiable before one.
 
 ## FI-81 — `defaults/global/` ships an `/analyze` that cannot write its own artifact, and it wins over the pack's
 
