@@ -10,6 +10,11 @@
 > open, §12.1 the host probes), the [A10 roadmap entry](../../roadmap.md), and
 > [FI-79](../../improvements.md) / [FI-80](../../improvements.md).
 >
+> ⚠ **THREE ROUNDS. READ [ROUND 3](#round-3--d1-rebuilt-on-the-maintainers-counter-proposal-2026-08-31) FOR `D1`.** Ruled so far: **`D0-b`**, **`D2`**, **`D5`**
+> (round 2). `D1` was refused in round 2 and rebuilt in round 3 on the maintainer's
+> counter-proposal — **configuration is the test's input, so it stays shared; what is protected
+> is writes to it.** `D3`, `D4` and the staging are still open.
+>
 > ⚠ **A SECOND ROUND FOLLOWS.** The maintainer answered on 2026-08-31, ruling `D2` and
 > reframing `D1` from *convenience vs exposure* to **isolation for testing**, and sent `D0`,
 > `D1`, `D2`'s mechanism and `D5` back for deeper comparison. **Read [Round 2](#round-2--reframed-by-the-maintainer-2026-08-31) for the
@@ -264,7 +269,7 @@ same side of the boundary.
 
 ### Recommendation — **D1-d + D1-a**, and hand the marker question to the taxonomy analysis
 
-> ⚠ **SUPERSEDED by [R2.3](#r23-d1-revisited--isolate-the-global-config-do-not-relocate-the-project-config)** — under the maintainer's reframing and a measured 3-site cost,
+> ⚠ **SUPERSEDED — see [R3.5](#r35-revised-d1)**, which supersedes R2.3 in turn. Round 2 argued the reverse of round 1;
 > global CONFIG **is** isolated. Kept readable: the option space below is unchanged.
 
 
@@ -761,6 +766,10 @@ shim.** During Block A, before `0.7.0` ships, the clone is invoked by path exact
 
 ## R2.3 D1 revisited — isolate the global config, do not relocate the project config
 
+> ⚠ **SUPERSEDED by [R3.5](#r35-revised-d1).** The maintainer refused this: isolating `~/.cco` was cheap
+> but did not serve the mode's purpose. Kept readable — round 3's project-config half builds on R2.1,
+> and the reasoning below is what round 3 argues against.
+
 > **SUPERSEDES Round 1's `D1-d` recommendation.** Round 1 recommended keeping CONFIG shared. Under
 > the maintainer's reframing — *isolation so broken code under test cannot damage the real user* —
 > and R2.1's measured 3-site cost, that recommendation does not survive.
@@ -951,3 +960,160 @@ identity channel that works from a session.
 6. **D5** — accept the four-verb responsibility model, and **move `cco doctor` out of A10** into its
    own entry?
 7. **Staging** — is **A10.1 / A10.2** the right cut, or should A10 ship as one unit?
+
+---
+
+# Round 3 — D1 rebuilt on the maintainer's counter-proposal, 2026-08-31
+
+> **Ruled in round 2**: `D0-b` ✅ · `D2` ✅ (die on a missing dev image; legacy flags become aliases;
+> `-dev` on the repository) · `D5` ✅ (four-verb model, the mode is the context, `cco doctor` leaves
+> A10). **`D1` was refused**, with a counter-proposal. This round tests that counter-proposal against
+> the code rather than accepting it, and rebuilds `D1` on it.
+
+## R3.0 The counter-proposal, and the premise I underweighted
+
+> *"Io voglio testare cco-dev con le mie config, che sono le stesse, sia global che project — non
+> cambiano se eseguo in dev mode o in modalità reale. Ciò che la dev mode deve proteggere sono
+> eventuali corruzioni (scritture)."*
+
+⭐ **The premise is right and rounds 1–2 both mis-weighted it.** Configuration is the **input** of the
+test, not its target: a dev run against a *different* config is not testing the user's setup. Round 2
+applied the "isolate what is cheap to isolate" rule to `~/.cco` **without asking whether isolating it
+serves the purpose of the mode**. It does not. The 3-site cost measured in R2.1 was real; it answered
+the wrong question.
+
+⇒ **CONFIG stays shared — global and project alike.** What changes is not *where* it lives but
+*whether a broken write survives*. The shape becomes: **prevention where the damage is unrepairable,
+remedy everywhere else, and a fixture for the cases that genuinely need a different config.**
+
+## R3.1 Does a pre-write backup hold up? Four tests against the code
+
+**T1 — What triggers it?** Two shapes, and one is disqualified by this repo's own history.
+
+- A **named list of config-writing verbs** — ⚠ *a named list is a lower bound*, a trap this project
+  has paid for four separate times. A verb added later inherits no backup and nothing says so.
+- **Unconditional**: snapshot at the start of **every** dev-mode invocation, taken only when the tree
+  differs from the last one. List-free, so no verb can be forgotten. With a **git-based** store the
+  cost when nothing changed is one `git status --porcelain`, and when something did it is O(delta),
+  not O(size).
+
+⇒ **Unconditional, git-based.** It also gives the property a tarball cannot: **depth**. Corruption you
+*notice* is repaired by any backup; corruption you notice twenty invocations later needs a history.
+
+**T2 — Does the backup survive the writers it is meant to protect against?** ✅ **Measured, and it
+does.** `grep` for an `rm -rf` of the whole config dir in `lib/*.sh` returns **nothing**: the worst
+reachable writer, `cco init --force`, removes `~/.cco/.claude` (`lib/cmd-init.sh:198`), not `~/.cco`.
+So a store living beside it is never taken out by the thing it guards. This is the measurement that
+makes the counter-proposal viable rather than merely plausible.
+
+**T3 — Does it collide with a stated contract?** 🔴 **Yes, and this changes the mechanism.**
+`cco config save`'s own help says: *"Explicit and manual: **cco never auto-commits**."* An automatic
+snapshot committing into `~/.cco/.git` would break that promise and pollute `cco config history` with
+machine commits interleaved among the user's curated ones.
+
+⇒ **The snapshot store must be a separate git dir**, not `~/.cco/.git`:
+`GIT_DIR=<dev-state>/config-snapshots.git`, `GIT_WORK_TREE=$(_cco_config_dir)`. Three properties fall
+out, all wanted:
+
+- `cco config history` / `status` / `save` are **untouched** — the contract holds literally.
+- It lives in the **sandboxed STATE** bucket, so it is dev-mode state: invisible to the published
+  binary and reaped by `cco dev reset`.
+- ⭐ It is **structurally unpushable**: `_config_push` operates on `$cfg/.git` (`lib/cmd-config.sh:283`)
+  and can never see this store.
+
+**T4 — What does it *not* repair?** One class, and it is the one round 1 measured (§6.2). With CONFIG
+shared and STATE sandboxed, `_run_migrations` still runs **target-shared / marker-sandboxed**: a
+dev-run migration mutates the real `~/.cco/.claude` and records that it ran in a bucket the published
+binary never reads — so the published binary **runs it again**. A file backup restores the files and
+leaves the **bookkeeping** wrong. See R3.4.
+
+## R3.2 The mechanism, and the half that does not exist yet
+
+**Completeness.** The snapshot must use `git add -A` against its own store, **not** `_CONFIG_ALLOWLIST`
+— measured, the allowlist omits **`access.yml`** and **`claude-version`**, and its whitelist
+`.gitignore` (`lib/cmd-config.sh:46-64`) excludes them too. A *publish* save wants a curated subset; a
+*safety* snapshot wants everything, stray files included. **Different scopes, deliberately** — and
+conflating them silently loses exactly the two files that have no other recovery path.
+
+🔴 **The restore half does not exist.** Measured: `cco config` has `save · status · history · push ·
+pull · validate` — **no `restore`, no `rollback`**. So today the project can record config history and
+**cannot put it back**. The backup plan needs that verb built, and it is the part with no prior art to
+lean on.
+
+⚠ **Secrets — a sub-decision, not a detail.** `~/.cco/secrets.env` is real and plaintext. It is
+deliberately absent from `_CONFIG_ALLOWLIST` **because that history is pushable**
+(`cco config push` exists) — an argument that **does not transfer** to a store that cannot be pushed
+(T3). And it is not purely hypothetical that cco writes it: `lib/migrate.sh:382` does
+`cp "$f" "$cfg/secrets.env"` during the legacy-vault migration, so a broken dev migration **can**
+clobber it.
+
+- **Include it** — the snapshot is a true restore point; cost: real secrets exist in a second on-disk
+  location, same user, same disk, never pushed.
+- **Exclude it** — nothing new on disk; cost: the one measured writer's damage is unrecoverable.
+
+## R3.3 The fixtures — the seam is still built, as an opt-in
+
+> *"Sempre possibile un project di test o config globale di test in dir separata … Il tooling dev deve
+> abilitare queste operazioni."*
+
+This is round 1's `D1-d` — **the seam exists but is not engaged by default** — and it is the right
+home for it. `CCO_CONFIG_HOME` (3 sites, R2.1) is built and left **disengaged**; `--dev` does not touch
+it. The dev tooling then offers two fixtures:
+
+| Fixture | What it does | Why it is not just documentation |
+|---|---|---|
+| **a throwaway global config** | creates a config dir seeded from the real one and runs against it via the seam | without the seam the only way to do this is a `$HOME` redirect, which also moves `~/.claude`, `~/.gitconfig` and every npm cache |
+| **a throwaway test project** | scaffolds a temp git repo with a `.cco` from the base template and registers it in the **sandboxed** index | keeps the write-testing off real repos entirely — and the index it lands in is already isolated, so it never pollutes the real project list |
+
+⚠ **`cco new` is not this.** Measured (`lib/cmd-new.sh:8-25`): it starts a *temporary session* over
+existing repos. It scaffolds no project and registers nothing. The fixture verb is new work.
+
+## R3.4 The one class the backup cannot cover — and the synthesis
+
+T4's migration case is where the two halves of the maintainer's own proposal meet: a backup is a
+**remedy**, and this class needs a **prevention**, because what breaks is not the files but the record
+of what has been applied.
+
+⇒ **Route that one class to the fixture.** Under `--dev`, migrations whose **target is the real
+CONFIG** refuse unless an isolated config dir is in use — the two call sites are named and few
+(`lib/update.sh:138`, `lib/cmd-init.sh:268`). The message is the escape hatch: *"testing a migration
+that writes config? run it against a test config dir."*
+
+This is not an extra rule bolted on. It is the maintainer's own division applied where it belongs:
+**real config for everything you are not deliberately mutating; a fixture for the class where a
+restore would leave the bookkeeping inconsistent.** Everything else runs against the real config with
+a snapshot behind it.
+
+## R3.5 Revised `D1`
+
+> **SUPERSEDES both R1's `D1-d + D1-a` and R2.3.** Neither survives the maintainer's premise that
+> configuration is the test's input.
+
+| Part | Ruling |
+|---|---|
+| **Global CONFIG** | **shared** — not forked, not redirected by `--dev` |
+| **Project config** | **shared** — not relocated (R2.1's ~64 inline sites and the repo-mount coupling stand as reasons not to, and now there is no motive either) |
+| **Protection** | an **unconditional, git-based snapshot** into a **separate `GIT_DIR`** under sandboxed STATE, taken at the start of each dev-mode run when the tree has changed; complete (`git add -A`), not allowlisted |
+| **Restore** | a **new verb** — it does not exist today |
+| **The uncoverable class** | CONFIG-targeting **migrations** refuse under `--dev` unless an isolated config dir is in use (2 call sites) |
+| **Fixtures** | `CCO_CONFIG_HOME` built but **disengaged**; dev tooling creates a throwaway config dir and a throwaway test project |
+| **`_CONFIG_ALLOWLIST` gap** | still worth closing (`access.yml`, `claude-version`) — but now it is about `cco config save` being a complete *publish*, not about the backup, which bypasses the allowlist by design |
+
+**What this drops from round 2**, deliberately: the `CCO_CONFIG_HOME` engagement, `cco dev seed` for
+CONFIG (there is nothing to seed — the config is the real one), and the `--allow-project-writes` gate.
+That last one goes because its premise was that project writes are dangerous; with a snapshot behind
+every dev run and the repo's own git in front of it, an ordinary project write is **doubly**
+recoverable. ⚠ The residue is narrow and should be said: `cco project save` **commits into the user's
+repo**, so a bad write there lands in history — recoverable, but noisy, and pushable by hand
+afterwards.
+
+## R3.6 Still open
+
+1. **`D1` as revised** — accept? And the two sub-decisions inside it: **secrets in the snapshot** or
+   out (R3.2), and does the **restore verb** live on `cco dev` or on `cco config`?
+2. **`D3`** — a `warn` (not a refusal) at `cco start` when the image's `cco.build-ref` diverges from
+   the CLI's own tree?
+3. **`D4`** — refuse `--dev` in-container, and fix the existing silent `--dev-sandbox` swallow?
+4. **Staging** — **A10.1** (identity: `--dev` + dispatcher, image mapping, in-container refusal, the
+   `--` fix, legacy aliases) then **A10.2** (protection + tooling: snapshot, restore, migration
+   routing, fixtures, `clean` scoping), or one unit?
