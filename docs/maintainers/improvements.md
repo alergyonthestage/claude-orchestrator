@@ -3248,9 +3248,21 @@ the maintainer re-runs the host suite. Say so rather than claiming green.
 ⚠ Still owed before `0.7.0`: the host suite is a release gate, and it is not green.
 ## FI-79 — the dev execution mode: what `--dev-sandbox` isolates, and what it leaves shared
 
-**Status**: ▶ Analysis done and approved 2026-08-27 —
-[`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md).
-Scheduled as **A10** in Block A. Design not started. **Promotes and re-scopes** the *Developer-mode
+**Status**: ✅ **DESIGNED 2026-08-31** — analysis approved 2026-08-27
+([`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md)); the six
+open questions were ruled across three rounds of a decision clinic
+([`engineering/analysis/dev-execution-mode-decisions.md`](engineering/analysis/dev-execution-mode-decisions.md),
+now historical) and recorded as
+**[ADR-0060](engineering/decisions/0060-developer-execution-mode.md)**, with the *how* in
+[`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md). Scheduled as
+**A10.1** (identity) + **A10.2** (protection and tooling) in Block A; `cco doctor` was split out as
+**A12**. ▶ Next: the design gate, then A10.1.
+
+⭐ **The ruling that reorganised the unit**: *configuration is the test's **input**, not its target* —
+so `~/.cco` and `<repo>/.cco` both stay **shared**, and what dev mode protects is the survival of a
+**bad write** (an unconditional git snapshot in a separate `GIT_DIR`), not the location of the file.
+Two earlier rounds recommended isolating `~/.cco` and were refused; both had weighed *how cheap is it
+to isolate* without asking *whether isolating serves the mode's purpose*. **Promotes and re-scopes** the *Developer-mode
 residue* backlog line in the roadmap, which scoped the remainder as **ergonomics**; the measurements
 say it is **correctness**.
 
@@ -3306,8 +3318,11 @@ identity (buckets · image tag · container/network names · CONFIG) · whether 
 
 ## FI-80 — no verb answers "which cco am I running, from where"
 
-**Status**: ▶ Ruled at FI-79's direction gate (2026-08-27) to land **first, as its own unit** —
-scheduled as **A11**, before A10. Design not started.
+**Status**: ✅ **BUILT, TESTED AND HOST-VERIFIED 2026-08-27** as **A11** — only the merge is owed.
+Ruled at FI-79's direction gate to land first, as its own unit. ⭐ Its label is now load-bearing for
+[FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared)'s
+design: ADR-0060 D7 wires the `cco.build-ref` comparison into `cco start` as a **warn**, closing the
+second of A11's three deliberate residues.
 
 **Why it is first**: it is the prerequisite oracle for testing **any** dev-mode option without a
 false pass, and it is useful on its own the moment two installs exist.

@@ -1,0 +1,278 @@
+# Developer execution mode — design
+
+> **Living design doc.** The *how* for [ADR-0060](../decisions/0060-developer-execution-mode.md);
+> the decisions and their rationale live there and are **not** repeated. Traces to the approved
+> analysis [`../analysis/dev-execution-mode.md`](../analysis/dev-execution-mode.md) and to the
+> decision clinic
+> [`../analysis/dev-execution-mode-decisions.md`](../analysis/dev-execution-mode-decisions.md).
+> **Status**: design ready for implementation (2026-08-31). No code yet.
+>
+> **Acceptance criteria, agreed 2026-08-31** — the design is done when each is answered by a named
+> artifact: (1) a dev run cannot overwrite the image a real session uses; (2) a dev run's writes to
+> the real configuration are restorable; (3) the developer types one name from any cwd; (4) no
+> default moves for a user; (5) every new identity has a reaper; (6) each acceptance check is shown
+> to **discriminate** before its pass is believed.
+
+## 1. Shape
+
+One binary, one mode. `--dev` forks the **code identity** (image) and the **internal buckets**, and
+leaves the **configuration shared** behind a restorable snapshot.
+
+```mermaid
+flowchart TB
+  IN["cco --dev &lt;verb&gt;"] --> CT{"in a container?"}
+  CT -->|"yes"| REF["refuse · exit 2<br/>§6.1"]
+  CT -->|"no"| TGT{"is REPO_ROOT<br/>the dev clone?"}
+  TGT -->|"no — the published binary"| EX["resolve target · exec<br/>§3.2"]
+  EX --> TGT
+  TGT -->|"yes"| ENG["engage the dev identity"]
+  ENG --> B["buckets → ~/.cco-devsandbox<br/>(ADR-0052 §7, unchanged)"]
+  ENG --> I["IMAGE_NAME → …-dev<br/>§4"]
+  ENG --> S["snapshot ~/.cco if changed<br/>§5"]
+  B --> RUN["run the verb"]
+  I --> RUN
+  S --> RUN
+```
+
+## 2. Requirements, traced
+
+| # | Requirement | Traces to |
+|---|---|---|
+| **R1** | A dev run must not overwrite the image a real session uses | analysis §3.1 (M1) · ADR-0060 D2/D3 |
+| **R2** | The developer invokes the clone **by name**, from any cwd | analysis §12.1 (M2) · D1 |
+| **R3** | The **real** configuration — global and project — is what a dev run reads | clinic round 3 · D4 |
+| **R4** | A bad dev write to configuration is restorable | D4.1–D4.5 |
+| **R5** | Cases needing a different configuration have a **fixture**, not a redirect | D4/D5 |
+| **R6** | No default moves for a user | D3 · *Consequences* |
+| **R7** | Every identity the mode creates is reapable | D6 · ADR-0045 precedent |
+| **R8** | The mode refuses where it cannot work, and never silently no-ops | D7 · analysis §7 |
+
+**Out of scope**, each with its owner: container/network naming (**B2**) · `cco doctor` (its own
+roadmap entry) · waking the dormant version gate (M3 — nothing here does) · relocating project
+config (priced and rejected, ADR-0060 D4.6) · a snapshot/restore of *mutated* dev state (YAGNI).
+
+## 3. `--dev`: parsing, resolution, dispatch
+
+### 3.1 Where it sits in `bin/cco`
+
+The existing dev-flag block (`bin/cco:141-153`) is the site. It is **after** the
+`cco_access=none` refusal (`:128`) — so a `none` session still gets its own refusal first — and
+**before** `PACKS_DIR`/`TEMPLATES_DIR`/`LLMS_DIR` (`:161-163`) and the first-run gate (`:635`).
+
+The block runs **post-source**, and that is deliberate: the binary parses **its own** `lib/`, which
+is self-consistent by construction, and `exec` then replaces the process image so nothing sourced
+survives. Sourcing before dispatch buys `refuse`, `die` and `_cco_in_container` instead of
+duplicating them inline.
+
+### 3.2 Argv, with the `--` terminator fixed
+
+Accepted spellings: `--dev`, `--dev=<path>`, and the `CCO_DEV=1` env. The scan **stops at the first
+`--`**; `--` and everything after it are passed through verbatim.
+
+⚠ This fixes a latent defect the current strip carries: measured, `grep -n '"--")' lib/*.sh bin/cco`
+returns **zero** hits, so today's consume-from-anywhere is harmless *by luck*. A flag that changes
+which **binary** executes must not inherit that.
+
+`--dev-sandbox` and `--dev-sandbox-seed` are accepted as **aliases** (of `--dev` and of an implied
+`cco dev seed`), each emitting one superseded `note`.
+
+### 3.3 Target resolution — first match wins, no silent fallback
+
+| Order | Source |
+|---|---|
+| 1 | `--dev=<path>` |
+| 2 | `$CCO_DEV_REPO` |
+| 3 | walk up from `$PWD` to the nearest enclosing cco clone — **this is what makes worktrees work**, and `rules/git-practices.md` mandates worktree-per-agent |
+| 4 | `~/.cco/dev-repo` — a one-line file, the same shape as `claude-version` and `languages` (no YAML parser needed) |
+| 5 | **die**, printing the four it tried |
+
+**Validation before `exec`** — the target must have an executable `bin/cco` *and* a `package.json`
+naming `@claude-orchestrator/cco`; otherwise die. Never `exec` into an unvalidated path.
+
+**Identity check**: compare `cd -P "$target" && pwd` with `REPO_ROOT`. Equal ⇒ **no dispatch**, run
+in place. This is the primary loop guard; `CCO_DEV_DISPATCHED=1`, exported before `exec` and
+refused on a second dispatch, is the belt for symlink/mount aliasing.
+
+**Why `exec` is safe here** (measured, analysis §5): it sets `BASH_SOURCE[0]` to the absolute target,
+so the readlink loop at `bin/cco:21-25` finds no symlink and `REPO_ROOT` lands on the clone; and
+because `exec` replaces the process image, the EXIT trap at `bin/cco:14` never fires — no spurious
+`✗ cco exited unexpectedly`.
+
+## 4. Image identity
+
+```
+_cco_dev_image "<image>" → "<image with -dev appended to the repository>"
+```
+
+The tag separator is the **last `:` after the last `/`** — so a registry host:port is not mistaken
+for a tag.
+
+| In | Out |
+|---|---|
+| `claude-orchestrator:latest` | `claude-orchestrator-dev:latest` |
+| `myorg/custom` (no tag) | `myorg/custom-dev` |
+| `localhost:5000/foo:1.0` | `localhost:5000/foo-dev:1.0` |
+| `foo@sha256:…` (digest-pinned) | **die** — a digest names one specific image and cannot be mapped; the way out is `project.dev.yml` |
+
+**Two application points, and the rule that avoids double-mapping:**
+
+- `bin/cco:37` becomes `IMAGE_NAME="${CCO_IMAGE_NAME:-claude-orchestrator:latest}"` — the default is
+  **unmoved**, so `FROM claude-orchestrator:latest` in the custom-image guide and all 7 doc surfaces
+  read as today. In the dev block, `IMAGE_NAME=$(_cco_dev_image "$IMAGE_NAME")` **unless
+  `CCO_IMAGE_NAME` was set explicitly** — explicit wins, the same rule `_cco_apply_dev_sandbox`
+  already applies to `CCO_*_HOME`.
+- `lib/cmd-start.sh:1589-1590`: map only a **`docker.image` that was actually set**; when it is
+  unset, `docker_image="$IMAGE_NAME"`, which the dev block has already mapped.
+
+```
+docker_image=$(yml_get "$project_yml" docker.image)      # project.dev.yml overlay first, §7
+if [[ -n "$docker_image" ]]; then
+    _cco_dev_active && docker_image=$(_cco_dev_image "$docker_image")
+else
+    docker_image="$IMAGE_NAME"                            # already mapped
+fi
+```
+
+A `docker.image` coming from `project.dev.yml` is **not** mapped — it is already the dev pin.
+
+`check_image` (`lib/utils.sh:379-383`) **dies** on a missing mapped image, naming both images and
+the two ways out (build it; or pin/unpin via `project.dev.yml`). `cco build` tags the mapped name at
+`lib/cmd-build.sh:163`, which is R1 satisfied.
+
+## 5. Configuration protection — the snapshot store
+
+```mermaid
+flowchart LR
+  RUN["a dev-mode run starts"] --> D{"~/.cco changed since<br/>the last snapshot?"}
+  D -->|"no"| GO["run the verb"]
+  D -->|"yes"| C["commit into<br/>&lt;dev-state&gt;/config-snapshots.git<br/>work-tree = ~/.cco"]
+  C --> GO
+  R["cco dev restore"] --> C
+  X["~/.cco/.git · cco config history"] -.->|"never touched"| C
+```
+
+| Property | Design |
+|---|---|
+| **Location** | `$(_cco_state_dir)/dev/config-snapshots.git`, with `GIT_WORK_TREE=$(_cco_config_dir)`. STATE is sandboxed under `--dev`, so it lands in the dev root — dev state, reaped with it |
+| **Never `~/.cco/.git`** | `cco config save` promises *"cco never auto-commits"*; and `_config_push` (`lib/cmd-config.sh:283`) operates on `$cfg/.git`, so this store is **structurally unpushable** |
+| **Trigger** | at dev engage, after the buckets are redirected: `git status --porcelain` non-empty ⇒ commit. Unconditional per run, **never a list of verbs** |
+| **Scope** | `git add -A` — **not** `_CONFIG_ALLOWLIST`, which omits `access.yml` and `claude-version`, the two members with no other recovery path |
+| **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`, so the user's own config repo is not recorded as a gitlink |
+| **Implementation constraint** | taken with **plain `git` invocations**, never through `cco config save`: the verb may itself be the code under test |
+| **Failure** | `warn`, not `die` — the precedent is `_cco_dev_sandbox_seed`'s partial-seed branch. 📝 Reviewable: a developer running unprotected because git is missing is a legitimate stop-and-ask candidate |
+| **Message** | `dev snapshot before: cco <argv>` — so `cco dev list` reads as a log of what was about to run |
+
+### 5.1 Restore
+
+`cco dev restore [<ref>] [--clean] [--dry-run]` — default `HEAD`. It checks out the tracked paths
+over `~/.cco`; files **created since** the snapshot are **reported, not deleted**, unless `--clean`
+is given. `--dry-run` is the project's existing idiom (`cco clean` has it) and makes the destructive
+preview free.
+
+⚠ It resolves the store from the dev root **without engaging dev mode**, so `cco dev restore` works
+from an ordinary shell.
+
+## 6. Fail-loud points
+
+### 6.1 In-container
+
+`--dev` (and its aliases) **refuse** with exit 2, naming the host. Precedent: `bin/cco:128`. The same
+change removes the existing silent swallow — today the flag is accepted, stripped from argv and
+ignored (`_cco_apply_dev_sandbox` returns 0 under `_cco_in_container`), which is the false-success
+shape `../analysis/false-success-class-audit.md` catalogues.
+
+### 6.2 CLI ↔ image divergence at `cco start`
+
+Compare the image's `cco.build-ref` label (A11) with `_cco_build_ref "$REPO_ROOT"`. Differ ⇒
+**`warn`**, proceed. Reasons it is `warn` and not `die`: the divergence is often intended (built
+once, CLI updated since), and ADR-0059's taxonomy places an accepted divergence the user can act on
+at `warn`. It closes A11's second residue and is the **only** cover for a project that pins
+`docker.image`, which §4's mapping does not reach.
+
+⚠ Read the label with `docker image inspect`, never `docker run` — in-session `docker run` returns
+rc 0 with **empty stdout** (FI-82).
+
+## 7. Fixtures — for the cases that genuinely need a different configuration
+
+`CCO_CONFIG_HOME` is **built** as a seam on `_cco_config_dir` (`lib/paths.sh:457`), with
+`PACKS_DIR`/`TEMPLATES_DIR` (`bin/cco:161-162`) routed through the resolver instead of the literal
+— **3 code sites** — and it is **left disengaged**: `--dev` never sets it.
+
+| Fixture | Verb | Notes |
+|---|---|---|
+| throwaway global config | `cco dev config new\|list\|remove <name>` | created under `<dev-root>/configs/<name>`, seeded by copy from the real `~/.cco`. ⭐ `cco dev config use <name>` **prints** the `export CCO_CONFIG_HOME=…` line and never claims to have set it — *"`export`s set by a subprocess do NOT survive into your shell"* (`scripts/cco-sandbox-e2e.sh`, the trap this project already paid for) |
+| throwaway test project | `cco dev project new <name>` | `git init` a repo under `<dev-root>/projects/<name>`, scaffold `.cco` from the base template, register it. The index it lands in is **already sandboxed**, so it never pollutes the real project list. ⚠ `cco new` is **not** this — measured (`lib/cmd-new.sh:8-25`), it starts a temporary *session* over existing repos and scaffolds nothing |
+
+### 7.1 `project.dev.yml`
+
+Optional, gitignored, **`project.yml`-only**, merged over it when present and dev mode is active.
+
+- **Overridable**: `docker.*` and other runtime wiring — the reason it exists.
+- **Not overridable**: `name:`, which keys the index, the per-project scoping (ADR-0051) and the
+  provenance records. An overlay that changed it would fork the identity silently ⇒ **die** if it is
+  present in the overlay.
+
+## 8. Verb surface
+
+The mode is the **context**: `cco --dev clean` acts on the dev environment, `cco clean` on the real
+one. No verb grows a `--dev` variant.
+
+| Verb | Change |
+|---|---|
+| `whoami` | extended: the active environment and its roots (host branch, on top of A11's identity block) |
+| `clean` | environment-scoped; new `--images` category removing the **active environment's** cco image |
+| `dev` | **new**: `seed` · `reset` · `list` · `restore` · `config …` · `project …` |
+| `doctor` | ⛔ **not here** — its own roadmap entry |
+
+Top-level surface goes 25 → 26.
+
+## 9. What does **not** change
+
+- `IMAGE_NAME`'s default, `~/.cco`, `<repo>/.cco`, `project.yml`, and every one of the 7 documented
+  image surfaces.
+- ⭐ **`tests/test_dev_sandbox.sh:75-86`** (`test_dev_sandbox_config_stays_shared`) stays green **as
+  written** — this design does not fork CONFIG, so the pinned test is unchanged and is the check
+  that the default did not move.
+
+## 10. Staging and definition of done
+
+**A10.1 — identity.** §3 (`--dev`, dispatch, the `--` fix, the aliases) · §4 (image mapping,
+`check_image`) · §6.1 (in-container refusal).
+*Done when*: a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
+untouched, **verified by `docker image inspect` on both tags**; `cco --dev` in-container exits 2;
+the suite is green with its `Results:` line present.
+
+**A10.2 — protection and tooling.** §5 (snapshot, restore) · §6.2 (the `cco start` warn) · §7
+(fixtures, `project.dev.yml`) · §8 (`cco dev`, `clean --images`) · the migration routing
+(ADR-0060 D5, at `lib/update.sh:138` and `lib/cmd-init.sh:268`).
+*Done when*: a dev run that mutates `~/.cco` is restorable to its pre-run state; a CONFIG-targeting
+migration under `--dev` refuses and names the fixture; `cco dev reset` reclaims the sandbox root, the
+snapshot store and the dev image.
+
+## 11. Acceptance lane — and the oracles that must be shown to discriminate
+
+⚠ **Both stages are baked**: each needs a real host `cco build`. In-session `docker run` returns rc 0
+with empty stdout, so `docker image inspect` is the channel.
+
+| Claim | Oracle | ⚠ Why the obvious oracle fails |
+|---|---|---|
+| which **code** ran | `cco whoami` → `REPO_ROOT` + provenance (A11) | `cco --version` prints `0.6.0` from **both** — measured non-discriminating (M3) |
+| which **tree built** an image | `docker image inspect … cco.build-ref` (A11's label) | `docker run` swallows stdout in-session (FI-82); and without `--entrypoint` it launches Claude Code and prints plausible output |
+| the dispatcher actually dispatched | `REPO_ROOT` in `cco whoami` ≠ the published package root | `which cco` answers PATH order, not the resolved root |
+| a guard fires | **neutralise it and watch the test fail** | *a mutation that passes = untested behaviour*; *an unreachable guard is an unmeasured guard* |
+
+Further traps that bind this lane, each paid for once: a pipeline's rc is the **last** command's ·
+`bash -n` reads only the **first** file · a **missing `Results:` line** is the signal, not the
+absence of failures · a named list is a lower bound · the docker proxy refuses at **rc 125**, which
+is docker's own code.
+
+## 12. Handed forward, not solved here
+
+- **Sequencing**: §4's image axis, **B1** (`cco build` inside `cco update`) and **B2** (container
+  naming) touch one namespace. ADR-0060 D3's orthogonality sentence belongs in
+  [`packaging-distribution.md`](packaging-distribution.md) §4 so B1/B2 inherit it.
+- **`_CONFIG_ALLOWLIST`** still omits `access.yml` and `claude-version` — now a `cco config save`
+  completeness question, not a backup one (the snapshot bypasses the allowlist by design).
+- **Accepted and unrepaired**: a broken dev migration can clobber `~/.cco/secrets.env`
+  (ADR-0060 D4.4); `cco project save` in dev mode commits into the user's repo — recoverable, noisy;
+  the version gate stays dormant.

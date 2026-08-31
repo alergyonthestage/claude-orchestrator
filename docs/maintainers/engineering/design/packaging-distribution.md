@@ -153,6 +153,13 @@ dir. Confirm every build/runtime path derives from `FRAMEWORK_ROOT` / `REPO_ROOT
   `bin/cco`); tagging the image with `:<package.version>` is a later refinement,
   not required for the package to install and run.
 
+  ⭐ **The dev-mode axis is orthogonal to this one, and stays so by construction**
+  ([ADR-0060](../decisions/0060-developer-execution-mode.md) D3): developer mode forks
+  the **repository name** (`claude-orchestrator` → `claude-orchestrator-dev`), never
+  the tag. So the `:<package.version>` refinement above applies unchanged to both
+  repositories when it lands, and neither it nor **B1** (`cco build` inside
+  `cco update`) has a namespace to rediscover here.
+
 ## 5. Release pipeline
 
 ```mermaid

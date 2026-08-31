@@ -288,7 +288,8 @@ ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the 
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-▶ **Order inside the block, as of 2026-08-27**: **A1 → A11 → A10 → A9**, then A2 · A3 · A6 · A7.
+▶ **Order inside the block, as of 2026-08-31**: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 ·
+A6 · A7, with **A12** (`cco doctor`, split out of A10 at its design gate) schedulable independently.
 ⚠ **The numbers are identifiers, not the order** — every position here is a decision of the
 maintainer's, not a dependency. A11 precedes A10 because it is A10's measuring instrument; A9 was
 scheduled immediately after A1 and now follows the pair.
@@ -297,9 +298,13 @@ scheduled immediately after A1 and now follows the pair.
 merged tree verified **identical** to the branch tip the suite measured. ✅ **A1 owes nothing** — the
 push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is BUILT, TESTED AND HOST-VERIFIED 2026-08-27**
 (suite 1787/7 of 1794, the 7 the known host-only set; the image label read back as
-`feat/devmode/dev-execution-mode@e0c93a8`). **Only the merge is still owed** — the human gate. ▶ **A10 is the next unit**
-— both were opened 2026-08-27 after the `cco build` incident, with the analysis approved the same
-day.
+`feat/devmode/dev-execution-mode@e0c93a8`). **Only the merge is still owed** — the human gate.
+✅ **A10 IS DESIGNED 2026-08-31** — six decisions ruled across three rounds of a decision clinic,
+recorded as [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) with the *how* in
+[`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md), and split
+into **A10.1** (identity) + **A10.2** (protection and tooling). ▶ **Next is the design gate, then
+A10.1.** Both units were opened 2026-08-27 after the `cco build` incident, with the analysis approved
+the same day.
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -826,43 +831,83 @@ Together the two halves close **all** of the FI-16 residue at `improvements.md:4
 (`Dockerfile`, `lib/`) — it takes a `cco build` in its acceptance lane, and the label cannot be
 verified before one.
 
-#### A10 — the dev execution mode ([FI-79](improvements.md))
+#### A10 — the dev execution mode ([FI-79](improvements.md)) — ▶ **DESIGNED 2026-08-31, split into A10.1 + A10.2**
 
 ▶ **Opened 2026-08-27** after the maintainer ran `cco build` from the npm-distributed CLI instead of
-the clone — the third instance of the FI-16 class. ✅ **Analysis DONE and APPROVED the same day**:
-[`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md). Design
-not started. **This promotes and re-scopes** the *Developer-mode residue* backlog line below, which
-scoped the remainder as **ergonomics**; the measurements say it is **correctness**.
+the clone — the third instance of the FI-16 class. ✅ **Analysis approved 2026-08-27**
+([`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md)).
+✅ **Design done 2026-08-31**: six decisions ruled across three rounds of a decision clinic
+([`engineering/analysis/dev-execution-mode-decisions.md`](engineering/analysis/dev-execution-mode-decisions.md),
+now historical), recorded as
+**[ADR-0060](engineering/decisions/0060-developer-execution-mode.md)**, with the *how* in
+[`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md).
+▶ **Next: the design gate, then implementation of A10.1.**
 
-⚠ **Not a re-invention.** `--dev-sandbox` already ships (ADR-0052 §7) and isolates STATE/DATA/CACHE.
-This is the half the WS-6 annotation deliberately left out, plus an axis nobody costed:
+**The shape as designed** — one binary, one mode. `--dev` forks the **code identity** (the image) and
+the **internal buckets**, and leaves the **configuration shared** behind a restorable snapshot.
 
-| Gap | Measure |
+⭐ **The ruling that reorganised the unit**: *configuration is the test's **input**, not its target.*
+A dev run against a different configuration is not testing the user's setup — so `~/.cco` and
+`<repo>/.cco` both stay **shared**, and what dev mode protects is the survival of a **bad write**, not
+the location of the file. This **upholds ADR-0052 §7's WS-6 call for a stronger reason than WS-6
+gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green **as written**.
+
+| Ruling | Where |
 |---|---|
-| **The image tag is the code identity of the in-session cco** | `Dockerfile:201-211` bakes `bin/`+`lib/` into `/opt/cco`; a normal session mounts **no host `lib/`**. `IMAGE_NAME` is hardcoded (`bin/cco:37`, no override), so both binaries `-t` one global tag and overwrite each other — sandbox or not. 8 consumers + 7 doc surfaces; the tag is a **published user contract** (`FROM claude-orchestrator:latest`) |
-| **No coexistence story** | `CONTRIBUTING.md:12-35` offers two setups, both **substitutive**. Nothing prevents two installs and **nothing detects** them |
-| **Migration target/marker split** | `_run_migrations` runs target-shared / marker-sandboxed: `lib/update.sh:138` (target `~/.cco/.claude`) and `:432` (target the user's **repo** — the mutation gets committed). Worst reachable writer: `cco init --force` → `rm -rf` of the real `~/.cco/.claude` re-seeded from the **dev tree** |
+| `--dev` is the primitive; dispatch is its sub-case. The published binary's only dev responsibility is **resolve and `exec`** ⇒ forward-compatible permanently. `cco-dev` is a shell alias, not a shipped file | ADR-0060 D1 |
+| Dev identity = internal buckets + **the image**. Container/network names deferred to **B2** by name | D2 |
+| The image forks on the **repository** (`claude-orchestrator-dev`), never the tag ⇒ `packaging-distribution.md` §4's `:<package.version>` axis stays free. `check_image` **dies** on a missing dev image | D3 |
+| Configuration shared, protected by an **unconditional git snapshot** in a **separate `GIT_DIR`** under sandboxed STATE — complete (`git add -A`, not the allowlist), secrets excluded, structurally unpushable. A **restore verb does not exist today** and is new work | D4 |
+| CONFIG-targeting **migrations** refuse under `--dev` unless an isolated config dir is in use — the one class a restore cannot repair, because target and marker sit on opposite sides of the boundary | D5 |
+| **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
+| Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image` | D7 |
 
-🔴 **The version gate is dormant, not merely bypassed**: npm `latest` and the clone are both `0.6.0`,
-both `CCO_INDEX_VERSION=2`, both max migration `017`, across **148 commits**. The incident is the
-**ungated** class, not a near-miss — do not let a design argue "the gate protects us".
+##### A10.1 — identity ▶ next
 
-**Ruled at the direction gate (2026-08-27)**: the npm binary **stays installed** — both CLIs must
-coexist, so the cheap collapse (a `CONTRIBUTING.md` change + a PATH-shadowing check) is explicitly
-**rejected**, not passed over. ⚠ Consequence: the dispatcher option **cannot be used until an npm
-release carrying it ships** — the installed `0.6.0` cannot dispatch.
+`--dev` + the dispatcher contract and its resolution order · `_cco_dev_image` at its two application
+points · the in-container refusal · the `--` terminator fix (measured: **zero** `"--")` handlers
+today) · `--dev-sandbox`/`--dev-sandbox-seed` become aliases.
 
-**Open for design** (analysis §11.1): whether the WS-6 *"CONFIG stays shared"* call is reopened
-(⚠ reopening changes a **pinned** test, `tests/test_dev_sandbox.sh:75-86`) · the scope of dev
-identity (buckets · image tag · container/network names · CONFIG) · whether a tag axis pre-empts
-`packaging-distribution.md` §4's deferred `:<package.version>` tagging · in-container legality
-(today the analogous flag is **silently swallowed** there) · which lifecycle verbs are in scope
-(no re-seed, no backup, no reaper, and **no `cco doctor` verb exists at all**).
+**Done when** a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
+untouched — ⚠ **verified with `docker image inspect` on both tags**, never `docker run` (FI-82) — and
+`cco --dev` in-container exits 2.
 
-⚠ **Sequence the naming namespace, do not discover it late**: A10's tag axis, **B1** (`cco build`
-inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace.
+##### A10.2 — protection and tooling
 
-⚠ **Both halves are baked** — the unit takes a `cco build` in its acceptance lane.
+The snapshot store · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
+(throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
+and `name:` is not overridable) · `clean` environment-scoping and `--images`.
+
+**Done when** a dev run that mutates `~/.cco` is restorable to its pre-run state, a CONFIG-targeting
+migration under `--dev` refuses and names the fixture, and `cco dev reset` reclaims the sandbox root,
+the snapshot store **and** the dev image.
+
+⚠ **Both stages are baked** — each takes a real host `cco build` in its acceptance lane.
+⚠ **Sequence the naming namespace, do not discover it late**: A10's image axis, **B1** (`cco build`
+inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace. ADR-0060 D3's
+orthogonality sentence is now **written into** `engineering/design/packaging-distribution.md` §4, so
+B1 and B2 inherit it.
+
+📝 **Accepted and unrepaired, deliberately**: a broken dev migration can clobber `~/.cco/secrets.env`
+(`lib/migrate.sh:382` is a measured writer, and secrets are excluded from the snapshot) ·
+`cco project save` in dev mode commits into the user's repo — recoverable, noisy · the version gate
+**stays dormant**, nothing here wakes it.
+
+#### A12 — `cco doctor`: one verb that answers *is anything wrong* — ▶ **NEW, opened 2026-08-31**
+
+▶ **Split out of A10 at its design gate** (ADR-0060 D6), because it is **user-facing** — the
+maintainer's call — **independently useful**, and would otherwise put a new top-level surface
+decision inside a maintainer-tooling unit.
+
+**What it aggregates, all of it already reachable and none of it discoverable**: `cco config
+validate` · `cco project validate` · ADR-0052's index reconcile (flag-on-read only) · ADR-0045's
+running registry (internal) · **the CLI↔image `cco.build-ref` comparison A11 made computable** ·
+install coherence (provenance vs PATH).
+
+⚠ **It is capability that already exists, made findable** — not new checks. Size it that way.
+⚠ The top-level verb surface goes **25 → 27** once A10's `dev` and this land; that is the cost to
+weigh at its own design gate.
+
 
 #### ✅ A8 — the onboarding prompts and the mount-declaration surface — **CLOSED 2026-08-18**
 

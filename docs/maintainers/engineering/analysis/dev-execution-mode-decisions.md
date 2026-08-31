@@ -10,6 +10,12 @@
 > open, §12.1 the host probes), the [A10 roadmap entry](../../roadmap.md), and
 > [FI-79](../../improvements.md) / [FI-80](../../improvements.md).
 >
+> ⏹ **CLOSED 2026-08-31 — all six ruled.** The rulings are in
+> [ADR-0060](../decisions/0060-developer-execution-mode.md); the *how* is in
+> [`../design/dev-execution-mode.md`](../design/dev-execution-mode.md). This file is the
+> **historical record of the option space** — read it to see what was rejected and why, never to
+> find current advice. Summary table at the end.
+>
 > ⚠ **THREE ROUNDS. READ [ROUND 3](#round-3--d1-rebuilt-on-the-maintainers-counter-proposal-2026-08-31) FOR `D1`.** Ruled so far: **`D0-b`**, **`D2`**, **`D5`**
 > (round 2). `D1` was refused in round 2 and rebuilt in round 3 on the maintainer's
 > counter-proposal — **configuration is the test's input, so it stays shared; what is protected
@@ -1117,3 +1123,22 @@ afterwards.
 4. **Staging** — **A10.1** (identity: `--dev` + dispatcher, image mapping, in-container refusal, the
    `--` fix, legacy aliases) then **A10.2** (protection + tooling: snapshot, restore, migration
    routing, fixtures, `clean` scoping), or one unit?
+
+---
+
+# Closed — all six ruled, 2026-08-31
+
+| # | Ruling |
+|---|---|
+| **D0** | **`D0-b`** — `--dev` is the primitive, dispatch is its sub-case; `cco-dev` is a shell alias |
+| **D1** | **Round 3's revised form** — configuration shared (global *and* project), unconditional git snapshot in a separate `GIT_DIR`, a new restore verb, CONFIG-targeting migrations routed to a fixture, `CCO_CONFIG_HOME` built but disengaged. **Secrets excluded** from the snapshot, with the `lib/migrate.sh:382` residue documented |
+| **D2** | **L1** via `_cco_dev_image` appending `-dev` to the **repository**; `check_image` **dies** on a missing dev image; legacy flags become **aliases** |
+| **D3** | **`a` + `c`** — the axes are declared orthogonal in `packaging-distribution.md` §4, **and** `cco start` **warns** on a `cco.build-ref` divergence |
+| **D4** | **refuse** in-container, and fix the existing silent swallow |
+| **D5** | The **mode is the context**, not a flag on every verb; four responsibilities; **`cco doctor` leaves A10** for its own entry |
+| **Staging** | **A10.1** identity → **A10.2** protection + tooling |
+
+**Where they now live**: [ADR-0060](../decisions/0060-developer-execution-mode.md) carries the
+rulings and what each rejected; [`../design/dev-execution-mode.md`](../design/dev-execution-mode.md)
+carries the *how*. This file is **historical** from here — the record of the option space the
+rulings were chosen from, not a live document.
