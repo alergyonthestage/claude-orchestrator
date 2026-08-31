@@ -3399,6 +3399,23 @@ one pays the same round trip.
 (user-owned). An existing user keeps the broken copy until they run `cco update --sync` — i.e. this
 is the **opinionated-change** lane of `rules/update-system.md`, not an additive one.
 
+🔴 **Second instance, measured 2026-08-31 — `/design` has the same defect, and it is worse.**
+`defaults/global/.claude/skills/design/SKILL.md` declares `context: fork` with **`agent: Plan`** — the
+built-in read-only architect agent, which has **no `Write` and no `Edit`** — while the pack's declares
+`agent: designer` with `Write, Edit`. Same collision shape, same winner (`defaults/global/` over the
+pack), same consequence: the design phase's own artifact — the design doc **and** its ADR — cannot be
+persisted by the role the skill routes to.
+
+⇒ **The pattern is not one skill, it is the `defaults/global/` skill+agent set.** Whatever fixes
+`/analyze` must be applied as a **sweep with a stated enumeration command**, not to the two instances
+now known — ⚠ *a named list is a lower bound*. The check that generalises: for every skill in
+`defaults/global/.claude/skills/` with `context: fork`, does the agent it names carry the tools the
+skill's own process section requires it to use?
+
+**Worked around the same way both times**: the lead writes the artifact. Recorded in the A10 design
+session (2026-08-31), which produced ADR-0060 and `engineering/design/dev-execution-mode.md` outside
+the skill for this reason.
+
 **Not fixed here, deliberately**: skills and agents are user-owned config, and `defaults/global/` is
 shipped framework content. Both need the maintainer's approval. **Shape of the fix** (nothing
 decided): bring `defaults/global/`'s `analyze` skill and `analyst` agent up to the pack's contract
