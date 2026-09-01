@@ -274,3 +274,60 @@ only what was rejected and why, so it is not re-litigated.
 - ⚠ **The project-writer list is a lower bound and was shown to be one within a single session**:
   round 3 of the clinic named four, and a re-grep found a fifth (`cco project add`). The design
   records the enumeration command so the list is auditable rather than inherited.
+
+---
+
+## Amendments
+
+> A1–A4 are the four amendments taken at the **approval gate** (2026-09-01) and folded
+> directly into the decisions above, each marked in place: the fatal snapshot (**D4.4**),
+> the dev-root layout (design §5.0), the `<repo>/.cco` guard (**D4.8**), and the
+> clone-without-`--dev` note (**D7** / design §6.3). A5 below is the first amendment taken
+> **after** implementation began; it is recorded here rather than in place because it
+> corrects a premise the original text asserted.
+
+### A5 — 2026-09-01: the clone probe tests existence, not directory-ness — §6.3's note was blind in a worktree
+
+Raised by the **implementation** of A10.1 and confirmed by measurement before the ruling.
+
+**The defect.** `_cco_install_provenance` (`lib/paths.sh`) classified `clone` on
+`[[ -d "$REPO_ROOT/.git" ]]`. A git **worktree's `.git` is a regular file** — a gitfile
+holding `gitdir: <path>` — so every worktree classified `unknown`, and **D7 / §6.3's
+clone-without-`--dev` note never fired there**. Measured, on this repository:
+
+| `$REPO_ROOT` | `.git` | before | note |
+|---|---|---|---|
+| the main checkout | directory | `clone` | emitted |
+| a `git worktree` of it | regular file | `unknown` | **silent** |
+| `/opt/cco` (baked into the image) | absent | `unknown` | silent |
+
+**Why it matters more here than the shape suggests.** The note exists to catch clone code
+about to tag the real image — *the mirror of the incident*. `rules/git-practices.md` makes
+**one worktree per agent** the default for concurrent development, so the safety net was
+absent in precisely the workflow this project mandates for itself.
+
+**What the original text got right, and what it missed.** §6.3 already examined the
+`-d` condition — but only to argue the note *cannot* fire inside a session, which the
+table above confirms is still true (`/opt/cco` carries no `.git`; `.dockerignore`
+excludes it). It also enumerated one **false positive**, a tarball or git-based install
+carrying a `.git/`. The **false negative** was never named.
+
+**Decision** (maintainer, 2026-09-01): probe for **existence** — `[[ -e … ]]`. A worktree
+of a clone **is** a clone, so this is a correction of the classifier, not a widening of it.
+`-e` follows symlinks, so a dangling `.git` link stays `unknown` and the resolver remains
+fail-safe.
+
+**Consequences, all three consumers named rather than only the one that motivated it:**
+
+- **§6.3's note** now fires from a worktree. The reason for the change.
+- **`cco whoami`'s `provenance`** renders `clone` instead of `unknown` for a worktree.
+  User-perceivable, and the reason this needed a maintainer's ruling rather than an
+  implementer's judgement. No existing test asserted the old value — measured: the
+  `unknown` case in `tests/test_whoami.sh` is a *plain non-git directory*, which has no
+  `.git` at all and is unaffected.
+- **`cco update`'s engine-update hint** (`_cco_engine_update_hint`, ADR-0037 D8) now
+  offers a worktree the clone hint — `git -C "$REPO_ROOT" pull && cco update` — where it
+  previously stayed silent. ⚠ **Accepted, and stated rather than hidden**: in a worktree on
+  a feature branch that has no upstream, that `pull` will fail. The hint is diagnostic and
+  the silence it replaces was itself a symptom of the misclassification, so a hint that can
+  be wrong beats advice withheld because the tool did not know what it was looking at.

@@ -539,8 +539,17 @@ _cco_internal_runtime_dir() {
 
 # Install provenance of this cco — how the framework tree got onto the machine.
 # Echoes one of: npm | brew | clone | unknown. Drives the engine-update hint
-# (`cco update`, ADR-0037 D8) and is reused by the update-refactor workstream.
-# Reads the global REPO_ROOT (set in bin/cco from the resolved script location).
+# (`cco update`, ADR-0037 D8), `cco whoami`'s identity block, and ADR-0060 §6.3's
+# clone-without-`--dev` note. Reads the global REPO_ROOT (set in bin/cco from the
+# resolved script location).
+#
+# ⚠ The clone probe tests EXISTENCE, not directory-ness (ADR-0060 Amendment A5).
+# A git WORKTREE's `.git` is a regular FILE — a gitfile holding `gitdir: <path>` —
+# so a `-d` probe called every worktree `unknown`, and §6.3's note, whose whole job
+# is to catch clone code about to tag the real image, was silent in exactly the
+# place `rules/git-practices.md` mandates the work happens: one worktree per agent.
+# A worktree of a clone IS a clone, so this is a correction, not a widening.
+# `-e` follows symlinks, so a dangling `.git` link stays `unknown` — still fail-safe.
 _cco_install_provenance() {
     case "${REPO_ROOT:-}" in
         */node_modules/@claude-orchestrator/cco|*/node_modules/@claude-orchestrator/cco/*)
@@ -548,7 +557,7 @@ _cco_install_provenance() {
         */Cellar/*|*/homebrew/Cellar/*)
             printf 'brew\n'; return ;;
     esac
-    [[ -d "${REPO_ROOT:-}/.git" ]] && { printf 'clone\n'; return; }
+    [[ -e "${REPO_ROOT:-}/.git" ]] && { printf 'clone\n'; return; }
     printf 'unknown\n'
 }
 
