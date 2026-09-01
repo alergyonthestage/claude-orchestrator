@@ -1579,3 +1579,35 @@ entries:
       CLI. The baked agent rule that pointed at this verb before it existed is
       updated in the image, so `cco build` refreshes what in-session agents are
       told.
+
+  - id: 69
+    date: "2026-09-01"
+    type: additive
+    title: "--dev — a developer execution mode that forks the image, not just the internal state"
+    description: >
+      **For everyday use, nothing changes.** No default moves: `cco` still
+      resolves `claude-orchestrator:latest`, `~/.cco` and every repo's
+      `<repo>/.cco` stay exactly where they are, and `project.yml` is never
+      rewritten.
+      **For anyone building cco from a clone, `--dev` replaces
+      `--dev-sandbox`.** The old flag isolated only the internal STATE/DATA/CACHE
+      buckets, so the published and the clone binaries still fought over the
+      same Docker image — running a clone's `cco build` could silently overwrite
+      the image a real session depends on. `--dev` forks the **image** too:
+      `cco --dev build` produces `claude-orchestrator-dev:latest` and leaves
+      `claude-orchestrator:latest` untouched, and every `cco --dev <verb>`
+      after that runs against the dev image and the isolated buckets. A
+      project's own pinned `docker.image` is mapped the same way, without
+      touching the committed `project.yml`. Configuration is deliberately
+      **not** forked — `~/.cco` and `<repo>/.cco` stay shared between your
+      real and dev sessions, because a dev run is meant to test your actual
+      configuration, not a copy of it.
+      `--dev-sandbox` and `--dev-sandbox-seed` still work but are now aliases
+      of `--dev` and print a note saying so — this is a behavior change to a
+      previously documented flag: isolating the buckets without the image is
+      no longer an option on its own. `--dev` refuses outright inside a
+      session (it forks host resources a session doesn't own), and running a
+      clone's `cco` **without** `--dev` now prints a one-line reminder every
+      time, since that's the exact collision `--dev` exists to prevent. See
+      `cco docs reference/cli` §3.34 for the full flag reference and
+      `CONTRIBUTING.md` for the recommended local-development workflow.
