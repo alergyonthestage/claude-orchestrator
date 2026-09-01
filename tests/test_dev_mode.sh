@@ -78,7 +78,7 @@ _dm_cco() {
         HOME="$DM_HOME" CCO_IN_CONTAINER="${DM_IN_CONTAINER:-0}" \
         CCO_SKIP_BUILD=1 CCO_NONINTERACTIVE=1 CCO_USER_CONFIG_DIR="$DM_HOME/.absent-vault" \
         ${DM_ENV[@]+"${DM_ENV[@]}"} \
-        bash "$REPO_ROOT/bin/cco" "$@"
+        bash "${DM_BIN:-$REPO_ROOT/bin/cco}" "$@"
 }
 
 # A stand-in dev clone: it satisfies §3.3's validation (an EXECUTABLE bin/cco and
@@ -483,8 +483,11 @@ test_dev_mode_clone_note_is_absent_under_dev() {
     local DM_HOME="$tmp/home"; mkdir -p "$DM_HOME"
     local plain rc=0 dev
     plain=$(_dm_cco --version 2>&1 >/dev/null | grep -E '^note:' | head -1) || true
+    # `|| return 1`, not a bare `fail`: with $plain empty the comparison below
+    # degrades to `!= *""*`, which is false for every input — a second, misleading
+    # failure on top of the one that actually happened.
     [[ -n "$plain" ]] \
-        || fail "precondition: the clone note must fire without --dev (§6.3)"
+        || { fail "precondition: the clone note must fire without --dev (§6.3)"; return 1; }
 
     local DM_ENV=("CCO_DEV_REPO=$REPO_ROOT")
     dev=$(_dm_cco --dev --version 2>&1 >/dev/null) || rc=$?
@@ -492,6 +495,114 @@ test_dev_mode_clone_note_is_absent_under_dev() {
         || fail "cco --dev must run in the clone, not fail, got rc=$rc: $dev"
     [[ "$dev" != *"$plain"* ]] \
         || fail "the clone note must not fire when --dev WAS requested (§6.3), got: $dev"
+}
+
+# ── §6.3 / ADR-0060 A5 — provenance sees a WORKTREE as a clone ───────
+
+# `_cco_install_provenance` for a REPO_ROOT of a given shape. The libs are sourced
+# with the REAL $REPO_ROOT (that is how they are located), and REPO_ROOT is
+# overridden only afterwards — the classifier reads the global at call time.
+# Usage: _dm_provenance_of <tmp> <fixture-root>
+_dm_provenance_of() {
+    local tmp="$1" root="$2"
+    (
+        _dm_lib_env "$tmp" >/dev/null 2>&1
+        REPO_ROOT="$root"
+        _cco_install_provenance
+    )
+}
+
+# A minimal tree that IS a cco REPO_ROOT, so the note can be observed end to end.
+# ⚠ bin/cco is COPIED, never symlinked: the readlink loop at bin/cco:21-25 would
+# resolve a symlink back to the real repo and REPO_ROOT would never be this tree.
+# The caller then gives the tree whichever `.git` shape it is testing.
+# Usage: _dm_fake_repo_root <dir>
+_dm_fake_repo_root() {
+    local dir="$1"
+    mkdir -p "$dir/bin"
+    cp "$REPO_ROOT/bin/cco" "$dir/bin/cco"; chmod +x "$dir/bin/cco"
+    cp "$REPO_ROOT/package.json" "$dir/package.json"
+    ln -s "$REPO_ROOT/lib" "$dir/lib"
+}
+
+# 🔴 REGRESSION (ADR-0060 A5, 2026-09-01). A git worktree's `.git` is a regular
+# FILE — a gitfile holding `gitdir: <path>` — so a directory-only probe classified
+# every worktree as `unknown` and §6.3's note was SILENT exactly where
+# rules/git-practices.md mandates the work happens (one worktree per agent). A
+# worktree of a clone IS a clone; the probe tests EXISTENCE, not directory-ness.
+#
+# The absent case is the same assertion read the other way, and it is the one that
+# must never drift: /opt/cco carries no `.git` (.dockerignore excludes it) and
+# §6.3 rests on that, so the note stays unable to fire inside a session. It is
+# pinned as a SHAPE — a tree with no `.git` — never as the literal path, so the
+# test measures the same property on a host.
+#
+# ⚠ The rows are evaluated as a TABLE and every mismatch is reported, rather than
+# stopping at the first: narrowing the probe back to `-d` must be readable as
+# "the worktree row moved and the other three did not", which a fail-fast test
+# cannot show — it would stop before reaching the rows that prove the fix did not
+# widen into the absent and dangling cases.
+test_dev_mode_provenance_reads_a_worktree_gitfile_as_a_clone() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    mkdir -p "$tmp/dir-clone/.git" "$tmp/worktree" "$tmp/no-git" "$tmp/dangling"
+    printf 'gitdir: %s\n' "$tmp/dir-clone/.git/worktrees/wt" > "$tmp/worktree/.git"
+    ln -s "$tmp/does-not-exist" "$tmp/dangling/.git"
+
+    local row shape expected actual bad=""
+    for row in "dir-clone:clone:a .git DIRECTORY" \
+               "worktree:clone:a worktree's .git GITFILE (A5) — THE REGRESSION" \
+               "no-git:unknown:no .git at all — the /opt/cco shape, where the note must stay silent" \
+               "dangling:unknown:a DANGLING .git symlink — the probe follows symlinks, fail-safe"; do
+        shape="${row%%:*}"; row="${row#*:}"
+        expected="${row%%:*}"; row="${row#*:}"
+        actual=$(_dm_provenance_of "$tmp" "$tmp/$shape")
+        [[ "$actual" == "$expected" ]] \
+            || bad+="  $shape: expected '$expected', got '$actual' — $row"$'\n'
+    done
+    [[ -z "$bad" ]] || fail "_cco_install_provenance misclassified:"$'\n'"$bad"
+}
+
+# The package-manager cases are matched on the path and win over any `.git`, so
+# each fixture carries one: a widened git probe must not reclassify them.
+test_dev_mode_provenance_package_manager_paths_win_over_git() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    local npm_root="$tmp/node_modules/@claude-orchestrator/cco"
+    local brew_root="$tmp/homebrew/Cellar/cco/9.9.9"
+    mkdir -p "$npm_root/.git" "$brew_root/.git"
+
+    local bad=""
+    [[ "$(_dm_provenance_of "$tmp" "$npm_root")"  == "npm"  ]] \
+        || bad+="  npm install must stay npm even with a .git present"$'\n'
+    [[ "$(_dm_provenance_of "$tmp" "$brew_root")" == "brew" ]] \
+        || bad+="  brew install must stay brew even with a .git present"$'\n'
+    [[ -z "$bad" ]] || fail "a package-manager path must win over the git probe:"$'\n'"$bad"
+}
+
+# End to end, which is the half that matters: the §6.3 note must actually EMIT
+# from a worktree-shaped tree, not merely have its classifier return a new string.
+# Both shapes run the same binary from the same fixture — only `.git` differs —
+# so the note's presence is attributable to nothing else.
+test_dev_mode_clone_note_fires_from_a_worktree_tree() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    local DM_HOME="$tmp/home"; mkdir -p "$DM_HOME"
+    local DM_BIN="$tmp/tree/bin/cco"
+    local DM_ENV=("CCO_FRAMEWORK_ROOT=$REPO_ROOT")
+    _dm_fake_repo_root "$tmp/tree"
+    printf 'gitdir: %s\n' "$tmp/elsewhere/.git/worktrees/wt" > "$tmp/tree/.git"
+
+    local rc=0 err count
+    err=$(_dm_cco --version 2>&1 >/dev/null) || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "the note must not fail the run, got rc=$rc: $err"
+    count=$(grep -cE '^note:.*--dev' <<< "$err" || true)
+    [[ "$count" -eq 1 ]] \
+        || fail "a worktree must get the clone note (A5), got $count: ${err:-<empty>}"
+
+    # Same tree, no `.git`: the /opt/cco shape stays silent.
+    rm -f "$tmp/tree/.git"
+    err=$(_dm_cco --version 2>&1 >/dev/null) || true
+    count=$(grep -cE '^note:.*--dev' <<< "$err" || true)
+    [[ "$count" -eq 0 ]] \
+        || fail "a tree with no .git must emit no clone note (§6.3), got: $err"
 }
 
 # ── §4 — the two application points, observed on the resolved name ───
