@@ -1587,7 +1587,22 @@ _start_load_config() {
     fi
 
     docker_image=$(yml_get "$project_yml" "docker.image")
-    [[ -z "$docker_image" ]] && docker_image="$IMAGE_NAME"
+    # Dev mode forks the image on its REPOSITORY part (ADR-0060 D3), and it must map
+    # exactly ONCE. The two branches below are what keeps that true, and the rule is
+    # not obvious from either one alone: a docker.image the PROJECT pinned has never
+    # been through the mapping, so it is mapped here; an UNSET one falls back to
+    # $IMAGE_NAME, which bin/cco's dev block already mapped at engage — mapping it
+    # again would ask docker for `…-dev-dev`.
+    #
+    # The committed project.yml is never rewritten: dev mode must not require a config
+    # change, because project.yml is shared with the team.
+    if [[ -n "$docker_image" ]]; then
+        if _cco_dev_active; then
+            docker_image=$(_cco_dev_image "$docker_image") || _cco_exit $?
+        fi
+    else
+        docker_image="$IMAGE_NAME"
+    fi
 
     mount_socket=$(_parse_bool "$(yml_get "$project_yml" "docker.mount_socket")" "false")
     # --no-docker: disable Docker socket for this session only
