@@ -123,7 +123,9 @@ test_pack_list_header_only_when_empty() {
     # Remove default packs dir content
     rm -rf "$CCO_PACKS_DIR"
     mkdir -p "$CCO_PACKS_DIR"
-    run_cco list pack
+    # STDOUT only: the assertion below is about the shape of the TABLE, and a
+    # diagnostic on stderr is not a table row (see run_cco_stdout in helpers.sh).
+    run_cco_stdout list pack
     assert_output_contains "NAME"
     # Output should only be the header line
     local line_count
@@ -175,8 +177,9 @@ test_pack_list_empty_counts_single_line_per_pack() {
         mkdir -p "$CCO_PACKS_DIR/$p"
         printf 'name: %s\n' "$p" > "$CCO_PACKS_DIR/$p/pack.yml"
     done
-    run_cco list pack
+    run_cco_stdout list pack
     # Exactly one header line + one line per pack (no row split across lines).
+    # STDOUT only, for the same reason as above: stderr carries diagnostics, not rows.
     local line_count
     line_count=$(printf '%s\n' "$CCO_OUTPUT" | wc -l | tr -d ' ')
     [[ "$line_count" -eq 3 ]] \
