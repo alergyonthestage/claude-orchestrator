@@ -31,10 +31,11 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 
 | Claim | Measured |
 |---|---|
-| Branch | `feat/devmode/dev-execution-mode` — ✅ **MERGED into `develop` on 2026-09-01**, after the maintainer approved the gate. Merged with `--no-ff`, so the gate is visible in history. ⚠ **No sha or commit count is stated here on purpose** — the commit that states one invalidates it. Measure: `git log --merges -1 develop` and `git rev-list --count origin/develop..develop` |
-| ⚠ The branch is **NOT deleted**, deliberately | `rules/git-practices.md`: the consolidation trigger is *"the branch appears among the merged"*, and deleting makes it unreachable **forever**. **A1 was deleted before its consolidation and its roadmap entry is still stranded** because of exactly this. The next `/handoff` consolidates first, **then** deletes with `git branch -d` (never `-D`) |
-| Push | 🔴 **STILL OWED.** `develop` was level with `origin/develop` before the merge and is now **ahead of it**. Push is **not possible from a session** — `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
-| Pre-merge verification | the suite was run **on the branch before the merge**, not assumed from the previous session |
+| Branches | ✅ **TWO merged into `develop` on 2026-09-01**, each with `--no-ff` so the gate stays visible in history: `feat/devmode/dev-execution-mode` (A11's code + the whole A10 design) and `feat/devmode/clone-without-dev-note` (the fourth amendment). ⚠ **No sha or commit count is stated here on purpose** — the commit that states one invalidates it. Measure: `git log --merges -3 develop`, `git branch --merged develop` |
+| ⚠ **Neither branch is deleted**, deliberately | `rules/git-practices.md`: the consolidation trigger is *"the branch appears among the merged"*, and deleting makes it unreachable **forever**. **A1 was deleted before its consolidation and its ~450-line roadmap entry is still stranded** because of exactly this. The next `/handoff` consolidates A11 + the A10 design into `roadmap-history.md` and memory **first**, **then** deletes **both** with `git branch -d` (never `-D`) |
+| Push | 🔴 **STILL OWED, and now the only thing standing between this work and the remote.** `develop` was level with `origin/develop` before the merges and is **ahead of it** now. Push is **not possible from a session** — `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
+| Pre-merge verification | ✅ the suite was **run on the branch**, not assumed: `1787 passed / 7 failed / 1794`, the `Results:` line present **once**, the 7 matching the documented host-only set name for name (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, `roadmap.md:364`). The second branch is **docs-only** — measured: 4 files, all under `docs/maintainers/`, and **no test or script references any of them** — so that result carries |
+| ⚠ Start here, not on a feature branch | the working tree is left on **`develop`**. Host and container share it |
 | Suite | Unchanged since A11: **1787 passed / 7 failed / 1794**, the 7 the documented host-only set **name for name**. Run it with `bin/test` (dry-run, no Docker). ⚠ Verify the `Results:` line exists — an aborted run reads green *and prints no summary* |
 | What this branch contains | A11's code (2 commits) **plus documents only**. The design sessions changed **no code** |
 | git in this container | needs `safe.directory`: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/claude-orchestrator git …` |
@@ -45,9 +46,9 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 
 | Gate | What unblocks it |
 |---|---|
-| ✅ ~~**Merge this branch**~~ | **CLOSED 2026-09-01** — approved by the maintainer and performed |
+| ✅ ~~**Merge**~~ | **CLOSED 2026-09-01** — both branches approved by the maintainer and merged |
 | 🔴 **Push `develop`** | **not possible from a session** (measured above). **Host step**: `git push origin develop` |
-| **Delete the merged branch** | owed to the **next** `/handoff`, which must consolidate A11 + the A10 design into `roadmap-history.md` and memory **first**. Deleting before that makes the trigger unreachable, as it did for A1 |
+| **Delete the two merged branches** | owed to the **next** `/handoff`, which must consolidate A11 + the A10 design into `roadmap-history.md` and memory **first**. Deleting before that makes the trigger unreachable, as it did for A1 |
 | **[FI-83](improvements.md)** direction | trigger measured; the cheap candidate touches no security surface. Needs one more observation and a call — see *Context* |
 | **[FI-84](improvements.md)** | free to relieve locally (move `user-config/`); the design half must be decided **with [FI-16](improvements.md)** |
 | **[FI-78](improvements.md)** | the 2 macOS test-portability failures. ⚠ **Host-only measurable**. **Owed before `0.7.0`** |
@@ -116,8 +117,9 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
       D4.8) · `cco dev restore|list|reset|seed` · migration routing · fixtures · `project.dev.yml` ·
       `clean` scoping + `--images`
 - [ ] **Push `develop`** from the host — `git push origin develop` (the merge is done; the push is not)
-- [ ] **Consolidate, then delete** `feat/devmode/dev-execution-mode` — at the next `/handoff`, in that
-      order (`git branch -d`, never `-D`)
+- [ ] **Consolidate, then delete** `feat/devmode/dev-execution-mode` **and**
+      `feat/devmode/clone-without-dev-note` — at the next `/handoff`, in that order (`git branch -d`,
+      never `-D`)
 - [ ] **Decide [FI-83](improvements.md)'s direction** — capture the one missing observation first
 - [ ] **Move `user-config/` out of the checkout** — [FI-84](improvements.md), free, host-side
 - [ ] **[FI-78](improvements.md)** — the two macOS failures, host-verified only, owed before `0.7.0`
