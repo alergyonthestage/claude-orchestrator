@@ -199,6 +199,14 @@ never sets it; the dev tooling and the developer do.
   intended and ADR-0059's taxonomy puts an accepted divergence the user can act on at `warn`. It
   closes the second of A11's three deliberate residues, and it is the **only** cover for a project
   that pins `docker.image`, which the tag mapping does not reach.
+- 🔴 **Clone provenance without `--dev`** (added 2026-09-01, after the maintainer asked whether running
+  `./bin/cco` from the clone engages the mode — **it does not, and nothing in the design said so**).
+  Running the clone without the flag is the **mirror of the incident**: it tags the real image with
+  clone code. Ruled: **detect and `note`** — not an auto-engage (building the real image from the
+  clone is a legitimate, `CONTRIBUTING.md`-documented action, and inferring the mode from where the
+  binary lives would make it implicit, against D6) and not a refusal (a false positive must cost only
+  a line of stderr). Unrated, on every invocation, with the precedent that settles it: the existing
+  `--dev-sandbox` banner is a `note` on every run for exactly this reason.
 - **Legacy flags**: `--dev-sandbox` / `--dev-sandbox-seed` become aliases of `--dev` /
   `cco dev seed`, each emitting a superseded note. ⚠ This is a behaviour change to a documented
   flag (`docs/users/reference/cli.md` §3.34), accepted deliberately: it removes a half-identity
