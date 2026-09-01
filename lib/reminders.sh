@@ -6,7 +6,8 @@
 # blocking clean-tree gate (downgraded to a reminder, ADR-0008) WITHOUT
 # resurrecting any profile/vault-specific behavior. Three reminders:
 #   (a) uncommitted changes in ~/.cco (the personal/global config store)
-#   (b) uncommitted changes in an involved <repo>/.cco
+#   (b) uncommitted changes in an involved <repo>/.cco (remedy: cco project save,
+#       ADR-0038 — before that verb existed this reminder had no verb to name)
 #   (c) cross-repo divergence — a project's member repos carry different .cco/
 #       synced sets (consumes the §4.6 sync-state fingerprint)
 #
@@ -17,7 +18,7 @@
 # here is best-effort and returns 0 (P14: awareness, never a block).
 #
 # Provides: _emit_config_reminders(), _reminder_git_dirty(),
-#   _reminder_cross_repo_divergence()
+#   _reminder_roots_divergent(), _reminder_cross_repo_divergence()
 # Dependencies: colors.sh (warn), paths.sh (_cco_config_dir),
 #   sync-meta.sh (_sync_fingerprint_compute)
 
@@ -36,11 +37,16 @@ _reminder_git_dirty() {
     [[ -n "$out" ]]
 }
 
-# Warn iff a project's member repos carry divergent .cco/ synced sets (Case C).
-# Compares the current synced-set fingerprint (§4.6) across the given repo roots
-# that actually have a .cco/; >= 2 distinct fingerprints => divergent.
-# Usage: _reminder_cross_repo_divergence <repo_root>...
-_reminder_cross_repo_divergence() {
+# True (exit 0) iff >= 2 of the given repo roots actually have a .cco/ AND their
+# synced-set fingerprints (§4.6) differ.
+#
+# The PREDICATE only — it emits nothing. Two callers need the same computation at
+# two different message levels: `cco start`'s reminder renders it as `warn` (it may
+# gate a launch), `cco project save` as `note` (ADR-0038 §2.6 — a save-time report
+# must never make a multi-repo project pause at every start). Splitting the answer
+# from the level is what lets both exist without a second fingerprint loop.
+# Usage: _reminder_roots_divergent <repo_root>...
+_reminder_roots_divergent() {
     local r fp first="" have_first=false divergent=false count=0
     for r in "$@"; do
         [[ -d "$r/.cco" ]] || continue
@@ -52,8 +58,14 @@ _reminder_cross_repo_divergence() {
             divergent=true
         fi
     done
-    if [[ $count -ge 2 ]] && $divergent; then
-        warn "project repos have divergent .cco — run 'cco sync' to converge from a chosen source"
+    [[ $count -ge 2 ]] && $divergent
+}
+
+# Warn iff a project's member repos carry divergent .cco/ synced sets (Case C).
+# Usage: _reminder_cross_repo_divergence <repo_root>...
+_reminder_cross_repo_divergence() {
+    if _reminder_roots_divergent "$@"; then
+        warn "project repos have divergent .cco → cco sync"
     fi
     return 0
 }
@@ -69,17 +81,25 @@ _emit_config_reminders() {
     local cfg
     cfg=$(_cco_config_dir)
     if _reminder_git_dirty "$cfg"; then
-        warn "~/.cco has uncommitted changes — commit them to version your global config"
+        warn "~/.cco has uncommitted changes → cco config save"
     fi
 
-    # (b) uncommitted involved <repo>/.cco
-    local r
+    # (b) uncommitted involved <repo>/.cco — ONE warn naming every repo, never one
+    #     per repo (ADR-0059 D16). The user commits them in one pass; N lines in the
+    #     start-time gate read as N problems when there is one thing to do.
+    local r _dirty="" _ndirty=0
     for r in ${roots[@]+"${roots[@]}"}; do
         [[ -d "$r/.cco" ]] || continue
         if _reminder_git_dirty "$r" ".cco"; then
-            warn "$(basename "$r"): .cco has uncommitted changes — commit it with your normal git flow"
+            _dirty="${_dirty}${_dirty:+, }$(basename "$r")"
+            _ndirty=$(( _ndirty + 1 ))
         fi
     done
+    if [[ "$_ndirty" -eq 1 ]]; then
+        warn "$_dirty: .cco has uncommitted changes → cco project save"
+    elif [[ "$_ndirty" -gt 1 ]]; then
+        warn "$_ndirty repos have uncommitted .cco ($_dirty) → cco project save"
+    fi
 
     # (c) cross-repo divergence
     _reminder_cross_repo_divergence ${roots[@]+"${roots[@]}"}

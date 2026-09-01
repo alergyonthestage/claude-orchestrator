@@ -125,3 +125,25 @@ test_config_pull_non_ff_aborts() {
     fi
     assert_output_contains "not a fast-forward"
 }
+
+# A4 D21, the personal store's half — measured to behave identically before the
+# fix: deleting a committed `*.env` made `cco config save` refuse, and there the
+# reset is the BARE `git reset`, so it also unstaged everything else.
+test_config_save_allows_removing_a_committed_secret() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    setup_cco_env "$tmpdir"
+    _seed_config_store
+    run_cco config save -m "initial"
+
+    # Committed BY HAND, because `save` itself would refuse to add it — which is
+    # exactly how a user reaches this state.
+    printf 'TOKEN=realvalue\n' > "$HOME/.cco/packs/p1/app.env"
+    git -C "$HOME/.cco" add -f -- packs >/dev/null 2>&1
+    git -C "$HOME/.cco" commit -q -m "committed by hand, app.env included" >/dev/null 2>&1
+    rm -f "$HOME/.cco/packs/p1/app.env"
+
+    run_cco config save -m "drop the secret" || fail "removing a secret must not be refused"
+    if git -C "$HOME/.cco" cat-file -e "HEAD:packs/p1/app.env" 2>/dev/null; then
+        fail "the deletion must be committed on the personal store too"
+    fi
+}

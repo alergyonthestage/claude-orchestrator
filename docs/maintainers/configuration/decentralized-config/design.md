@@ -591,7 +591,11 @@ sequenceDiagram
   `<repo>/.cco` source it used — `started <project> from <repo> [source: --from | entry | cwd]` — so the
   precedence is never opaque. The passive unresolved/unreachable badge at `cco start`/`cco list` **names
   the next step explicitly**: `⚠ <project>: N reference(s) unresolved/unreachable — run 'cco project
-  validate' for details`. The badge is awareness, never a block (P14).
+  validate' for details`. The badge does not *fail* the start (P14 — the session still launches
+  with the resolved members), but since [ADR-0059](../../cli/decisions/0059-message-classification-and-the-start-warning-gate.md)
+  D1 it is a `⚠ warn` like any other, so it **holds the launch at the start-time gate** until the
+  user answers. Awareness that can actually be read, rather than awareness printed into a stream the
+  command was about to destroy.
 
 **Ordered `cco start` sequence (H1 — resolution before notices).** The divergence notice
 and the reminder aggregator both read the members' `.cco/`, which requires the members to

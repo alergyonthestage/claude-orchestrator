@@ -67,18 +67,72 @@ own remote — clone the repo on a second machine *or* hand it to a teammate, an
 
 ## 3. Versioning Your Configuration
 
-### 3.1 Project config — ordinary git on the repo
+### 3.1 Project config — `cco project save`
 
-`<repo>/.cco/` is committed with the code it serves, using your **normal git flow**.
-There is no special command — it is just files in the repo.
+`<repo>/.cco/` is committed with the code it serves, in the repo's own git. You can
+always do that by hand — it is just files in the repo — but the config is normally
+mixed in with unrelated work, so cco gives you the same ergonomics `cco config save`
+gives the personal store:
 
 ```bash
-git add .cco                       # stage the project config
-git commit -m "tighten review rules"
-git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by construction
+cco project status                           # what is not saved yet (writes nothing)
+cco project save -m "tighten review rules"   # commit ONLY .cco/**, secret-scanned
+cco project history                          # how the config changed, and which parts
+cco project history -n 1 --full              # with the diff
 
-git log -- .cco/                   # isolate the config history
+git push                           # Axis-1 (your PCs) + Axis-2 (teammates), by construction
 ```
+
+`cco project save` stages **only** `.cco/**`. Anything else that is dirty — or that
+you had already staged — is left untouched, so you can save the config in the middle
+of a task without disturbing it. Run it from anywhere inside the repo; your `.cco/`
+does not have to sit at the top of it, so a service inside a monorepo works the same
+way.
+
+Things it deliberately refuses rather than fixes for you:
+
+- **a missing or insufficient `.cco/.gitignore`** — it names the lines to add, but
+  does not write them. That file is a versioned file in *your* repository, and
+  authoring it would put a change you did not ask for inside the commit you did.
+- **an ignore rule that keeps an essential file out of the commit** — `project.yml`
+  (your config's identity) or `.cco/.gitignore` (the barrier every clone inherits).
+  There the check above can be satisfied by accident: a rule that ignores `.cco/`
+  wholesale "covers" every secret class because it covers everything, and the save
+  would commit nothing while reporting success. cco names **the rule that actually
+  fires** — pattern, file and line — so you can go and change it. Keeping `.cco/` out
+  of git on purpose is a supported choice; it just means there is nothing to save.
+- **a secret-shaped file under `.cco/`** — the same 2-pass scan `cco config save`
+  runs (filename and content, `*.example` exempt). The refusal unstages `.cco/` and
+  nothing else. ⚠ It asks what the commit would **add**: *removing* a secret is the
+  outcome you wanted, so a save whose only change is that deletion succeeds.
+
+All of these are reported **together**, so you never fix one and meet the next on the
+retry. Coverage is decided by asking git whether a **rule exists**, so a directory-wide
+pattern or one inherited from elsewhere in your ignore chain counts. A file you had
+already **committed** before adding the rule is not a refusal: git tracks it whatever
+the rule says, so the save reports it and **proceeds** — it is already in your
+history, and this commit is not what put it there. `git rm --cached` stops future
+commits from carrying it; it does not rewrite the ones already made.
+
+In a multi-repo project the save covers the repo you ran it in, then tells you which
+other member repos still have an uncommitted `.cco/` — and, separately, whether the
+members have **drifted apart** in content, which is a `cco sync` question rather than
+a commit one.
+
+`cco project status` is the preview: it lists exactly what `save` would commit — not what
+`git status` would show. Files git ignores are absent, and so is everything outside `.cco/`. It also
+answers the second half of the question — *would it succeed* — by reporting **any** of the refusals
+above before the list, at exit 0, instead of making you discover it by having a save refused. When one
+would fire, the closing `→ cco project save` hint is withheld. A **tracked** file that a rule covers
+is reported below the list instead: that one is not a refusal, so the hint stays — `status` is just
+where you meet it, rather than finding out from a save. It never calls a config **clean** while any
+of this stands, and with `--full` it withholds the diff of a file it just flagged as secret-like
+(`*.example` skeletons excepted — they exist to be read).
+
+`cco project history` is path-filtered, so it shows every commit that touched
+`.cco/` — including commits that also touched code, and commits made by hand long
+before the verb existed. The equivalent by hand is `git log -- .cco/`, without the
+column naming which parts of the config changed.
 
 `<repo>/.cco/project.yml` is **machine-agnostic** — it carries logical names +
 coordinates only, never real local paths — so `git diff` is always truthful and the
@@ -92,7 +146,9 @@ scan refuses real secrets and exempts `*.example`.
 remote is opt-in). Version and sync it with `cco config`:
 
 ```bash
+cco config status                      # what is not saved yet (writes nothing)
 cco config save -m "add deploy pack"   # explicit, manual commit (allowlist + secret scan)
+cco config history                     # how the store changed, and which parts
 cco config push                        # push to your opt-in personal remote
 cco config pull                        # pull on another machine
 ```
@@ -101,7 +157,8 @@ cco config pull                        # pull on another machine
 `.claude/`, the global `setup*.sh`/`mcp-packages.txt`/`languages`) — never
 `git add -A` — and runs a 2-pass secret scan. Commits are **explicit and semantic**
 (no auto-commit). A non-fast-forward `cco config pull` aborts and tells you to resolve
-in your IDE, as ordinary git.
+in your IDE, as ordinary git. `cco config status` previews both halves the same way its
+project twin does: what would be committed, and whether the secret scan would refuse it.
 
 `cco config validate [--fix]` sanitizes orphaned internal state after a manual
 deletion (detect/report, prune only on confirm) — never automatic.

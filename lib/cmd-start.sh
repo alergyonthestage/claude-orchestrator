@@ -390,7 +390,7 @@ _start_resolve_access() {
     # F4 inert-edit-project case: (none,rw,none) becomes (ro,rw,none) — the project-mode
     # default — so ~/.cco stays readable (never writable unless G=rw).
     if [[ "$_preset" == "config-editor" && "$(_cco_axis_rank "$cco_g")" -lt 1 ]]; then
-        echo "note: config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)." >&2
+        note "config-editor needs to read the global store to author against it — clamping cco_access global=none up to 'ro' (use --cco-access edit-global to also WRITE ~/.cco)."
         cco_g="ro"
     fi
     cco_access=$(_cco_triple_label "$cco_g" "$cco_pc" "$cco_po")
@@ -442,7 +442,7 @@ _start_resolve_access() {
     # explicit preset/override wider than cco does. Cr never warns (no cco counterpart).
     if _claude_discordant "$claude_cr" "$claude_cp" "$claude_cg" "$claude_co" "$cco_g" "$cco_pc" "$cco_po" \
                           "$claude_emd" "$claude_eru" "$claude_eag" "$claude_esk"; then
-        echo "note: claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note." >&2
+        note "claude_access ($claude_access) authors .claude more broadly than cco_access ($cco_access) reads/writes .cco config — explicit discordance, allowed (ADR-0049 §4). Align the two to silence this note."
     fi
 
     # FI-52 divergence notice (accepted 2026-08-06 — option 1+4, ADR-0057 §Amendments).
@@ -454,7 +454,7 @@ _start_resolve_access() {
     # caller that gates on warnings.
     local _cmd_overreach; _cmd_overreach=$(_claude_matrix_overreach "$claude_matrix")
     if [[ -n "$_cmd_overreach" ]]; then
-        echo "note: claude_md=ask emits ONE glob over all of /workspace (ADR-0057 D8), so CLAUDE.md still prompts on trees this session granted rw: ${_cmd_overreach}. Accepted divergence (FI-52), not a defect — add entries.claude_md=rw to --claude-access to author without the prompt." >&2
+        note "claude_md=ask emits ONE glob over all of /workspace (ADR-0057 D8), so CLAUDE.md still prompts on trees this session granted rw: ${_cmd_overreach}. Accepted divergence (FI-52), not a defect — add entries.claude_md=rw to --claude-access to author without the prompt."
     fi
 
     # access.cco.include_member_configs (ADR-0046 §6, additive, default false):
@@ -1717,11 +1717,11 @@ _start_check_health() {
         die "Resolve conflict markers before starting. Run 'cco update --sync' or edit the files manually."
     fi
 
-    # Warn about managed skills that shadow user-level copies
+    # Warn about managed skills that shadow user-level copies.
+    # ONE condition, ONE warn (ADR-0059 D2): the three-line form listed the same
+    # shadowing three times in the gate's list, where a reader counts entries.
     if [[ -d "$config_dir/.claude/skills/init-workspace" ]]; then
-        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace)."
-        warn "This skill is now managed (enterprise-level) and the managed version takes precedence."
-        warn "You can safely remove the user copy: rm -rf ~/.cco/.claude/skills/init-workspace"
+        warn "init-workspace skill found in user global (~/.cco/.claude/skills/init-workspace) — it is now managed (enterprise-level) and the managed copy takes precedence. Remove the user copy with: rm -rf ~/.cco/.claude/skills/init-workspace"
     fi
 }
 
@@ -1900,7 +1900,6 @@ _start_generate_integrations() {
 # the only start-specific concern is skipping the tutorial/internal
 # project (which uses template-baked paths, nothing to resolve).
 _start_resolve_paths() {
-    unresolved_refs=0
     $is_internal && return 0
     # Single resolution entry point (ADR-0033 / S1 finding #7): start invokes the
     # SAME resolve surface as `cco resolve` — interactive heal of every referenced
@@ -1909,20 +1908,27 @@ _start_resolve_paths() {
     # N3 (ADR-0052 §6): a user Exit ([q]) at a heal prompt propagates rc=2 — signal
     # it up (return 2) so cmd_start aborts the launch BEFORE the container boots,
     # rather than the old "skip-and-boot" that ignored the return.
+    # 2nd arg (ADR-0059 A2 D24): compose generation follows this call, and
+    # _generate_llms_mounts / _generate_pack_mounts restate an uninstalled llms or
+    # pack in a sentence that names where cco looked and the exact remedy. The
+    # resolve pass therefore stays silent for THOSE TWO KINDS ONLY — repos and
+    # mounts have no downstream producer and keep reporting here.
     local _ru_rc=0
-    _resolve_unit "$(dirname "$project_dir")" || _ru_rc=$?
+    _resolve_unit "$(dirname "$project_dir")" downstream-restates || _ru_rc=$?
     [[ $_ru_rc -eq 2 ]] && return 2
     # Conscious-skip model (design §4.4 / P14, ADR-0017 D2): _resolve_unit offered
     # [c]lone / [p]ath / [s]kip per unresolved member (TTY) and already warned each
-    # member it could not resolve (skip / non-TTY). Here we only COUNT the residue
-    # for the passive ⚠ badge — the mount-gen excludes empty-path entries, so a
-    # skipped member is never a silent empty mount (#B17).
-    local kind key effective status
-    while IFS=$'\t' read -r kind key effective status; do
-        [[ -z "$kind" ]] && continue
-        [[ "$status" == "exists" ]] && continue
-        unresolved_refs=$((unresolved_refs + 1))
-    done < <(_project_effective_paths "$project_dir")
+    # member it could not resolve (skip / non-TTY) — that warning is the whole
+    # statement of the condition now (ADR-0059 A2 D25 removed the residue badge that
+    # re-counted a subset of it here). The mount-gen excludes empty-path entries, so
+    # a skipped member is never a silent empty mount (#B17).
+    #
+    # ⚠ The explicit `return 0` is LOAD-BEARING, not tidiness. With the residue loop
+    # gone, the last command of this function is `[[ $_ru_rc -eq 2 ]] && …`, whose
+    # status on the normal path is 1 — the caller reads that as "resolve failed" and
+    # aborts the start before any container. Measured: 227 suite failures, all of
+    # them a dry-run that produced no compose file.
+    return 0
 }
 
 # Emit the non-blocking config reminder aggregator (ADR-0008) for this project's
@@ -1931,8 +1937,8 @@ _start_resolve_paths() {
 # unresolved index. Silent when members carry no <repo>/.cco/ (the pre-P2
 # central layout). The remaining cco start source-selection wiring (§4.4:
 # --from, Case-C precedence, the divergence notice, the source-transparency
-# line + passive ⚠ badge) lands in P2, built once against the decentralized
-# layout. Always non-blocking (P14).
+# line) lands in P2, built once against the decentralized layout. Always
+# non-blocking (P14).
 _start_emit_reminders() {
     $is_internal && return 0
     local -a roots=()
@@ -2915,6 +2921,22 @@ _start_launch() {
     # Load project-specific secrets (override global values — Docker uses last -e for duplicates)
     load_secrets_file run_env "$project_dir/secrets.env"
 
+    # ── The warning gate (ADR-0059 D7) ───────────────────────────────
+    # HERE, and not at the end of cmd_start: `load_secrets_file` warns about a
+    # malformed line AFTER every other step of the command (lib/secrets.sh:102), so
+    # a gate placed any earlier would silently miss exactly the class of problem a
+    # user most wants to hear about before working inside the session. And BEFORE
+    # the running-registry marker: an abort must leave no entry to reap.
+    if ! _cco_warn_gate; then
+        _cco_warn_capture_end
+        info "Aborted — no session started."
+        return 0
+    fi
+    # The buffer has done its job; the launch below blocks for the whole session and
+    # nothing reads it again. Ending here also keeps _CCO_WARN_LOG — an exported
+    # host path — out of the container's environment.
+    _cco_warn_capture_end
+
     info "Starting session for project '${project_name}'..."
 
     # Session running registry (ADR-0045). `docker compose run` blocks for the whole
@@ -2982,6 +3004,11 @@ cmd_start() {
             --api-key) use_api_key=true; shift ;;
             --dry-run) dry_run=true; shift ;;
             --dump) dry_run_dump=true; shift ;;
+            # ADR-0059 A2 D23 — answer the start-time pause without env plumbing.
+            # It ASSUMES YES, it does not pretend there is no terminal: the message
+            # list is still rendered, only the question is skipped. The
+            # "nobody is there" spelling stays CCO_NONINTERACTIVE=1.
+            --yes|-y) CCO_ASSUME_YES=1; shift ;;
             --chrome)     opt_chrome="on";  shift ;;
             --no-chrome)  opt_chrome="off"; shift ;;
             --github)     opt_github="on";  shift ;;
@@ -3041,6 +3068,9 @@ Options:
                        session)
   --dry-run            Show the generated docker-compose without running
   --dump               With --dry-run: persist artifacts to .tmp/ for inspection
+  --yes, -y            Answer the start-time pause: show the messages, do not ask
+                       (same as CCO_ASSUME_YES=1; CCO_NONINTERACTIVE=1 instead says
+                       there is no terminal at all)
   --port <p>           Add extra port mapping (repeatable)
   --env <K=V>          Add extra environment variable (repeatable)
 
@@ -3081,7 +3111,6 @@ EOF
 
     # Variables set by helper functions (declared here for shared scope)
     local project_dir project_yml is_internal claude_src source_repo source_kind
-    local unresolved_refs=0
     local project_name auth_method docker_image mount_socket network
     local browser_enabled browser_mode browser_cdp_port browser_effective_port browser_mcp_args
     local github_enabled github_token_env pack_names
@@ -3097,6 +3126,11 @@ EOF
     local session_context_b64="" subagent_context_b64=""  # Level-A injected context (ADR-0042)
     local session_preset="normal"    # normal | tutorial | config-editor (built-in presets, D6)
     local _op_config_masks=()        # host<TAB>target pairs of built-in config mounts to secret-mask (5b)
+
+    # ADR-0059 D1 — start capturing warnings before the first step that can emit one
+    # (_start_load_config, the yaml parser and the pack/agent normalizers all do).
+    # AFTER argument parsing, so `--help` and a rejected flag leave no buffer behind.
+    _cco_warn_capture_begin
 
     _start_resolve_project
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_project done" >&2
@@ -3157,14 +3191,20 @@ EOF
     fi
     [[ "${CCO_DEBUG:-}" == "1" ]] && echo "[debug] resolve_paths done" >&2
 
-    # Source transparency + passive ⚠ badge (design §4.4 / ADR-0019 D2 layer-e /
-    # P14), AFTER member resolution (H1). Always print which <repo>/.cco config
-    # source was used, so the precedence (--from > cwd/by-name) is never opaque;
-    # the badge names the next step (cco resolve) but never blocks the launch.
+    # Source transparency (design §4.4 / ADR-0019 D2 layer-e / P14), AFTER member
+    # resolution (H1). Always print which <repo>/.cco config source was used, so the
+    # precedence (--from > cwd/by-name) is never opaque.
+    #
+    # The passive ⚠ residue badge that stood here is REMOVED (ADR-0059 A2 D25). It
+    # counted only what `_project_effective_paths` returns — repos and mounts — while
+    # `cmd-resolve.sh` counts all four kinds, so it was always a SUBSET and never
+    # fired alone: the pause showed two contradictory counts of one condition
+    # ("3 reference(s) still unresolved" beside "1 reference(s) unresolved").
+    # Its own comment called it a badge that "never blocks the launch" — a pre-gate
+    # device for warnings that scrolled past, which is the job the pause now does
+    # for every message.
     if ! $is_internal; then
         info "started ${project_name} from $(basename "$source_repo") [source: ${source_kind}]"
-        [[ "${unresolved_refs:-0}" -gt 0 ]] && \
-            warn "⚠ ${project_name}: ${unresolved_refs} reference(s) unresolved — run 'cco resolve'"
     fi
 
     # H1: config reminders fire AFTER member resolution, never against an empty
@@ -3187,11 +3227,19 @@ EOF
     _agents_report_flush
 
     if $dry_run; then
+        # D8 — a dry-run does NOT gate. Nothing takes the terminal, so the warnings
+        # are readable where they are printed, which is the entire objective; a
+        # prompt here would make the inspection path more interactive than the real
+        # one. The flush comes FIRST so the summary stays the last thing on screen.
+        _cco_warn_capture_end
         _start_show_summary
         return 0
     fi
 
-    _start_launch
+    local _launch_rc=0
+    _start_launch || _launch_rc=$?
+    _cco_warn_capture_end
+    return "$_launch_rc"
 }
 
 # ── Browser support helpers ──────────────────────────────────────────
@@ -3253,8 +3301,9 @@ _resolve_browser_port() {
         done
         if [[ "$taken" == "false" ]]; then
             if [[ "$port" != "$preferred" ]]; then
-                warn "Browser: CDP port ${preferred} is claimed by another session."
-                warn "         Using port ${port} instead."
+                # ONE condition, ONE warn (ADR-0059 D2) — the port being taken and
+                # the port being used instead are the same fact.
+                warn "Browser: CDP port ${preferred} is claimed by another session — using port ${port} instead."
                 info "         Run: cco chrome start --project ${current_project}"
             fi
             echo "$port"

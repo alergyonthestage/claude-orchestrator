@@ -444,6 +444,81 @@ test_resolve_pack_missing_warns_non_tty() {
         || fail "Expected an executable install hint, got: $out"
 }
 
+# ── D24 (ADR-0059 A2) — one condition, one sentence, across producers ─
+#
+# A start generates the compose right after this call, and the compose generators
+# restate an uninstalled llms or pack in a better sentence — one that names where
+# cco looked and the exact remedy. Two producers, two wordings, one condition: the
+# buffer deduplicates on the message TEXT and cannot catch that. So the resolve pass
+# goes silent for those two kinds when the caller says the sentence is coming.
+#
+# ⚠ Repos and extra_mounts have NO downstream producer. The rule is deliberately not
+# uniform across the four kinds, and the second test is what fails if a later
+# "tidy-up" extends the silence to all four — which would DELETE the message.
+
+_RSV_D24_YML='name: demo
+repos:
+  - name: myrepo
+  - name: absent-repo
+    url: https://github.com/org/absent.git
+llms:
+  - name: svelte
+    url: https://svelte.dev/llms.txt
+packs:
+  - name: team-pack
+    url: https://github.com/org/sharing.git'
+
+_rsv_d24_run() {   # $1 = tmp root, $2 = the downstream-restates argument ("" or set)
+    export LLMS_DIR="$1/llms"; mkdir -p "$LLMS_DIR"
+    export PACKS_DIR="$1/packs"; mkdir -p "$PACKS_DIR"
+    source "$REPO_ROOT/lib/colors.sh"; source "$REPO_ROOT/lib/utils.sh"
+    source "$REPO_ROOT/lib/yaml.sh"; source "$REPO_ROOT/lib/paths.sh"
+    source "$REPO_ROOT/lib/index.sh"; source "$REPO_ROOT/lib/local-paths.sh"
+    source "$REPO_ROOT/lib/packs.sh"; source "$REPO_ROOT/lib/cmd-resolve.sh"
+    _cco_have_tty() { return 1; }                                   # headless
+    _resolve_unit "$1/myrepo" "$2" 2>&1
+}
+
+test_resolve_is_silent_for_llms_and_packs_when_restated_downstream() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_D24_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+
+    local out; out=$(_rsv_d24_run "$tmp" downstream-restates)
+
+    [[ "$out" != *"llms 'svelte' not installed"* ]] \
+        || fail "D24: the resolve pass must not restate an uninstalled llms a start is about to describe better, got: $out"
+    [[ "$out" != *"pack 'team-pack' not installed"* ]] \
+        || fail "D24: same for a pack, got: $out"
+
+    # ⚠ The asymmetry, asserted: repos have no downstream producer, so this line is
+    # the ONLY statement of that condition and must survive.
+    [[ "$out" == *"repo 'absent-repo' unresolved on this machine"* ]] \
+        || fail "D24: repos are deliberately NOT silenced — nothing downstream repeats them, got: $out"
+}
+
+test_resolve_still_reports_llms_and_packs_when_it_is_the_only_producer() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/myrepo"
+    _rsv_unit "$tmp" myrepo "$_RSV_D24_YML"
+    seed_index_path myrepo "$tmp/myrepo"
+
+    # `cco resolve` run on its own generates no compose, so nothing will restate it.
+    # This is also the control for the test above: it proves the silence there is
+    # the argument's doing and not a fixture that never had those entries.
+    local out; out=$(_rsv_d24_run "$tmp" "")
+
+    [[ "$out" == *"llms 'svelte' not installed"* ]] \
+        || fail "a standalone resolve must still name the uninstalled llms — nothing else will, got: $out"
+    [[ "$out" == *"pack 'team-pack' not installed"* ]] \
+        || fail "a standalone resolve must still name the uninstalled pack, got: $out"
+    [[ "$out" == *"repo 'absent-repo' unresolved on this machine"* ]] \
+        || fail "and the repo line is unconditional, got: $out"
+}
+
 test_resolve_pack_tty_invokes_heal() {
     local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
     setup_cco_env "$tmp"
@@ -577,6 +652,192 @@ test_resolve_disambiguate_no_candidates_returns_1() {
     local rc=0
     ( _da_src; _resolve_reuse_menu loner repos "" proj-c ) >/dev/null || rc=$?
     [[ $rc -eq 1 ]] || fail "a name bound in no other project must yield no menu (rc=1, got $rc)"
+}
+
+# ── A8 — the onboarding prompts (ADR-0059 D13/D14) ───────────────────────────
+#
+# ⚠ WHY THE BODY IS PATCHED, stated rather than implied. Both prompts end in
+# `read -r reply < /dev/tty`, and a hermetic run has no controlling terminal — the
+# same constraint design §6.2 records for the gate. The choice was: leave the read
+# half untested, drive a pty (BSD `script` takes different arguments, and a pty
+# test invites the capture-hang class), or run the REAL body with only the tty read
+# replaced. This does the third. Everything else — the rendering, the case, the
+# absolutization — is the shipped code, read out of lib/local-paths.sh at run time.
+#
+# The patch proves it applied: an unpatched body would block on /dev/tty forever
+# rather than fail an assertion, so _p8_body refuses to return one.
+
+_P8_REPLIES=""
+
+# Pop the next queued reply into <varname> (one per patched read).
+# ⚠ NOT a command substitution: `reply=$(_p8_reply)` pops in a SUBSHELL, so the
+# queue never advances and every read replays the first answer.
+_p8_reply() {
+    local __v="$1" __r="${_P8_REPLIES%%$'\n'*}"
+    _P8_REPLIES="${_P8_REPLIES#*$'\n'}"
+    printf -v "$__v" '%s' "$__r"
+}
+
+# Echo <fn>'s body from lib/local-paths.sh, tty read → queue pop. rc 1 if the
+# substitution found nothing to replace.
+_p8_body() {
+    local body src="${2:-$REPO_ROOT/lib/local-paths.sh}"
+    body=$(awk -v want="^$1\\(\\)" '$0 ~ want { inside=1 } inside { print } inside && /^}/ { exit }' \
+             "$src" | sed '1d;$d' \
+           | sed 's#read -r reply < /dev/tty#_p8_reply reply#')
+    [[ -n "$body" ]] || return 1
+    case "$body" in *"/dev/tty"*) return 1 ;; esac
+    printf '%s\n' "$body"
+}
+
+# Run <fn>'s patched body with the remaining arguments as its positionals.
+_p8_run() {
+    local _fn="$1"; shift
+    local _body
+    _body=$(_p8_body "$_fn") || { echo "HARNESS: the tty read was not patched out of $_fn" >&2; return 99; }
+    eval "$_body"
+}
+
+# The harness's own oracle: it must REFUSE a body it failed to patch. Without
+# this, a reworded read line would leave `< /dev/tty` in place and the suite would
+# block forever instead of failing — the capture-hang class, one layer up.
+test_p8_harness_refuses_a_body_it_could_not_patch() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    printf '%s\n' 'f() {' '    read -r reply </dev/tty' '}' > "$tmp/src.sh"   # no space: sed misses it
+    local rc=0
+    _p8_body f "$tmp/src.sh" >/dev/null || rc=$?
+    [[ $rc -eq 1 ]] || { fail "_p8_body must refuse a body that still reads /dev/tty (rc=$rc)"; return 1; }
+
+    printf '%s\n' 'f() {' '    read -r reply < /dev/tty' '}' > "$tmp/src.sh"  # the real spelling
+    rc=0
+    _p8_body f "$tmp/src.sh" >/dev/null || rc=$?
+    [[ $rc -eq 0 ]] || { fail "_p8_body must accept the spelling it patches (rc=$rc)"; return 1; }
+}
+
+# ── D13 — the clone prompt offers its destination and accepts an override ────
+
+# Source + stub: a TTY that is not there, and a git that clones nothing.
+_p8_src() {
+    _da_src
+    _cco_have_tty() { return 0; }
+    git() { [[ "$1" == "clone" ]] && { mkdir -p "$3"; return 0; }; command git "$@"; }
+}
+
+test_clone_prompt_renders_its_destination_and_enter_accepts_it() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    local out
+    out=$(
+        exec 2>"$tmp/err"
+        _p8_src
+        _P8_REPLIES=$'c\n\n'          # (c), then bare Enter
+        _p8_run _prompt_for_path backend https://ex.com/b.git "$tmp/dev/backend" Repository
+    )
+    CCO_OUTPUT=$(cat "$tmp/err")
+    assert_output_contains "Clone into [$tmp/dev/backend]" || return 1
+    assert_equals "$tmp/dev/backend" "$out" "bare Enter must accept the destination the prompt offered"
+}
+
+test_clone_prompt_accepts_an_override() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    local out
+    out=$(
+        exec 2>/dev/null
+        _p8_src
+        _P8_REPLIES=$'c\n'"$tmp/elsewhere/backend"$'\n'
+        _p8_run _prompt_for_path backend https://ex.com/b.git "$tmp/dev/backend" Repository
+    )
+    assert_equals "$tmp/elsewhere/backend" "$out" "the answer to 'Clone into' must be where the clone lands (D13)"
+}
+
+# The mount case is the one FI-69 was reported from: `suggested` is computed only
+# for repos (local-paths.sh:489-494), so a mount is hard-wired to ~/Projects/<name>
+# — a location unrelated to where the user keeps mounts, and (p) is no escape
+# because it demands an existing path. The override is what stops that being a trap.
+test_clone_prompt_lets_a_mount_escape_the_home_projects_fallback() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+
+    local out
+    out=$(
+        exec 2>"$tmp/err"
+        _p8_src
+        _P8_REPLIES=$'c\n'"$tmp/mnt/assets"$'\n'
+        _p8_run _prompt_for_path assets https://ex.com/a.git "" Mount    # no suggestion
+    )
+    CCO_OUTPUT=$(cat "$tmp/err")
+    assert_output_contains "Clone into [$HOME/Projects/assets]" || return 1
+    assert_equals "$tmp/mnt/assets" "$out" "a mount must be able to clone somewhere other than ~/Projects" || return 1
+}
+
+# M7: the override is absolutized like (p)'s answer — a relative path stored in the
+# index resolves wrong from any other cwd.
+test_clone_prompt_absolutizes_a_relative_override() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/cwd"
+
+    local out
+    out=$(
+        exec 2>/dev/null
+        cd "$tmp/cwd" || exit 1
+        _p8_src
+        _P8_REPLIES=$'c\nsub/backend\n'
+        _p8_run _prompt_for_path backend https://ex.com/b.git "$tmp/dev/backend" Repository
+    )
+    assert_equals "$(cd "$tmp/cwd" && pwd -P)/sub/backend" "$out" "a relative override must be absolutized (M7)" || return 1
+}
+
+# ── T13 / D14 — the reuse prompt accepts the token it printed ────────────────
+#
+# FI-70 in one line: the prompt printed `[1-1]` and the parser rejected `1-1`. The
+# test therefore does what the user did — READS the token off the rendered line and
+# types it back. Asserting the parser alone would have passed throughout the defect.
+
+# Echo the token the choice line offers for reuse, as rendered.
+_p8_printed_token() {
+    printf '%s\n' "$1" | sed -n 's/^ *\[\([^]]*\)\].*reuse that path.*/\1/p'
+}
+
+test_reuse_prompt_accepts_the_single_candidate_token_it_printed() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a"
+    seed_index_path backend "$tmp/be-a" proj-a
+
+    # Pass 1 — read the token off the rendered line ([d] leaves without side effects).
+    ( exec 2>"$tmp/err"; _p8_src; _P8_REPLIES=$'d\n'; _p8_run _resolve_disambiguate backend extra_mounts "" proj-c ) >/dev/null
+    local rendered; rendered=$(cat "$tmp/err")
+    local tok; tok=$(_p8_printed_token "$rendered")
+    [[ -n "$tok" ]] || { fail "the choice line offered no reuse token at all: $rendered"; return 1; }
+
+    # Pass 2 — type it back, verbatim.
+    local out rc=0
+    out=$( exec 2>/dev/null; _p8_src; _P8_REPLIES="$tok"$'\n'; _p8_run _resolve_disambiguate backend extra_mounts "" proj-c ) || rc=$?
+    assert_equals "0" "$rc" "the token the prompt printed ('$tok') must be accepted when typed back" || return 1
+    assert_equals "$tmp/be-a" "$out" "accepting '$tok' must reuse that candidate's path" || return 1
+}
+
+test_reuse_prompt_renders_literal_tokens_never_a_range() {
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    setup_cco_env "$tmp"
+    mkdir -p "$tmp/be-a" "$tmp/be-b"
+    seed_index_path backend "$tmp/be-a" proj-a
+    seed_index_path backend "$tmp/be-b" proj-b
+
+    ( exec 2>"$tmp/err"; _p8_src; _P8_REPLIES=$'d\n'; _p8_run _resolve_disambiguate backend extra_mounts "" proj-c ) >/dev/null
+    CCO_OUTPUT=$(cat "$tmp/err")
+    assert_output_contains "[1] [2] reuse that path" || return 1
+
+    # And the LAST token is accepted too — a range that happened to read right at
+    # the low end would still be wrong at the high one.
+    local out rc=0
+    out=$( exec 2>/dev/null; _p8_src; _P8_REPLIES=$'2\n'; _p8_run _resolve_disambiguate backend extra_mounts "" proj-c ) || rc=$?
+    assert_equals "0" "$rc" "the last rendered token must be accepted" || return 1
+    assert_equals "$tmp/be-b" "$out" "token [2] must reuse the second candidate" || return 1
 }
 
 test_resolve_reuse_binds_the_chosen_path() {

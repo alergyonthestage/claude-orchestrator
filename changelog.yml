@@ -1391,6 +1391,173 @@ entries:
       No rebuild needed: the projection is produced at start time by the CLI.
 
   - id: 65
+    date: "2026-08-18"
+    type: additive
+    title: "cco start now pauses before it hands over the terminal, instead of losing what it printed"
+    description: >
+      **The defect.** `cco start` printed its messages and then handed the terminal
+      to `docker compose run`. The Claude Code TUI opened over them and the
+      scrollback was gone, so the entire message surface of the command was
+      write-only — including the warning that says a teammate will finish its work
+      and lose it. This was measured, not supposed: a real warning sat on the first
+      line after the start command through a complete acceptance run, read by
+      nobody.
+      **What changes.** On an interactive terminal, `cco start` and `cco new` now
+      always stop immediately before the container runs and wait for you. That is
+      the point: a start takes about five seconds, and everything it wrote — `⚠`,
+      `note:`, `ℹ`, `✓` alike — is unreadable the moment the session opens. Bare
+      Enter starts; `a` aborts, and an abort leaves no container and no session
+      marker behind.
+      **What the pause says depends on what the run found.** A run with nothing to
+      report, or with notes only, shows them and asks `Press Enter to start the
+      session`. A run that emitted one or more warnings lists them and asks
+      `Start the session anyway? [S/a]`. `a` aborts in every case, including the
+      quiet one that does not advertise it — so a wrong project is always one
+      keystroke away from being backed out of.
+      **The list is built to be read at a glance.** Each message is printed
+      **once** — no longer both in passing and again in the list — and the entries
+      are grouped by area (packs & overlays, config hygiene, documentation/llms,
+      agent teams, …) with a count per group, in a fixed order so two runs of the
+      same project read the same way. Warnings come first, notes after them. Where
+      a message has an obvious next command, it is shown in its own column:
+      `→ cco sync`. And a condition that used to print once per item now prints
+      once: five committed rules shadowed by the same pack overlay are one line
+      naming all five, not five lines. A missing llms or pack is stated once too,
+      in the sentence that names where cco looked and what to run — not twice, in
+      two different wordings.
+      **Four message levels, and only one of them asks you to decide.** `⚠` is a
+      condition of this session you may want to act on; `note:` is an accepted
+      divergence with nothing to do about it; `ℹ`/`✓` are the chronicle of what the
+      command did; plain feedback inside a prompt is part of the prompt. There is no
+      curated list of "important" warnings — the behaviour is a property of the
+      level, so a warning written years from now escalates the pause on the day it
+      is written.
+      **Automation has two spellings, and they say different things.** With no
+      controlling terminal — CI, a script, a captured run, or
+      `CCO_NONINTERACTIVE=1` — there is no prompt and the launch proceeds exactly as
+      before: that one means *nobody is there*. `CCO_ASSUME_YES=1`, or the new
+      `--yes` / `-y` flag on `cco start` and `cco new`, means *somebody is there and
+      has already answered*: the list is still shown, only the question is skipped.
+      `cco start --dry-run` does not pause either — nothing takes the terminal
+      there, so the output is already readable.
+      No rebuild needed: it all runs host-side in the CLI.
+
+  - id: 66
+    date: "2026-08-18"
+    type: additive
+    title: "A writable extra mount can finally be declared from the CLI, and the onboarding prompts stop advertising choices they refuse"
+    description: >
+      **`cco project add mount --writable`.** An extra mount is bound read-only by
+      default, and that default is unchanged. What was missing was any way to say
+      the opposite from the command line: `--mount <src>:rw` has expressed a
+      writable mount for a long time, but `cco project add mount` had no spelling
+      for it at all, so the case was reachable only by hand-editing `project.yml`.
+      `--writable` now records `readonly: false`. `--readonly` stays and keeps
+      recording an explicit `readonly: true` — it no longer reads as opting into a
+      restriction that was already unconditional; the pair is what shows you the
+      default. The two together are an error rather than a precedence puzzle, and
+      passing neither still writes no key at all.
+      **The prompt that clones a missing repo now asks where to put it.** It used
+      to clone to a destination you were shown but could not change, and for an
+      extra mount that destination was always `~/Projects/<name>` — a place with no
+      relation to where you keep your mounts. Choosing "specify a path" was no way
+      out either, since it requires a directory that already exists. The prompt now
+      offers its destination and accepts anything you type instead; Enter accepts
+      the offer, and a relative answer is stored as an absolute path so it still
+      resolves from any other directory.
+      **The reuse prompt lists the choices it accepts.** When a name is already
+      bound in another project, the menu offered `[1-n]` — range notation printed
+      among literal keys like `[d]` and `[q]`. With a single candidate it printed
+      `[1-1]`, and typing that back was rejected as invalid. It now prints the
+      tokens themselves: `[1] [2] reuse that path`.
+      No rebuild needed: all three run host-side in the CLI.
+
+  - id: 67
+    date: "2026-08-21"
+    type: additive
+    title: "cco project save/status/history — version a project's own config, see what is unsaved, and read either store's history back"
+    description: >
+      **`cco project save`.** Your project's config lives in `<repo>/.cco/` and is
+      versioned by the repo's own git — which meant committing it by hand, picking
+      it out from whatever else your working tree happened to be holding. The
+      personal store has had `cco config save` for exactly this since the start;
+      the in-repo side never got its twin. It has one now. `cco project save`
+      stages **only** `.cco/**` and commits it: anything else that is dirty, or
+      that you had already staged, is left exactly as it was, so you can save the
+      config in the middle of a task. Run it from anywhere inside the repo, with
+      `-m` for the message. Three things it refuses rather than fixing for you: a
+      `.cco/.gitignore` that is missing or does not cover the secret patterns (it
+      names the lines to add, but that file is a versioned file in your repository
+      and writing it would put an unrequested change in the commit you asked for);
+      an ignore rule anywhere that would keep `project.yml` or `.cco/.gitignore`
+      itself out of the commit — a save that drops your config's identity, or the
+      barrier every clone of it inherits, is not a save, and cco names the rule that
+      actually fires, with its pattern, file and line, so you can go and change it
+      (keeping `.cco/` out of git on purpose is a supported choice — it just means
+      there is nothing to save); and a secret-shaped file staged under `.cco/` — the
+      same two-pass scan `cco config save` runs, with `*.example` exempt, and if the
+      offending path is one you had already committed it offers `git rm --cached`
+      rather than telling you to move it somewhere it already is. All of them are
+      reported in one go, so you never fix one and meet the next on the retry. What
+      the first check asks is whether an ignore **rule exists**, so a directory-wide
+      pattern counts, and a file you had already committed before adding the rule
+      is not a refusal: git tracks it whatever the rule says, so the save reports it
+      and proceeds — it is already in your history, and `git rm --cached` stops
+      future commits from carrying it without rewriting the ones already made. In a
+      multi-repo project it
+      also tells you which other member repos still have an uncommitted `.cco/`,
+      and separately whether the members have drifted apart in content, which is a
+      `cco sync` question rather than a commit one.
+      **`cco project history` and `cco config history`.** Asking how your config
+      changed used to mean knowing git, knowing the pathspec, and — for `~/.cco` —
+      knowing where the store even lives. Both stores now answer for themselves:
+      one line per commit with the date, the author, the message, and **which
+      parts of the config changed** (`project.yml`, `claude/rules`, …), `-n` to
+      change how many, `--full` to add the diff. The project one is path-filtered
+      rather than marked, so it shows every commit that touched `.cco/` —
+      including commits that also touched code, and commits made by hand long
+      before this verb existed. A store you have never saved is told so, not
+      treated as an error.
+      **`cco project status` and `cco config status`.** Before you save, the other
+      question: what have I actually changed, and would saving it work? Both stores
+      answer it, writing nothing at all — one line per file with its fate in that
+      commit (`M` modified, `A` new, `D` deleted), and `--full` for the diffs. What
+      it lists is **exactly what `save` would commit**, which is not what
+      `git status` would show you: files git ignores are absent, everything outside
+      `.cco/` is absent however dirty your tree is, and on the personal store only
+      the allowlisted config appears. And it answers the other half — *would saving
+      work* — for **both** ways a save can be refused: the `.gitignore` barrier, and
+      the secret scan, run over the very set it just listed. It says so and still
+      answers, at exit 0, in the same words the refusal would use, so you find out
+      before a save is refused rather than after; when one would fire, the closing
+      `→ cco project save` hint is withheld rather than pointing you at a command
+      destined to fail. A file you had committed before adding the rule that covers
+      it is reported below the list — not a refusal, so the hint stays; `status` is
+      simply where you meet it. It never calls a config clean while any of that
+      stands — having nothing to commit is not the same as being saved — and with
+      `--full` it withholds the diff of a file it has just flagged as secret-like,
+      printing the pattern that matched instead of the contents it warned you about
+      (`*.example` skeletons excepted: they exist to be read). A clean config names
+      its last save, so "nothing to do" never reads the same as "never saved".
+      In a session, `project save` needs an edit-project (or wider) level and
+      `project status` / `project history` are free at any level; the `config`
+      readers need read-global, because at read-project the personal store is not
+      mounted for them to read.
+      Two shapes the verbs handle that you would not think to test for. Your
+      `.cco/` does not have to sit at the top of the repository — a service inside
+      a monorepo, or a repo adopted below its root, works the same, and paths are
+      reported from the repository root so you can open them. And deleting a secret
+      is not treated as staging one: removing `.cco/secrets.env` and saving is the
+      right thing to do, so it succeeds rather than being refused with advice you
+      cannot follow. An empty `-m` is refused rather than quietly replaced by the
+      default message, on both stores, and `cco config save --help` answers like
+      every other verb.
+      No rebuild needed for the commands themselves — they run host-side in the
+      CLI. The baked agent rule that pointed at this verb before it existed is
+      updated in the image, so `cco build` refreshes what in-session agents are
+      told.
+
+  - id: 68
     date: "2026-08-19"
     type: additive
     title: "Pack agents and rules no longer arrive empty on Docker Desktop (gRPC-FUSE)"

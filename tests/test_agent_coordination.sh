@@ -279,14 +279,42 @@ test_agn_d6_widening_is_announced_naming_the_agents() {
 # warnings and gates on exactly this classification. ADR-0058 A2 ships D6 ahead of
 # A5 deliberately, which makes the classification the one thing that cannot be got
 # wrong now: a message emitted as a note stays invisible after A5 lands.
-test_agn_d6_report_is_a_warning_not_a_note() {
+# The two messages this normalizer emits sit at DIFFERENT levels, and the
+# discriminator is not how loud they are — it is whether anything is left for the
+# user to decide (ADR-0059 A1 §A2, amending ADR-0058 A2).
+#
+# `widened`  → cco RESOLVED it, the user's files are unchanged, nothing to do → note
+# `no return channel` → cco could NOT fix it, a teammate will lose its work  → warn
+#
+# Measured, not supposed: in the first real gated session the `widened` line was the
+# least actionable of fourteen entries, and it held the launch.
+test_agn_d6_widened_is_a_note_and_does_not_gate() {
     local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
     _agn_env; _agn_fixture "$tmpdir"
 
     _agent_src "$AGN_SRC/analyst.md" "/workspace/.claude/agents/analyst.md" "ro" >/dev/null
     local msg; msg=$(_agents_report_flush 2>&1)
+    echo "$msg" | grep -q "widened" \
+        || fail "the widening must still be announced — silence is not the fix:"$'\n'"$msg"
     echo "$msg" | grep -q "⚠" \
-        || fail "D6: the announcement is not a warn — A5 will never pause on it:"$'\n'"$msg"
+        && { fail "A2: cco fixed this and changed none of the user's files — it must NOT gate the launch:"$'\n'"$msg"; return 1; }
+    echo "$msg" | grep -q "^note:" \
+        || fail "A2: the widening announcement must be a note:"$'\n'"$msg"
+    return 0
+}
+
+test_agn_d6_no_return_channel_still_gates() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _agn_env; _agn_fixture "$tmpdir"
+
+    # `denied.md` names SendMessage in disallowedTools — cco honours that (A3) and
+    # therefore CANNOT give it a return channel. This is the flagship case.
+    _agent_src "$AGN_SRC/denied.md" "/workspace/.claude/agents/denied.md" "ro" >/dev/null
+    local msg; msg=$(_agents_report_flush 2>&1)
+    echo "$msg" | grep -q "NO return channel" \
+        || fail "the unfixable case must still be reported:"$'\n'"$msg"
+    echo "$msg" | grep -q "⚠" \
+        || fail "A2: 'a teammate will finish its work and lose it' is exactly what the gate exists for — it must stay a warn:"$'\n'"$msg"
     return 0
 }
 

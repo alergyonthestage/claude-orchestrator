@@ -2518,8 +2518,13 @@ if it recurs.
 
 ## FI-55: `cco start` never pauses on its own warnings — the session opens over them
 
-**Status**: 🔴 Open — raised by the maintainer 2026-08-06, from repeated field experience. **Quick
-win, Block A.**
+**Status**: ✅ **FIXED 2026-08-14 (U1+U2), reworked 2026-08-18 (U4); host acceptance PASSED** —
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) (Accepted, D1…D15
++ **Amendment A1**, D16…D19) + [design](cli/design/design-warning-gate-and-onboarding-prompts.md).
+Raised by the maintainer 2026-08-06, from repeated field experience. **Quick win, Block A**, designed
+jointly with [A8](#fi-68-cco-project-add-mount---readonly-is-a-no-op-and-no-flag-declares-a-writable-mount).
+🔴 **D19, the full reclassification of every `warn` producer, is still owed before the cycle merges** —
+see the [roadmap](roadmap.md).
 
 **What happens.** `cco start` emits its warnings (uncommitted `~/.cco`, uncommitted `.cco`,
 framework-reserved `llms/` shadowing, resolution notices…) and then immediately hands the terminal to
@@ -2915,11 +2920,22 @@ other way round.
 
 ---
 
-## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount
+## FI-68: `cco project add mount --readonly` is a no-op, and no flag declares a writable mount ✅ fixed
 
-**Status**: 🔴 Open — a **decision**, not a defect in the default. Reported by the maintainer
-2026-08-09 (field observation), **re-derived from the code and inverted**: the report read *"the
-default is rw and `--readonly` is the explicit flag"*, and the code says the opposite.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `d9c3065`) — the maintainer ruled **option 1**
+(`--writable` added, `--readonly` kept as an explicit affirmation) on 2026-08-13:
+[ADR-0059 D12](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d12--cco-project-add-mount-gains---writable---readonly-stays-and-states-the-default-maintainer-2026-08-13),
+[design §5.1](cli/design/design-warning-gate-and-onboarding-prompts.md). `changelog.yml` #66 +
+[`cli.md` §3.25](../users/reference/cli.md). ⚠ **The `readonly: true` default is untouched**, and a
+test guards it (`test_add_mount_no_flag_writes_no_readonly_key`) precisely because this report's
+inverted premise invited flipping it. Was a **decision**, not a defect in the default. Reported by the maintainer 2026-08-09 (field
+observation), **re-derived from the code and inverted**: the report read *"the default is rw and
+`--readonly` is the explicit flag"*, and the code says the opposite.
+
+📌 The maintainer's own correction, 2026-08-13, is the clearest statement of the defect and is
+recorded verbatim because it is narrower than the original report: *the CLI with no flag writes only
+the mount's name, without `readonly: true` — which is the default anyway; the real problem is that
+`--readonly` is useless because it is already the default, and no flag sets `rw` from the CLI.*
 
 **What the code does.** `_effective_extra_mounts` resolves the mount mode as
 `ro=$(_parse_bool "$ro_raw" "true")` (`lib/local-paths.sh:312`) — an **absent** `readonly:` key
@@ -2957,9 +2973,14 @@ extra_mount is reference material rather than a config repo.
 
 ---
 
-## FI-69: the clone prompt never asks where to clone
+## FI-69: the clone prompt never asks where to clone ✅ fixed
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D13](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d13--the-clone-prompt-offers-its-destination-and-accepts-an-override),
+[design §5.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. The destination is now offered and an override accepted, resolved
+through `_resolve_to_abs` like `(p)`'s answer; the mount case — the one the report was raised from —
+has its own test.
 
 Option `(c)` of the unresolved-path prompt clones to a destination the user is never shown a chance to
 change: `local clone_target="${suggested:-$HOME/Projects/$name}"`, immediately followed by `mkdir -p`
@@ -2984,9 +3005,14 @@ override, in the same keystroke shape as the rest of the prompt. ⚠ Anything ad
 
 ---
 
-## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts
+## FI-70: the candidate-reuse prompt enumerates `[1-n]`, which is not what it accepts ✅ fixed
 
-**Status**: 🔴 Open — reported by the maintainer 2026-08-09, confirmed in the code.
+**Status**: ✅ **FIXED 2026-08-18** (unit U3, `c5ae3a8`) —
+[ADR-0059 D14](cli/decisions/0059-message-classification-and-the-start-warning-gate.md#d14--the-reuse-prompt-enumerates-the-tokens-it-accepts),
+[design §5.3](cli/design/design-warning-gate-and-onboarding-prompts.md). Reported by the maintainer
+2026-08-09, confirmed in the code. 📌 Its regression test reads the token off the **rendered** line
+and types it back — the only shape that fails during the defect, since the parser was always right to
+reject `1-1` (design §6.4).
 
 The reuse-or-homonym prompt (ADR-0051 D4) prints its options as
 `[1-${#cands[@]}] reuse that path` (`lib/local-paths.sh:438`). With a single candidate that renders
@@ -3039,3 +3065,184 @@ while there, not the three flagged lines — the doc predates two ADRs, so a nam
 (this project's third recurrence of that lesson). Belongs to the `documenter`, not to an inline fix.
 
 **Effort**: Medium — the rewrite is small, the re-derivation is the work.
+
+---
+
+## FI-72: nothing detects the *next* unclassified `warn` producer
+
+**Status**: 🔴 Open — raised by the
+[D19 reclassification](cli/analysis/d19-warn-producer-reclassification.md) (2026-08-18), §9 item 6.
+Recorded, deliberately not built in that cycle.
+
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1 keys the
+pause on the **level**, never on a curated list, so a `warn` written years from now is captured,
+listed and answered for without anyone remembering the ADR. That guarantee holds and needs nothing.
+
+What has no mechanism at all is the step *before* it: putting a new producer through §3.2's decision
+tree. D19 measured **184 call sites, 46 reached in 12 files** — and found three files that had never
+been classified, one of which (`lib/migrate.sh`) no human list had ever named. The design's §3.3 table
+is now correct and is a **snapshot of a moving tree**: it is a lower bound again the moment someone
+adds warning number 185.
+
+**Direction**: the instrument already exists as a throwaway — §2 of the D19 analysis. Its three
+probes are cheap and hermetic: a trace line inside `warn` (`${BASH_SOURCE[1]}:${BASH_LINENO[0]}`),
+`set -x` with `FUNCNAME` in `PS4`, and `shopt -s extdebug; declare -F` to attribute a line to its
+function. Turned into a lint it would run the hermetic `cco start` scenarios, diff the reached set
+against a committed inventory, and fail on a producer the inventory does not name.
+
+⚠ **What it must NOT become is a gating list.** The value is a *reminder to classify*, and it may
+only ever cost a review comment. The moment the pause consults it, P2 is violated and the message
+that should have stopped the launch stops being shown — which is precisely the failure ADR-0059
+refuses to build.
+
+📌 Two false-pass traps this lane already paid for, worth reusing rather than re-discovering: an
+oracle that matched a function name inside a **comment** on an executed line (strip `#…` before
+matching), and a brace-depth body parser that mis-attributed lines (use `declare -F`, which the shell
+answers itself).
+
+**Effort**: Medium — the probes are written; making them a stable lint over the scenario battery,
+and deciding what the committed inventory looks like, is the work.
+
+---
+
+## FI-73: piping any cco verb into a consumer that closes early prints `✗ cco exited unexpectedly`
+
+**Status**: 🔴 Open — raised 2026-08-21 while implementing [A1](roadmap.md)'s `status` verbs.
+**Pre-existing, not introduced by that unit** (measured, below).
+
+The EXIT trap in `bin/cco:14` prints `✗ cco exited unexpectedly (exit N)` unless `_cco_completed`
+is true. When stdout is a pipe whose reader exits first — `| head -n`, or `| less` and the user
+quits — the next write raises `SIGPIPE`, bash dies on the signal, and the trap runs with the
+sentinel still false. The user gets an error on a run that did exactly what they asked.
+
+That is precisely the failure the INV-EXIT discipline (`lib/colors.sh`) names in its own words:
+*"It must NEVER fire on a run that terminated deliberately, because an ✗ on a correct exit is both a
+lie and a mask."* A closed downstream pipe is a deliberate termination — the user's, not cco's.
+
+**Measured** — the discriminator is whether the verb writes MORE lines after the reader stops, not
+how much it writes in total:
+
+| Probe | Lines | `\| head -1` → sentinel |
+|---|---|---|
+| `cco docs` | 26 | **yes** ← untouched by A1, which is what makes this pre-existing |
+| `cco project status` | 6 | yes |
+| `cco project status --full` | 29 | yes |
+| `cco project history` | 1 | no (nothing left to write) |
+| `cco list` | 2 | no (same) |
+
+A verb emitting its output through ONE `cat` heredoc (`cco help`, the group `--help` texts) does not
+trigger it either: the single write lands in the pipe buffer before the reader exits.
+
+**Why A1 raised it.** `status` and `history --full` are report verbs, so they are the ones users
+actually pipe. The bug was always reachable; nothing made it likely before.
+
+**Candidate fix** — one line, and it needs a decision because it edits a statically-enforced
+invariant: `trap '_cco_completed=true' PIPE` alongside the EXIT trap, classifying a SIGPIPE death as
+deliberate. Deliberately NOT applied at the end of the implementing session: it changes global CLI
+behaviour on a guarded invariant, which is a maintainer's call, and
+`test_invariant_exit_sentinel_discipline` must be extended with the case in the same change.
+
+⚠ Verify the fix on the case it must still catch: a real `set -u` violation must go on printing the
+✗. A trap that silences the sentinel wholesale would trade the bug for the crash-reporting it exists
+to provide.
+
+---
+
+## FI-74 — `cco <group> save --help` is refused at a read level, on both twins
+
+**Raised by**: `/review-implementation` of A1, 2026-08-22. **Not introduced by A1** — the twin
+`cco config save --help` has behaved this way since it shipped, which is what makes it a class rather
+than a defect of the unit.
+
+The operator shim's D7 rule says help is available at every level. The shortcut that implements it
+matches on `$1` only — `case "$sub" in -h|--help)` — so `cco project save --help` (where `--help` is
+`$2`) falls through to the write gate and is refused with exit 2. A user at `read-project` cannot read
+what the verb they may not run would do.
+
+**Class, not instance**: any `<group> <verb> --help` where the group dispatches before the help
+shortcut. Enumerate by running them, do not reason from the source — `tests/helpers.sh` gives an
+operator lane in ~10 lines, and a named list of affected verbs has been a lower bound five times in
+this repo.
+
+## FI-75 — `cco project save -m ""` silently uses the default message ✅ CLOSED 2026-08-26
+
+An empty `-m` was indistinguishable from an absent one (`[[ -z "$msg" ]]`), so the commit landed with
+`project config update` and the user was not told their message was discarded.
+
+✅ **Closed by ADR-0038 Amendment A4** (the whole-cycle review's realignments): an empty `-m` is
+refused, on **both** stores — the twin inherited it in the same commit. ⚠ The test is on the
+**argument**, not on `$msg` after the parse loop; there the two cases are still indistinguishable.
+
+## FI-76 — `_status_changed` reads NUL-delimited and renders newline-delimited
+
+`_status_changed` correctly reads with `-z` (verified on a path containing a space) but hands
+`_status_render` a `\n`-delimited list, so a filename containing a newline would break the mark/path
+split and the `grep -c .` count. Extremely remote — a newline in a `.cco/` filename — and recorded
+only so the next reader does not re-derive that the `-z` read was the whole fix.
+
+## FI-77 — the `.claude` authoring axis is invisible to the agent it governs
+
+**Raised**: 2026-08-22, from a maintainer's question. **Scheduled the same day as roadmap entry
+[A9](roadmap.md), immediately after A1** — the position is a decision, not a dependency.
+All four facts below are **measured**, not read.
+
+The **cco** axis (Axis A) is surfaced to the agent twice: a baked managed rule
+(`cco-config-interaction.md`) states the policy, and the session context narrates this session's
+level and what it scopes. The **`.claude` authoring** axis (Axis B) has **neither**. The asymmetry is
+the finding.
+
+| Measured | Value |
+|---|---|
+| derived default, `cco_access=read-project` | trees `Cr=Cp=Cg=Co=ro`; entries `claude_md=ask`, `rules`/`agents`/`skills`=`ro` |
+| effective on `<repo>/.claude` (tree `max()` class) | `CLAUDE.md` → **`ask`**; `rules`, `agents`, `skills` → **`ro`** |
+| the four managed rules mentioning Axis B | **none** (`defaults/managed/.claude/rules/`) |
+| `lib/session-context.sh` | takes `cco_access` as a parameter; **`claude_access` is not passed to it at all** |
+
+So `ask` — the level that lets an agent propose a change and have the user approve it in-session —
+covers **`CLAUDE.md` alone**. `rules/`, `agents/` and `skills/` are `ro`, and `ro` is a **mount**
+property: changing it is a restart, not a prompt.
+
+**Why this is a defect and not merely a gap.** Two shipped rules already instruct the agent to
+*propose* rule changes — `memory-policy.md` (*"this means proposing the change to the user, not
+writing directly"*) and the project's `documentation.md` (*"propose moving it to a rule, editing
+rules is the human's call"*). The instruction ships; the context that makes it actionable does not.
+An agent following it cannot tell whether the proposal route is a permission prompt (`CLAUDE.md`), a
+restart (`rules/`), or forbidden — so it either does not propose, proposes the wrong remedy, or
+attempts a write and reads a bare read-only-filesystem errno with nothing connecting it to a policy.
+
+This is `documentation.md`'s own operational-artifact test failing: *delete this and does the agent get
+an operational decision wrong?* — yes, and it is already deleted.
+
+**Shape of the fix** (design owed, nothing decided): mirror Axis A rather than invent a form — the
+policy in a managed rule (the natural home is a section of `cco-config-interaction.md`, which is
+already access-conditional and already covers the sibling axis), this session's values in the session
+context. ⚠ Both are **baked** (`Dockerfile:225` copies `defaults/managed/`; `lib/` likewise), so
+whichever unit takes this also takes a `cco build` in its acceptance lane.
+
+⚠ **This session cannot measure the default from itself** — the FI-25 mask (`access: {claude: all}`
+in `.cco/project.yml`) is on deliberately. The values above come from calling `_claude_derive_triple`
+directly; pin `--claude-access` for any session-level check.
+
+
+## FI-78 — two macOS-only suite failures, both test-portability defects in the warn-gate cycle
+
+Surfaced by the **macOS host suite on bash 3.2**, 2026-08-26 (`Results: 1775 passed, 2 failed, 1777
+total`). ⚠ **The `Results:` line is present once**, so the suite did not abort — the bash 3.2 parse
+risk is clear. Both failures are in `tests/test_warn_capture.sh`, i.e. the **A5+A8 warn-gate cycle,
+already merged**; neither is A1's, and both are defects of the **test**, not of the product.
+
+| Test | Mechanism |
+|---|---|
+| `test_warn_capture_buffer_lives_outside_the_confined_buckets` | the oracle is a **lexical** prefix match on `${TMPDIR:-/tmp}`, but macOS returns the buffer path **resolved** (`/private/var/folders/…/T/cco-warn.XXXXXX`). The buffer *is* under TMPDIR; the comparison is what cannot see it |
+| `test_warn_gate_is_reached_only_through_the_two_launch_paths` | `_wg_line_of` passes `'if \$dry_run; then'` to **awk** via `-v`. macOS's one-true-awk handles `\$` differently from gawk, so `$` becomes an **ERE anchor** mid-pattern, nothing matches, and the helper returns `0` |
+
+**Shape of the fix** (nothing decided): for the first, compare the **physical directory identity**
+(`cd "$(dirname "$buf")" && pwd -P` against the same for `$TMPDIR`) rather than a string prefix —
+⚠ **not** `realpath`, which this repo has already ruled out for bash 3.2 + BSD (FI-27). For the
+second, stop passing a regex through `-v` and match with a shell `case` or a fixed-string `grep -F`.
+
+🔴 **Neither is measurable from the container.** bash 3.2 itself is reachable over the Docker socket
+(`bash:3.2`), but **BSD `awk` and BSD `mktemp` are not** — so a fix written here is unverified until
+the maintainer re-runs the host suite. Say so rather than claiming green.
+
+⚠ Still owed before `0.7.0`: the host suite is a release gate, and it is not green.

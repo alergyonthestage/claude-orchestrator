@@ -617,7 +617,10 @@ _cco_dev_sandbox_seed() {
     else
         _cco_ensure_dir "$root/data"
     fi
-    warn "dev-sandbox: seeded STATE+DATA from your real buckets into $root (one-shot)"
+    # A note, not a warn (ADR-0059 §3.3): the seed SUCCEEDED and the user asked for
+    # it. The two failure branches above stay `warn` — a partial seed IS a session
+    # condition worth stopping for.
+    note "dev-sandbox: seeded STATE+DATA from your real buckets into $root (one-shot)"
 }
 
 # Engage the sandbox: redirect the internal buckets and announce it. A strict no-op
@@ -635,5 +638,11 @@ _cco_apply_dev_sandbox() {
     [[ "${CCO_STATE_HOME:-}" == /* ]] || export CCO_STATE_HOME="$root/state"
     [[ "${CCO_CACHE_HOME:-}" == /* ]] || export CCO_CACHE_HOME="$root/cache"
     export CCO_DEV_SANDBOX_ROOT="$root"
-    warn "dev-sandbox active — internal state isolated under $root (NOT your real cco state)"
+    # 📌 The one judgement call of the ADR-0059 §3.3 audit, flagged and approved as
+    # written: loud by intent, but the user typed --dev-sandbox themselves and
+    # nothing about the session is other than they asked for. Gating every
+    # dev-sandbox start would put friction on the developer path — it is an accepted
+    # divergence, which is exactly what `note` is for. Do not re-open it because the
+    # banner looks like a warning.
+    note "dev-sandbox active — internal state isolated under $root (NOT your real cco state)"
 }

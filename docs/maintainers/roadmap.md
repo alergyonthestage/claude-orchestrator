@@ -4,7 +4,7 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-09** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -44,6 +44,45 @@
 > of *Not in the sequence*, and left to the `documenter`: the doc predates two ADRs, so the three
 > flagged lines are a lower bound.
 > Full record: [post-merge docs review](configuration/agent-cco-access/reviews/2026-08-09-post-merge-docs-review.md).
+>
+> **2026-08-13 → 18, the A5 + A8 cycle** — designed jointly
+> ([ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md), D1…D15 +
+> **Amendment A1** D16…D19 + **Amendment A2** D20…D25) and built as five units on
+> `feat/cli/start-warning-gate`: **U1 + U2** (2026-08-14) gave `cco start` / `cco new` a gate that
+> stops on the warnings the run emitted; **host acceptance passed 2026-08-18** and its own findings
+> became **U4**, the output model (each warning printed once, grouped by an area derived from the
+> producing file); **U3** shipped the same day and closes **A8** — `--writable`, the clone
+> destination, the literal reuse tokens ([FI-68](improvements.md) … [FI-70](improvements.md), all
+> three closed); **U5** discharged **D19** and shipped the amendment it produced.
+> ✅ **D19 is done, and it reclassified nothing.** Measured by *running* both verbs — 184 `warn` call
+> sites, **46 reached in 12 files**, 24 fired — every reached producer is correct at its level. Three
+> files had simply never been classified (`reminders.sh`, `llms.sh`, and `lib/migrate.sh`, which no
+> list had ever named), and **D1 held throughout** because it keys on the level and never on a list:
+> *P2 paying itself back*. ADR-0008 was **not** contradicted — its *non-blocking* forbids a
+> precondition that forces commits, not a prompt that defaults to proceed.
+> ⭐ What the measurement really found is what **A2** then decided: D1 had fused the level with the
+> pause, leaving `note:` and `ℹ` write-only. The pause now keys on *the run reaching the launch*; the
+> level only decides what it says.
+> ✅ **MERGED into `develop` 2026-08-21** (`6208228`, `--no-ff`), branch deleted.
+>
+> **2026-08-20, A1's design** — ✅ **[ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md)
+> written and accepted** (D1…D8), taking the number this roadmap reserved for it and never wrote.
+> The unit is **three verbs, not one**: `cco project save` plus `cco project history` and
+> `cco config history` — D2 ruled that reading the config's history is a cco verb on **both** stores,
+> so the user never needs git. All five decisions the A1 entry owed are taken; see the entry.
+> 🔑 One measurement is load-bearing and counter-intuitive: **committing a read-only `.cco/` succeeds**
+> (git writes to `.git/`, which is `rw`), so D8's `edit-project+` gate is **policy, not mechanism** —
+> and `project save` deliberately gets no ro-mount guard. ⚠ Exactly one file in the unit is
+> image-baked (the managed rule), so exactly one `cco build` is owed at acceptance.
+>
+> **2026-08-21, the merge** — both branches are **in `develop`**: the A5+A8 cycle (`6208228`) and A1's
+> design (`90c1391`), two `--no-ff` merges, both feature branches deleted. Suite on the merged
+> `develop`: **1710 / 7 of 1717**, identical to the pre-merge figure, so nothing regressed. 🔴
+> **`develop` is unpushed, 40 ahead** — that is the next action, and `origin/feat/cli/start-warning-gate`
+> is the one merged remote branch still to delete. ⚠ **`feat/claude-view-file-overlays` is rares' and
+> stays untouched** (`43c2c33`, local = remote). The A1 implementation now runs on
+> **`feat/config/save-and-history`**, cut from the merged tip — where `note()` finally exists, which is
+> the whole reason the design branch could not be cut from the old `develop`.
 
 ## The planning documents — and why there are three
 
@@ -74,19 +113,34 @@ narrative, the lessons, and the per-stage records live in
   the image and nothing else does, so a session started without the rebuild silently runs the previous
   release. **Block B exists to end this.**
 - **Branches**: `main` is an *ancestor* of `develop` (no divergence, no backmerge owed); both carry
-  `0.6.0`. ⚠ **`develop` is 14 commits ahead of `origin/develop`** (the FI-58 merge `979a0e4` and its
-  history) — **owed a push from the host**, along with deleting the two merged remote branches
-  `origin/feat/delegation/return-channel` and `origin/feat/access/claude-md-axis`.
-  ✅ The earlier A4 push is done — `develop` was level at `e6ea2e7` before this merge.
-  Both merged branches are gone locally; `origin/feat/access/claude-md-axis` **still exists on the
-  remote** and can be deleted from the host (`git push origin --delete feat/access/claude-md-axis`).
-  📝 Its local deletion needed `-D`, not `-d`: the branch was fully merged into `develop` but *ahead*
-  of its own stale remote-tracking ref, and `-d` reads that ref, not `develop`. Verify with
-  `git log develop..<branch>` (empty = safe), never by trusting `-d`'s refusal.
+  `0.6.0`. ✅ **The A5+A8 cycle and A1's design are MERGED into `develop`** (2026-08-21), as two
+  `--no-ff` merges in that order: `6208228` (the five A5/A8 units) and `90c1391` (ADR-0038 + design).
+  Both feature branches were deleted locally with `-d` — it did not refuse, and `git log develop..<b>`
+  was **0 for both** before the deletion.
+  ✅ **`develop` is LEVEL with `origin/develop`** — measured 2026-08-22 (`git rev-list --count
+  origin/develop..develop` = 0). The push happened host-side and that gate is closed;
+  `origin/feat/cli/start-warning-gate` is gone too. The only remote feature branch left is
+  `origin/feat/claude-view-file-overlays`, which is rares' and stays.
+  📝 **`origin/feat/cli/start-warning-gate` still exists on the remote** and is the one merged branch
+  left to delete there — outward-facing, so it is asked rather than assumed.
+  ⚠ **`feat/claude-view-file-overlays` is NOT ours and is deliberately untouched** — rares' branch,
+  verified identical local and remote at `43c2c33`, reviewed by the maintainer in a dedicated session.
+  It must stay out of every cleanup sweep.
+  ⚠ **Measure, never restate — a rule this project has now paid for four times.** A branch position
+  written in prose has disagreed with the refs three times, and a *stated commit count is invalidated
+  by the commit that states it* (the last handoff commit turned its own "+2" into "+3"). And ⚠ **the
+  host can change this session's branch under it**: host and container share one working tree, so a
+  host-side `checkout` or `push` lands here with no fetch. `git branch --show-current` before any
+  write, not only at session start.
+  📝 A local deletion can need `-D` when the branch is merged into `develop` but *ahead of its own
+  stale remote-tracking ref* — `-d` reads that ref, not `develop`. Verify with `git log develop..<branch>`
+  (empty = safe), never by trusting `-d`'s refusal. It was not needed this time.
   ⚠ **Push with `--follow-tags`** when a tag is involved — a bare `git push` leaves the tag behind
   and `release.yml` never fires.
-- **Test baseline**: in-container **1654 passed / 7 failed of 1661**, measured on `develop` after the
-  FI-58 merge (2026-08-13, mask on) — +21 over the previous baseline, all from that unit. Previously
+- **Test baseline**: in-container **1710 passed / 7 failed of 1717**, measured on `develop` **after the
+  two 2026-08-21 merges** (mask on) — identical to the figure measured on the branch before merging, so
+  the merges introduced no regression; the 7 verified **name for name**. Before it, **1654 / 7 of 1661**
+  after the FI-58 merge (2026-08-13). Previously
   **1633 passed / 7 failed of 1640** on `develop` at `3ca4cfa` (2026-08-09, mask on) — the 7 verified **name for name** as the known host-only set
   (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, defeated by the ADR-0047 boundary,
   [FI-19](improvements.md)). +2 against A4's `1631/7 of 1638`: the FI-67 regression pair. The last
@@ -100,11 +154,12 @@ narrative, the lessons, and the per-stage records live in
   ⚠ **Consequence for any future A4 measurement in this project**: the mask makes every tree `rw`, so
   `max()` absorbs `ask` and no rule is emitted — pin the shape with an explicit `--claude-access`
   instead, exactly as the runbook does.
-- **Next free ADR number: 0059** (0058 = teammate coordination tools, **Accepted (design)** with
-  D1…D11 + amendments A1 and A2). ⚠ **ADR-0038 and
-  ADR-0040 do not exist as documents** — they are
-  numbers reserved by earlier roadmap entries for workstreams D and F. Whoever writes them writes them
-  for the first time; do not go looking for a file.
+- **Next free ADR number: 0060** (0059 = message classification + the start warning gate,
+  **Accepted (design)** with D1…D15; 0058 = teammate coordination tools, **implemented** for D4/D5+D6,
+  D1…D11 + amendments A1–A3). ✅ **ADR-0038 now exists** — written 2026-08-20 as A1's design
+  (project-config versioning + the history surface), taking the number this roadmap had reserved for it.
+  ⚠ **ADR-0040 still does not exist as a document** — it is a number reserved by an earlier roadmap
+  entry for workstream F. Whoever writes it writes it for the first time; do not go looking for a file.
 
 ## The plan — order ratified 2026-08-04
 
@@ -223,11 +278,174 @@ the day it is written.
 ### Block A — quick wins and coherence debts → `0.7.0`
 
 Minor bump, not a patch: it introduces new verbs and a new access knob. Nothing here needs an analysis
-phase; A1 and A2 need a short design, A3 needs none, and **A4's design is already done and accepted**
+phase; A1, A2 and **A9** need a short design, A3 needs none, and **A4's design is already done and accepted**
 ([ADR-0057](configuration/agent-cco-access/decisions/0057-ask-enforcement-plane-and-resource-classes.md)).
-A5 and A8 share one short design over the same interactive surface — see A8.
+✅ **A5 and A8's shared design is done and accepted** (2026-08-13,
+[ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md) D1…D15 +
+[design](cli/design/design-warning-gate-and-onboarding-prompts.md)) — it decomposes into **three
+ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the two amendments the live
+run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
+(= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-#### A1 — `cco save`: project-config versioning helper
+▶ **Order inside the block, as of 2026-08-22**: **A1 → A9** (the maintainer scheduled A9 immediately
+after A1), then A2 · A3 · A6 · A7. A9's position is a decision, not a dependency.
+
+✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
+merged tree verified **identical** to the branch tip the suite measured. ▶ **A9 is now the current
+unit.** ⚠ Two things `develop` still owes: the **push** (a host step — this session cannot reach the
+remote) and a **`cco build`** (see A1's entry).
+
+#### A1 — `cco project save`: project-config versioning, the status preview, and the history surface
+
+✅ **DESIGN DONE AND ACCEPTED 2026-08-20** —
+[ADR-0038](configuration/decentralized-config/decisions/0038-project-config-versioning.md) (D1…D8,
+all eight ruled by the maintainer at the gate) +
+[design](configuration/decentralized-config/design/design-project-config-versioning.md). The ADR
+number reserved by this entry is now **written**.
+
+✅ **IMPLEMENTED 2026-08-21** on `feat/config/save-and-history` — **five verbs**, both barriers, the
+D4 multi-repo report, the shim classification, and every surface in design §5. T1…T22 + S1…S9 are
+covered, plus four shapes no plan named (a pre-staged file surviving both a save and a refusal; a
+`.gitignore` spelled equivalently; INV-GIF, the drift guard on the coverage floor; and the
+never-saved store, the only state where `config status`'s allowlist pathspec is load-bearing).
+
+✅ **`cco build` DONE 2026-08-21** — the acceptance lane is closed. The rebuilt image carries the
+managed rule naming the real verb; verified in-session at `/etc/claude-code/`, no *"forthcoming"*.
+
+⭐ **Amendment A1 (D9…D12) widened the unit mid-flight** — the maintainer raised, against the
+finished three verbs, that the write half had **no preview**: `save` has two refusal paths and a
+commit set that is not obvious from outside, and `history` answers a different question (what WAS
+saved). `cco project status` + `cco config status` close it, on both stores by P-B — the same
+argument that turned D2 from one read verb into two. The matrix is now **2×3**.
+
+**Both original `Open` choices are settled**: default commit message **`project config update`** (it
+lands in the user's own log among code commits, where the twin's bare `config update` would be
+ambiguous); `history`'s default limit **`-n 10`**.
+
+✅ **REVIEWED 2026-08-21/22** (`/review-implementation`) — verdict *fixed-in-place*: faithful to
+D1…D12, §6's plan mapped to real tests voice by voice, suite `1749 passed, 7 failed, 1756` with the 7
+the known host-only set. One objective defect fixed (a mirror comment naming a function the branch had
+factored away). Three residual nits are **not** this unit's: [FI-74](improvements.md) …
+[FI-76](improvements.md).
+
+⭐ **Amendment A2 (D13…D15) came OUT of that review** — designed 2026-08-22, ✅ **BUILT 2026-08-24**. The
+review measured two states where `git check-ignore` answers a different question than D7 asks, and
+they fail in **opposite** directions: a **tracked** file reports not-ignored, so the barrier refuses
+forever with a remedy already in the file (**false refusal**); a root `.gitignore` swallowing `.cco/`
+whole makes every probe pass, after which nothing is staged and both verbs report success (**false
+pass — silent and total**). D13 fixes the predicate (`--no-index`) and rules the tracked file a
+`note`, not a refusal and **not** a confirmation prompt; D14 extends `status` to both refusal paths,
+which was Amendment A1's own stated premise; D15 refuses vacuous coverage. Contract: ADR-0038
+Amendment A2 + design §2.4/§2.6/§5b.3/**§6.2c (AT1…AT9)**.
+
+✅ **A2 IMPLEMENTED 2026-08-24** on the same branch, three commits (the predicate; the preview; the
+status-side ruling below).
+**AT1…AT9 are all written and green**, and the oracle was shown to discriminate before the fix: 7 of
+the first 10 new tests failed first, AT4 reproducing the false pass verbatim (`already up to date —
+nothing to save`, rc 0). Suite **`1761 passed, 7 failed, 1768 total`** — **+12 tests, zero regressions**, and
+the 7 verified **name for name** as the known host-only set (6 `test_as_*` +
+`test_paths_symlink_safe_tool_root`). A2 touches **no baked file**, so it owes no `cco build`.
+The four changed `lib/` files and the test file parse under **real bash 3.2** (`bash:3.2` via the
+Docker socket, one invocation per file — `bash -n` reads only the first — with three controls proving
+the oracle rejects). ⚠ That is a **lint**: the macOS host *suite* on 3.2 is still owed before `0.7.0`. ⚠ **AT8 was owed regardless of the rest** and is now pinned: a `.netrc` under a
+scaffold-conformant `.gitignore` is refused by the scan and the staged set reset — the compensating
+control §7 leans on, which carried the narrow gitignore floor with nothing measuring it. It **passed
+on first run**, i.e. it pins behaviour that already held rather than fixing anything.
+
+⭐ **D14 was applied to `cco config status` as well**, which §6.2c does not name. `_config_save`'s
+first barrier writes itself, so the scan is its only refusal path; previewing it on one store and not
+the other would rebuild the exact asymmetry A1 D9 refused to leave open.
+
+✅ **The one question A2's design left open is RULED (maintainer, 2026-08-24)**: `project status`
+**does** surface D13's tracked-file finding — `status` is the surface read before deciding, so it is
+where the user should meet the file without running a save. ⚠ Not as a `note`: §5b.5 keeps facts about
+*this* repo inside the answer on **stdout**, so `save` emits the `note` and `status` prints the same
+words, from one definition. And it is computed **after** the D15 return — in the vacuous state every
+file under `.cco/` probes as ignored, so the finding would name the whole config. Both are pinned by
+tests, the first asserting **stdout alone** (capturing `2>&1` would pass on a stderr `note` and
+measure nothing).
+
+⭐ **Amendment A3 (D16…D19) came out of A2's OWN review** — raised 2026-08-24, ruled by the maintainer
+the same day, built immediately. The through-line is one defect and it is **D13's own**: *a message
+that claims more than its mechanism proves, and a remedy the user cannot follow.* D13 removed one
+instance; D15's refusal reintroduced another one screen away. All four measured:
+
+| Measured | Class |
+|---|---|
+| root `.gitignore` of merely `*.yml` → *"ignores `.cco/` entirely… would commit nothing"* + *"remove the rule that ignores .cco/"*, while git stages **2 files** and **that rule does not exist** | the unfollowable remedy, verbatim D13 |
+| root rule of just `.cco/.gitignore` → **`✓ saved`** on a config whose **barrier never landed**; every clone starts unprotected | the silent total failure, verbatim D15 |
+| root swallows `.cco/` **and** `.cco/.gitignore` missing → `status` says **"is clean"** over 4 unsaveable files; the two remedies arrive a round trip apart | "clean" claims the config is saved |
+| `status --full` on a `.cco/.netrc` → the password printed **24 lines below** its own warning | the verb publishes what it just called a secret |
+
+**D16** keeps D15's key and drops its conclusion — no finite probe set proves *"entirely"* — naming the
+rule that **actually fires**, widening to an **essential set** (`project.yml` + `.gitignore`), and
+adding a **post-condition** `save` asserts after staging. ⚠ Refusing when `.cco/` is wholly ignored
+**stays and is deliberate**: it is the supported path for a solo adopter keeping cco config out of
+git, and there the save must abort, not half-succeed. **D17** renders all findings together and bars
+the word *clean* while any stands. **D18** withholds the diff of a flagged file (`*.example` exempt).
+**D19** branches the secret remedy on tracked → `git rm --cached`.
+
+⭐ **The post-condition was untested until it was pinned deliberately** — neutralising it changed
+nothing in the whole suite, because the barrier ahead of it makes it unreachable from the CLI. AR9
+calls it directly. A guard nothing can reach is a guard nothing has measured.
+
+Suite after A3: **`1770 passed, 7 failed, 1777 total`** — **+9 tests, zero regressions**, the 7 again
+the known host-only set name for name. Five independent mutations were run and all five now fail (one
+passed before AR9 existed). The five changed files parse under **real bash 3.2**, with a negative
+control.
+
+### ▶ Where A1 stands: reviewed, fixed, at the merge gate *(2026-08-26)*
+
+**Implementation COMPLETE, and the whole-cycle review is DONE and its rulings BUILT.** A1 plus
+**four** amendments, 8 commits added on 2026-08-26, unmerged.
+
+🔴 **THIS CYCLE DOES OWE A `cco build`, and earlier records said the opposite.** Measured against
+`Dockerfile` — the image bakes `bin/`, `lib/`, `templates/`, `docs/users`, `changelog.yml` and
+`defaults/managed/` (lines 201–225) — and the branch changes **all but one** of those, including
+`defaults/managed/.claude/rules/cco-config-interaction.md`. The earlier "no baked file touched" was
+true only of the **A2+A3 delta**, and the conclusion drawn from it did not hold for the cycle. ⚠ The
+consequence is not cosmetic: an in-session agent's `cco project save` runs the **image-baked** copy,
+so none of A4's fixes reach a running session until the image is rebuilt. The host CLI is unaffected
+— users run their installed `bin/cco`, which is why the changelog correctly says no rebuild is needed
+*for the commands themselves*.
+
+The review the maintainer scoped — one pass over the finished `save`/`status`/`history` cycle, six
+verbs, both stores, rather than over the A3 delta — ended the pattern that had grown the unit by one
+amendment per review three times. It returned **REVIEW NEEDED**: one defect fixed in place and **two
+blockers**, both of them A3's own through-line (*a message that claims more than its mechanism proves,
+and a remedy the user cannot follow*) in states A3 never looked at. All three were ruled by the
+maintainer and are built as
+**[Amendment A4](configuration/decentralized-config/decisions/0038-project-config-versioning.md#a4--2026-08-26-the-same-defect-two-states-further-out-and-one-verb-that-could-not-be-asked)**
+(D20…D22), plus seven realignments that needed no decision:
+
+| Ruling | What it closes |
+|---|---|
+| **D20** — anchor on the git top-level, not the unit dir | a secret under a `.cco/` **below** the repo root was committed under `✓ saved`; `status --full` printed nothing at all. Pathspecs are cwd-relative, every git *output* path is top-level-relative |
+| **D21** — a deletion is not a leak | the save that **removes** a secret was refused, and the refusal's own reset undid the `git rm --cached` it prescribed. Both stores |
+| **D22** — `cco config save --help` | the only verb of the six without the arm, so its access gate could only be asked negatively |
+
+⭐ **Why three reviews missed D20**: at the top level the prefix is empty and every message is
+byte-identical, so *a test written only at the top level cannot see it*. Every A4 fix is pinned by a
+mutation, and the nested pair discriminates (§6.2e).
+
+✅ **CLOSED 2026-08-26** — merged at `ab97482` (`--no-ff`, 39 commits), branch `feat/config/save-and-history`
+deleted with `-d`. Measured before the merge: `Results: 1778 passed, 7 failed, 1785 total`, the
+`Results:` line present **once**, the 7 the known host-only set verified name for name; and after it,
+`git diff feat/config/save-and-history develop` **empty** — the merged tree is the tree the suite
+measured, so nothing was re-run on a different tree.
+
+▶ **Still owed on `develop`**: the **push** (host step — the remote is not reachable from a session)
+and the **`cco build`** below. The macOS host-suite failures are [FI-78](improvements.md), not A1.
+
+**macOS host suite (bash 3.2), run 2026-08-26**: `Results: 1775 passed, 2 failed, 1777 total`, the
+`Results:` line present **once** ⇒ **no bash 3.2 parse abort**, which was the risk to fear. ⚠ The
+expectation of `1770/7` written previously was wrong: those 7 fail **in the container**, not on the
+host. The two real failures are **test-portability defects in the A5+A8 warn-gate cycle, already
+merged — not A1**: a lexical `$TMPDIR` prefix match against a path macOS returns resolved
+(`/private/var/…`), and a `\$` in an awk `-v` pattern that the macOS one-true-awk turns into an ERE
+anchor. ⚠ **Neither is measurable from the container** (bash 3.2 is reachable over the Docker socket;
+BSD `awk`/`mktemp` are not), so a fix has to be re-run on the host. Tracked as
+[FI-78](improvements.md).
 
 **Problem.** In the decentralized model, project config lives in `<repo>/.cco/` and is versioned by the
 repo's own git. To version *only* the config, the user must hand-stage `.cco/**` among unrelated repo
@@ -238,28 +456,96 @@ model never got its twin.
 `cco-config-interaction.md` and ADR-0042's Level-C guidance tell edit-level agents to version config
 atomically with `cco project save` — a verb that does not exist. Today the rule degrades gracefully by
 calling it *forthcoming* and pointing at plain git. When this ships, that text is restored to the real
-verb.
+verb. ✅ **D1 chose that spelling**, so the restoration is a deletion, not a rewrite.
 
-**Scope (v1).** Stage **exclusively** `<repo>/.cco/**`, never the rest of the working tree; secret
-detection before commit, reusing `lib/secrets.sh` as `cco config save` does; `secrets.env` stays
-gitignored and is never staged; an isolated-history read (`git log -- <repo>/.cco/` already
-path-filters, regardless of how a commit was made).
+**Scope — five verbs, not one.** The unit closes a 2×3 matrix: `cco config save` is shipped;
+**`cco project save`**, **`cco project status`**, **`cco config status`**, **`cco project history`**
+and **`cco config history`** are new (the `status` row is Amendment A1, raised during
+implementation). The
+read half grew from the maintainer's ruling on D2: the user gets an official cco command for the
+history of *both* stores and never needs to know git — and the personal store is the side where the
+user is least able to construct the git command themselves.
 
-**Decisions the session owes.**
-- **The verb name.** The maintainer's note says `cco save`; ADR-0042 and the managed rule assume
-  `cco project save`; `cco config save` is taken by the personal store. Pick once — the injected
-  context and the managed rule must name the real verb.
-- Path-filtered history vs a commit trailer (`Cco-Save: true` + `git log --grep`), and whether a
-  companion read verb (`cco project history`) exists at all.
-- `--amend` / message templating: in or out.
-- **Multi-repo**: commit the invoking repo's `.cco/` only, or fan out to every config-bearing member
-  the way `--sync` does?
-- **Operator-shim classification**: in-container write verb at `cco_access ≥ edit-project`, or
-  host-only? Confirm the secret scan and the path scoping hold under container-operator mode.
+🔑 **The one measurement the implementation must not re-derive.** Committing a **read-only** `.cco/`
+*succeeds* — `git add -- .cco/` returns 0, because git reads the worktree and writes to `.git/`, which
+is `rw` (the `.cco` bind is a read-only child mount inside a read-write repo). The twin's ro-mount
+guard exists because `~/.cco` **contains its own `.git`**, and that reason does not transfer. So D8's
+`edit-project+` gate is **policy, not mechanism**, and `project save` gets **no** ro-mount guard
+mirroring `_config_save`'s. A reader who reasons from the filesystem will conclude the opposite.
 
-**References.** ADR number **reserved as 0038, never written**. Twins to read first: `lib/cmd-config.sh`
-(`cco config save`), `lib/secrets.sh`, `bin/cco` `_cco_operator_shim`. Integration contract:
+**The five decisions this entry owed are all taken** (ADR-0038): the verb name is `cco project save`
+(D1); the history is path-filtered, never trailer-marked (D3 — measured: a trailer would show **0 of
+the 5** real config commits in this repo); `--amend` and message templating are **out**, `-m` only
+(D5); multi-repo commits the **invoking repo only** and *names* the others, distinguishing
+uncommitted from divergent (D4); the shim classification is `_op_write … project` for `save`, free for
+`project history`, `_op_read_scope global` for `config history` (D8 — measured: at `read-project`
+`~/.cco` is not mounted as a store at all).
+
+⚠ **One `cco build` in the acceptance lane**, owed by exactly one file: the managed rule
+`defaults/managed/.claude/rules/cco-config-interaction.md` is **image-baked**. Everything else is
+host-side CLI produced at run time.
+
+**References.** Twins to read first: `lib/cmd-config.sh` (`cco config save`), `lib/secrets.sh`,
+`bin/cco` `_cco_operator_shim`, `lib/reminders.sh` (reminder (b) is the caller already waiting for the
+verb). Integration contract:
 [ADR-0042](configuration/agent-cco-access/decisions/0042-agent-cco-interaction-model.md).
+
+#### A9 — the `.claude` authoring axis is invisible to the agent it governs ([FI-77](improvements.md))
+
+▶ **Scheduled 2026-08-22 by the maintainer, immediately after A1** — the position is a decision, not a
+dependency: nothing in A9 needs A1, and A1's cycle simply has to close first.
+
+**A4 built the mechanism; nothing told the agent it exists.** ADR-0057 shipped the `ask` plane and the
+Axis-B resource classes, and the agent that lives under them is never informed of either. This is
+A4's *awareness* residue the way [A7](#a7--the-a4-review-residue-fi-62--fi-66) is its code residue.
+
+⚠ **It is an OMISSION, not staleness — and that decides the shape of the work.** No shipped rule
+asserts anything false about the axis (measured: the four managed rules do not mention it at all). So
+this adds a section; it does not correct wrong text. Anyone scoping it as "fix the stale rules" will
+go looking for text that is not there.
+
+**The asymmetry, measured 2026-08-22.** The **cco** axis reaches the agent twice — a baked managed
+rule (`cco-config-interaction.md`) states the policy, and the session context narrates this session's
+level. The **`.claude` authoring** axis reaches it through **neither**:
+
+| Measured | Value |
+|---|---|
+| derived default at `cco_access=read-project` | trees `Cr=Cp=Cg=Co=ro`; entries `claude_md=ask`, `rules`/`agents`/`skills`=`ro` |
+| effective on `<repo>/.claude` (tree `max()` class) | `CLAUDE.md` → **`ask`**; `rules`, `agents`, `skills` → **`ro`** |
+| managed rules mentioning Axis B | **none** |
+| `lib/session-context.sh` | receives `cco_access`; **`claude_access` is never passed to it** |
+
+🔴 **`ask` covers `CLAUDE.md` ALONE.** The other three classes are `ro`, and `ro` is a **mount**
+property — a **restart**, not a prompt. An agent that assumes the whole tree is askable proposes the
+wrong remedy; one that assumes the whole tree is locked does not propose at all.
+
+**Why it is a defect and not a nice-to-have.** Two shipped rules already instruct the agent to
+*propose* rule changes — `memory-policy.md` (*"proposing the change to the user, not writing
+directly"*) and `documentation.md` (*"propose moving it to a rule, editing rules is the human's
+call"*). The instruction ships without the context that makes it actionable, so the agent cannot tell
+whether the route is a permission prompt, a restart, or nothing. It is `documentation.md`'s own
+operational-artifact test failing: *delete this and does the agent get an operational decision wrong?*
+— yes, and it is already deleted.
+
+**Shape — mirror Axis A, do not invent a form.** Policy in a managed rule (natural home: a section of
+`cco-config-interaction.md`, already access-conditional and already covering the sibling axis);
+this session's values in the session context. Both are the places a reader already looks for the
+other axis, which is most of the argument.
+
+**Open at design time, not now:**
+- Does the session context render Axis B **always**, or only when it differs from the derived default?
+  (The cco axis is always rendered; the symmetry argument says always, the noise argument says not.)
+- Does the rule state the **restart command** for the `ro` classes, and if so with a host path?
+  ⚠ `rules/git-practices.md` forbids host paths in committed artifacts; the path map exists for
+  handing them to the user in-session, not for baking them.
+- Whether `cco whoami`'s *Authoring trees* block stays the only detailed surface.
+
+⚠ **Both targets are BAKED** — `Dockerfile:225` copies `defaults/managed/`, and `lib/` likewise. The
+unit takes a **`cco build`** in its acceptance lane, and the managed-rule half **cannot be verified
+in-session** without it (`docs/maintainers/.../design §6.4` names this same limit for A1).
+
+⚠ **A measuring session cannot use itself as the sample** — the FI-25 mask (`access: {claude: all}`)
+is on in this project deliberately. Call `_claude_derive_triple` directly, or pin `--claude-access`.
 
 #### A2 — Per-project custom Docker image ([FI-49](improvements.md))
 
@@ -443,32 +729,9 @@ nothing. Placement is a default, not a ruling.
   default now applies to it. Net effect is arguably safer, but the published guarantee is literally
   false. Reword (forward annotation) or pin `claude: none`. **Listed in the open decisions below.**
 
-#### A5 — `cco start` must pause on its own warnings ([FI-55](improvements.md))
+#### ✅ A5 — `cco start` must pause on its own warnings — **CLOSED 2026-08-18**
 
-**The whole warning surface of `cco start` is currently write-only.** The warnings print, then
-`docker compose run` takes the terminal and the TUI opens over them — the user never gets the chance
-to read them, let alone act. This is not a hypothesis: [FI-54](improvements.md) sat in that stream,
-on the **first line** after the start command, through a complete six-check acceptance run, read by
-nobody.
-
-**Behaviour**: after emitting warnings, and only if there are any, stop and ask — start, or abort.
-A clean start stays silent and immediate. The prompt should carry the warning list, because the
-natural next step (offering `cco config save`, committing `.cco`, …) grows out of it.
-
-📌 **Coupled to [FI-58](#-ahead-of-the-queue--the-delegation-channel-fi-58improvementsmd), and the
-coupling is one-way.** ADR-0058 D6's warning ships **before** this
-([A2](integration/agent-teams/decisions/0058-teammate-coordination-tools.md#amendments)), so from the
-moment D4/D5 land there is a real `⚠ warn` in the start stream that nobody can read — A5 is what
-makes it arrive. That does not make A5 a blocker for FI-58, and it does not change A5's design; it
-raises its priority **inside** Block A, and it adds one classification to get right (the normalizer's
-warning is a `⚠ warn`, never a `note:`).
-
-⚠ **The two things this design must get right**, both already paid for once: the prompt gates on
-`_cco_have_tty` and honours `CCO_NONINTERACTIVE=1` (or the suite and every output-capturing caller
-hang on a question whose text the capture swallowed — `test_invariant_tty_gate_single_spelling`); and
-**only `⚠ warn` gates**, never `note:`/`ℹ` — A4's own FI-52 divergence notice was deliberately emitted
-as a `note:` for exactly this reason. Classifying every start-time message honestly is the real work;
-the prompt is small.
+Shipped as U1, U2, U4 and U5 and **merged into `develop` 2026-08-21** (`6208228`); [FI-55](improvements.md) closed. Design and amendments: [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md). The full entry, the U1…U5 table and the discharged D19 block are in [roadmap-history.md](roadmap-history.md#block-a--the-a5--a8-cycle-closed-2026-08-18-merged-2026-08-21).
 
 #### A6 — `.claude/worktrees` belongs in the functional-write floor ([FI-56](improvements.md))
 
@@ -484,35 +747,9 @@ first (the report does not carry it), then **re-derive the whole floor** against
 (`_emit_workflows_overlay`). This is the quick win; the full **worktree design** (Sprint 10, *Git
 worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
 
-#### A8 — the onboarding prompts and the mount-declaration surface ([FI-68](improvements.md) … [FI-70](improvements.md))
+#### ✅ A8 — the onboarding prompts and the mount-declaration surface — **CLOSED 2026-08-18**
 
-**Three field reports from 2026-08-09, all on the surface a user meets *first*** — the prompts that
-resolve an unregistered path, and the command that declares a mount. None is deep, none blocks
-anything, and all three cost a user their first impression of the tool.
-
-| | Defect | Site |
-|---|---|---|
-| [FI-68](improvements.md) | `--readonly` is a **no-op** (the default is already read-only), and **no flag declares a writable mount** | `lib/cmd-project-add.sh:162,235` |
-| [FI-69](improvements.md) | option `(c)` **never asks where to clone** — and `(p)` cannot answer for it, since it demands an existing path | `lib/local-paths.sh:126-132,150` |
-| [FI-70](improvements.md) | the reuse prompt prints `[1-n]`, a **range** among literal keys; typing back `1-1` is rejected | `lib/local-paths.sh:438,445` |
-
-⚠ **FI-68 arrived inverted, and the correction is the load-bearing part.** The report read *"the
-default is rw"*; the code defaults `readonly` to **`true`** (`lib/local-paths.sh:312`), as documented
-and as the secure-defaults policy requires. **The default is not in scope** — what is wrong is only
-the *surface*: a flag that cannot change an outcome, and no way to express the permissive case at all.
-An implementer who takes the report at face value would invert a shipped security default.
-
-**Sequence it with [A5](#a5--cco-start-must-pause-on-its-own-warnings-fi-55improvementsmd).** FI-69 and
-FI-70 live in `lib/local-paths.sh`'s interactive prompts, under the same `_cco_have_tty` /
-`CCO_NONINTERACTIVE=1` constraint A5 must satisfy — and A5 is *adding* a prompt to the same start-time
-flow. Done together the TTY contract is derived once; done apart it is derived twice, and the second
-derivation is the one that hangs the suite.
-
-**One decision for the maintainer, at design time not now** ([FI-68](improvements.md)): add
-`--writable`, or fix the help text and leave writable mounts to `project.yml`. It grants a
-user-perceivable capability from a one-line command, so it is a gate, not an implementation choice.
-
----
+Shipped as U3 of the A5+A8 cycle and **merged into `develop` 2026-08-21** (`6208228`); [FI-68](improvements.md) … [FI-70](improvements.md) all closed. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-a5--a8-cycle-closed-2026-08-18-merged-2026-08-21).
 
 ### Cross-cutting analysis — resource taxonomy & the configuration-scope model
 
@@ -828,6 +1065,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | [FI-37](improvements.md) — no working workflow-save path in the repo lane (`<repo>/.claude`, axis `Cr`) | Usability, no data loss. ADR-0055 gave the *project* tree a functional-write floor; the repo tree deliberately did not get one, because a repo's native `.claude/` is cross-cutting config shared with everyone who clones it. The fix is a mechanism choice, not a patch |
 | [FI-38](improvements.md) — workflows STATE overlay hygiene | Two policy choices, not bugs: a stub outlives the entry that justified it, and a collision with a later-committed workflow is resolved silently. ⚠ The emitting function runs inside `$( )` and its stdout **is** compose YAML — any notice must go to stderr or be emitted by the caller |
 | [FI-39](improvements.md) — Claude Code memory state cco does not persist | **One ADR covering both halves; do not split it.** (a) per-agent `memory:` is declared on eight agents and evaporates — measured: of four declared scopes only the lead's works, and six pack agents produced **zero bytes** in weeks. (b) `autoMemoryDirectory` — a simplification. ⚠ **Weigh it together with cross-PC state sync, never before**: role memory becomes an object to sync, with its own ownership/conflict/confidentiality questions, and deciding it first means deciding it without its most binding requirement. ⚠ And the fix **cannot be "make `.claude` writable"** — that would buy a low-priority feature by selling the security guarantee named in C2 |
+| **Report the upstream documentation defect** (agent teams) | `llms-full.txt:543` states that *"Team coordination tools such as `SendMessage` and the task management tools are always available to a teammate even when `tools` restricts other tools"*. **Measured false** on 2.1.220, 2.1.226 and again on 2026-08-13 — it is the sentence that made FI-58 invisible for weeks, and ADR-0058 exists because it is wrong. Evidence: [analysis-002 §12](integration/agent-teams/analysis/analysis-002-delegation-return-channel.md). ⚠ **Needs a control run on a stock installation first** — every measurement so far was taken inside cco, so the report must rule cco's own managed layer out before it is filed. Recorded here 2026-08-13 because it had only ever lived in an ephemeral handoff |
 | **State sync (cross-PC / cross-team)** | The largest deferred item; needs its own design. Boundary to preserve: git stays the one engine for vault sync and resource sharing; a daemon would own only what git carries badly (append-heavy, machine-local STATE) |
 | #10b — statusline | Show session usage/limit percentage instead of (or beside) the dollar cost; fix stale ctx% after `/compact`; configurable format. Low effort, fits any release |
 | FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
@@ -857,6 +1095,21 @@ None blocking. Each is cheap to answer and expensive to discover later.
    sessions started hitting the wall on their own ([FI-56](improvements.md)) and before this project
    adopted *worktree per agent* as its rule for parallel work. A6 removes the immediate symptom, which
    is exactly why the question should be answered deliberately rather than by the next incident.
+6. **Ratify or retire the `acceptance/` docs leaf.** Added 2026-08-13 (until then it had only ever
+   lived in an ephemeral handoff). The pack's canonical set is `analysis/ design/ decisions/
+   reviews/`; the access domain invented a sixth, `acceptance/`, and it exists in **exactly one**
+   domain (`configuration/agent-cco-access/`). The FI-58 probe record was deliberately filed under
+   `integration/agent-teams/reviews/` rather than spread the contested leaf into a second domain —
+   which would have settled this question by accident. Ratify it into the taxonomy, or fold it into
+   `reviews/`. ⚠ Moving the existing files breaks inbound links from ADRs and `improvements.md`, so a
+   decision to fold must schedule the link sweep with it.
+7. **Should `cco clean` sweep the warn-capture buffers?** Added 2026-08-14 (U1). The buffer is an
+   `mktemp` file under `${TMPDIR:-/tmp}` (ADR-0059 D6); cleanup is explicit, so only a hard kill leaves
+   one behind, and what it leaves is inert — an unread list of strings the OS reclaims on its usual
+   schedule. The design claimed `cco clean --tmp` sweeps them; it does not (that flag removes
+   `<project>/.cco/.tmp/` dry-run dirs), and the claim is now corrected in
+   [design §4.2](cli/design/design-warning-gate-and-onboarding-prompts.md). Adding a `$TMPDIR/cco-warn.*`
+   sweep is a **user-visible change to `cco clean`**, so it was not folded into U1 silently.
 
 ## Long-term planned work
 

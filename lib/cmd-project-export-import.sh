@@ -16,7 +16,8 @@
 # 2-pass secret scan over a <repo>/.cco/ tree (filename + content; *.example and the
 # gitignored secrets.env are exempt — secrets.env is never bundled). Echoes the
 # offending relative path on the first hit, returns 1 (block). Mirrors
-# cmd-config.sh:_config_scan_staged.
+# secrets.sh:_secret_scan_staged — same 2-pass semantics over a TREE rather than a
+# staged set, which is why it cannot simply call it (there is no index to read).
 _project_export_scan_secrets() {
     local cco_dir="$1" f rel hit
     while IFS= read -r f; do
