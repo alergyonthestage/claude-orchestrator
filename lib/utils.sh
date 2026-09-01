@@ -375,11 +375,26 @@ _cco_session_status_display() {
     esac
 }
 
-# Check image exists
+# Check image exists.
+#
+# Under dev mode $IMAGE_NAME is ALREADY the mapped `…-dev` name (bin/cco's dev block
+# maps it once, at engage). So the miss must name BOTH images — the dev one that is
+# absent and the real one it is the twin of — or the reader reaches for the published
+# image, which is the one thing this mode exists to keep them away from.
+#
+# 🔴 There is deliberately NO fallback to the unmapped image (ADR-0060 D3): falling
+# back would run PUBLISHED code in a dev session, which is the original incident with
+# a warning on top. The only way out is to build the dev image.
 check_image() {
-    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-        die "Docker image '$IMAGE_NAME' not found. Run 'cco build' first."
+    docker image inspect "$IMAGE_NAME" >/dev/null 2>&1 && return 0
+    if _cco_dev_active; then
+        # Set by bin/cco at the moment it maps, so it is empty exactly when nothing
+        # was mapped (an explicit CCO_IMAGE_NAME) — where there is no second name to
+        # honestly report.
+        local base="${_CCO_DEV_IMAGE_BASE:-}"
+        die "Dev image '$IMAGE_NAME' not found${base:+ (the dev twin of '$base')}. Run 'cco --dev build' to build it. cco will not fall back${base:+ to '$base'} — that would run published code in a dev session."
     fi
+    die "Docker image '$IMAGE_NAME' not found. Run 'cco build' first."
 }
 
 # Check global config exists (created by cco init, or migrated by cco update).
