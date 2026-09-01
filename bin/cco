@@ -136,27 +136,168 @@ if _cco_in_container && [[ -n "${CCO_SESSION_CONTEXT:-}" ]] && ! _cco_container_
     refuse "cco is not available at this access level (cco_access=none). Start a session with --cco-access read-project (the default) or higher to use cco, or run cco on your host."
 fi
 
-# ── Developer sandbox toggle (ADR-0052 §7) ───────────────────────────
-# Consume a leading/global `--dev-sandbox[-seed]` flag anywhere in the args
-# (equivalently the CCO_DEV_SANDBOX / CCO_DEV_SANDBOX_SEED env) and redirect the
-# internal XDG buckets to an isolated root, so a dev binary never shares STATE/DATA/
-# CACHE with the published one — the multi-version scenario §1's version gate is
-# calibrated for. MUST run before the store resolvers below (PACKS/LLMS) and the
-# first-run gate so every bucket read is already sandboxed. Strip the flag so the
-# command parser never sees it; the env form needs no stripping. Host-only + never
-# clobbering an explicit CCO_*_HOME override is enforced in _cco_apply_dev_sandbox.
+# ── Developer execution mode (ADR-0060) ─────────────────────────────
+# `--dev` forks the code IDENTITY (the image) and the internal buckets, and leaves the
+# configuration SHARED (ADR-0060 D1/D2/D4). It is implemented ONCE, here, in the file
+# both copies of the code carry: when REPO_ROOT already IS the dev clone the flag
+# engages in place; when it is not (the published binary) this block resolves the dev
+# target and `exec`s into it, after which this same block runs in the clone and
+# engages. The published binary's only dev responsibility is resolve-and-hand-off, so
+# every dev SEMANTIC lives in the target — always the newest code, which is the
+# forward-compatibility a second shim binary could not have given (D1).
+#
+# ⚠ POSITION IS LOAD-BEARING. After the cco_access=none refusal above, so a `none`
+# session still gets its own refusal first; before PACKS_DIR/TEMPLATES_DIR/LLMS_DIR
+# and the first-run gate, so every bucket read is already redirected. And POST-SOURCE
+# deliberately (design §3.1): the binary parses its OWN lib/, self-consistent by
+# construction, and `exec` replaces the process image so nothing sourced survives —
+# which buys refuse/die/note/_cco_in_container/_cco_install_provenance instead of
+# duplicating them inline.
+
+_cco_dev_requested=false
+_cco_dev_target_flag=""
+_cco_dev_alias_sandbox=false
+_cco_dev_alias_seed=false
+
+# ⚠ The scan STOPS at the first `--`; `--` and everything after it pass through
+# verbatim. Measured, `grep -n '"--")' lib/*.sh bin/cco` returns ZERO hits, so the
+# consume-from-anywhere this replaces was harmless BY LUCK — and a flag that decides
+# which BINARY executes must not inherit that (design §3.2).
 if [[ $# -gt 0 ]]; then
     _cco_kept=()
+    _cco_passthrough=false
     for _a in "$@"; do
+        if $_cco_passthrough; then _cco_kept+=("$_a"); continue; fi
         case "$_a" in
-            --dev-sandbox)      export CCO_DEV_SANDBOX=1 ;;
-            --dev-sandbox-seed) export CCO_DEV_SANDBOX=1; export CCO_DEV_SANDBOX_SEED=1 ;;
+            --)                 _cco_passthrough=true; _cco_kept+=("$_a") ;;
+            --dev)              _cco_dev_requested=true ;;
+            --dev=*)            _cco_dev_requested=true; _cco_dev_target_flag="${_a#--dev=}" ;;
+            --dev-sandbox)      _cco_dev_requested=true; _cco_dev_alias_sandbox=true ;;
+            --dev-sandbox-seed) _cco_dev_requested=true; _cco_dev_alias_seed=true
+                                export CCO_DEV_SANDBOX_SEED=1 ;;
             *)                  _cco_kept+=("$_a") ;;
         esac
     done
     set -- ${_cco_kept[@]+"${_cco_kept[@]}"}
-    unset _cco_kept _a
+    unset _cco_kept _a _cco_passthrough
 fi
+[[ "${CCO_DEV:-}" == "1" ]] && _cco_dev_requested=true
+
+# The legacy spellings are ALIASES of `--dev` now (ADR-0060 D7). This is a behaviour
+# change to a documented flag, accepted deliberately: it removes a half-identity —
+# buckets without the image — rather than perpetuating two modes that isolate
+# different things. One note each, so the developer learns the name that survives.
+if $_cco_dev_alias_sandbox; then
+    note "--dev-sandbox is superseded by --dev (ADR-0060 D7): dev mode now forks the IMAGE as well as the internal buckets. Engaging --dev."
+fi
+if $_cco_dev_alias_seed; then
+    note "--dev-sandbox-seed is superseded by --dev (ADR-0060 D7). Engaging --dev; the one-shot bucket seed still runs on this invocation."
+fi
+
+# In-container: REFUSE, naming the host (design §6.1, precedent above). This removes
+# the silent swallow the flag used to get — accepted, stripped from argv and ignored —
+# which is the false-success shape this repo keeps an audit of. The legacy ENV
+# spellings refuse here too, for the same reason. `_cco_apply_dev_sandbox`'s own
+# in-container `return 0` is left alone: it is a separately tested contract, and the
+# refusal belongs at the boundary where the request arrives, not in the helper.
+if $_cco_dev_requested \
+   || [[ "${CCO_DEV_SANDBOX:-}" == "1" || "${CCO_DEV_SANDBOX_SEED:-}" == "1" ]]; then
+    if _cco_in_container; then
+        refuse "Developer execution mode is host-only: it forks the cco image and the internal buckets, and a session owns neither — its buckets are the sacred mounts. Run 'cco --dev <verb>' on your HOST instead."
+    fi
+fi
+
+if $_cco_dev_requested; then
+    # Target resolution — FIRST MATCH WINS, no silent fallback (design §3.3). Source 3
+    # is what makes the mandated worktree-per-agent workflow work with no per-worktree
+    # configuration: standing in a worktree resolves to THAT worktree.
+    _cco_dev_target=""
+    _cco_dev_from=""
+    if [[ -n "$_cco_dev_target_flag" ]]; then
+        _cco_dev_target="$_cco_dev_target_flag"; _cco_dev_from="--dev=<path>"
+    elif [[ -n "${CCO_DEV_REPO:-}" ]]; then
+        _cco_dev_target="$CCO_DEV_REPO";         _cco_dev_from="\$CCO_DEV_REPO"
+    elif _cco_dev_walk=$(_cco_dev_find_clone "$PWD"); then
+        _cco_dev_target="$_cco_dev_walk";        _cco_dev_from="the cco clone enclosing $PWD"
+        unset _cco_dev_walk
+    else
+        # A one-line file, the same shape as claude-version and languages — no YAML
+        # parser. The plain $HOME form matches _cco_config_dir without an eager
+        # resolver call at startup, exactly as the store dirs below do.
+        _cco_dev_file="$HOME/.cco/dev-repo"
+        if [[ -f "$_cco_dev_file" ]]; then
+            _cco_dev_target=$(head -n 1 "$_cco_dev_file" | tr -d '\r' | sed 's/[[:space:]]*$//')
+            _cco_dev_from="$_cco_dev_file"
+        fi
+        unset _cco_dev_file
+    fi
+    if [[ -z "$_cco_dev_target" ]]; then
+        die "--dev: no dev clone to run. Tried, in order: (1) --dev=<path>; (2) \$CCO_DEV_REPO; (3) walking up from $PWD to an enclosing cco clone; (4) $HOME/.cco/dev-repo (a one-line file holding the path). Name one of them."
+    fi
+
+    # Validate BEFORE the handoff — `exec` replaces this process with that path, so an
+    # unvalidated target is never executed (design §3.3).
+    _cco_dev_real=$(cd -P "$_cco_dev_target" 2>/dev/null && pwd) \
+        || die "--dev: '$_cco_dev_target' (from $_cco_dev_from) is not a directory."
+    _cco_dev_clone_at "$_cco_dev_real" \
+        || die "--dev: '$_cco_dev_real' (from $_cco_dev_from) is not a cco clone — it needs an executable bin/cco and a package.json naming @claude-orchestrator/cco."
+
+    if [[ "$_cco_dev_real" != "$REPO_ROOT" ]]; then
+        # The identity check above is the PRIMARY loop guard; this is the belt for
+        # symlink / mount aliasing that makes two paths one directory.
+        [[ "${CCO_DEV_DISPATCHED:-}" == "1" ]] \
+            && refuse "--dev: refusing a second dispatch. This binary was already reached by a --dev handoff, yet '$_cco_dev_real' (from $_cco_dev_from) is not its own root '$REPO_ROOT' — usually a symlink or bind mount that makes one clone look like two. Point --dev=<path> at the physical path."
+        export CCO_DEV_DISPATCHED=1
+        # ⚠ The RESOLVED target is handed forward as `--dev=<path>`, and that is not
+        # decoration: this same block runs again in the target, where it must answer
+        # "is REPO_ROOT the dev clone?" by resolving. Sources 2–4 (the env, the cwd,
+        # ~/.cco/dev-repo) survive the exec unchanged and would answer identically —
+        # but source 1 was STRIPPED from argv here, so a `--dev=<path>` handoff would
+        # arrive with nothing to resolve and die naming four sources it could not use.
+        # Re-supplying it keeps all four symmetric, and keeps the identity check (not
+        # a "you are the target" env flag) the thing that decides to engage — which is
+        # what leaves the CCO_DEV_DISPATCHED belt above reachable and therefore
+        # measurable.
+        #
+        # Measured (analysis §5): `exec` sets BASH_SOURCE[0] to the absolute target, so
+        # the readlink loop at the top finds no symlink and REPO_ROOT lands on the
+        # clone; and because it replaces the process image, the EXIT trap never fires —
+        # no spurious "✗ cco exited unexpectedly".
+        exec "$_cco_dev_real/bin/cco" "--dev=$_cco_dev_real" ${@+"$@"}
+    fi
+
+    # Engage, in the clone. CCO_DEV is the one spelling every other site reads
+    # (_cco_dev_active); CCO_DEV_SANDBOX is the bucket half, unchanged from
+    # ADR-0052 §7 and applied by _cco_apply_dev_sandbox below.
+    export CCO_DEV=1
+    export CCO_DEV_SANDBOX=1
+    if [[ -z "${CCO_IMAGE_NAME:-}" ]]; then
+        # Explicit wins — the same rule _cco_apply_dev_sandbox applies to CCO_*_HOME.
+        # _CCO_DEV_IMAGE_BASE records what was mapped, so check_image can name both.
+        _CCO_DEV_IMAGE_BASE="$IMAGE_NAME"
+        IMAGE_NAME=$(_cco_dev_image "$IMAGE_NAME") || _cco_exit $?
+        note "dev mode active — this session's cco image is $IMAGE_NAME (NOT $_CCO_DEV_IMAGE_BASE)"
+    fi
+else
+    # The MIRROR of the incident (design §6.3, ADR-0060 D7). Running the clone WITHOUT
+    # --dev tags the real image with clone code — the same collision from the other
+    # side. Ruled: detect and `note`. NOT an auto-engage (building the real image from
+    # the clone is legitimate and documented in CONTRIBUTING.md, and inferring the mode
+    # from where the binary lives would make it implicit, against D6) and NOT a refusal
+    # (a false positive — a tarball or git-based install carrying a .git/ — must cost
+    # only a line of stderr).
+    #
+    # Unrated, on EVERY invocation: no verb list, because a list is a lower bound; and
+    # no rate-limit marker, because that would write state into the REAL STATE bucket
+    # purely to suppress a message. The precedent that settles the noise question is
+    # _cco_apply_dev_sandbox's own banner, a note on every run for the same reason.
+    if [[ "$(_cco_install_provenance)" == "clone" ]]; then
+        note "running a cco CLONE without --dev: this acts on your REAL cco environment and would tag '$IMAGE_NAME', the image your real sessions use. Use 'cco --dev <verb>' to act on the dev environment instead."
+    fi
+fi
+unset _cco_dev_requested _cco_dev_target_flag _cco_dev_alias_sandbox _cco_dev_alias_seed \
+      _cco_dev_target _cco_dev_from _cco_dev_real _cco_dev_walk 2>/dev/null || true
+
 _cco_apply_dev_sandbox
 
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
