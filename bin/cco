@@ -34,7 +34,14 @@ unset _cco_src _cco_dir
 FRAMEWORK_ROOT="${CCO_FRAMEWORK_ROOT:-$REPO_ROOT}"
 DEFAULTS_DIR="$FRAMEWORK_ROOT/defaults"
 NATIVE_TEMPLATES_DIR="$FRAMEWORK_ROOT/templates"
-IMAGE_NAME="claude-orchestrator:latest"
+# The image is the CODE IDENTITY of the in-session cco (ADR-0060, M1): the Dockerfile
+# bakes bin/ + lib/ into /opt/cco and a normal session mounts no host lib/, so whoever
+# tags this name decides which cco runs inside every session. CCO_IMAGE_NAME is the
+# seam that lets a caller name a different one; the DEFAULT DOES NOT MOVE (design §9),
+# so `FROM claude-orchestrator:latest` in the custom-image guide and all 7 documented
+# image surfaces read exactly as before. Dev mode maps this name (`…-dev`) below —
+# unless CCO_IMAGE_NAME was set explicitly, in which case explicit wins.
+IMAGE_NAME="${CCO_IMAGE_NAME:-claude-orchestrator:latest}"
 LIB_DIR="$REPO_ROOT/lib"
 
 # ── User config directory resolution ─────────────────────────────────
