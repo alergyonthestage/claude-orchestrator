@@ -32,7 +32,7 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 | A10.1 merged | ✅ `--no-ff` into `develop`, and the merged tree verified **identical** to the branch: `git diff feat/devmode/a10-1-identity develop` is **empty**. That is why the suite figure measured on the branch carries without a re-run |
 | Suite | **1812 passed / 7 failed / 1819 total**, `Results:` line **present**, and the 7 are the documented host-only set **name for name** (6 `test_as_*` + `test_paths_symlink_safe_tool_root`). Run it with `bin/test` (dry-run, no Docker) |
 | New tests | `tests/test_dev_mode.sh` **25/25** (22 contract + 3 for Amendment A5). `tests/test_dev_sandbox.sh` **9/9, unmodified**, the pinned `test_dev_sandbox_config_stays_shared` included — design §9's check that CONFIG did not fork |
-| Push | 🔴 **STILL OWED.** `develop` is **58 ahead** of `origin/develop`. **Not possible from a session** — measured three ways: `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
+| Push | 🔴 **STILL OWED.** `develop` is ahead of `origin/develop`. ⚠ **No count is stated here on purpose — the commit that states one invalidates it.** Measure: `git rev-list --count origin/develop..develop`. **Not possible from a session** — measured three ways: `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
 | Branches | ✅ **all four merged branches were consolidated and then deleted** (`git branch -d`, never `-D`): `feat/devmode/dev-execution-mode`, `feat/devmode/clone-without-dev-note`, `feat/devmode/a10-1-identity`, `feat/devmode/a10-1-identity-impl`. The worktree `/workspace/a101-impl` was removed |
 | ⚠ `feat/claude-view-file-overlays` | **rares' branch — untouched, and it stays that way** |
 | git in this container | `git worktree` **always** needs `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'`; `~/.gitconfig` is a **read-only host mount**, so `git config --global` is not a route. Other git verbs fail only intermittently |
@@ -83,7 +83,7 @@ correction. Read it only to see *why* an alternative was rejected.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] 🔴 **Push `develop`** from the host — `git push origin develop` (58 commits)
+- [ ] 🔴 **Push `develop`** from the host — `git push origin develop`
 - [ ] 🔴 **A10.1's acceptance** on the host — `cco build` under `--dev`, then `docker image inspect`
       on **both** tags. Never `docker run`, never `cco --version`
 - [ ] ▶ **Implement [A10.2](roadmap.md)** — the snapshot store · the `<repo>/.cco` restorability
