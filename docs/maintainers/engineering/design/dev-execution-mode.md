@@ -41,7 +41,7 @@ flowchart TB
 | **R1** | A dev run must not overwrite the image a real session uses | analysis §3.1 (M1) · ADR-0060 D2/D3 |
 | **R2** | The developer invokes the clone **by name**, from any cwd | analysis §12.1 (M2) · D1 |
 | **R3** | The **real** configuration — global and project — is what a dev run reads | clinic round 3 · D4 |
-| **R4** | A bad dev write to configuration is restorable | D4.1–D4.5 |
+| **R4** | A bad dev write to configuration is restorable, and an unprotected dev run does not start | D4.1–D4.6 |
 | **R5** | Cases needing a different configuration have a **fixture**, not a redirect | D4/D5 |
 | **R6** | No default moves for a user | D3 · *Consequences* |
 | **R7** | Every identity the mode creates is reapable | D6 · ADR-0045 precedent |
@@ -141,11 +141,44 @@ the two ways out (build it; or pin/unpin via `project.dev.yml`). `cco build` tag
 
 ## 5. Configuration protection — the snapshot store
 
+### 5.0 Where the dev root is in practice — and why it is **not** a new XDG bucket
+
+⭐ **Dev mode adds no bucket.** The four-bucket XDG model (ADR-0007/0015) is untouched: dev mode
+**re-points three of the existing four** (`CCO_STATE_HOME` / `CCO_DATA_HOME` / `CCO_CACHE_HOME`) at
+children of one directory, and CONFIG is not re-pointed at all (ADR-0060 D4). `~/.cco-devsandbox` is
+a **container**, not a fifth bucket, and it always was — `_cco_dev_sandbox_root`
+(`lib/paths.sh:589-592`) is a plain `$HOME/.cco-devsandbox`, overridable by an absolute
+`CCO_DEV_SANDBOX_ROOT`.
+
+```
+<dev-root>/                      # default $HOME/.cco-devsandbox — one reap target
+├── state/                       # ← CCO_STATE_HOME   ┐ the three redirected XDG buckets;
+├── data/                        # ← CCO_DATA_HOME    │ contents seeded from the real ones
+├── cache/                       # ← CCO_CACHE_HOME   ┘ by `cco dev seed`
+├── snapshots/config.git         # NEW — the pre-run config snapshot store (§5)
+├── configs/<name>/              # NEW — fixture global configs (CCO_CONFIG_HOME targets, §7)
+└── projects/<name>/             # NEW — fixture test projects (§7)
+```
+
+⚠ **The new entries are siblings of the three buckets, never children of `state/`, and that is
+measured rather than tidy.** `_cco_dev_sandbox_seed` (`lib/paths.sh:606-628`) does
+`cp -a "$real_state" "$root/state"` and is gated by `[[ -d "$root/state" ]] && return 0`. Anything
+this design placed under `state/` would therefore be (a) indistinguishable from **copied real STATE**,
+and (b) entangled with a one-shot guard — either the seed can never run because the directory already
+exists, or a re-seed overwrites the store. Keeping them as siblings leaves both the seed and the
+bucket semantics exactly as they ship.
+
+**Env spelling**: `CCO_DEV_ROOT` becomes the preferred name and `CCO_DEV_SANDBOX_ROOT` is kept as the
+superseded alias — the same treatment the flags get (§3.2). ⚠ **The default path does not move.**
+Renaming `~/.cco-devsandbox` would strand every sandbox that already exists, which is exactly the
+orphan class this unit exists not to create.
+
+
 ```mermaid
 flowchart LR
   RUN["a dev-mode run starts"] --> D{"~/.cco changed since<br/>the last snapshot?"}
   D -->|"no"| GO["run the verb"]
-  D -->|"yes"| C["commit into<br/>&lt;dev-state&gt;/config-snapshots.git<br/>work-tree = ~/.cco"]
+  D -->|"yes"| C["commit into<br/>&lt;dev-root&gt;/snapshots/config.git<br/>work-tree = ~/.cco"]
   C --> GO
   R["cco dev restore"] --> C
   X["~/.cco/.git · cco config history"] -.->|"never touched"| C
@@ -153,14 +186,30 @@ flowchart LR
 
 | Property | Design |
 |---|---|
-| **Location** | `$(_cco_state_dir)/dev/config-snapshots.git`, with `GIT_WORK_TREE=$(_cco_config_dir)`. STATE is sandboxed under `--dev`, so it lands in the dev root — dev state, reaped with it |
+| **Location** | `<dev-root>/snapshots/config.git`, with `GIT_WORK_TREE=$(_cco_config_dir)` — a **sibling** of the three redirected buckets, never inside `state/` (§5.0). Reaped with the dev root |
 | **Never `~/.cco/.git`** | `cco config save` promises *"cco never auto-commits"*; and `_config_push` (`lib/cmd-config.sh:283`) operates on `$cfg/.git`, so this store is **structurally unpushable** |
-| **Trigger** | at dev engage, after the buckets are redirected: `git status --porcelain` non-empty ⇒ commit. Unconditional per run, **never a list of verbs** |
+| **Trigger** | **the step is unconditional** — it runs at every `cco --dev` engage, before the verb, whatever the verb is. The **commit** happens only when `git status --porcelain` is non-empty (an empty commit records nothing). Never a list of verbs |
 | **Scope** | `git add -A` — **not** `_CONFIG_ALLOWLIST`, which omits `access.yml` and `claude-version`, the two members with no other recovery path |
 | **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`, so the user's own config repo is not recorded as a gitlink |
 | **Implementation constraint** | taken with **plain `git` invocations**, never through `cco config save`: the verb may itself be the code under test |
-| **Failure** | `warn`, not `die` — the precedent is `_cco_dev_sandbox_seed`'s partial-seed branch. 📝 Reviewable: a developer running unprotected because git is missing is a legitimate stop-and-ask candidate |
+| **Failure** | 🔴 **`die` — blocking, ruled by the maintainer 2026-09-01.** If the snapshot cannot be taken, the mode's safety property cannot be established, so the run must not proceed. This deliberately departs from `_cco_dev_sandbox_seed`'s `warn`: a partial seed is a convenience, a missing restore point is the protection itself |
 | **Message** | `dev snapshot before: cco <argv>` — so `cco dev list` reads as a log of what was about to run |
+
+### 5.0b No-op vs failure, and where the step does **not** fire
+
+| Situation | Behaviour |
+|---|---|
+| `~/.cco` does not exist (fresh machine) | **no-op + `note`** — there is nothing to protect, and this is not a failure |
+| `~/.cco` exists, git missing / store un-initialisable / `status` or `commit` fails | 🔴 **`die`** |
+| `~/.cco` exists, tree unchanged since the last snapshot | no commit, no message — the step succeeded |
+
+**Where it fires**: on `cco --dev <verb>`. The `cco dev <sub>` verbs resolve the dev root **without
+engaging the mode** (§5.1), so they take no snapshot — **except `cco dev restore`**, which mutates
+`~/.cco` and therefore takes one first, so a restore is itself undoable.
+
+⚠ **Ordering is load-bearing, and getting it wrong is a false pass**: `$GIT_DIR/info/exclude` must be
+written **at store init, before the first `git add -A`**. A test that asserts the exclusions exist
+would pass on a store whose *first commit* already contained `secrets.env`.
 
 ### 5.1 Restore
 
@@ -200,7 +249,7 @@ rc 0 with **empty stdout** (FI-82).
 
 | Fixture | Verb | Notes |
 |---|---|---|
-| throwaway global config | `cco dev config new\|list\|remove <name>` | created under `<dev-root>/configs/<name>`, seeded by copy from the real `~/.cco`. ⭐ `cco dev config use <name>` **prints** the `export CCO_CONFIG_HOME=…` line and never claims to have set it — *"`export`s set by a subprocess do NOT survive into your shell"* (`scripts/cco-sandbox-e2e.sh`, the trap this project already paid for) |
+| throwaway global config | `cco dev config new\|list\|remove <name>` | created under `<dev-root>/configs/<name>` (§5.0), seeded by copy from the real `~/.cco`. ⭐ `cco dev config use <name>` **prints** the `export CCO_CONFIG_HOME=…` line and never claims to have set it — *"`export`s set by a subprocess do NOT survive into your shell"* (`scripts/cco-sandbox-e2e.sh`, the trap this project already paid for) |
 | throwaway test project | `cco dev project new <name>` | `git init` a repo under `<dev-root>/projects/<name>`, scaffold `.cco` from the base template, register it. The index it lands in is **already sandboxed**, so it never pollutes the real project list. ⚠ `cco new` is **not** this — measured (`lib/cmd-new.sh:8-25`), it starts a temporary *session* over existing repos and scaffolds nothing |
 
 ### 7.1 `project.dev.yml`
@@ -274,5 +323,5 @@ is docker's own code.
 - **`_CONFIG_ALLOWLIST`** still omits `access.yml` and `claude-version` — now a `cco config save`
   completeness question, not a backup one (the snapshot bypasses the allowlist by design).
 - **Accepted and unrepaired**: a broken dev migration can clobber `~/.cco/secrets.env`
-  (ADR-0060 D4.4); `cco project save` in dev mode commits into the user's repo — recoverable, noisy;
+  (ADR-0060 D4.5); `cco project save` in dev mode commits into the user's repo — recoverable, noisy;
   the version gate stays dormant.

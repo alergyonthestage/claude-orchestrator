@@ -113,27 +113,34 @@ What dev mode protects is therefore not the location of the configuration but th
    list of config-writing verbs is a lower bound** — a class this repo has paid for four times.
 2. **In a separate `GIT_DIR`**, never `~/.cco/.git`. `cco config save`'s contract is explicit —
    *"Explicit and manual: cco never auto-commits"* — and an automatic commit into that history
-   would break it and pollute `cco config history`. The separate store also lives in the
-   **sandboxed STATE** bucket (so it is dev state, reaped with the dev environment) and is
-   **structurally unpushable**: `_config_push` operates on `$cfg/.git` and cannot see it.
+   would break it and pollute `cco config history`. The store lives under the **dev root**, as a
+   sibling of the three redirected buckets (design §5.0 — *not* inside `state/`, which the one-shot
+   seed copies over), so it is reaped with the dev environment; and it is **structurally
+   unpushable**: `_config_push` operates on `$cfg/.git` and cannot see it.
 3. **Complete, not allowlisted.** The snapshot stages everything (`git add -A` against its own
    store), because `_CONFIG_ALLOWLIST` omits `access.yml` and `claude-version` — exactly the two
    members with no other recovery path. A *publish* save wants a curated subset; a *safety*
    snapshot wants the whole tree. Different scopes, deliberately.
-4. **Secrets are excluded.** `~/.cco/secrets.env` and the known secret patterns stay out, so no
+4. 🔴 **A failed snapshot is fatal** (amended 2026-09-01, maintainer's ruling). The step is
+   **unconditional** — it runs at every `--dev` engage, before the verb — and if it cannot be taken
+   the run **dies**: the mode's safety property could not be established, so it must not proceed.
+   This departs deliberately from `_cco_dev_sandbox_seed`'s `warn`, and the distinction is the point:
+   a partial seed is a convenience, a missing restore point **is** the protection. An absent `~/.cco`
+   is a **no-op**, not a failure — there is nothing to protect.
+5. **Secrets are excluded.** `~/.cco/secrets.env` and the known secret patterns stay out, so no
    secret material is duplicated to a second location on disk. ⚠ The accepted cost, stated rather
    than hidden: `lib/migrate.sh:382` (`cp "$f" "$cfg/secrets.env"`) is a measured writer, so a
    broken dev migration can clobber `secrets.env` **irrecoverably**. Documented, not silent.
-5. **A restore verb, which does not exist today.** Measured: `cco config` offers
+6. **A restore verb, which does not exist today.** Measured: `cco config` offers
    `save · status · history · push · pull · validate` and **no restore**. It lands as
    `cco dev restore`, because the store is dev-mode state, not `~/.cco`'s curated history.
-6. **Project config is not relocated either.** Reads are shared in both modes — that is the point.
+7. **Project config is not relocated either.** Reads are shared in both modes — that is the point.
    Relocating it was priced and rejected: it is composed inline at ~64 sites across 16 files (a
    resolver exists, `_resolve_project_cco_dir`, with **2 callers**) and it **rides the repo mount**
    (`_compose_vol "${repo_path}" "/workspace/${repo_name}"`), so moving it is a mount-topology
    change (ADR-0047/0049). It is also **versioned in the user's repo**, so an ordinary bad write is
    recoverable without any mechanism. No `--allow-project-writes` gate is introduced.
-7. **`project.dev.yml`** — optional, gitignored, and deliberately **`project.yml`-only**. What
+8. **`project.dev.yml`** — optional, gitignored, and deliberately **`project.yml`-only**. What
    legitimately varies per mode is runtime wiring (the image, a port, a network) and it all lives
    there; the rest of `<repo>/.cco` is *the content under test*. ⚠ Identity fields are **not**
    overridable: `project.yml`'s `name:` keys the index, the per-project scoping (ADR-0051) and the
@@ -233,6 +240,6 @@ only what was rejected and why, so it is not re-litigated.
 - ⚠ **A named sequencing obligation**: A10's image axis, **B1** (`cco build` inside `cco update`)
   and **B2** (container naming) touch one namespace. D3's orthogonality sentence in
   `packaging-distribution.md` §4 is what B1 and B2 inherit instead of rediscovering it.
-- **Unrepaired, deliberately**: a broken dev migration can clobber `~/.cco/secrets.env` (D4.4);
+- **Unrepaired, deliberately**: a broken dev migration can clobber `~/.cco/secrets.env` (D4.5);
   `cco project save` in dev mode commits into the user's repo, recoverable but noisy; and M3's
   dormant version gate stays dormant — nothing here wakes it.

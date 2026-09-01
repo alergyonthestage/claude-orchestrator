@@ -857,7 +857,7 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 | `--dev` is the primitive; dispatch is its sub-case. The published binary's only dev responsibility is **resolve and `exec`** ⇒ forward-compatible permanently. `cco-dev` is a shell alias, not a shipped file | ADR-0060 D1 |
 | Dev identity = internal buckets + **the image**. Container/network names deferred to **B2** by name | D2 |
 | The image forks on the **repository** (`claude-orchestrator-dev`), never the tag ⇒ `packaging-distribution.md` §4's `:<package.version>` axis stays free. `check_image` **dies** on a missing dev image | D3 |
-| Configuration shared, protected by an **unconditional git snapshot** in a **separate `GIT_DIR`** under sandboxed STATE — complete (`git add -A`, not the allowlist), secrets excluded, structurally unpushable. A **restore verb does not exist today** and is new work | D4 |
+| Configuration shared, protected by an **unconditional git snapshot** in a **separate `GIT_DIR`** at `<dev-root>/snapshots/config.git` — complete (`git add -A`, not the allowlist), secrets excluded, structurally unpushable, and 🔴 **fatal on failure** (amended 2026-09-01). A **restore verb does not exist today** and is new work | D4 |
 | CONFIG-targeting **migrations** refuse under `--dev` unless an isolated config dir is in use — the one class a restore cannot repair, because target and marker sit on opposite sides of the boundary | D5 |
 | **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
 | Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image` | D7 |
@@ -887,6 +887,13 @@ the snapshot store **and** the dev image.
 inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace. ADR-0060 D3's
 orthogonality sentence is now **written into** `engineering/design/packaging-distribution.md` §4, so
 B1 and B2 inherit it.
+
+⭐ **The `<dev-root>` is not a new XDG bucket** — dev mode adds none, it **re-points three of the
+existing four** at children of `~/.cco-devsandbox`. The snapshot store and the fixtures are
+**siblings** of those three, never inside `state/`: measured, `_cco_dev_sandbox_seed` does
+`cp -a "$real_state" "$root/state"` behind a one-shot guard, so anything placed there is either
+overwritten by a re-seed or blocks the seed entirely. The default path **does not move** —
+renaming it would strand every existing sandbox.
 
 📝 **Accepted and unrepaired, deliberately**: a broken dev migration can clobber `~/.cco/secrets.env`
 (`lib/migrate.sh:382` is a measured writer, and secrets are excluded from the snapshot) ·
