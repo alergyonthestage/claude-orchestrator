@@ -45,7 +45,7 @@ flowchart TB
 | **R5** | Cases needing a different configuration have a **fixture**, not a redirect | D4/D5 |
 | **R6** | No default moves for a user | D3 · *Consequences* |
 | **R7** | Every identity the mode creates is reapable | D6 · ADR-0045 precedent |
-| **R8** | The mode refuses where it cannot work, and never silently no-ops | D7 · analysis §7 |
+| **R8** | The mode refuses where it cannot work, never silently no-ops, and says so when the clone runs against the real environment | D7 · analysis §7 |
 
 **Out of scope**, each with its owner: container/network naming (**B2**) · `cco doctor` (its own
 roadmap entry) · waking the dormant version gate (M3 — nothing here does) · relocating project
@@ -302,6 +302,42 @@ at `warn`. It closes A11's second residue and is the **only** cover for a projec
 
 ⚠ Read the label with `docker image inspect`, never `docker run` — in-session `docker run` returns
 rc 0 with **empty stdout** (FI-82).
+
+### 6.3 Clone provenance without `--dev` — a note, not an engage
+
+⚠ **The mirror of the incident, and the design did not name it until asked.** The 2026-08-27 incident
+was *running the npm `cco build` instead of the clone's*. Running **`./bin/cco build` from the clone
+without `--dev`** produces the same collision from the other side: the clone's code tags
+`claude-orchestrator:latest`, which is the image a real session uses. Nothing here engages the mode
+implicitly — `--dev` is the only switch (§3.2), by design — so this case needs its own signal.
+
+**Ruled 2026-09-01: detect and `note`; do not auto-engage, do not refuse.** Building the real image
+from the clone is a **legitimate, documented action** (`CONTRIBUTING.md`), so taking it away would be
+wrong; and inferring the mode from where the binary lives would make it implicit, contradicting
+*the mode is the context, explicitly chosen* (ADR-0060 D6).
+
+- **Condition**: `_cco_install_provenance` = `clone` **and** dev mode was not requested. ⭐ Unlike M2's
+  *"detect the other install"*, which had nothing to detect, this is a property of the **running
+  binary** and is knowable today — the classifier already exists (`lib/paths.sh:541-550`) and A11 gave
+  it its first user surface.
+- **Frequency: every invocation, unrated.** ⭐ Precedent, and it settles the noise question without a
+  new mechanism: `_cco_apply_dev_sandbox` already emits a `note` on **every** `--dev-sandbox` run, and
+  its own comment rules that gating it *"would put friction on the developer path — it is an accepted
+  divergence, which is exactly what `note` is for."* This is the symmetric case. **No list of verbs**
+  (a list is a lower bound) and **no rate-limit marker** — rate-limiting would mean writing state into
+  the **real** STATE bucket purely to suppress a message.
+- **Channel**: `note()` (`lib/colors.sh:47-48`) writes to **stderr** and participates in ADR-0059's
+  warn capture, so it never corrupts a machine-readable stdout such as `cco path list`.
+- **Placement**: the `else` arm of the dev-mode check in the `bin/cco:141-153` block.
+
+⚠ **It should never fire inside a session, but verify rather than assume**: `_cco_install_provenance`
+returns `clone` only when `$REPO_ROOT/.git` is a **directory**, and `.dockerignore` excludes `.git/`
+from the build context, so `/opt/cco` is not a clone. Confirm at implementation.
+
+⚠ **A known false positive, and why it is tolerable**: an install that lives outside
+`node_modules/@claude-orchestrator/cco` yet carries a `.git/` — a tarball or git-based install —
+classifies as `clone`. It costs one line of stderr. That a false positive is harmless here is
+precisely what makes a **note** the right instrument and an auto-engage or a refusal the wrong one.
 
 ## 7. Fixtures — for the cases that genuinely need a different configuration
 

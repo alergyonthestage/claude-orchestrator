@@ -861,13 +861,13 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 | CONFIG-targeting **migrations** refuse under `--dev` unless an isolated config dir is in use — the one class a restore cannot repair, because target and marker sit on opposite sides of the boundary | D5 |
 | 🔴 **`<repo>/.cco` is GUARDED, not snapshotted** (added 2026-09-01): the snapshot covers `~/.cco` alone, so under `--dev` a writer that can **destroy uncommitted content** refuses when the project tree is dirty, never-committed, or not a git repo. ⭐ **The criterion is the ruling, not the list** — a writer whose only effect is a *commit* is exempt, which is why `cco project save` must be | D4.8 |
 | **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
-| Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image` | D7 |
+| Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image`; and 🔴 **`note` when the clone runs WITHOUT `--dev`** (added 2026-09-01) — the **mirror of the incident**, since `./bin/cco build` from the clone tags the real image. Detect and say so; never auto-engage (building the real image from the clone is documented and legitimate) and never refuse | D7 |
 
 ##### A10.1 — identity ▶ next
 
 `--dev` + the dispatcher contract and its resolution order · `_cco_dev_image` at its two application
-points · the in-container refusal · the `--` terminator fix (measured: **zero** `"--")` handlers
-today) · `--dev-sandbox`/`--dev-sandbox-seed` become aliases.
+points · the in-container refusal · **the clone-without-`--dev` note** · the `--` terminator fix
+(measured: **zero** `"--")` handlers today) · `--dev-sandbox`/`--dev-sandbox-seed` become aliases.
 
 **Done when** a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
 untouched — ⚠ **verified with `docker image inspect` on both tags**, never `docker run` (FI-82) — and

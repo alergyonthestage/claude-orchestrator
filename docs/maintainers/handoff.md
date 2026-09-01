@@ -8,7 +8,7 @@
 
 ## Where we are
 
-**Phase: Design → CLOSED AND APPROVED (2026-09-01, with three amendments, all already applied).
+**Phase: Design → CLOSED AND APPROVED (2026-09-01, with four amendments, all already applied).
 Next is Implementation + Test of A10.1.** No decision is left open for the maintainer before
 implementation starts. The maintainer's instruction closing the design session was explicit:
 *"procediamo con l'implementazione in una nuova sessione, design approvato."*
@@ -17,7 +17,7 @@ implementation starts. The maintainer's instruction closing the design session w
 flowchart LR
     AN["analysis approved ✅<br/>2026-08-27"] --> CL["decision clinic ✅<br/>3 rounds · 6 rulings<br/>now HISTORICAL"]
     CL --> ADR["ADR-0060 + design ✅"]
-    ADR --> GATE["design gate ✅ 2026-09-01<br/>approved · 3 amendments"]
+    ADR --> GATE["design gate ✅ 2026-09-01<br/>approved · 4 amendments"]
     GATE --> A101["A10.1 · identity<br/>⬅ BUILD THIS"]
     A101 --> A102["A10.2 · protection + tooling"]
     A102 --> A9["A9 · FI-77"]
@@ -31,10 +31,11 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 
 | Claim | Measured |
 |---|---|
-| Branch | `feat/devmode/dev-execution-mode` — ✅ **MERGED into `develop` on 2026-09-01**, after the maintainer approved the gate. Merged with `--no-ff`, so the gate is visible in history. ⚠ **No sha or commit count is stated here on purpose** — the commit that states one invalidates it. Measure: `git log --merges -1 develop` and `git rev-list --count origin/develop..develop` |
-| ⚠ The branch is **NOT deleted**, deliberately | `rules/git-practices.md`: the consolidation trigger is *"the branch appears among the merged"*, and deleting makes it unreachable **forever**. **A1 was deleted before its consolidation and its roadmap entry is still stranded** because of exactly this. The next `/handoff` consolidates first, **then** deletes with `git branch -d` (never `-D`) |
-| Push | 🔴 **STILL OWED.** `develop` was level with `origin/develop` before the merge and is now **ahead of it**. Push is **not possible from a session** — `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
-| Pre-merge verification | the suite was run **on the branch before the merge**, not assumed from the previous session |
+| Branches | ✅ **TWO merged into `develop` on 2026-09-01**, each with `--no-ff` so the gate stays visible in history: `feat/devmode/dev-execution-mode` (A11's code + the whole A10 design) and `feat/devmode/clone-without-dev-note` (the fourth amendment). ⚠ **No sha or commit count is stated here on purpose** — the commit that states one invalidates it. Measure: `git log --merges -3 develop`, `git branch --merged develop` |
+| ⚠ **Neither branch is deleted**, deliberately | `rules/git-practices.md`: the consolidation trigger is *"the branch appears among the merged"*, and deleting makes it unreachable **forever**. **A1 was deleted before its consolidation and its ~450-line roadmap entry is still stranded** because of exactly this. The next `/handoff` consolidates A11 + the A10 design into `roadmap-history.md` and memory **first**, **then** deletes **both** with `git branch -d` (never `-D`) |
+| Push | 🔴 **STILL OWED, and now the only thing standing between this work and the remote.** `develop` was level with `origin/develop` before the merges and is **ahead of it** now. Push is **not possible from a session** — `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
+| Pre-merge verification | ✅ the suite was **run on the branch**, not assumed: `1787 passed / 7 failed / 1794`, the `Results:` line present **once**, the 7 matching the documented host-only set name for name (6 `test_as_*` + `test_paths_symlink_safe_tool_root`, `roadmap.md:364`). The second branch is **docs-only** — measured: 4 files, all under `docs/maintainers/`, and **no test or script references any of them** — so that result carries |
+| ⚠ Start here, not on a feature branch | the working tree is left on **`develop`**. Host and container share it |
 | Suite | Unchanged since A11: **1787 passed / 7 failed / 1794**, the 7 the documented host-only set **name for name**. Run it with `bin/test` (dry-run, no Docker). ⚠ Verify the `Results:` line exists — an aborted run reads green *and prints no summary* |
 | What this branch contains | A11's code (2 commits) **plus documents only**. The design sessions changed **no code** |
 | git in this container | needs `safe.directory`: `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace/claude-orchestrator git …` |
@@ -45,9 +46,9 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 
 | Gate | What unblocks it |
 |---|---|
-| ✅ ~~**Merge this branch**~~ | **CLOSED 2026-09-01** — approved by the maintainer and performed |
+| ✅ ~~**Merge**~~ | **CLOSED 2026-09-01** — both branches approved by the maintainer and merged |
 | 🔴 **Push `develop`** | **not possible from a session** (measured above). **Host step**: `git push origin develop` |
-| **Delete the merged branch** | owed to the **next** `/handoff`, which must consolidate A11 + the A10 design into `roadmap-history.md` and memory **first**. Deleting before that makes the trigger unreachable, as it did for A1 |
+| **Delete the two merged branches** | owed to the **next** `/handoff`, which must consolidate A11 + the A10 design into `roadmap-history.md` and memory **first**. Deleting before that makes the trigger unreachable, as it did for A1 |
 | **[FI-83](improvements.md)** direction | trigger measured; the cheap candidate touches no security surface. Needs one more observation and a call — see *Context* |
 | **[FI-84](improvements.md)** | free to relieve locally (move `user-config/`); the design half must be decided **with [FI-16](improvements.md)** |
 | **[FI-78](improvements.md)** | the 2 macOS test-portability failures. ⚠ **Host-only measurable**. **Owed before `0.7.0`** |
@@ -88,7 +89,7 @@ Everything below is from the design; it is listed here so the first hour is not 
 
 | Site | What changes |
 |---|---|
-| `bin/cco:141-153` | the dev-flag block: parse `--dev` / `--dev=<path>` / `CCO_DEV`, **stop the scan at the first `--`**, refuse in-container, resolve the target and `exec`. Runs **post-source** and **after** the `cco_access=none` refusal at `:128` — both deliberate, design §3.1 |
+| `bin/cco:141-153` | the dev-flag block: parse `--dev` / `--dev=<path>` / `CCO_DEV`, **stop the scan at the first `--`**, refuse in-container, resolve the target and `exec` — and in its `else` arm, the **clone-without-`--dev` note** (design §6.3). Runs **post-source** and **after** the `cco_access=none` refusal at `:128` — both deliberate, design §3.1 |
 | `bin/cco:37` | `IMAGE_NAME="${CCO_IMAGE_NAME:-claude-orchestrator:latest}"` — **the default does not move** |
 | new helper `_cco_dev_image` | design §4 has the mapping table and the digest case. Its home is an implementation choice; the dev block in `lib/paths.sh:562-650` is the natural one |
 | `lib/cmd-start.sh:1589-1590` | map **only** a `docker.image` that was actually set — when unset it inherits the already-mapped `$IMAGE_NAME`. The rule that avoids double-mapping is written out in §4 |
@@ -116,8 +117,9 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
       D4.8) · `cco dev restore|list|reset|seed` · migration routing · fixtures · `project.dev.yml` ·
       `clean` scoping + `--images`
 - [ ] **Push `develop`** from the host — `git push origin develop` (the merge is done; the push is not)
-- [ ] **Consolidate, then delete** `feat/devmode/dev-execution-mode` — at the next `/handoff`, in that
-      order (`git branch -d`, never `-D`)
+- [ ] **Consolidate, then delete** `feat/devmode/dev-execution-mode` **and**
+      `feat/devmode/clone-without-dev-note` — at the next `/handoff`, in that order (`git branch -d`,
+      never `-D`)
 - [ ] **Decide [FI-83](improvements.md)'s direction** — capture the one missing observation first
 - [ ] **Move `user-config/` out of the checkout** — [FI-84](improvements.md), free, host-side
 - [ ] **[FI-78](improvements.md)** — the two macOS failures, host-verified only, owed before `0.7.0`
@@ -146,7 +148,7 @@ mode's purpose**. It does not — a dev run against a different configuration is
 setup. So `~/.cco` **and** `<repo>/.cco` stay shared, and what dev mode protects is the survival of a
 **bad write**. This upholds ADR-0052 §7's WS-6 call **for a stronger reason than WS-6 gave**.
 
-### The three amendments at the approval gate — do not re-open them
+### The four amendments at the approval gate — do not re-open them
 
 All are in the ADR and the design; here only so nobody relitigates.
 
@@ -171,6 +173,16 @@ All are in the ADR and the design; here only so nobody relitigates.
    refuses when the tree is not restorable. ⭐ **The criterion is the ruling, not the list**: a writer
    whose only effect is a *commit* is exempt — which is why **`cco project save` must be**, since it
    only acts on a dirty `.cco` and a dirty-check would make it permanently untestable.
+
+4. 🔴 **Running the clone WITHOUT `--dev` gets a `note`, not an auto-engage** (design §6.3), added when
+   the maintainer asked whether `./bin/cco` engages the mode. **It does not, and nothing in the design
+   had said so.** That is the **mirror of the incident**: `./bin/cco build` from the clone tags the
+   real `claude-orchestrator:latest`. Ruled: detect via `_cco_install_provenance` = `clone` and emit a
+   `note` — never auto-engage (building the real image from the clone is legitimate and documented in
+   `CONTRIBUTING.md`, and inferring the mode from where the binary lives would make it implicit), never
+   refuse (a false positive must cost one line of stderr). ⭐ **Unrated, on every invocation**, with the
+   precedent that settles the noise question: `_cco_apply_dev_sandbox` already notes on every
+   `--dev-sandbox` run for exactly this reason.
 
 ### Measurements a session must not argue away
 
