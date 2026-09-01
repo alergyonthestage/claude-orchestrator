@@ -28,11 +28,11 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 
 | Claim | Measured |
 |---|---|
-| Branch | the working tree is left on **`docs/devmode/a10-1-closure`**, which carries this handoff and the roadmap consolidation and is **not yet merged**. `develop` already has all of A10.1 |
+| Branch | the working tree is left on **`develop`**, and **everything from this cycle is merged into it** — A10.1 itself, and the closure commits (this handoff + the roadmap consolidation). No feature branch is left open. ⚠ Host and container share one working tree, so measure the branch again before writing |
 | A10.1 merged | ✅ `--no-ff` into `develop`, and the merged tree verified **identical** to the branch: `git diff feat/devmode/a10-1-identity develop` is **empty**. That is why the suite figure measured on the branch carries without a re-run |
 | Suite | **1812 passed / 7 failed / 1819 total**, `Results:` line **present**, and the 7 are the documented host-only set **name for name** (6 `test_as_*` + `test_paths_symlink_safe_tool_root`). Run it with `bin/test` (dry-run, no Docker) |
 | New tests | `tests/test_dev_mode.sh` **25/25** (22 contract + 3 for Amendment A5). `tests/test_dev_sandbox.sh` **9/9, unmodified**, the pinned `test_dev_sandbox_config_stays_shared` included — design §9's check that CONFIG did not fork |
-| Push | 🔴 **STILL OWED.** `develop` is **55 ahead** of `origin/develop`. **Not possible from a session** — measured three ways: `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
+| Push | 🔴 **STILL OWED.** `develop` is **58 ahead** of `origin/develop`. **Not possible from a session** — measured three ways: `origin` is SSH, `credential.helper` unset, `gh auth status` → not logged in. **Host step**: `git push origin develop` |
 | Branches | ✅ **all four merged branches were consolidated and then deleted** (`git branch -d`, never `-D`): `feat/devmode/dev-execution-mode`, `feat/devmode/clone-without-dev-note`, `feat/devmode/a10-1-identity`, `feat/devmode/a10-1-identity-impl`. The worktree `/workspace/a101-impl` was removed |
 | ⚠ `feat/claude-view-file-overlays` | **rares' branch — untouched, and it stays that way** |
 | git in this container | `git worktree` **always** needs `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'`; `~/.gitconfig` is a **read-only host mount**, so `git config --global` is not a route. Other git verbs fail only intermittently |
@@ -43,7 +43,6 @@ Order inside Block A: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 �
 |---|---|
 | 🔴 **Push `develop`** | **not possible from a session** (measured above). **Host step**: `git push origin develop` |
 | 🔴 **A10.1's acceptance check** | **host-only by construction** — `--dev` refuses in-container, which is itself verified. On the host: a real `cco build` under `--dev`, then `docker image inspect` on **both** tags, proving `claude-orchestrator-dev:latest` was produced and `claude-orchestrator:latest` untouched. ⚠ Never `docker run` ([FI-82](improvements.md): rc 0, empty stdout in-session) and never `cco --version` (non-discriminating across both binaries, ADR-0060 M3) |
-| **Merge this closure branch** | `docs/devmode/a10-1-closure` holds the roadmap consolidation and this handoff. `rules/git-workflow.md` forbids committing straight to `develop`, hence the branch |
 | **[A10.2](roadmap.md)** | designed and unblocked — the next unit |
 | **[FI-83](improvements.md)** direction | trigger measured; the cheap candidate (start teammate panes in the lead's cwd) touches no security surface. ⚠ Still unobserved: **which directory the dialog named** |
 | **[FI-84](improvements.md)** | free to relieve locally (move `user-config/`); the design half must be decided **with [FI-16](improvements.md)** |
@@ -84,9 +83,7 @@ correction. Read it only to see *why* an alternative was rejected.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] **Merge `docs/devmode/a10-1-closure`** into `develop` — it carries this handoff and the
-      roadmap consolidation
-- [ ] 🔴 **Push `develop`** from the host — `git push origin develop` (55 commits)
+- [ ] 🔴 **Push `develop`** from the host — `git push origin develop` (58 commits)
 - [ ] 🔴 **A10.1's acceptance** on the host — `cco build` under `--dev`, then `docker image inspect`
       on **both** tags. Never `docker run`, never `cco --version`
 - [ ] ▶ **Implement [A10.2](roadmap.md)** — the snapshot store · the `<repo>/.cco` restorability
