@@ -304,7 +304,7 @@ recorded as [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) w
 [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md), and split
 into **A10.1** (identity) + **A10.2** (protection and tooling). Both units were opened 2026-08-27
 after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT AND
-TESTED 2026-09-01** (suite 1807/9 of 1816, see below). **Two gates still owed**: the merge, and the
+TESTED 2026-09-01** (suite 1812/7 of 1819, see below). **Two gates still owed**: the merge, and the
 host-only `docker image inspect` acceptance check. ▶ **Next is A10.2.**
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
@@ -875,13 +875,17 @@ untouched — ⚠ **verified with `docker image inspect` on both tags**, never `
 `cco --dev` in-container exits 2.
 
 ✅ **BUILT AND TESTED 2026-09-01**, on `feat/devmode/a10-1-identity`. `tests/test_dev_mode.sh` is
-new: **22/22**. `tests/test_dev_sandbox.sh` stays green **unmodified**, **9/9** — including the
+new: **25/25**. `tests/test_dev_sandbox.sh` stays green **unmodified**, **9/9** — including the
 pinned `test_dev_sandbox_config_stays_shared` (design §9's check that CONFIG did not fork). Full
-suite: **1807 passed / 9 failed / 1816 total**, `Results:` line present — 7 are the documented
-host-only set, **name for name**; the other 2 (`test_pack_cli.sh`) were a regression **found and
-fixed this cycle**: two table-shape assertions were counting `run_cco`'s merged `2>&1` stream, so a
-new stderr note read as a table row — a `run_cco_stdout` helper now captures stdout alone, and both
-were proven to still fail under an injected extra stdout line before the fix landed.
+suite: **1812 passed / 7 failed / 1819 total**, `Results:` line present, and the 7 are the
+documented host-only set **name for name** — no regression left standing.
+
+One regression was **found and fixed** inside the cycle: two table-shape assertions in
+`test_pack_cli.sh` counted `run_cco`'s merged `2>&1` stream, so the new stderr note read as a table
+row. A `run_cco_stdout` helper now captures stdout alone; both were proven to still fail under an
+injected extra stdout line. And one defect the build **uncovered in existing code** is fixed with
+its own three tests — a worktree classified as `unknown`, so §6.3's note was blind in the very
+workflow this project mandates ([ADR-0060 Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments)).
 
 🔴 **Two gates still owed, both host steps, neither closable in this session**: the merge (the human
 gate), and the acceptance check the suite cannot reach — a real `cco build` under `--dev` producing
