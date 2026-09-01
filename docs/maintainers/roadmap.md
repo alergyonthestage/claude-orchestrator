@@ -4,7 +4,13 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
+> **Last updated: 2026-09-01** — **A11 and A10.1 are closed and merged**; both entries moved to
+> [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
+> The dev execution mode's identity half is shipped, so a dev build can no longer overwrite the image
+> a real session uses. **A10.2 is next.** One gate is owed on A10.1 and is host-only: the
+> `docker image inspect` acceptance check. `develop` is **unpushed**.
+>
+> **2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
 > **implementation review passed on 2026-08-08** with two objective defects fixed in place — both on
 > the security surface, both in shapes the acceptance run structurally could not reach.
@@ -296,16 +302,19 @@ scheduled immediately after A1 and now follows the pair.
 
 ✅ **A1 IS CLOSED** — merged into `develop` at `ab97482` on 2026-08-26, branch deleted, and the
 merged tree verified **identical** to the branch tip the suite measured. ✅ **A1 owes nothing** — the
-push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is BUILT, TESTED AND HOST-VERIFIED 2026-08-27**
-(suite 1787/7 of 1794, the 7 the known host-only set; the image label read back as
-`feat/devmode/dev-execution-mode@e0c93a8`). **Only the merge is still owed** — the human gate.
+push and the `cco build` both closed 2026-08-27 (see A1's entry). ✅ **A11 IS CLOSED** — built, tested and
+host-verified 2026-08-27 (the image label read back as `feat/devmode/dev-execution-mode@e0c93a8`,
+so it **discriminates**), **merged into `develop` 2026-09-01**, entry moved to
+[roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 ✅ **A10 IS DESIGNED 2026-08-31** — six decisions ruled across three rounds of a decision clinic,
 recorded as [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) with the *how* in
 [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md), and split
 into **A10.1** (identity) + **A10.2** (protection and tooling). Both units were opened 2026-08-27
-after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT AND
-TESTED 2026-09-01** (suite 1812/7 of 1819, see below). **Two gates still owed**: the merge, and the
-host-only `docker image inspect` acceptance check. ▶ **Next is A10.2.**
+after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT, TESTED AND
+MERGED 2026-09-01** (suite 1812/7 of 1819; entry moved to
+[roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01)).
+🔴 **One gate still owed on it**, and no session can close it: the host `docker image inspect`
+acceptance check. ▶ **Next is A10.2.**
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -770,69 +779,11 @@ first (the report does not carry it), then **re-derive the whole floor** against
 (`_emit_workflows_overlay`). This is the quick win; the full **worktree design** (Sprint 10, *Git
 worktree isolation*) stays a separate, larger unit and is now pulled by real demand.
 
-#### A11 — no verb answers "which cco am I running, from where" ([FI-80](improvements.md))
+#### ✅ A11 — no verb answers "which cco am I running, from where" ([FI-80](improvements.md)) — **CLOSED 2026-08-27**
 
-▶ **Opened and scheduled 2026-08-27, before A10** — it is A10's measuring instrument, so it ships
-first. Ruled at A10's direction gate.
+Both halves shipped — the `cco CLI` identity block on `whoami`'s host branch, and `LABEL cco.build-ref` — and **merged into `develop` 2026-09-01**. The label was verified on a host and **discriminates**, carrying the exact branch ref: that is what made it A10's measuring instrument, and the only identity channel that works from a session. ⚠ Its **three deliberate residues** stay open and undecided; one of them, the `cco start` CLI↔image divergence warning, is scheduled inside [A10.2](#a102--protection-and-tooling). The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 
-✅ **BUILT AND TESTED 2026-08-27**, both halves, on `feat/devmode/dev-execution-mode`:
-`592526a` (the `cco CLI` identity block on `whoami`'s host branch) and `80b9c10`
-(`LABEL cco.build-ref="$CCO_BUILD_REF"`, `Dockerfile:230`). Living docs and `changelog.yml` (id 68)
-updated in `5de68f6` + `5d271e7`. Tests: **9 new**, written independently from the contract —
-8 in `tests/test_whoami.sh` (a new file: the host branch had no coverage at all) and 1 in
-`tests/test_build.sh`. Each was proven to **fail before the fix**; the one that cannot fail before it
-(a negative test, that the block stays off the in-container branch) was proven by **mutation**
-instead. Full suite **1787 passed / 7 failed / 1794** — the 7 are the documented host-only set,
-**identical name for name**, no new failure.
-
-✅ **The `LABEL` is VERIFIED on the host, 2026-08-27** — the gate no hermetic test could close.
-`./bin/cco build` from the clone, then
-`docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'`
-→ **`feat/devmode/dev-execution-mode@e0c93a8`**, the branch tip at build time. The value is not
-merely present: it **discriminates**, carrying the exact ref. ⭐ This is the first identity channel
-that answers *which code is this image* **without running a container** — the reason A11 carried the
-label at all ([FI-82](improvements.md): `docker run`'s stdout does not cross from a session).
-⚠ The suite pins only the *declaration* (the `LABEL` exists, interpolates `$CCO_BUILD_REF`, sits
-after the `ARG` — one before it bakes an empty value silently); that the value **arrives in the
-built image** stays a host step, by construction, at every future build.
-
-🔴 **ONE gate left: the merge**, which is the human one. The branch is unmerged and unpushed.
-
-⚠ **The three residues below were deliberately NOT built**, being user-perceivable and outside the
-ruled shape: `whoami`'s host branch does **not** read the image label, `cco start` does **not** warn
-on a CLI↔image divergence, and the `IMAGE_NAME` tag is not surfaced. A11 makes the handshake
-**computable**; it does not compute it. Whether any of the three is wanted is undecided.
-
-**Measured**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone ⇒ a
-**non-discriminating oracle**, and any acceptance test built on it is a false pass by construction.
-`which cco` answers PATH order, not the `REPO_ROOT` the readlink loop reaches. `cco whoami`'s host
-branch (`lib/cmd-whoami.sh:50-70`) reports **no `REPO_ROOT`, no provenance, no version**.
-`_cco_install_provenance` (`lib/paths.sh:541-550`) does classify `npm|brew|clone|unknown` but has
-**one** consumer and no user surface.
-
-**Shape as ruled** — **two halves, both in scope** (the second added by the maintainer 2026-08-27):
-
-1. **The CLI half** — extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance`
-   and the version.
-2. **The image half — a `LABEL` on the image** carrying the build ref. Today `Dockerfile` sets
-   **none** (measured: `docker image inspect … --format '{{json .Config.Labels}}'` → `null`), and
-   `/opt/cco/BUILD` has exactly one reader, `lib/cmd-whoami.sh:102`, **in-container only**.
-
-⭐ **Why the `LABEL` is the right carrier, and not merely convenient.** Measured 2026-08-27:
-`docker image inspect` returns real output **inside a session** (rc 0, the image id matching the
-build log's manifest), while `docker run`'s stdout is **swallowed there** — rc 0, empty
-([FI-82](improvements.md)). So the label is the **only container-free channel that works from both
-the host and a session**. It also makes the CLI↔image handshake computable *from inside*: an agent
-can compare its own `/opt/cco/BUILD` against `docker image inspect` on the tag and detect that the
-image was rebuilt under it.
-
-Together the two halves close **all** of the FI-16 residue at `improvements.md:471`, not half.
-
-**Effort**: Low. Needs no design phase of its own beyond the shape above. ⚠ Both halves are baked
-(`Dockerfile`, `lib/`) — it takes a `cco build` in its acceptance lane, and the label cannot be
-verified before one.
-
-#### A10 — the dev execution mode ([FI-79](improvements.md)) — ▶ **DESIGNED 2026-08-31, split into A10.1 + A10.2**
+#### A10 — the dev execution mode ([FI-79](improvements.md)) — ✅ **A10.1 MERGED 2026-09-01** · ▶ **A10.2 IS NEXT**
 
 ▶ **Opened 2026-08-27** after the maintainer ran `cco build` from the npm-distributed CLI instead of
 the clone — the third instance of the FI-16 class. ✅ **Analysis approved 2026-08-27**
@@ -842,7 +793,8 @@ the clone — the third instance of the FI-16 class. ✅ **Analysis approved 202
 now historical), recorded as
 **[ADR-0060](engineering/decisions/0060-developer-execution-mode.md)**, with the *how* in
 [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md).
-▶ **Next: the design gate, then implementation of A10.1.**
+✅ **Design gate passed 2026-09-01** with four amendments, and **A10.1 is built, tested and merged**
+the same day — a fifth amendment (**A5**) came out of the build itself. ▶ **Next: A10.2.**
 
 **The shape as designed** — one binary, one mode. `--dev` forks the **code identity** (the image) and
 the **internal buckets**, and leaves the **configuration shared** behind a restorable snapshot.
@@ -864,34 +816,11 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 | **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
 | Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image`; and 🔴 **`note` when the clone runs WITHOUT `--dev`** (added 2026-09-01) — the **mirror of the incident**, since `./bin/cco build` from the clone tags the real image. Detect and say so; never auto-engage (building the real image from the clone is documented and legitimate) and never refuse | D7 |
 
-##### A10.1 — identity
+##### ✅ A10.1 — identity — **BUILT, TESTED AND MERGED 2026-09-01**
 
-`--dev` + the dispatcher contract and its resolution order · `_cco_dev_image` at its two application
-points · the in-container refusal · **the clone-without-`--dev` note** · the `--` terminator fix
-(measured: **zero** `"--")` handlers today) · `--dev-sandbox`/`--dev-sandbox-seed` become aliases.
+`--dev` and the dispatcher contract, `_cco_dev_image` at its two application points, the in-container refusal, the clone-without-`--dev` note, the `--` terminator fix, and the legacy flags as superseded aliases. Suite **1812 passed / 7 failed / 1819**, `Results:` line present, the 7 the documented host-only set **name for name**. A defect the build uncovered in **existing** code was ruled and fixed with it — [ADR-0060 Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments), a git worktree classified as `unknown`.
 
-**Done when** a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
-untouched — ⚠ **verified with `docker image inspect` on both tags**, never `docker run` (FI-82) — and
-`cco --dev` in-container exits 2.
-
-✅ **BUILT AND TESTED 2026-09-01**, on `feat/devmode/a10-1-identity`. `tests/test_dev_mode.sh` is
-new: **25/25**. `tests/test_dev_sandbox.sh` stays green **unmodified**, **9/9** — including the
-pinned `test_dev_sandbox_config_stays_shared` (design §9's check that CONFIG did not fork). Full
-suite: **1812 passed / 7 failed / 1819 total**, `Results:` line present, and the 7 are the
-documented host-only set **name for name** — no regression left standing.
-
-One regression was **found and fixed** inside the cycle: two table-shape assertions in
-`test_pack_cli.sh` counted `run_cco`'s merged `2>&1` stream, so the new stderr note read as a table
-row. A `run_cco_stdout` helper now captures stdout alone; both were proven to still fail under an
-injected extra stdout line. And one defect the build **uncovered in existing code** is fixed with
-its own three tests — a worktree classified as `unknown`, so §6.3's note was blind in the very
-workflow this project mandates ([ADR-0060 Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments)).
-
-🔴 **Two gates still owed, both host steps, neither closable in this session**: the merge (the human
-gate), and the acceptance check the suite cannot reach — a real `cco build` under `--dev` producing
-`claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified
-with `docker image inspect` on both tags**, never `docker run` (FI-82, empty stdout in-session) and
-never `cco --version` (non-discriminating across both binaries, ADR-0060 M3).
+🔴 **One gate still owed, and it is host-only by construction**: a real `cco build` under `--dev` producing `claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified with `docker image inspect` on both tags** — never `docker run` (FI-82, empty stdout in-session), never `cco --version` (non-discriminating, ADR-0060 M3). `--dev` refuses in-container, so no session can close it. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 
 ##### A10.2 — protection and tooling
 

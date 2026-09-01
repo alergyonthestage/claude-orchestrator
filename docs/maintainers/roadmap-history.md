@@ -12,6 +12,7 @@
 ## Contents
 
 - [Cycle 1 — agent↔cco access, the acceptance rounds, and `v0.6.0`](#cycle-1--agentcco-access-the-acceptance-rounds-and-v060)
+- [Block A — the dev-mode identity cycle, A11 and A10.1](#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01)
 - [Block A — the A5 + A8 cycle](#block-a--the-a5--a8-cycle-closed-2026-08-18-merged-2026-08-21)
 - [Decentralized-config refactor — status snapshot](#decentralized-config-refactor--status-snapshot)
 - [Decentralized-config refactor — phase-by-phase log](#decentralized-config-refactor--phase-by-phase-log)
@@ -2099,6 +2100,142 @@ Users who want claude-mem can install it independently as a Claude Code plugin �
 - **Vendor lock-in**: Strongly tied to Zilliz/Milvus ecosystem
 
 However, claude-context could be supported as an **optional provider** in the RAG system (Sprint 12, `rag.provider: claude-context`) for users who accept cloud-based indexing. The default provider should be fully local.
+
+---
+
+## Block A — the dev-mode identity cycle, A11 and A10.1 (merged 2026-09-01)
+
+> Two units, one thread: **which cco is running, and which image does it tag.** A11 built the
+> measuring instrument; A10.1 used it to close the 2026-08-27 `cco build` incident. Both merged into
+> `develop` on 2026-09-01. The contract is
+> [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) (with **Amendment A5**, taken
+> after implementation began); the *how* is
+> [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md).
+> **A10.2 (protection and tooling) is NOT here** — it is still open, in the roadmap.
+>
+> ⭐ **The one sentence the cycle is worth remembering for**: *configuration is the test's input, not
+> its target* — which is why `~/.cco` and `<repo>/.cco` stay shared and dev mode protects the
+> survival of a bad write instead of relocating the file.
+
+### The two entries, as they stood when they closed
+
+#### A11 — no verb answers "which cco am I running, from where" ([FI-80](improvements.md))
+
+▶ **Opened and scheduled 2026-08-27, before A10** — it is A10's measuring instrument, so it ships
+first. Ruled at A10's direction gate.
+
+✅ **BUILT AND TESTED 2026-08-27**, both halves, on `feat/devmode/dev-execution-mode`:
+`592526a` (the `cco CLI` identity block on `whoami`'s host branch) and `80b9c10`
+(`LABEL cco.build-ref="$CCO_BUILD_REF"`, `Dockerfile:230`). Living docs and `changelog.yml` (id 68)
+updated in `5de68f6` + `5d271e7`. Tests: **9 new**, written independently from the contract —
+8 in `tests/test_whoami.sh` (a new file: the host branch had no coverage at all) and 1 in
+`tests/test_build.sh`. Each was proven to **fail before the fix**; the one that cannot fail before it
+(a negative test, that the block stays off the in-container branch) was proven by **mutation**
+instead. Full suite **1787 passed / 7 failed / 1794** — the 7 are the documented host-only set,
+**identical name for name**, no new failure.
+
+✅ **The `LABEL` is VERIFIED on the host, 2026-08-27** — the gate no hermetic test could close.
+`./bin/cco build` from the clone, then
+`docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'`
+→ **`feat/devmode/dev-execution-mode@e0c93a8`**, the branch tip at build time. The value is not
+merely present: it **discriminates**, carrying the exact ref. ⭐ This is the first identity channel
+that answers *which code is this image* **without running a container** — the reason A11 carried the
+label at all ([FI-82](improvements.md): `docker run`'s stdout does not cross from a session).
+⚠ The suite pins only the *declaration* (the `LABEL` exists, interpolates `$CCO_BUILD_REF`, sits
+after the `ARG` — one before it bakes an empty value silently); that the value **arrives in the
+built image** stays a host step, by construction, at every future build.
+
+🔴 **ONE gate left: the merge**, which is the human one. The branch is unmerged and unpushed.
+
+⚠ **The three residues below were deliberately NOT built**, being user-perceivable and outside the
+ruled shape: `whoami`'s host branch does **not** read the image label, `cco start` does **not** warn
+on a CLI↔image divergence, and the `IMAGE_NAME` tag is not surfaced. A11 makes the handshake
+**computable**; it does not compute it. Whether any of the three is wanted is undecided.
+
+**Measured**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone ⇒ a
+**non-discriminating oracle**, and any acceptance test built on it is a false pass by construction.
+`which cco` answers PATH order, not the `REPO_ROOT` the readlink loop reaches. `cco whoami`'s host
+branch (`lib/cmd-whoami.sh:50-70`) reports **no `REPO_ROOT`, no provenance, no version**.
+`_cco_install_provenance` (`lib/paths.sh:541-550`) does classify `npm|brew|clone|unknown` but has
+**one** consumer and no user surface.
+
+**Shape as ruled** — **two halves, both in scope** (the second added by the maintainer 2026-08-27):
+
+1. **The CLI half** — extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance`
+   and the version.
+2. **The image half — a `LABEL` on the image** carrying the build ref. Today `Dockerfile` sets
+   **none** (measured: `docker image inspect … --format '{{json .Config.Labels}}'` → `null`), and
+   `/opt/cco/BUILD` has exactly one reader, `lib/cmd-whoami.sh:102`, **in-container only**.
+
+⭐ **Why the `LABEL` is the right carrier, and not merely convenient.** Measured 2026-08-27:
+`docker image inspect` returns real output **inside a session** (rc 0, the image id matching the
+build log's manifest), while `docker run`'s stdout is **swallowed there** — rc 0, empty
+([FI-82](improvements.md)). So the label is the **only container-free channel that works from both
+the host and a session**. It also makes the CLI↔image handshake computable *from inside*: an agent
+can compare its own `/opt/cco/BUILD` against `docker image inspect` on the tag and detect that the
+image was rebuilt under it.
+
+Together the two halves close **all** of the FI-16 residue at `improvements.md:471`, not half.
+
+**Effort**: Low. Needs no design phase of its own beyond the shape above. ⚠ Both halves are baked
+(`Dockerfile`, `lib/`) — it takes a `cco build` in its acceptance lane, and the label cannot be
+verified before one.
+
+##### A10.1 — identity
+
+`--dev` + the dispatcher contract and its resolution order · `_cco_dev_image` at its two application
+points · the in-container refusal · **the clone-without-`--dev` note** · the `--` terminator fix
+(measured: **zero** `"--")` handlers today) · `--dev-sandbox`/`--dev-sandbox-seed` become aliases.
+
+**Done when** a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
+untouched — ⚠ **verified with `docker image inspect` on both tags**, never `docker run` (FI-82) — and
+`cco --dev` in-container exits 2.
+
+✅ **BUILT AND TESTED 2026-09-01**, on `feat/devmode/a10-1-identity`. `tests/test_dev_mode.sh` is
+new: **25/25**. `tests/test_dev_sandbox.sh` stays green **unmodified**, **9/9** — including the
+pinned `test_dev_sandbox_config_stays_shared` (design §9's check that CONFIG did not fork). Full
+suite: **1812 passed / 7 failed / 1819 total**, `Results:` line present, and the 7 are the
+documented host-only set **name for name** — no regression left standing.
+
+One regression was **found and fixed** inside the cycle: two table-shape assertions in
+`test_pack_cli.sh` counted `run_cco`'s merged `2>&1` stream, so the new stderr note read as a table
+row. A `run_cco_stdout` helper now captures stdout alone; both were proven to still fail under an
+injected extra stdout line. And one defect the build **uncovered in existing code** is fixed with
+its own three tests — a worktree classified as `unknown`, so §6.3's note was blind in the very
+workflow this project mandates ([ADR-0060 Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments)).
+
+🔴 **Two gates still owed, both host steps, neither closable in this session**: the merge (the human
+gate), and the acceptance check the suite cannot reach — a real `cco build` under `--dev` producing
+`claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified
+with `docker image inspect` on both tags**, never `docker run` (FI-82, empty stdout in-session) and
+never `cco --version` (non-discriminating across both binaries, ADR-0060 M3).
+
+### What the build found that the design had not
+
+Three defects surfaced **during** implementation rather than in review, each recorded where it
+belongs and repeated here only as a pointer:
+
+- 🔴 **A git worktree classified as `unknown`**, because `_cco_install_provenance` probed `.git` for
+  directory-ness and a worktree's `.git` is a **regular file**. ADR-0060 §6.3's note was therefore
+  blind in exactly the workflow `rules/git-practices.md` mandates — one worktree per agent. Ruled and
+  fixed as [Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments), which
+  names all three consumers of the classifier.
+- **Two table-shape assertions counted a merged `2>&1` stream.** `run_cco` fuses stdout and stderr,
+  so a diagnostic on stderr read as a table row the moment anything started writing there. The
+  implementation was right and the assertions were reading the wrong stream; `run_cco_stdout` in
+  `tests/helpers.sh` is the seam that separates the two questions.
+- **Three defects inside the new tests themselves**, found by a mutation campaign before the code
+  existed — two false passes and one gap. The gap is the instructive one: the `--` terminator was
+  covered on the dispatch path only, and the missing half is precisely the shape an implementer falls
+  into (fix the new scan, leave the old strip behind).
+
+⭐ **The measurement discipline that paid for itself twice here**: the tester ran **24** guard
+neutralising mutations against a throwaway reference implementation, and later **four spellings** of
+the A5 probe (`-e`, `-d`, `-f`, unconditional) — reporting *every* row rather than failing fast,
+because the evidence wanted was "the worktree row moved and the other three did not", which a
+fail-fast test structurally cannot show. The unconditional spelling is what proves the two fail-safe
+rows (no `.git`, dangling symlink) are live measurements rather than decoration.
+
 
 ---
 
