@@ -2585,31 +2585,80 @@ Usage: cco docs [<topic>]
 
 ---
 
-### 3.34 Developer sandbox (`--dev-sandbox`)
+### 3.34 Developer execution mode (`--dev`)
 
-A **global flag** (not a subcommand) for the rare case of running a development build of
-cco alongside the published one on the **same machine**. cco refuses to run when its on-disk
-state is newer than the binary understands (the version gate, ADR-0052) — the only realistic
-way to hit that is two cco versions sharing one machine's internal buckets. The sandbox removes
-the collision at the source: it redirects cco's **internal** buckets (STATE/DATA/CACHE) to an
-isolated root so the two binaries never touch — or corrupt — each other's state.
+A **global flag** (not a subcommand) for hacking on cco itself while keeping the published
+CLI intact on the same machine. `--dev` forks the **code identity** — which image a session
+runs — together with the **internal buckets** (STATE/DATA/CACHE), and leaves **configuration
+shared**: `~/.cco` and `<repo>/.cco` are the same stores either way, because configuration is
+what a dev run is testing *against*, not something dev mode should fork too. See
+[ADR-0060](../../maintainers/engineering/decisions/0060-developer-execution-mode.md) for the
+full rationale.
 
 ```
-cco --dev-sandbox <command>        # redirect STATE/DATA/CACHE to ~/.cco-devsandbox/{state,data,cache}
-cco --dev-sandbox-seed <command>   # same, plus a one-shot copy of your real STATE+DATA into the sandbox
+cco --dev <command>          # engage dev mode; resolve the dev clone (see below) and run it there
+cco --dev=<path> <command>   # engage dev mode against a specific clone
+CCO_DEV=1 cco <command>      # equivalent env toggle
 ```
 
-- Equivalent env toggles: `CCO_DEV_SANDBOX=1` and `CCO_DEV_SANDBOX_SEED=1`. The sandbox root is
-  `~/.cco-devsandbox` by default, overridable with `CCO_DEV_SANDBOX_ROOT=<abs-path>`.
-- **`~/.cco` (your personal config store) stays SHARED** — the gate's inputs (the index, the
-  schema version, the registries) all live in STATE/DATA/CACHE, so only those are isolated; your
-  authored packs/templates/`.claude` are not duplicated.
-- Never clobbers an explicit `CCO_STATE_HOME`/`CCO_DATA_HOME`/`CCO_CACHE_HOME` override; **host-only**
-  (a real session's mounted buckets are never redirected); OFF by default is a strict no-op.
-- `--dev-sandbox-seed` copies your real **STATE + DATA** (not CACHE — it is re-fetchable) once, so a
-  dev build starts against realistic state. It runs only when the sandbox is fresh.
-- `cco whoami` reports when a sandbox is active, with the redirected bucket paths — so a sandbox
-  session is never mistaken for the real one.
+**What forks, what doesn't:**
+
+| | Dev mode | Published |
+|---|---|---|
+| Docker image | `<repo>-dev` (see mapping below) | `claude-orchestrator:latest` |
+| STATE / DATA / CACHE | isolated under `~/.cco-devsandbox` | your real machine-local state |
+| `~/.cco`, `<repo>/.cco`, `project.yml` | **shared** — never forked, never rewritten | same |
+
+**Target resolution** — when the binary you invoked is not itself sitting inside the dev
+clone, `--dev` resolves which clone to run and hands off to it. First match wins, in order:
+
+1. `--dev=<path>`
+2. `$CCO_DEV_REPO`
+3. walking up from `$PWD` to the nearest enclosing cco clone — this is what makes a
+   worktree-per-agent setup work with no per-worktree configuration
+4. `~/.cco/dev-repo` — a one-line file holding the path
+
+If none resolve, cco dies naming all four. Once resolved, cco hands the whole process to
+that clone's own `bin/cco` — every dev-mode behavior from that point on is defined by the
+target clone's code, never by the binary you originally typed.
+
+**Image mapping** — the Docker image cco uses is mapped onto its dev twin by appending
+`-dev` to the **repository** part of the name and keeping the tag: `claude-orchestrator:latest`
+becomes `claude-orchestrator-dev:latest`. This is applied to the default image, and separately
+to a `docker.image` a project has pinned in its `project.yml` — the committed file itself is
+never rewritten, so pinning a dev-mapped image never requires a config change. An explicit
+`CCO_IMAGE_NAME` always wins over the mapping. If the mapped image doesn't exist, `cco` dies
+rather than silently falling back to the published image — that fallback would run published
+code inside what you believe is a dev session. Build the dev image with `cco --dev build`.
+
+⚠ **No default moves.** Outside `--dev`, `IMAGE_NAME` still resolves to
+`claude-orchestrator:latest` exactly as before, and nothing about a normal session changes.
+
+**In-container**: `--dev` (and its aliases below) refuse with exit 2, naming the host — a
+session owns neither the image tag nor the internal buckets it would need to fork.
+
+**Legacy aliases**: `--dev-sandbox` and `--dev-sandbox-seed` are now **aliases of `--dev`**,
+each emitting a one-line note that it has been superseded. ⚠ This is a **behavior change** to
+a previously documented flag: `--dev-sandbox` used to isolate only the internal buckets, while
+`~/.cco` and the image stayed shared with the published binary; under `--dev` the image now
+forks too. If you relied on `--dev-sandbox` isolating buckets alone, that half-identity no
+longer exists — use `--dev` and expect the image to fork with it.
+
+- Equivalent env toggles: `CCO_DEV_SANDBOX=1` (set automatically by `--dev`) and
+  `CCO_DEV_SANDBOX_SEED=1` (the legacy `--dev-sandbox-seed`'s one-shot copy of your real
+  STATE+DATA into the sandbox, still honored). The sandbox root is `~/.cco-devsandbox` by
+  default, overridable with `CCO_DEV_SANDBOX_ROOT=<abs-path>`.
+- Never clobbers an explicit `CCO_STATE_HOME`/`CCO_DATA_HOME`/`CCO_CACHE_HOME` override;
+  host-only (a real session's mounted buckets are never redirected); OFF by default is a
+  strict no-op.
+- `cco whoami` reports when the bucket sandbox is active, with the redirected bucket paths —
+  so a dev session is never mistaken for the real one.
+
+**Running the clone without `--dev`**: if you invoke a cco clone's own `bin/cco` directly
+without `--dev`, cco prints a one-line note on every invocation — running clone code against
+the real image is exactly the mirror-image collision `--dev` exists to prevent (it's also how
+you legitimately build the real image from your clone, so cco only notes this, it never
+refuses or auto-engages).
 
 ---
 
