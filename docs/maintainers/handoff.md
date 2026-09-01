@@ -99,8 +99,9 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
 - [ ] **Update the living docs A10.1 changes** — `docs/users/reference/cli.md` §3.34 (the flag
       becomes an alias), `CONTRIBUTING.md` §*Local development* (the two substitutive setups are
       replaced by `cco --dev`), `changelog.yml`
-- [ ] **[A10.2](roadmap.md)** — snapshot store, `cco dev restore|list|reset|seed`, migration routing,
-      fixtures, `project.dev.yml`, `clean` scoping + `--images`
+- [ ] **[A10.2](roadmap.md)** — snapshot store, the **`<repo>/.cco` restorability guard** (ADR-0060
+      D4.8), `cco dev restore|list|reset|seed`, migration routing, fixtures, `project.dev.yml`,
+      `clean` scoping + `--images`
 - [ ] **Merge** this branch, then **push** from the host (both open; push impossible from a session)
 - [ ] **Decide [FI-83](improvements.md)'s direction** — capture the one missing observation first
 - [ ] **Move `user-config/` out of the checkout** — [FI-84](improvements.md), free, host-side
@@ -131,9 +132,9 @@ setup. So `~/.cco` **and** `<repo>/.cco` stay shared, and what dev mode protects
 **bad write**. This upholds ADR-0052 §7's WS-6 call **for a stronger reason than WS-6 gave**, and it
 is why `tests/test_dev_sandbox.sh:75-86` stays green **as written**.
 
-### The two amendments at the approval gate (2026-09-01)
+### The three amendments at the approval gate (2026-09-01)
 
-Both are already in the ADR and the design; they are recorded here only so nobody re-opens them.
+All are already in the ADR and the design; they are recorded here only so nobody re-opens them.
 
 1. 🔴 **A failed snapshot is FATAL, not a warning.** The step is **unconditional** — every `--dev`
    engage, before the verb — and if the restore point cannot be taken the run **dies**: the mode's
@@ -147,6 +148,16 @@ Both are already in the ADR and the design; they are recorded here only so nobod
    one-shot `[[ -d "$root/state" ]] && return 0` guard, so anything placed under `state/` is either
    overwritten by a re-seed or blocks the seed entirely. The default **path does not move** —
    renaming it would strand every existing sandbox, the orphan class this unit exists not to create.
+3. 🔴 **`<repo>/.cco` is GUARDED, not snapshotted** — ADR-0060 **D4.8**, added when the maintainer
+   asked what protects project config. **The answer as the design stood was: nothing.** The snapshot's
+   work-tree is `~/.cco` alone; two sentences claiming project writes were *"doubly recoverable"* /
+   *"recoverable without any mechanism"* were **overstated** and are corrected in place (the clinic
+   carries a dated correction). Project config is protected by **the user's own repo git**, which is
+   complete only for a committed, clean tree in a git repo — and **a non-git repo is a supported
+   case** (`lib/cmd-project-save.sh:452`). ⇒ Under `--dev` a writer that can **destroy uncommitted
+   content** refuses when the tree is not restorable. ⭐ **The criterion is the ruling, not the list**:
+   a writer whose only effect is a *commit* is exempt — which is why **`cco project save` must be**,
+   since it only acts on a dirty `.cco` and a dirty-check would make it permanently untestable.
 
 ### Measurements a session must not argue away
 
@@ -171,6 +182,10 @@ Both are already in the ADR and the design; they are recorded here only so nobod
   never the allowlist.
 - ⚠ `grep -n '"--")' lib/*.sh bin/cco` → **zero** hits: no verb handles a `--` terminator. Today's
   flag strip is harmless **by luck**; `--dev` carries the fix.
+- ⚠ **The project-writer list is a lower bound, demonstrated within one session**: the clinic's round 3
+  named four, a re-grep found a fifth (`cco project add`, `lib/cmd-project-add.sh:206,261`) and a
+  probable sixth (`cco repo rename`). Design §5.2 records the **enumeration command** — re-run it and
+  classify every hit, do not inherit the table.
 - ⚠ `<repo>/.cco` is composed **inline ~64 times across 16 files** (20 in `cmd-start.sh`), the
   resolver `_resolve_project_cco_dir` has **2 callers**, and it **rides the repo mount** — which is
   why relocating it was priced and rejected.
@@ -200,6 +215,12 @@ Both are already in the ADR and the design; they are recorded here only so nobod
 - ⚠ **Ordering that is a false pass in waiting**: the snapshot store's `info/exclude` must be written
   **before** the first `git add -A`. A test asserting the exclusions exist would pass on a store whose
   *first commit* already contained `secrets.env`.
+- 🔴 **Never write `git -C <unit-dir> … -- .cco`.** Every git **output** path (`status --porcelain`,
+  `ls-files`, `diff --cached --name-only`, `check-ignore -v`'s source) is reported relative to the
+  **top level**, never to cwd — joining those onto the unit dir failed silently and **a secret under a
+  nested `.cco/` was committed under `✓ saved`**. Use `_project_resolve_unit`
+  (`lib/cmd-project-save.sh:86-97`) and anchor on `$_PROJECT_GITROOT` + `$_PROJECT_SPEC`. The D4.8
+  guard sits squarely in this trap's blast radius.
 - ⚠ **Concurrent agents share one index.** Commit with the **pathspec form**
   (`git commit <paths> -m …`), never `git add` + bare `git commit`. A **new** file needs
   `git add <path>` first, then the pathspec commit.
