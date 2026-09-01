@@ -220,6 +220,16 @@ RUN chmod +x /opt/cco/bin/cco \
 # what the launcher believes it built.
 ARG CCO_BUILD_REF=unknown
 RUN printf '%s\n' "$CCO_BUILD_REF" > /opt/cco/BUILD && chmod 644 /opt/cco/BUILD
+# The same ref as a LABEL, so the answer is readable WITHOUT a container. Inside a
+# cco session `docker run` returns rc 0 with empty stdout (only the exit code
+# crosses the proxy — FI-82), so /opt/cco/BUILD is unreachable from there, while
+# `docker image inspect` returns real output. The label is therefore the one
+# identity channel that works from both the host and a session:
+#   docker image inspect claude-orchestrator:latest \
+#     --format '{{index .Config.Labels "cco.build-ref"}}'
+# Namespace `cco.` is the one the container labels already publish (cco.project,
+# lib/utils.sh). MUST stay after the ARG above, or the value interpolates empty.
+LABEL cco.build-ref="$CCO_BUILD_REF"
 
 # ── Managed settings (framework infrastructure — non-overridable) ────
 COPY --chown=root:root defaults/managed/ /etc/claude-code/

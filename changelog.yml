@@ -1518,6 +1518,29 @@ entries:
       including commits that also touched code, and commits made by hand long
       before this verb existed. A store you have never saved is told so, not
       treated as an error.
+
+  - id: 68
+    date: "2026-08-27"
+    type: additive
+    title: "cco whoami now identifies which cco is running on the host, and images carry their build ref as a label"
+    description: >
+      **`cco whoami` on the host.** `cco --version` returns the same string from an
+      npm install and from a clone, and `which cco` only answers PATH order rather
+      than the `REPO_ROOT` the script actually resolved to — neither tells you which
+      `cco` you are running. The host branch now opens with a `cco CLI` block, printed
+      before the developer-sandbox block: `version` (from `package.json`, the same
+      source `cco --version` reads), `provenance` (`npm` / `brew` / `clone` /
+      `unknown`), and `REPO_ROOT` (the resolved framework tree). A field that can't be
+      determined renders the literal `unknown` rather than guessing.
+      **`cco.build-ref` image label.** The ref an image was built from was already
+      written to `/opt/cco/BUILD`, but that file needs a running container to read —
+      and inside a cco session `docker run` returns exit 0 with empty stdout, so it's
+      unreachable from there. The same ref is now also set as an image label, readable
+      from both the host and a session without starting a container:
+      `docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels
+      "cco.build-ref"}}'`.
+      The label is baked in, so it only appears after your next `cco build`. The
+      `cco whoami` change is host-side CLI and works immediately — no rebuild needed.
       **`cco project status` and `cco config status`.** Before you save, the other
       question: what have I actually changed, and would saving it work? Both stores
       answer it, writing nothing at all — one line per file with its fate in that

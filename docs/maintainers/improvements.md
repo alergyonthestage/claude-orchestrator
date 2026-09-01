@@ -3246,3 +3246,421 @@ second, stop passing a regex through `-v` and match with a shell `case` or a fix
 the maintainer re-runs the host suite. Say so rather than claiming green.
 
 ⚠ Still owed before `0.7.0`: the host suite is a release gate, and it is not green.
+## FI-79 — the dev execution mode: what `--dev-sandbox` isolates, and what it leaves shared
+
+**Status**: ✅ **DESIGNED 2026-08-31** — analysis approved 2026-08-27
+([`engineering/analysis/dev-execution-mode.md`](engineering/analysis/dev-execution-mode.md)); the six
+open questions were ruled across three rounds of a decision clinic
+([`engineering/analysis/dev-execution-mode-decisions.md`](engineering/analysis/dev-execution-mode-decisions.md),
+now historical) and recorded as
+**[ADR-0060](engineering/decisions/0060-developer-execution-mode.md)**, with the *how* in
+[`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md). Scheduled as
+**A10.1** (identity) + **A10.2** (protection and tooling) in Block A; `cco doctor` was split out as
+**A12**. ▶ Next: the design gate, then A10.1.
+
+⭐ **The ruling that reorganised the unit**: *configuration is the test's **input**, not its target* —
+so `~/.cco` and `<repo>/.cco` both stay **shared**, and what dev mode protects is the survival of a
+**bad write** (an unconditional git snapshot in a separate `GIT_DIR`), not the location of the file.
+Two earlier rounds recommended isolating `~/.cco` and were refused; both had weighed *how cheap is it
+to isolate* without asking *whether isolating serves the mode's purpose*. **Promotes and re-scopes** the *Developer-mode
+residue* backlog line in the roadmap, which scoped the remainder as **ergonomics**; the measurements
+say it is **correctness**.
+
+**Surfaced** 2026-08-27: the maintainer ran `cco build` from the **npm-distributed CLI** instead of
+the clone's `./bin/cco`. Third instance of the FI-16 class (2026-07-15, 2026-07-16, this one).
+
+**What already ships**: `--dev-sandbox` / `--dev-sandbox-seed` (ADR-0052 §7, WS-6 annotation),
+`lib/paths.sh:584-650` + `bin/cco:141-153`. It redirects STATE/DATA/CACHE. This is **not** a
+re-invention — it is the half the WS-6 annotation deliberately left out, plus an axis nobody costed.
+
+**The three measured gaps** (full evidence in the analysis):
+
+| Gap | Measure |
+|---|---|
+| **The image tag is the code identity of the in-session cco** | `Dockerfile:201-211` bakes `bin/`+`lib/` into `/opt/cco` and symlinks `/usr/local/bin/cco`; a normal session mounts **no host `lib/`**. `IMAGE_NAME` is hardcoded at `bin/cco:37` with no override — so both binaries `-t` the same global tag and overwrite each other. **8** consumers + **7** doc surfaces, incl. `FROM claude-orchestrator:latest` in the custom-image guide: the tag is a published user contract |
+| **No coexistence story** | `CONTRIBUTING.md:12-35` offers two setups, both **substitutive** (`npm link` overwrites the global shim). Nothing prevents two installs and **nothing detects** them |
+| **The migration target/marker split** | `_run_migrations` runs with the **target** shared and the **marker** sandboxed — `lib/update.sh:138` (target `~/.cco/.claude`) and `:432` (target the user's **repo**, so the mutation gets committed), marker `_cco_global_meta()` in STATE. Worst reachable writer: `cco init --force` → `rm -rf` of the real `~/.cco/.claude` (`lib/cmd-init.sh:198`) re-seeded from the **dev tree** |
+
+🔴 **The version gate cannot protect against this and it is not a near-miss — it is dormant.**
+Measured: npm `latest` and the clone are both `0.6.0`, both `CCO_INDEX_VERSION=2`, both max
+migration `017`, across **148 commits** and **+3246** lines under `lib/`+`bin/`+`templates/`. So
+`cco --version` prints the identical string from both and **is a non-discriminating oracle**. Any
+acceptance test built on it is a false pass by construction. The oracles that *do* discriminate are
+`_cco_install_provenance` (one internal consumer, no user surface) and
+`docker run --rm --entrypoint cat claude-orchestrator:latest /opt/cco/BUILD` (`branch@sha` vs
+`unknown`; ⚠ **`--entrypoint` is load-bearing** — without it `Dockerfile:233`'s entrypoint takes the
+words as argv and launches Claude Code instead, and only the `branch@sha` half has actually been
+executed — analysis §12.1) — which
+is why [FI-80](#fi-80--no-verb-answers-which-cco-am-i-running-from-where) lands first.
+
+**Ruled at the direction gate (2026-08-27)**: the npm binary **stays installed** — both CLIs must
+coexist, and the cheap collapse (a `CONTRIBUTING.md` change + a PATH-shadowing check) is explicitly
+rejected, not passed over.
+
+🔴 **Host probes run the same day corrected one premise** (analysis §12.1): `which -a cco` printed
+the **same path twice** — one binary through a **duplicated PATH entry**, not two installs. **The
+clone has no name on PATH at all.** So the coexistence just ruled is a state **to create**, not one
+to disambiguate; the ergonomic complaint is *the clone has no name*, not *which one wins*; and any
+design leaning on "detect the other install and warn" has, today, **nothing to detect** — the
+detection is for a state the design itself introduces. The two `--version` and two `whoami` probes
+**confirmed** their in-container measurements byte for byte.
+
+**Open for design** (analysis §11.1): whether the WS-6 "CONFIG stays shared" call is reopened
+(⚠ reopening changes a **pinned** test, `tests/test_dev_sandbox.sh:75-86`) · the scope of dev
+identity (buckets · image tag · container/network names · CONFIG) · whether a tag axis pre-empts
+`packaging-distribution.md` §4's deferred `:<package.version>` tagging · in-container legality
+(today the analogous flag is **silently swallowed** there) · which lifecycle verbs are in scope.
+
+⚠ **Naming-namespace collision to sequence, not discover late**: dev mode's tag axis, Block **B1**
+(`cco build` inside `cco update`) and **B2** (`cco attach` container naming) all touch one namespace.
+
+**Effort**: Med. **Type**: correctness + maintainer tooling.
+
+## FI-80 — no verb answers "which cco am I running, from where"
+
+**Status**: ✅ **BUILT, TESTED AND HOST-VERIFIED 2026-08-27** as **A11** — only the merge is owed.
+Ruled at FI-79's direction gate to land first, as its own unit. ⭐ Its label is now load-bearing for
+[FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared)'s
+design: ADR-0060 D7 wires the `cco.build-ref` comparison into `cco start` as a **warn**, closing the
+second of A11's three deliberate residues.
+
+**Why it is first**: it is the prerequisite oracle for testing **any** dev-mode option without a
+false pass, and it is useful on its own the moment two installs exist.
+
+**Measured today**: `cco --version` returns `cco 0.6.0` from **both** the npm install and the clone
+(`_cco_print_version`, `bin/cco:294-302`) ⇒ non-discriminating. `which cco` answers PATH order, not
+the `REPO_ROOT` the readlink loop actually reaches. `cco whoami`'s host branch
+(`lib/cmd-whoami.sh:50-70`) prints *"Not in a cco session (host context)"* and then only the
+dev-sandbox block if active: **no `REPO_ROOT`, no provenance, no version**.
+`_cco_install_provenance` (`lib/paths.sh:541-550`) **does** classify `npm|brew|clone|unknown` but has
+**exactly one** consumer, `lib/cmd-update.sh:14`, and no user surface.
+
+**Shape as ruled** — **two halves, both in scope** (the second added by the maintainer 2026-08-27):
+
+1. **CLI half** — extend `cco whoami`'s host branch with `REPO_ROOT`, `_cco_install_provenance` and
+   the version.
+2. **Image half — a `LABEL` carrying the build ref.** Today there is none: measured
+   `docker image inspect claude-orchestrator:latest --format '{{json .Config.Labels}}'` → **`null`**.
+   `/opt/cco/BUILD` (`Dockerfile:221-222`) has **one** reader, `lib/cmd-whoami.sh:102`,
+   **in-container only**, so nothing can ask the image what built it without running it.
+
+⭐ **Why a `LABEL` and not a documented `docker run`**: measured the same day,
+`docker image inspect` returns real output **inside a session** (rc 0; the id matched the build
+log's manifest), while `docker run`'s stdout is **swallowed** there — rc 0, empty
+([FI-82](#fi-82--inside-a-session-docker-run-returns-rc-0-with-empty-stdout-only-the-exit-code-crosses)).
+The label is therefore the **only container-free identity channel that works from both the host and
+a session**, and it makes the handshake computable from inside: an agent can compare its own
+`/opt/cco/BUILD` with `docker image inspect` on the tag and detect that the image was rebuilt under
+it.
+
+**Relation to FI-16**: with both halves, closes **all** of the residue FI-16 records at
+`improvements.md:471` — the CLI↔image version handshake — not half of it.
+
+**Effort**: Low. ⚠ Both halves are baked ⇒ a `cco build` in the acceptance lane; the label is not
+verifiable before one.
+
+## FI-81 — `defaults/global/` ships an `/analyze` that cannot write its own artifact, and it wins over the pack's
+
+**Status**: 🔴 Measured 2026-08-27, in this repo's own session. **Shipped defect**, not a local
+config accident: the broken pair is in `defaults/global/`, which `cco init` copies into every user's
+`~/.cco/.claude/`. Also a **live instance of [FI-32](#fi-32) / [A3](roadmap.md)** — the cross-scope
+collision warning — with a measured cost.
+
+**What happened**: `/analyze` was invoked for [FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared).
+The forked agent produced a complete analysis and then **could not persist it** — it had no `Write`
+and no Bash redirect. It surfaced the blocker honestly and handed the content back, costing a full
+round trip. The lead wrote the file instead.
+
+**The collision, measured.** Two `/analyze` skills are registered at once (the session's own skill
+listing shows `/analyze` **twice**):
+
+| Registered at | `agent:` | `allowed-tools:` | Wins? |
+|---|---|---|---|
+| `~/.claude/skills/analyze/` (user level, seeded from `defaults/global/`) | `Explore` | `Read, Grep, Glob, Bash` — **no `Write`** | 🔴 **yes** |
+| `/workspace/.claude/skills/analyze/` (the `core-dev-framework` pack) | `analyst` | `Read, Grep, Glob, Bash, Write, WebFetch, WebSearch` | no |
+
+The oracle that identifies the winner is the **description** rendered in the session's skill list: it
+is `defaults/global`'s (*"…for codebase exploration and requirements understanding"*), not the pack's
+(*"…writes its analysis as a draft under `<domain>/analysis/` and returns a summary"*). ⚠ The two
+skills' `name:` is identical, so nothing in the listing itself says a choice was made.
+
+**The same split in the agent**: `defaults/global/.claude/agents/analyst.md` declares
+`disallowedTools: Write, Edit`; the pack's declares `tools: … Write …` with `disallowedTools: Edit`
+and a description that says *"writes only its own analysis artifact"*.
+
+🔴 **Why it is a defect and not a preference**: the pack's own `rules/workflow.md` imposes the
+obligation — *"Every role persists its own artifact, read-only ones included: 'read-only' means does
+not modify existing code or documents, not writes nothing"* — and closes with *"a gate cannot name a
+path nobody could write."* So `defaults/global/` ships a skill+agent pair that **structurally cannot
+satisfy a rule shipped beside it**. Every `/analyze` in a project whose user-level copy is the stale
+one pays the same round trip.
+
+⚠ **It does not self-heal.** `defaults/global/` is copied once at `cco init` and never overwritten
+(user-owned). An existing user keeps the broken copy until they run `cco update --sync` — i.e. this
+is the **opinionated-change** lane of `rules/update-system.md`, not an additive one.
+
+🔴 **Second instance, measured 2026-08-31 — `/design` has the same defect, and it is worse.**
+`defaults/global/.claude/skills/design/SKILL.md` declares `context: fork` with **`agent: Plan`** — the
+built-in read-only architect agent, which has **no `Write` and no `Edit`** — while the pack's declares
+`agent: designer` with `Write, Edit`. Same collision shape, same winner (`defaults/global/` over the
+pack), same consequence: the design phase's own artifact — the design doc **and** its ADR — cannot be
+persisted by the role the skill routes to.
+
+⇒ **The pattern is not one skill, it is the `defaults/global/` skill+agent set.** Whatever fixes
+`/analyze` must be applied as a **sweep with a stated enumeration command**, not to the two instances
+now known — ⚠ *a named list is a lower bound*. The check that generalises: for every skill in
+`defaults/global/.claude/skills/` with `context: fork`, does the agent it names carry the tools the
+skill's own process section requires it to use?
+
+**Worked around the same way both times**: the lead writes the artifact. Recorded in the A10 design
+session (2026-08-31), which produced ADR-0060 and `engineering/design/dev-execution-mode.md` outside
+the skill for this reason.
+
+**Not fixed here, deliberately**: skills and agents are user-owned config, and `defaults/global/` is
+shipped framework content. Both need the maintainer's approval. **Shape of the fix** (nothing
+decided): bring `defaults/global/`'s `analyze` skill and `analyst` agent up to the pack's contract
+(`agent: analyst`, `Write` allowed, `disallowedTools: Edit`), then decide whether `defaults/global/`
+should ship a duplicate of a pack-owned skill **at all** — a second copy of one concept is what
+`rules/documentation.md`'s *one concept, one file* exists to prevent, and it is what produced this
+collision.
+
+⭐ **The lesson worth keeping even after the fix**: an agent's tool grant and the rule that obliges it
+to write are in **different files, and nothing checks them against each other.** The failure mode is
+silent until a role is asked to do the thing its grant forbids.
+
+**Effort**: Low to fix, Med to decide the duplication question. **Type**: shipped defect + config
+coherence.
+
+## FI-82 — inside a session, `docker run` returns rc 0 with EMPTY stdout; only the exit code crosses
+
+**Status**: 🔴 Measured 2026-08-27 while running [FI-79](#fi-79--the-dev-execution-mode-what---dev-sandbox-isolates-and-what-it-leaves-shared)'s
+host probes. **A measurement trap, not a feature request** — nothing is broken for the workloads
+that already use the idiom correctly, but any *new* check written the obvious way is a false pass.
+
+**Measured**, in-container, against the cco image **and** third-party `bash:3.2`, with `cat`, with
+`echo`, and with an explicit `-a stdout`:
+
+| Form | rc | stdout |
+|---|---|---|
+| `docker run --rm --entrypoint cat <img> /opt/cco/BUILD` | 0 | **empty** |
+| `docker run --rm --entrypoint echo <img> HELLO` | 0 | **empty** |
+| `docker run --rm bash:3.2 echo WORLD` | 0 | **empty** |
+| `docker run --rm --entrypoint false <img>` | **1** | — |
+| `docker run --rm --entrypoint true <img>` | **0** | — |
+
+⇒ **The rc channel is intact; the stdout channel is not.** The failure presents in the single most
+convincing shape this repo tracks: **rc 0 and nothing to look at.**
+
+**Why it matters beyond this unit**:
+
+- Any in-session verification that **captures `docker run` output** measures nothing and passes.
+  Belongs in the false-success class alongside the forms in
+  [`engineering/analysis/false-success-class-audit.md`](engineering/analysis/false-success-class-audit.md).
+- It **explains** why the bash-3.2 lint idiom recorded in `CLAUDE.md` (*Conventions*) is **rc-based**
+  (`bash -n`, discriminating by exit status): that is the only channel that crosses. The idiom is
+  correct — but the *reason* it is correct was never written down, so the next person to reach for
+  `docker run … && grep` has nothing warning them off.
+- ⇒ **The `/opt/cco/BUILD` probe is host-only**, in every form. Not "the analyst happened to be in a
+  container" — it cannot be run from a session at all.
+
+📝 **Second, adjacent trap re-confirmed**: the proxy refuses past **10 containers** with
+`cco-docker-proxy: operation denied — max container limit reached (10)` at rc **125** — *docker's*
+code, not the command's. Reached while running the probes above, which is why the bash-3.2 lint's
+**negative control could not be run** in that session ⇒ the lint was *unverified there*, not
+verified. A naive `|| fail` reads 125 as "the command failed"; a naive `&& pass` never sees it.
+
+**Shape of the fix** (nothing decided, and it may be *documentation only*): first establish whether
+the swallowed stdout is the proxy, the daemon connection, or the absence of a TTY — **it was not
+diagnosed**, only measured. Then decide whether the operational rule belongs in `CLAUDE.md`'s
+*Conventions* beside the bash-3.2 entry it explains. ⚠ Not done here: `CLAUDE.md` is a
+user-configured project instruction file.
+
+**Effort**: Low to document, unknown to diagnose. **Type**: measurement trap / agent-facing
+correctness.
+
+## FI-83 — an interactive trust prompt stalls a delegated run, and the lead cannot even say so
+
+**Status**: 🔴 Observed 2026-08-27 by the maintainer, during [A11](roadmap.md)'s implementation.
+**The class is autonomy-mode blockers**: work the user has delegated stops on an interactive gate
+the user has, in substance, already answered — and stops **silently**, because the blocked party is
+a subagent whose prompt the lead does not surface.
+
+**What happened.** The lead spawned two subagents (`implementer` + `tester`). Both were held at a
+*"do you trust this folder"* dialog until the maintainer answered it by hand. Until then the lead
+reported the agents as *running*; the delegated work had not started. The stall is the measurement —
+no reproduction was attempted, and **the trigger was not diagnosed** (see *Unmeasured*).
+
+**Measured — the gate is not the one cco already governs.**
+
+- **Workspace trust is a directory-scoped startup gate, distinct from permission prompts.** Per the
+  official docs it gates hooks, `statusLine` (`code-claude/llms-full.txt:35382`), a project skill's
+  `allowed-tools` (`:33577`) and plugin-skills (`:33336`), per-server `.mcp.json` approval (`:5992`),
+  `autoMemoryDirectory` (`:31656`), `gcpAuthRefresh` (`:17067`), `headersHelper` (`:21896`) and
+  `/goal` (`:16956`).
+- 🔴 **`--dangerously-skip-permissions` does not cover it.** The docs describe that flag as bypassing
+  *permission* prompts "other than explicit ask rules" (`:8295`) and never name the trust gate; the
+  session that hit this prompt **was already running with the flag** (`Dockerfile:233` →
+  `claude --dangerously-skip-permissions`). ⇒ Measured, not deduced: the flag is not the answer.
+- **The documented remedy is interactive and per-directory** — *"run `claude` in your project
+  directory at least once to accept the workspace trust dialog"* (`:29217`).
+- ⭐ **A documented non-interactive channel exists**: *"Non-interactive runs with `-p` skip the trust
+  check"* (`:39503`, stated of `--worktree`). Whether it is reachable for a cco session is unknown —
+  a cco session is interactive by construction.
+- ⚠ **`--worktree` exits with an error when trust is not accepted** (`:39503`). This matters here
+  because `skills/implement` prescribes *"a dedicated worktree/branch"* per implementer and the Agent
+  tool offers `isolation: "worktree"` — both create directories that have never been trusted.
+- **Acceptance should persist**: `~/.claude.json` is machine-local STATE bind-mounted per project —
+  `lib/cmd-start.sh:2218` maps `${state_root}/claude.json` → `/home/claude/.claude.json`, `:2872-2874`
+  ensures the host file exists, `lib/cmd-new.sh:140` seeds a `:ro` copy. ⇒ the cost should be
+  **once per project state root**, not per session. Unverified — see *Unmeasured*.
+- **`defaults/managed/managed-settings.json` carries no trust key today** (grepped: no match).
+- 🔴 **The session cannot read its own trust state.** A read of `/home/claude/.claude.json` from
+  inside this session was **denied**. ⇒ the lead cannot introspect *why* a delegate is stalled, so it
+  cannot report the stall either — which is why the symptom presents as "the agents are running".
+
+**Unmeasured — say so, do not assume.**
+
+- **Which directory the prompt named, and therefore what triggered it.** Three candidates, none
+  confirmed: a new directory (a worktree the skill or `isolation: "worktree"` created) · a **separate
+  `claude` process** (this session's teammate mode is `tmux`) whose cwd differs · a pre-warmed worker
+  resolving another directory's settings (the upstream changelog records exactly that class at
+  `:3712`). ⚠ **In this instance the agents were spawned in-process with no worktree isolation**, so
+  the worktree hypothesis — the one that looks obvious — is the least supported of the three.
+- Whether the acceptance just given persists into the next session, as the STATE mount implies.
+- Whether the `-p` trust-skip is reachable at all from a cco-launched session.
+
+**Direction to evaluate** (nothing decided; per the 2026-07-16 convention, re-derive the bound first).
+
+1. **Measure the trigger before designing anything.** One cheap run: spawn a single subagent, record
+   the exact prompt text and the directory it names. Every option below aims somewhere different, and
+   today we would be aiming at a guess.
+2. If the trigger is a **directory cco or the skill created**, the question is whether to stop
+   creating untrusted directories for subagents, or to pre-accept the ones cco itself made.
+3. If it is a **fresh `claude` process** (tmux teammates), the fix lives in how that process is
+   launched, not in the trust store.
+4. **Pre-accepting trust at `cco start` is the blunt instrument, and it is a security decision, not a
+   formality.** ⚠ The natural argument for it — *cco already governs access safely through mounts,
+   `ask` and `:ro`* — covers **filesystem exposure only**. Trust additionally gates **shell-executing
+   settings supplied by the repo itself**: `<repo>/.claude/settings.json`, a repo skill's
+   `allowed-tools`, `statusLine`, `.mcp.json` servers. cco mounts those `:ro` **to the agent**, which
+   stops the agent from *editing* them and does nothing to stop Claude Code from *executing* them.
+   Pre-accepting trust therefore means **cco vouches, on the user's behalf, that a cloned repo's hooks
+   may run** — a guarantee the ADR-0047 boundary does not cover. Maintainer's call, and it wants an
+   ADR. A narrower shape that keeps the guarantee: pre-accept **only directories cco itself created**
+   under an already-trusted repo, never a repo directory on first mount.
+5. **Third option, orthogonal to all of the above: make the stall legible instead of removing the
+   gate.** The docs note that a prompt hit while away pauses the session until answered, and that a
+   channel with the permission-relay capability can forward it (`:8295`). Even without a relay, the
+   lead being able to say *"delegate blocked on a trust dialog for `<dir>`"* is worth more than a
+   silent hang — and it is blocked today by the `~/.claude.json` read refusal measured above.
+
+**Relation to [FI-61](#fi-61)**: both are *the harness changed the session's gating under us*. FI-61
+is watch-not-work with no reproduction; this one has a reproduction path (item 1) and a live cost.
+
+**Effort**: Low to measure the trigger. Unknown to fix. ⚠ Option 4 is an **ADR**, not a patch.
+**Type**: autonomy-mode blocker / agent-facing correctness; option 4 is a security surface.
+
+### FI-83 addition, 2026-08-27 — the trigger, measured a few hours later
+
+The note above says the trigger was never diagnosed and lists three candidates. One of them is now
+**measured**, and it is not the one that looked obvious. Left above unedited: what it recorded was
+the state of knowledge at the time, and the wrong-looking candidate list is the lesson.
+
+**Measured**, from the lead session, with `tmux list-panes -a`:
+
+| pane | pid | `cwd` |
+|---|---|---|
+| 1.1 — the **lead** | 97 | `/workspace` |
+| 1.2 · 1.3 · 1.4 — the three **teammates** | 2780 · 33310 · 2840 | `/workspace/claude-orchestrator` |
+
+Two facts fall out, and together they close the mechanism:
+
+1. **A teammate is a separate `claude` process**, not an in-process subagent — the panes run their
+   own binary (`2.1.247`) under their own pid. So each performs its **own startup**, trust gate
+   included. This session's teammate mode is `tmux`; the `Agent` tool was called with **no**
+   `isolation`, which is why the worktree candidate was the weakest one and stayed weak.
+2. 🔴 **The teammates' `cwd` is not the lead's.** The lead sits in `/workspace`, every teammate in
+   `/workspace/claude-orchestrator`. **Workspace trust is directory-scoped** ⇒ the lead's acceptance
+   for `/workspace` grants nothing for the repo directory, and the first process to start there meets
+   an ungated dialog.
+
+**It also predicts what was observed and not designed for**: the `documenter`, spawned ~10 minutes
+after the maintainer accepted, started in the same directory and **did not stall** — consistent with
+the acceptance persisting for that directory (and with `~/.claude.json` being the per-project STATE
+mount recorded above).
+
+⚠ **Still not observed: the directory the dialog actually named.** Nobody captured the prompt text.
+The mechanism above fits every fact in evidence and no other candidate now does — but that specific
+confirming observation is missing, and it is the one that would make this certain rather than
+merely unrefuted.
+
+**What this changes about the fix.** The blunt option (4) above — pre-accept trust for repo
+directories — is no longer the cheapest thing that would work, and it was the one carrying the whole
+security cost:
+
+- ▶ **New, and nearly free: start teammate panes in the lead's own `cwd`.** If the teammates began in
+  `/workspace` there would be no second directory to trust, and **no security surface is touched at
+  all** — nothing is vouched for, a gate is simply not re-encountered. ⚠ Verify first *why* they
+  start in the repo: if a teammate's cwd is deliberate (a repo-scoped agent wants the repo root),
+  this trades one ergonomic property for another and is the maintainer's call, not an obvious win.
+- The narrow form of option 4 is now narrower still and better argued: pre-accept **only the
+  directories cco itself mounts and starts sessions in**, which is a set cco *creates*, not a set it
+  *discovers*.
+- ⚠ **Option 4's security argument is unchanged and still stands** for whatever survives: trust also
+  gates execution of shell-carrying settings the repo supplies, and `:ro` stops the agent editing
+  them, never Claude Code executing them.
+
+**Effort**: unchanged for the fix; the diagnosis step (item 1 above) is now **done in part** — what
+remains is capturing the dialog's own text, which costs one spawned teammate in a fresh directory.
+
+## FI-84 — the first-run legacy-vault archive makes every fresh-HOME test pay 13s on this checkout
+
+**Status**: 📝 Measured 2026-08-27 while writing [A11](roadmap.md)'s tests. **Not a shipped defect** —
+the mechanism is correct by design and its user cost is once. Recorded because the *suite* cost is
+large, invisible, and local to a maintainer's own checkout, which is the shape that gets rediscovered
+as "this test is mysteriously slow".
+
+**Measured**: `cco whoami` on the host takes **~13s** from this repo root (3/3 runs, ~13s of *user*
+CPU — work, not I/O wait), against ~1s from a checkout without the artifact. The cause is not a
+traversal in `whoami`: every `cco` invocation with a fresh `$HOME` finds this checkout's untracked
+**454MB `user-config/`** and archives it —
+`ℹ Legacy vault detected — archiving before migration…` → a `vault-<ts>.tar.gz` under
+`<state>/cco/backups/`.
+
+**The mechanism, read at source** (`lib/migrate.sh`):
+
+- `_cco_first_run` calls `_cco_backup_legacy_vault` for **every verb except `help`** (`:329-331`) —
+  read-only introspection included (`whoami`, `list`, `docs`).
+- It fires only on a **git-versioned** vault (`[[ -d "$vault/.git" ]] || return 0`, `:122`), which is
+  what this checkout's `user-config/` is and what a clean checkout has none of.
+- It is **idempotent per STATE root** (`:135-146`): a marker plus an authoritative
+  "a verified archive already exists" guard, the second deliberately decoupled from the first so a
+  wiped marker cannot trigger a re-archive.
+
+⇒ The toll is **once per fresh STATE root**, not per command. A real user pays it once and the
+archive is the safety net it is meant to be. A **test suite** creates a fresh `$HOME` per test, so on
+this checkout each such test pays it in full: `test_whoami`'s five real-tree cases alone write
+~2.3GB of throwaway tarballs per run, and **every other test that gives cco a fresh HOME pays the
+same toll** — this was found through `whoami` but is in no way specific to it.
+
+**What is NOT wrong here** — say it explicitly, so nobody "fixes" it:
+
+- Not an A11 regression. A pre-fix tree (`64f1581`) built to mirror this repo root entry-for-entry is
+  equally slow (13.4s / 13.1s / 12.8s).
+- Not a defect in the archive. Backing the vault up *before* anything else touches it is the whole
+  point of the net, and the idempotency guards are the careful kind.
+- The tests were left **faithful** rather than shaped around the artifact. Making a test fast by
+  teaching it about a local directory is how a suite stops measuring the product.
+
+**The open question, and it is a small one**: whether a **read-only** verb should trigger a 454MB
+write at all, or whether the archive belongs at the first *writer*. ⚠ This sits in the neighbourhood
+[FI-16](#fi-16-fail-loud-state-guards-for-mixed-cco-versions) already flagged — *"check whether the
+gate belongs before `_cco_first_run`'s own bootstrap/self-heal steps, which already mutate state at
+that point"* — so decide the two together rather than patching this one.
+
+▶ **The maintainer's own action, unrelated to any code change**: relocating the 454MB `user-config/`
+out of the checkout removes the toll from every test on this machine today. It is gitignored local
+state, so nothing in the repo depends on where it lives.
+
+**Effort**: zero to relieve locally (move the directory). Low to change the call site, but **do not
+change it alone** — see the FI-16 coupling. **Type**: suite cost / design question.

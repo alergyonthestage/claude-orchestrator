@@ -13,8 +13,9 @@
 # This ships the CAPABILITY under a working name (fix design 02 §F4, ratified).
 #
 # Provides: cmd_whoami()
-# Dependencies: colors.sh, paths.sh (_cco_container_operator), access-scope.sh,
-#   yaml.sh (yml_get_repo_coords, for the mounted-repos line)
+# Dependencies: colors.sh, paths.sh (_cco_container_operator,
+#   _cco_install_provenance), access-scope.sh, yaml.sh (yml_get_repo_coords,
+#   for the mounted-repos line)
 
 # Mounted code repos for the R1 identity block: the repo names in the session's
 # /workspace/project.yml that are actually present as directories under /workspace
@@ -41,6 +42,9 @@ Usage: cco whoami
 Report this session's resolved access state: the cco/claude access levels, the
 current project (and config-editor targets, if any), and which config trees are
 writable vs read-only. Read-only, always available in a session.
+
+On the host (no session envelope) it reports instead which cco binary is running
+and where it came from: version, install provenance, and the resolved REPO_ROOT.
 EOF
             return 0
             ;;
@@ -49,6 +53,27 @@ EOF
     # On the host there is no session envelope — cco runs unrestricted.
     if ! _cco_container_operator; then
         info "Not in a cco session (host context) — cco runs unrestricted here."
+        # Which cco is this, and where does it run from (FI-80)? Neither existing
+        # oracle discriminates: `cco --version` answers the same string from an npm
+        # install and from a clone, and `which cco` answers PATH order rather than
+        # the REPO_ROOT the readlink loop (bin/cco) actually resolved through the
+        # symlink. Version + provenance + REPO_ROOT together do. Emitted BEFORE the
+        # sandbox block because identity comes first and the sandbox is a modifier
+        # on it — mirroring the in-container branch, which opens with Session.
+        #
+        # Same source of truth as `cco --version` (_cco_print_version in bin/cco):
+        # package.json's `version` at the package root (ADR-0037 D7). When it cannot
+        # be read (no jq, no package.json) the field is the literal `unknown` — an
+        # empty or invented version would be read as an answer.
+        local _pkg="${REPO_ROOT:-}/package.json" _ver=""
+        if [[ -f "$_pkg" ]] && command -v jq >/dev/null 2>&1; then
+            _ver=$(jq -r '.version // empty' "$_pkg" 2>/dev/null) || _ver=""
+        fi
+        echo ""
+        printf '%bcco CLI%b\n' "$BOLD" "$NC"
+        printf '  version:      %s\n' "${_ver:-unknown}"
+        printf '  provenance:   %s\n' "$(_cco_install_provenance)"
+        printf '  REPO_ROOT:    %s\n' "${REPO_ROOT:-unknown}"
         # Developer sandbox indicator (ADR-0052 §7): when engaged, the internal
         # buckets are isolated so a dev binary never collides with the published
         # one. Surfaced HERE (host branch) because the sandbox is a host-developer
