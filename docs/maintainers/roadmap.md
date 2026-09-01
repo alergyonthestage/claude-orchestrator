@@ -302,9 +302,10 @@ push and the `cco build` both closed 2026-08-27 (see A1's entry). ▶ **A11 is B
 ✅ **A10 IS DESIGNED 2026-08-31** — six decisions ruled across three rounds of a decision clinic,
 recorded as [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) with the *how* in
 [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md), and split
-into **A10.1** (identity) + **A10.2** (protection and tooling). ▶ **Next is the design gate, then
-A10.1.** Both units were opened 2026-08-27 after the `cco build` incident, with the analysis approved
-the same day.
+into **A10.1** (identity) + **A10.2** (protection and tooling). Both units were opened 2026-08-27
+after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT AND
+TESTED 2026-09-01** (suite 1812/7 of 1819, see below). **Two gates still owed**: the merge, and the
+host-only `docker image inspect` acceptance check. ▶ **Next is A10.2.**
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -863,7 +864,7 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 | **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
 | Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image`; and 🔴 **`note` when the clone runs WITHOUT `--dev`** (added 2026-09-01) — the **mirror of the incident**, since `./bin/cco build` from the clone tags the real image. Detect and say so; never auto-engage (building the real image from the clone is documented and legitimate) and never refuse | D7 |
 
-##### A10.1 — identity ▶ next
+##### A10.1 — identity
 
 `--dev` + the dispatcher contract and its resolution order · `_cco_dev_image` at its two application
 points · the in-container refusal · **the clone-without-`--dev` note** · the `--` terminator fix
@@ -872,6 +873,25 @@ points · the in-container refusal · **the clone-without-`--dev` note** · the 
 **Done when** a dev `cco build` produces `…-dev:latest` and leaves `claude-orchestrator:latest`
 untouched — ⚠ **verified with `docker image inspect` on both tags**, never `docker run` (FI-82) — and
 `cco --dev` in-container exits 2.
+
+✅ **BUILT AND TESTED 2026-09-01**, on `feat/devmode/a10-1-identity`. `tests/test_dev_mode.sh` is
+new: **25/25**. `tests/test_dev_sandbox.sh` stays green **unmodified**, **9/9** — including the
+pinned `test_dev_sandbox_config_stays_shared` (design §9's check that CONFIG did not fork). Full
+suite: **1812 passed / 7 failed / 1819 total**, `Results:` line present, and the 7 are the
+documented host-only set **name for name** — no regression left standing.
+
+One regression was **found and fixed** inside the cycle: two table-shape assertions in
+`test_pack_cli.sh` counted `run_cco`'s merged `2>&1` stream, so the new stderr note read as a table
+row. A `run_cco_stdout` helper now captures stdout alone; both were proven to still fail under an
+injected extra stdout line. And one defect the build **uncovered in existing code** is fixed with
+its own three tests — a worktree classified as `unknown`, so §6.3's note was blind in the very
+workflow this project mandates ([ADR-0060 Amendment A5](engineering/decisions/0060-developer-execution-mode.md#amendments)).
+
+🔴 **Two gates still owed, both host steps, neither closable in this session**: the merge (the human
+gate), and the acceptance check the suite cannot reach — a real `cco build` under `--dev` producing
+`claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified
+with `docker image inspect` on both tags**, never `docker run` (FI-82, empty stdout in-session) and
+never `cco --version` (non-discriminating across both binaries, ADR-0060 M3).
 
 ##### A10.2 — protection and tooling
 

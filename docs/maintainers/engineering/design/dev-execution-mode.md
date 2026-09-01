@@ -5,7 +5,11 @@
 > analysis [`../analysis/dev-execution-mode.md`](../analysis/dev-execution-mode.md) and to the
 > decision clinic
 > [`../analysis/dev-execution-mode-decisions.md`](../analysis/dev-execution-mode-decisions.md).
-> **Status**: design ready for implementation (2026-08-31). No code yet.
+> **Status**: **A10.1 (identity) is built and green as of 2026-09-01** — §3, §4, §6.1 and §6.3 are
+> shipped behaviour; one post-implementation correction is
+> [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments). **A10.2 (protection and
+> tooling) is designed and NOT built**: §5, §6.2, §7 and §8 describe intended behaviour, not what
+> the code does today.
 >
 > **Acceptance criteria, agreed 2026-08-31** — the design is done when each is answered by a named
 > artifact: (1) a dev run cannot overwrite the image a real session uses; (2) a dev run's writes to
@@ -330,9 +334,17 @@ wrong; and inferring the mode from where the binary lives would make it implicit
   warn capture, so it never corrupts a machine-readable stdout such as `cco path list`.
 - **Placement**: the `else` arm of the dev-mode check in the `bin/cco:141-153` block.
 
-⚠ **It should never fire inside a session, but verify rather than assume**: `_cco_install_provenance`
-returns `clone` only when `$REPO_ROOT/.git` is a **directory**, and `.dockerignore` excludes `.git/`
-from the build context, so `/opt/cco` is not a clone. Confirm at implementation.
+✅ **Measured at implementation** (2026-09-01), both directions, because a note that fires inside a
+session would add a stderr line to every in-session cco invocation: `/opt/cco` carries **no** `.git`
+(`.dockerignore` excludes it from the build context) and classifies `unknown`, so the note **cannot**
+fire in a session; the clone's own `bin/cco` classifies `clone` and emits it, with stdout left clean.
+
+🔴 **What the same measurement found, and the original text did not anticipate** — a git **worktree's
+`.git` is a regular file**, not a directory, so the `-d` probe called every worktree `unknown` and this
+note was **silent in a worktree**: exactly where `rules/git-practices.md` mandates the work happens.
+Ruled and corrected — the probe tests **existence** ([ADR-0060 Amendment A5](../decisions/0060-developer-execution-mode.md#amendments)),
+which also changes `cco whoami`'s `provenance` and `cco update`'s engine hint for a worktree. The
+amendment names all three consumers.
 
 ⚠ **A known false positive, and why it is tolerable**: an install that lives outside
 `node_modules/@claude-orchestrator/cco` yet carries a `.git/` — a tarball or git-based install —

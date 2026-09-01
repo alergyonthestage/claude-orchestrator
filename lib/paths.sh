@@ -10,7 +10,10 @@
 #           _cco_project_managed(), _cco_project_compose(),
 #           _cco_project_claude_state(), _cco_project_pack_manifest(),
 #           _cco_project_source(), _cco_pack_source(), _cco_template_source(),
-#           _cco_pack_install_tmp()
+#           _cco_pack_install_tmp();
+#           developer execution mode (ADR-0060) — _cco_dev_active(),
+#           _cco_dev_image(), _cco_dev_clone_at(), _cco_dev_find_clone(),
+#           and the bucket sandbox _cco_dev_sandbox_*() / _cco_apply_dev_sandbox()
 # Dependencies: colors.sh (die)
 # Globals: none — the resolvers read $HOME and the CCO_*_HOME / XDG_*_HOME env
 
@@ -536,8 +539,17 @@ _cco_internal_runtime_dir() {
 
 # Install provenance of this cco — how the framework tree got onto the machine.
 # Echoes one of: npm | brew | clone | unknown. Drives the engine-update hint
-# (`cco update`, ADR-0037 D8) and is reused by the update-refactor workstream.
-# Reads the global REPO_ROOT (set in bin/cco from the resolved script location).
+# (`cco update`, ADR-0037 D8), `cco whoami`'s identity block, and ADR-0060 §6.3's
+# clone-without-`--dev` note. Reads the global REPO_ROOT (set in bin/cco from the
+# resolved script location).
+#
+# ⚠ The clone probe tests EXISTENCE, not directory-ness (ADR-0060 Amendment A5).
+# A git WORKTREE's `.git` is a regular FILE — a gitfile holding `gitdir: <path>` —
+# so a `-d` probe called every worktree `unknown`, and §6.3's note, whose whole job
+# is to catch clone code about to tag the real image, was silent in exactly the
+# place `rules/git-practices.md` mandates the work happens: one worktree per agent.
+# A worktree of a clone IS a clone, so this is a correction, not a widening.
+# `-e` follows symlinks, so a dangling `.git` link stays `unknown` — still fail-safe.
 _cco_install_provenance() {
     case "${REPO_ROOT:-}" in
         */node_modules/@claude-orchestrator/cco|*/node_modules/@claude-orchestrator/cco/*)
@@ -545,7 +557,7 @@ _cco_install_provenance() {
         */Cellar/*|*/homebrew/Cellar/*)
             printf 'brew\n'; return ;;
     esac
-    [[ -d "${REPO_ROOT:-}/.git" ]] && { printf 'clone\n'; return; }
+    [[ -e "${REPO_ROOT:-}/.git" ]] && { printf 'clone\n'; return; }
     printf 'unknown\n'
 }
 
@@ -561,7 +573,82 @@ _cco_cache_dir() {
     printf '%s\n' "$base"
 }
 
-# ── Developer sandbox (ADR-0052 §7) ─────────────────────────────────
+# ── Developer execution mode (ADR-0060) ─────────────────────────────
+# `--dev` is ONE mode of ONE binary (ADR-0060 D1). What it forks is the code IDENTITY
+# — the image (`_cco_dev_image`, D3) — and the three INTERNAL buckets (the sandbox
+# below, ADR-0052 §7, unchanged). What it deliberately does NOT fork is the
+# configuration: `~/.cco` and `<repo>/.cco` stay shared, because configuration is the
+# test's INPUT, not its target (D4). ADR-0052 §7's WS-6 "CONFIG stays shared" call is
+# upheld here — for that stronger reason, not the one WS-6 gave.
+#
+# bin/cco owns the flag surface (`--dev`, `--dev=<path>`, and the legacy
+# `--dev-sandbox[-seed]` aliases) and normalises every spelling onto CCO_DEV before
+# anything below is asked, so these helpers answer one question each and never parse.
+
+# True (0) when the developer execution mode is engaged. The single question every
+# other site asks — `check_image`, `cco start`'s image mapping, and the
+# environment-scoped verbs A10.2 adds.
+_cco_dev_active() { [[ "${CCO_DEV:-}" == "1" ]]; }
+
+# Map an image reference onto its dev twin: `-dev` is appended to the REPOSITORY part
+# and the tag is KEPT (ADR-0060 D3) — `claude-orchestrator:latest` becomes
+# `claude-orchestrator-dev:latest`. Forking the repository rather than the tag leaves
+# the TAG axis free for packaging-distribution.md §4's deferred `:<package.version>`:
+# the two axes are orthogonal, and that is what B1/B2 inherit instead of rediscovering.
+#
+# The tag separator is the LAST `:` AFTER the last `/`, so a registry `host:port`
+# (`localhost:5000/foo`) is not mistaken for a tag. A digest-pinned reference dies —
+# a digest names ONE specific image, so there is no other image it could mean.
+#
+# ⚠ `die` here runs inside the CALLER's command substitution, i.e. a subshell, where
+# it sets only that subshell's sentinel. Every call site must therefore read
+# `x=$(_cco_dev_image "$x") || _cco_exit $?` (INV-EXIT), or a perfectly correct
+# refusal comes out with "✗ cco exited unexpectedly" glued underneath it.
+_cco_dev_image() {
+    local image="$1"
+    [[ -n "$image" ]] || die "Cannot derive a dev image name: the image reference is empty."
+    case "$image" in
+        *@*) die "Image '$image' is pinned by digest and cannot be mapped to a dev image — a digest names one specific image. Reference it by tag to use dev mode." ;;
+    esac
+    local prefix=""
+    local name="$image"
+    case "$image" in
+        */*) prefix="${image%/*}/"; name="${image##*/}" ;;
+    esac
+    case "$name" in
+        *:*) printf '%s%s-dev:%s\n' "$prefix" "${name%:*}" "${name##*:}" ;;
+        *)   printf '%s%s-dev\n'    "$prefix" "$name" ;;
+    esac
+}
+
+# True (0) when <dir> is a cco tree it is safe to hand the whole process to: an
+# EXECUTABLE `bin/cco` AND a `package.json` naming @claude-orchestrator/cco. Both
+# halves are required — `exec` REPLACES this process with that path, so the target is
+# validated before the handoff, never after it (design §3.3).
+_cco_dev_clone_at() {
+    local dir="$1"
+    [[ -n "$dir" && -d "$dir" ]] || return 1
+    [[ -x "$dir/bin/cco" ]] || return 1
+    [[ -f "$dir/package.json" ]] || return 1
+    grep -q '"@claude-orchestrator/cco"' "$dir/package.json" 2>/dev/null
+}
+
+# Walk up from <dir> (default $PWD) to the nearest ENCLOSING cco clone; echoes its
+# absolute path, returns 1 when no ancestor qualifies. Source 3 of the target
+# resolution (design §3.3), and the one that makes the mandated worktree-per-agent
+# workflow work: a developer standing in any worktree gets THAT worktree, with no
+# per-worktree configuration to keep in step.
+_cco_dev_find_clone() {
+    local dir
+    dir=$(cd -P "${1:-$PWD}" 2>/dev/null && pwd) || return 1
+    while : ; do
+        _cco_dev_clone_at "$dir" && { printf '%s\n' "$dir"; return 0; }
+        [[ "$dir" == "/" || -z "$dir" ]] && return 1
+        dir=$(dirname "$dir")
+    done
+}
+
+# ── The bucket sandbox (ADR-0052 §7) ────────────────────────────────
 # The fail-loud version gate (§1) dies whenever on-disk internal state is NEWER
 # than the running binary. The only realistic way a developer trips it is running a
 # dev `bin/cco` and the published one against the SAME machine — shared XDG state is
@@ -581,8 +668,9 @@ _cco_cache_dir() {
 # Host-only: a real session's operator buckets are the sacred mounts and are never
 # redirected. Never clobbers an explicit CCO_*_HOME override (tests, power users).
 
-# True (0) when the developer sandbox toggle is engaged (the CCO_DEV_SANDBOX env, or
-# the `--dev-sandbox` flag which bin/cco normalises onto that env before this runs).
+# True (0) when the BUCKET half is engaged (the CCO_DEV_SANDBOX env, which bin/cco
+# sets for the legacy `--dev-sandbox` spelling and whenever `--dev` engages — the
+# buckets are one half of the dev identity, ADR-0060 D2).
 _cco_dev_sandbox_active() { [[ "${CCO_DEV_SANDBOX:-}" == "1" ]]; }
 
 # The sandbox root: an explicit absolute CCO_DEV_SANDBOX_ROOT wins, else

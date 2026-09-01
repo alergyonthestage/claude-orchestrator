@@ -12,22 +12,48 @@ Thank you for your interest in contributing! This guide will help you get starte
 ## Local development
 
 End users install the published CLI with `npm install -g @claude-orchestrator/cco`.
-To hack on cco itself, run it **straight from your clone** instead — that way
-`cco` always reflects your working tree:
+To hack on cco itself, use the **developer execution mode** (`--dev`,
+[ADR-0060](docs/maintainers/engineering/decisions/0060-developer-execution-mode.md))
+instead of pointing your global `cco` at the clone. `--dev` forks the **Docker
+image** your session runs (`claude-orchestrator-dev` instead of
+`claude-orchestrator`) and the **internal buckets** (STATE/DATA/CACHE, isolated
+under `~/.cco-devsandbox`), while leaving your real `~/.cco` and every repo's
+`<repo>/.cco` **shared** with your normal sessions — so a dev run still tests
+your actual configuration, and never clobbers the image or state a real session
+depends on. Both CLIs — the published one and your clone — stay installed side
+by side; you never need your global `cco` to *become* the clone:
 
 ```bash
 git clone https://github.com/<you>/claude-orchestrator.git ~/claude-orchestrator
 cd ~/claude-orchestrator
 
-# Option A — put bin/ on your PATH (zsh shown; use ~/.bashrc for bash):
-echo 'export PATH="$PATH:$HOME/claude-orchestrator/bin"' >> ~/.zshrc && source ~/.zshrc
-
-# Option B — symlink the global `cco` shim to your clone (mirrors the npm layout):
-npm link
-
-cco build          # build the Docker image from your working tree
-bin/test           # run the full test suite (dry-run, no Docker needed)
+bin/cco --dev build          # build claude-orchestrator-dev:latest from your working tree,
+                              # leaving claude-orchestrator:latest (your real image) untouched
+bin/cco --dev start <project>  # run a session on the dev image + isolated buckets,
+                                # against your real ~/.cco and <repo>/.cco
+bin/test                     # run the full test suite (dry-run, no Docker needed)
 ```
+
+⚠ **This is today's shape, not the target one.** `--dev` ships in `0.7.0`
+([ADR-0060 D1](docs/maintainers/engineering/decisions/0060-developer-execution-mode.md)),
+and until that's the version you have installed globally, the **published**
+`cco` doesn't understand `--dev` at all — invoke your clone **by path**, as
+above (`bin/cco --dev …` from inside the clone, or the full path from
+anywhere). Once `0.7.0` is published, any `cco --dev <verb>` — run from your
+globally-installed `cco`, from any cwd — resolves your clone and hands off to
+it automatically, so `bin/cco --dev …` becomes optional rather than required.
+That resolution checks, in order: `--dev=<path>`, `$CCO_DEV_REPO`, walking up
+from your cwd to an enclosing clone, then a `~/.cco/dev-repo` file holding the
+path — so setting one of those now (e.g. `echo ~/claude-orchestrator >
+~/.cco/dev-repo`) means you're ready the moment you upgrade. A shell alias such
+as `alias cco-dev='cco --dev'` is a convenience you set up yourself, not
+something cco ships.
+
+Running your clone's `bin/cco` **without** `--dev` is legitimate (it's how you'd
+build the real, published image from your working tree) but tags
+`claude-orchestrator:latest` — the image your real sessions use — with clone
+code; cco prints a one-line reminder each time you do this, precisely so it's
+never a surprise.
 
 `cco` resolves its framework root from the script location (a `readlink` loop in
 `bin/cco`), so it works from any clone path or symlink. The framework tree is

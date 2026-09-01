@@ -262,6 +262,28 @@ run_cco() {
     fi
 }
 
+# Same as run_cco, but captures STDOUT ONLY.
+#
+# For assertions about the SHAPE of stdout — a line count, an exact table — where a
+# diagnostic on stderr is legitimate output that must not be counted. `note`/`warn`
+# write to stderr by contract (ADR-0059), so merging the two streams as run_cco does
+# makes such an assertion accidentally correct only for as long as nothing writes
+# there. Measured: the clone-provenance note (ADR-0060 D7) writes on EVERY invocation
+# from a clone, and the suite runs from the clone — which is how two table-shape
+# assertions in test_pack_cli.sh started counting a stderr line as a table row.
+# Use run_cco when the assertion is about a MESSAGE; use this one when it is about
+# the shape of stdout.
+run_cco_stdout() {
+    DRY_RUN_DIR=""
+    CCO_OUTPUT=$(
+        CCO_USER_CONFIG_DIR="$CCO_USER_CONFIG_DIR" \
+        CCO_PACKS_DIR="$CCO_PACKS_DIR" \
+        CCO_TEMPLATES_DIR="$CCO_TEMPLATES_DIR" \
+        CCO_LLMS_DIR="$CCO_LLMS_DIR" \
+        bash "$REPO_ROOT/bin/cco" "$@" 2>/dev/null
+    ) || return $?
+}
+
 # ── Assertions ────────────────────────────────────────────────────────
 
 fail() {
