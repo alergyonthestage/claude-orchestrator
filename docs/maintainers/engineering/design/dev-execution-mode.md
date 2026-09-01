@@ -5,7 +5,11 @@
 > analysis [`../analysis/dev-execution-mode.md`](../analysis/dev-execution-mode.md) and to the
 > decision clinic
 > [`../analysis/dev-execution-mode-decisions.md`](../analysis/dev-execution-mode-decisions.md).
-> **Status**: design ready for implementation (2026-08-31). No code yet.
+> **Status**: **A10.1 (identity) is built and green as of 2026-09-01** — §3, §4, §6.1 and §6.3 are
+> shipped behaviour; one post-implementation correction is
+> [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments). **A10.2 (protection and
+> tooling) is designed and NOT built**: §5, §6.2, §7 and §8 describe intended behaviour, not what
+> the code does today.
 >
 > **Acceptance criteria, agreed 2026-08-31** — the design is done when each is answered by a named
 > artifact: (1) a dev run cannot overwrite the image a real session uses; (2) a dev run's writes to
