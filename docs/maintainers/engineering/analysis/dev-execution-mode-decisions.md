@@ -1109,7 +1109,16 @@ a snapshot behind it.
 CONFIG (there is nothing to seed — the config is the real one), and the `--allow-project-writes` gate.
 That last one goes because its premise was that project writes are dangerous; with a snapshot behind
 every dev run and the repo's own git in front of it, an ordinary project write is **doubly**
-recoverable. ⚠ The residue is narrow and should be said: `cco project save` **commits into the user's
+recoverable.
+
+> 🔴 **Correction, 2026-09-01 — this sentence was wrong when written, and nothing above it has been
+> rewritten.** The snapshot's work-tree is `$(_cco_config_dir)` — **`~/.cco` only**. `<repo>/.cco` is
+> covered by **nothing cco does**, so a project write is *singly* recoverable, via the user's own repo
+> git, and not at all when that tree is dirty, never-committed, or in a repo that is not git. The
+> maintainer found the gap by asking what protects project config. The resolution is
+> **[ADR-0060 D4.8](../decisions/0060-developer-execution-mode.md)**: a guard that refuses, not a
+> second store. Dropping `--allow-project-writes` stands — the guard replaces it with something
+> narrower and better targeted — but it was reasoned to on a premise with one link missing. ⚠ The residue is narrow and should be said: `cco project save` **commits into the user's
 repo**, so a bad write there lands in history — recoverable, but noisy, and pushable by hand
 afterwards.
 

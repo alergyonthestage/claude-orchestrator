@@ -859,6 +859,7 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 | The image forks on the **repository** (`claude-orchestrator-dev`), never the tag ⇒ `packaging-distribution.md` §4's `:<package.version>` axis stays free. `check_image` **dies** on a missing dev image | D3 |
 | Configuration shared, protected by an **unconditional git snapshot** in a **separate `GIT_DIR`** at `<dev-root>/snapshots/config.git` — complete (`git add -A`, not the allowlist), secrets excluded, structurally unpushable, and 🔴 **fatal on failure** (amended 2026-09-01). A **restore verb does not exist today** and is new work | D4 |
 | CONFIG-targeting **migrations** refuse under `--dev` unless an isolated config dir is in use — the one class a restore cannot repair, because target and marker sit on opposite sides of the boundary | D5 |
+| 🔴 **`<repo>/.cco` is GUARDED, not snapshotted** (added 2026-09-01): the snapshot covers `~/.cco` alone, so under `--dev` a writer that can **destroy uncommitted content** refuses when the project tree is dirty, never-committed, or not a git repo. ⭐ **The criterion is the ruling, not the list** — a writer whose only effect is a *commit* is exempt, which is why `cco project save` must be | D4.8 |
 | **The mode is the context**, not a flag on every verb. `whoami` · `doctor` · `clean` · `dev`. ⛔ **`cco doctor` is OUT of A10** — its own entry below | D6 |
 | Refuse `--dev` in-container (and fix the existing **silent swallow**); **warn** at `cco start` on a `cco.build-ref` divergence — the only cover for a project that pins `docker.image` | D7 |
 
@@ -874,13 +875,14 @@ untouched — ⚠ **verified with `docker image inspect` on both tags**, never `
 
 ##### A10.2 — protection and tooling
 
-The snapshot store · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
+The snapshot store · the `<repo>/.cco` restorability guard (D4.8) · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
 (throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
 and `name:` is not overridable) · `clean` environment-scoping and `--images`.
 
 **Done when** a dev run that mutates `~/.cco` is restorable to its pre-run state, a CONFIG-targeting
-migration under `--dev` refuses and names the fixture, and `cco dev reset` reclaims the sandbox root,
-the snapshot store **and** the dev image.
+migration under `--dev` refuses and names the fixture, a project writer refuses on a dirty /
+never-committed / non-git `<repo>/.cco` **while `cco project save` still works**, and `cco dev reset`
+reclaims the sandbox root, the snapshot store **and** the dev image.
 
 ⚠ **Both stages are baked** — each takes a real host `cco build` in its acceptance lane.
 ⚠ **Sequence the naming namespace, do not discover it late**: A10's image axis, **B1** (`cco build`

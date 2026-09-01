@@ -138,9 +138,28 @@ What dev mode protects is therefore not the location of the configuration but th
    Relocating it was priced and rejected: it is composed inline at ~64 sites across 16 files (a
    resolver exists, `_resolve_project_cco_dir`, with **2 callers**) and it **rides the repo mount**
    (`_compose_vol "${repo_path}" "/workspace/${repo_name}"`), so moving it is a mount-topology
-   change (ADR-0047/0049). It is also **versioned in the user's repo**, so an ordinary bad write is
-   recoverable without any mechanism. No `--allow-project-writes` gate is introduced.
-8. **`project.dev.yml`** — optional, gitignored, and deliberately **`project.yml`-only**. What
+   change (ADR-0047/0049). No `--allow-project-writes` gate is introduced.
+8. 🔴 **`<repo>/.cco` is guarded, not snapshotted** (added 2026-09-01, after the maintainer asked what
+   protects project config — the answer as first drafted was **nothing**). The snapshot's work-tree is
+   `~/.cco` alone; project config is protected by **the user's own repo git**, which is complete only
+   when the tree is versioned and clean. ⚠ The earlier claim that a project write was *"recoverable
+   without any mechanism"* was **overstated**: it holds for a committed, clean tree in a git repo, and
+   fails for **uncommitted** changes, a **never-committed or gitignored** `.cco`, and a repo that
+   **is not git** — a supported case (`lib/cmd-project-save.sh:452`).
+
+   ⇒ Under `--dev`, a writer that can **destroy uncommitted content** **refuses** when `<repo>/.cco`
+   is not restorable. ⭐ **The criterion is the ruling, not the list**: a writer whose only effect is a
+   *commit* is exempt, because a commit is revertable by construction — which is why **`cco project
+   save` is exempt and must be**, since it only acts on a dirty `.cco` and a dirty-check would make it
+   permanently untestable in dev mode. Classify a future writer by the criterion.
+
+   ⚠ **Why not a second snapshot store**: for the committed case it would duplicate a protection that
+   already exists, and it cannot be taken unconditionally — project config has **no choke point**
+   (the ~64 inline sites above), so a store would be anchored on the same list while adding a
+   per-project reaper. Refusing where git cannot help is the smaller and more honest instrument. The
+   option that removes the list entirely — routing those ~64 sites through the resolver — is recorded
+   as its own future unit, not silent debt.
+9. **`project.dev.yml`** — optional, gitignored, and deliberately **`project.yml`-only**. What
    legitimately varies per mode is runtime wiring (the image, a port, a network) and it all lives
    there; the rest of `<repo>/.cco` is *the content under test*. ⚠ Identity fields are **not**
    overridable: `project.yml`'s `name:` keys the index, the per-project scoping (ADR-0051) and the
@@ -241,5 +260,9 @@ only what was rejected and why, so it is not re-litigated.
   and **B2** (container naming) touch one namespace. D3's orthogonality sentence in
   `packaging-distribution.md` §4 is what B1 and B2 inherit instead of rediscovering it.
 - **Unrepaired, deliberately**: a broken dev migration can clobber `~/.cco/secrets.env` (D4.5);
-  `cco project save` in dev mode commits into the user's repo, recoverable but noisy; and M3's
-  dormant version gate stays dormant — nothing here wakes it.
+  `cco project save` in dev mode commits into the user's repo — recoverable but noisy, and it is the
+  one writer D4.8's guard deliberately exempts; and M3's dormant version gate stays dormant — nothing
+  here wakes it.
+- ⚠ **The project-writer list is a lower bound and was shown to be one within a single session**:
+  round 3 of the clinic named four, and a re-grep found a fifth (`cco project add`). The design
+  records the enumeration command so the list is auditable rather than inherited.

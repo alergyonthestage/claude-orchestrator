@@ -41,7 +41,7 @@ flowchart TB
 | **R1** | A dev run must not overwrite the image a real session uses | analysis §3.1 (M1) · ADR-0060 D2/D3 |
 | **R2** | The developer invokes the clone **by name**, from any cwd | analysis §12.1 (M2) · D1 |
 | **R3** | The **real** configuration — global and project — is what a dev run reads | clinic round 3 · D4 |
-| **R4** | A bad dev write to configuration is restorable, and an unprotected dev run does not start | D4.1–D4.6 |
+| **R4** | A bad dev write to configuration is restorable, and a run that could not be restored does not start — `~/.cco` by snapshot (§5), `<repo>/.cco` by guard (§5.2) | D4.1–D4.7 |
 | **R5** | Cases needing a different configuration have a **fixture**, not a redirect | D4/D5 |
 | **R6** | No default moves for a user | D3 · *Consequences* |
 | **R7** | Every identity the mode creates is reapable | D6 · ADR-0045 precedent |
@@ -220,6 +220,68 @@ preview free.
 
 ⚠ It resolves the store from the dev root **without engaging dev mode**, so `cco dev restore` works
 from an ordinary shell.
+
+### 5.2 Project configuration — a guard, not a second store
+
+⚠ **The snapshot covers `~/.cco` only** (`GIT_WORK_TREE=$(_cco_config_dir)`). `<repo>/.cco` is
+protected by **the user's own repo git**, and that protection is complete *only* when the tree is
+versioned and clean. The four cases it does not cover — and what the guard does about them:
+
+| Case | Without a guard | With it |
+|---|---|---|
+| `.cco` committed and clean | ✅ `git checkout -- .cco` restores fully | unchanged |
+| `.cco` has **uncommitted** changes | 🔴 the delta is lost | **refuse** |
+| `.cco` **never committed** / gitignored | 🔴 nothing to restore to | **refuse** |
+| the repo **is not git** — a supported case (`lib/cmd-project-save.sh:452` handles it and refuses to `git init` a repo cco does not own) | 🔴 no protection at all | **refuse** |
+
+⭐ **The membership criterion, so the guard is not merely a list**: it applies to a writer that can
+**destroy uncommitted content**. It does **not** apply to a writer whose only effect is a *commit* —
+a commit is revertable by construction, and round 3 already accepted that class as *recoverable,
+noisy*. ⚠ **This exempts `cco project save`, and the exemption is required, not cosmetic**: that verb
+only does anything when `.cco` is dirty, so a dirty-check would make it permanently untestable in dev
+mode. Classify a future writer by the criterion, not by finding it on this list.
+
+**Writers to guard** — from `grep -rnE '"\$\{?[a-z_]+\}?/\.cco' lib/*.sh | grep -viE 'HOME|config_dir|cfg_dir'`,
+each hit then classified by hand. ⚠ **This is a lower bound and it has already been shown to be one**:
+round 3 named four, and a re-grep in the same session found a fifth. Re-run the command at
+implementation and classify every hit.
+
+| Writer | Site | Destroys uncommitted? |
+|---|---|---|
+| project migrations (target = the repo working tree) | `lib/update.sh:432` | yes |
+| `cco forget` — `rm -rf "$p/.cco"` | `lib/cmd-forget.sh:240` | yes |
+| `cco project import` — `cp -R` over the target `.cco` | `lib/cmd-project-export-import.sh:197` | yes |
+| `cco project add` — rewrites `<repo>/.cco/project.yml` | `lib/cmd-project-add.sh:206,261` | yes |
+| `cco repo rename` | `lib/cmd-repo.sh:176` | ⚠ probable — classify at implementation |
+| `cco project save` | `lib/cmd-project-save.sh` | **no — commit only ⇒ exempt** |
+| *(excluded, measured false positives)* `lib/cmd-llms.sh:123,746` writes the **llms store** in CACHE · `lib/cmd-start.sh:1942` writes **dry-run output** | — | not project config |
+
+**The check** — `_cco_dev_project_restorable <unit_dir>`, three conditions in this order:
+
+1. `_project_resolve_unit "$unit"` fails ⇒ **not a git work tree**.
+2. `git -C "$_PROJECT_GITROOT" ls-files --error-unmatch -- "$_PROJECT_SPEC"` fails ⇒ **nothing tracked**
+   (never committed, or gitignored).
+3. `git -C "$_PROJECT_GITROOT" status --porcelain -- "$_PROJECT_SPEC"` non-empty ⇒ **uncommitted
+   changes**.
+
+🔴 **Reuse `_project_resolve_unit` (`lib/cmd-project-save.sh:86-97`); never write
+`git -C <unit> … -- .cco`.** Its own header records why, and it was paid for: *every* git **output**
+path (`status --porcelain`, `ls-files`, `diff --cached --name-only`, `check-ignore -v`'s source) is
+reported relative to the **top level**, never to cwd. Joining those onto the unit dir failed silently
+and **a secret under a nested `.cco/` was committed under `✓ saved`**. Both halves must anchor on
+`$_PROJECT_GITROOT` + `$_PROJECT_SPEC`.
+
+⚠ **Order 2 before 3, and keep both.** A `.cco` that is entirely untracked also shows in
+`status --porcelain` (as `??`), so checking 3 first would blame *"uncommitted changes"* for what is
+really *"never committed"*. And a **gitignored** `.cco` shows in **neither** `status` (ignored files
+are hidden) **nor** `ls-files` — condition 2 is what catches it. Either check alone leaves a hole.
+
+**The refusal** names which of the three failed, the path, and the two ways out: commit or stash
+`.cco`, or work on a fixture — `cco dev project new` (§7) creates a **git** repo, so the fixture path
+is covered by construction.
+
+📝 **No escape flag.** Round 3 dropped `--allow-project-writes` and this does not bring it back: the
+fixture is the escape. Reopen only if the refusal is measured to block a real workflow.
 
 ## 6. Fail-loud points
 
