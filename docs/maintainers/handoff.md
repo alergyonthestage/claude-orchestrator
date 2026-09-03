@@ -178,6 +178,17 @@ command is itself a lower bound.** Any future writer sweep must ask *what reache
   same 24 files, so counting them passes on the destroying implementation. The implementer used a
   **sentinel file** under `~/.cco/.claude`: guard in place → `SURVIVED`, guard neutralised →
   `DESTROYED`. ⭐ When the remedy re-creates what it destroyed, count the *identity*, never the number.
+- 🔴 **And an rc-and-wording oracle does not discriminate it either — measured, independently.** With
+  the guard at the line D5 names, the tester's regression test reported **two** assertion failures
+  (the manifest diff and the missing marker) and **`assert_refused` was not among them**: the refusal
+  was entirely correct — exit 2, the right message, both ways out named — while the config had
+  already been deleted. ⭐ **Only survival caught it.** A test that asserts the refusal is green on the
+  destroying implementation. ⚠ Corollary the same test paid for: `assert_refused … "cco"` asserts
+  **nothing**, because every message that command can print contains *"cco"*.
+- ⚠ **Process substitution renders EMPTY inside the runner's capture.** A failure message built as
+  `diff <(printf …) <(printf …)` named a difference it could then not show — the silent-pass class,
+  arriving in the *failure* message rather than the assertion. Write the manifests to files and
+  compare the files.
 - 🔴 **A restore that leaves index and HEAD diverged bricks the NEXT run**: the following snapshot
   commit comes out empty, `git commit` returns non-zero, and D4.4 turns that into a `die`. Found in a
   throwaway reference implementation before any real code existed. `tests/test_dev_protection.sh` #11
