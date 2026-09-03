@@ -135,6 +135,14 @@ _update_global() {
             # No pre-migration vault snapshot (the vault is removed, P3): the
             # universal raw-tar backup (J0) already protects the legacy config, and
             # ~/.cco is versioned via explicit `cco config save` (ADR-0008).
+            #
+            # ADR-0060 D5 — the one class the dev-mode snapshot cannot repair. With
+            # CONFIG shared and STATE sandboxed this runs target-shared /
+            # marker-sandboxed: the files change in the REAL ~/.cco while the
+            # "already ran" marker lands in a bucket the published binary never
+            # reads, so that binary runs the same migration again. A restore puts
+            # the files back and leaves the bookkeeping wrong. Refuse instead.
+            _cco_dev_guard_config_migration global "$installed_dir"
             if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
                 error "Global migrations failed. Run 'cco update' again after resolving the issue."
                 return 1

@@ -264,6 +264,12 @@ _cco_init_ensure_global() {
     # Save base versions for future 3-way merge (STATE).
     _save_all_base_versions "$(_cco_global_base_dir)" "$DEFAULTS_DIR/global/.claude" "global"
 
+    # ADR-0060 D5, the second of the two call sites: a dev-run migration against the
+    # real CONFIG records that it ran in a sandboxed bucket the published binary never
+    # reads, so the published binary runs it again — the one class a restore cannot
+    # repair. ⚠ The refusal lands AFTER the seed above, deliberately: it is scoped to
+    # the migration, not to `init`, so it never fires on an init that would run none.
+    _cco_dev_guard_config_migration global "$gclaude"
     # Fresh install — nothing to migrate, just marks the schema current.
     if ! _run_migrations "global" "$gclaude" 0 "$meta_file"; then
         error "Migrations failed during init. Run 'cco update' to retry."
