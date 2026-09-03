@@ -4,7 +4,17 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-09-03** — **A11 and A10.1 are closed, merged and ACCEPTED**; both entries
+> **Last updated: 2026-09-03 (second session)** — 🔴 **A host `cco build` moved
+> `claude-orchestrator:latest` BACKWARDS to the published 0.6.0 tree** (label gone, baked cco three
+> units behind the checkout); the repair is a host `./bin/cco build` from `develop` and the incident
+> is [FI-86](improvements.md). ✅ **[FI-85](improvements.md) is no longer open against cco** — the
+> cause is a **Claude Code auto-update** (2.1.259), measured, and the deny rules were identical on
+> both images. ⭐ Both findings are field evidence for sequencing **[design §6.2](engineering/design/dev-execution-mode.md)**
+> — the `cco start` build-ref divergence warning — **first** inside A10.2 wave 2: it would have
+> caught the regression at session start. A10.2's own status is unchanged (wave 1 built, **not
+> merged**).
+>
+> **2026-09-03** — **A11 and A10.1 are closed, merged and ACCEPTED**; both entries
 > moved to
 > [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 > The dev execution mode's identity half is shipped **and verified on a host**, so a dev build can no
@@ -863,6 +873,13 @@ prompts**. Detail in the handoff.
 ▶ **Wave 2 (tooling) is not started**: `cco dev seed|reset|list|config|project` (the seams exist) ·
 `clean` environment-scoping and `--images` · the §6.2 `cco start` build-ref warn · the fixtures ·
 `project.dev.yml`.
+
+⭐ **Sequencing evidence, 2026-09-03**: a host `cco build` silently rebuilt the **published 0.6.0**
+tree and moved `claude-orchestrator:latest` backwards ([FI-86](improvements.md)); the next session
+opened on an orchestrator three units behind its own checkout and found it only by inspection. **The
+§6.2 build-ref divergence warning would have caught it at `cco start`.** ⇒ a proposal for the
+maintainer: make §6.2 the **first** item of wave 2 rather than one of six. It is also the item that
+protects every *later* wave-2 acceptance run, since both stages are baked.
 
 The snapshot store · the `<repo>/.cco` restorability guard (D4.8) · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
 (throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
