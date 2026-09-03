@@ -3665,17 +3665,121 @@ state, so nothing in the repo depends on where it lives.
 **Effort**: zero to relieve locally (move the directory). Low to change the call site, but **do not
 change it alone** — see the FI-16 coupling. **Type**: suite cost / design question.
 
-## FI-85 — permission dialogs on ordinary Bash reads, under bypassPermissions, in this project's sessions only
+## FI-85 — permission dialogs on ordinary Bash reads, under bypassPermissions
 
-**Status**: 🔴 **Observed 2026-09-03, cause NOT found, and the first diagnosis was REFUTED by
-measurement.** Recorded so that a recurrence has a date to be measured against. **Nothing was
-changed** — no code, no configuration, no permission rule. The only action taken was advisory
-(the lead told its agents to shape commands differently), which is a palliative, not a fix.
+**Status**: ▶ **CAUSE IDENTIFIED 2026-09-03 (second session), and it is NOT cco.** The differentiator
+is a **Claude Code auto-update** — the harness's own Bash permission analysis. Not this project's
+configuration, not its commands, not its image. **Nothing in cco was changed and nothing in cco needs
+to change.** The first session's record is preserved below: its measurements were correct and both of
+its refutations still hold.
 
-⚠ **This is an open question, not a finding with a remedy.** Read §*What was refuted* before acting
-on any part of it.
+### 2026-09-03, second session — the discrimination table
 
-### The symptom
+Eleven observations. Six arrived unsought (the lead's own commands, **with zero subagents running**),
+three are the probes the first session deferred, and two are earlier probes repeated for continuity.
+
+| # | Command | `cd` | path | pipeline | reader | Dialog |
+|---|---|---|---|---|---|---|
+| 1 | `grep -c . /workspace/…/README.md` | no | abs | no | grep | no |
+| 2 | `grep -c . README.md` | no | rel | no | grep | no |
+| 3 | `grep -c . README.md` (cwd inherited) | no | rel | no | grep | no |
+| 4 | `cd <abs>` ⏎ `sed -n '110,180p' F` | **yes** | rel | no | sed | no |
+| 5 | `cd <abs>` ⏎ `sed …F; echo …; sed …F` | **yes** | rel | no | sed | no |
+| 6 | `sed -n … /abs/F; git -C … \| tail -1` | no | abs | **yes** | sed | no |
+| 7 | **PROBE A** `cd <abs>` ⏎ `grep -c X README.md` | **yes** | rel | no | grep | **no** |
+| 8 | **PROBE B** `cd <abs>` ⏎ `grep -c X README.md \| cat` | **yes** | rel | **yes** | grep | **YES** |
+| 9 | **PROBE C** `cd <abs>` ⏎ `sed -n '1,2p' README.md \| cat` | **yes** | rel | **yes** | sed | **no** |
+| 10–11 | six natural commands, each `cd` + relative `grep` inside a pipeline | **yes** | rel | **yes** | grep | **YES** |
+
+⇒ **The trigger is the conjunction of four conditions**: a `cd`, a **relative** path, a **pipeline**,
+and **`grep`** as the reader. Remove any one and the dialog does not appear — rows 7, 9, 6 and 4
+each remove exactly one.
+
+🔴 **This refutes the first session's surviving hypothesis.** *Compound structure* was the best
+reading of the evidence then; row 5 has **four statements**, a `cd`, and two relative reads, and does
+not prompt. Multi-statement is not the discriminator. ⭐ Same class as the refutation before it: the
+hypothesis was built from the shapes that *did* prompt, and the shape that separates them was one
+nobody had run.
+
+⭐ **The dialog's own explanation is false, and that is a datum.** It says the `grep` *"would search a
+directory that cannot be determined here"*. In every probe the `cd` target is a **literal absolute
+path** — `/workspace/claude-orchestrator`. Nothing is undeterminable. The message describes the
+analyzer's limit, not the command's.
+
+### Why it had never happened before — the measurement that found the cause
+
+The maintainer's second observation is what redirected the investigation: *this had never happened in
+any previous cco session; today was the first time.* A structural cause present all along could not
+produce that. Measured in the container:
+
+```
+/home/claude/.local/share/claude/versions/
+  2.1.257   Sep  1 18:04
+  2.1.258   Sep  2 08:55
+  2.1.259   Sep  2 22:58   ← the version running for both observations
+```
+
+- The install dir is a **host mount shared by every session on the machine** —
+  `~/.cache/cco/claude-install/share` over virtiofs, `rw` (`mountinfo`, 1 hit). An auto-update
+  therefore crosses sessions and survives container restarts.
+- **Both** FI-85 observations are dated **2026-09-03** — the first day after 2.1.259 landed.
+- A session already running keeps the binary it started with. ⇒ ⭐ **the maintainer's *"other
+  projects' sessions do not do this"* was a version difference, not a project difference** — those
+  sessions were older and long-lived. The sharpest datum in the first record pointed at cco because
+  the version axis was not in view.
+
+⇒ **cco is exonerated on measurement, not by argument.** The deny rules are identical on both images
+(`Read(~/.claude.json)`, `Read(~/.ssh/*)`, baked, **0** `mountinfo` hits), and the symptom **survived
+a complete image change** — including a change that moved the image from a post-A4 build to the
+published 0.6.0 one, i.e. across two different permission emitters.
+
+### ▶ The experiment that would pin the version boundary — the maintainer's
+
+cco can pin the harness version, so the boundary is measurable rather than assumed
+(`--claude-version` on `cco build`, or the `~/.cco/claude-version` knob):
+
+```
+cco build --claude-version 2.1.257 && cco start <project>
+# then, in the session:
+cd <repo>
+grep -c PROBE README.md | cat
+```
+
+- **No dialog** ⇒ confirmed; the boundary lies in 2.1.257 → 2.1.259.
+- **Dialog** ⇒ the cause predates 2.1.257 and this section is wrong.
+
+⚠ **2.1.258 was never observed either way**, so a confirmed result narrows the boundary to a range,
+not to a version.
+
+### What to do meanwhile — and what NOT to do
+
+**The workaround is narrow, and the narrowness matters**: in a command containing a **pipeline**, give
+`grep` an **absolute** path, or drop the `cd`. It is *not* "keep Bash commands simple" — rows 5 and 9
+show that multi-statement commands and pipelines are each fine on their own.
+
+⚠ **Explicitly NOT proposed**, and both were live options before the cause was known:
+
+- **Touching the two deny rules.** They protect SSH keys and the Claude credential file; the friction
+  is not theirs.
+- **A cco hook or rule to instruct agents.** The first session raised
+  `config/hooks/subagent-context.sh` as the channel that provably reaches subagents. Today's dialogs
+  came from the **lead alone, with zero subagents running** — so that channel is not where the
+  friction is, and a baked hook would also have made the remedy depend on a working `cco build`
+  (see [FI-86](#fi-86--cco-build-never-says-which-source-tree-it-is-baking)).
+
+**Effort**: zero in cco. **Type**: harness regression, worked around, boundary unpinned.
+
+---
+
+### The first session's record — 2026-09-03, morning
+
+> Preserved as written. Its measurements stand; its *"current hypothesis"* is **superseded** by the
+> table above, and is kept because the reasoning that produced it was sound on the evidence it had.
+
+**Original status**: 🔴 Observed 2026-09-03, cause NOT found, first diagnosis REFUTED by measurement.
+Nothing was changed — no code, no configuration, no permission rule.
+
+#### The symptom
 
 With bypass permissions active, the maintainer was repeatedly interrupted by
 `Bash command … Do you want to proceed?` dialogs for read-only commands — from the lead and from
@@ -3685,9 +3789,11 @@ spawned subagents alike. One dialog's explanation line, the only one captured ve
 > here, and a `Read()` deny rule is configured; only you can approve running it anyway.
 
 ⭐ **The maintainer's own observation is the sharpest datum in the file**: *other projects' sessions
-do not do this.* That is what turned a nuisance into a question.
+do not do this.* That is what turned a nuisance into a question. *(2026-09-03, second session: it was
+sharp and it was decisive — but it pointed at the project axis, and the answer was on the version
+axis. See above.)*
 
-### What was measured, and what it rules out
+#### What was measured, and what it rules out
 
 | Measured | Result |
 |---|---|
@@ -3695,14 +3801,14 @@ do not do this.* That is what turned a nuisance into a question.
 | whether this session got a per-session overlay | **No.** `mountinfo` has **0** hits for `managed-settings.json`, so this session runs the **baked default** — the file every cco session gets |
 | whether another session could have fewer rules | **No.** `_emit_managed_settings_overlay` (`lib/cmd-start.sh:2533`) takes `defaults/managed/managed-settings.json` as its **base and adds**. Every session carries **at least** these two rules |
 
-⇒ **Configuration is eliminated as the differentiator.** Every cco session has the same deny rules or
-stricter. Whatever makes this project's sessions different is **behavioural**, not configurational.
+⇒ **Configuration is eliminated as the differentiator.** *(Re-measured on the replacement image
+2026-09-03 and still exact — which is what let the second session cross cco off entirely.)*
 
-### 🔴 What was refuted
+#### 🔴 What was refuted
 
 The first diagnosis — *"the trigger is `cd <dir> && <cmd> <relative-file>`"* — was taken from the one
-dialog whose text was captured, and generalised. Three probes run from the lead, with the maintainer
-reporting which raised a dialog:
+dialog whose text was captured, and generalised. Three probes, with the maintainer reporting which
+raised a dialog:
 
 | Probe | Command | Dialog |
 |---|---|---|
@@ -3715,58 +3821,107 @@ true statement about *that one command*, not a sufficient condition. ⭐ The cla
 project's most-repeated one, arriving from a new direction: **a single sample is a lower bound**, and
 a diagnostic message explains its own case, not the general rule.
 
-### The current hypothesis — UNVERIFIED, do not act on it as fact
+#### The hypothesis this section reached — SUPERSEDED
 
 Tabulating every command known to have prompted against the three that did not, the discriminator
-appears to be **compound structure**, not the `cd`:
+appeared to be **compound structure**, not the `cd`: single simple commands never prompted, while
+every multi-statement or piped command did. **Speculated mechanism**: a simple command matches an
+existing `allow` rule (`Bash(grep *)`, …) and passes; a complex compound reduces to no single rule,
+falls through to read-path analysis, and there the presence of any `Read()` deny makes it fail closed.
 
-| Command | Structure | Dialog |
-|---|---|---|
-| probes 1–3 | single simple command | no |
-| lead | `cd && grep …; echo …; awk …` — three statements | **yes** |
-| tester | `cd; grep … \| grep \| grep \| head` — 4-stage pipeline | **yes** |
-| tester | `cd; git diff … \| head -120` — `;` plus a pipe | **yes** |
-| implementer | `cd && grep -r … \| head` — pipe, recursive read | **yes** |
-| implementer | `cd && echo; grep -A 18 \| head; echo; sed` — four statements | **yes** |
-| implementer | `cd && grep -rn … \| grep -v \| head` — 3-stage pipeline | **yes** |
+🔴 **Refuted 2026-09-03 by PROBE A/B/C and by row 5** — a four-statement command with two relative
+reads does not prompt, and a two-statement one with a pipe does. The structure axis was real but it
+was the *pipeline*, and only in conjunction with `grep` and a relative path.
 
-**Speculated mechanism**: a simple command is matched against the existing `allow` rules
-(`Bash(grep *)`, `Bash(head *)`, … in the user settings) and passes; a complex compound reduces to no
-single rule, falls through to read-path analysis, and there the presence of *any* `Read()` deny makes
-it fail closed. This would also explain the cross-session difference with **no** config difference:
-this project's sessions are agent-heavy, and its agents compose long multi-stage commands.
+⚠ The section closed by naming two probes that would separate multi-statement from pipeline, and said
+they were *"deliberately not run, to stop consuming the maintainer's attention mid-implementation"*.
+⭐ **Running them cost three dialogs and closed the question** — the deferral was the more expensive
+choice, and that is the lesson worth carrying rather than the hypothesis.
 
-⚠ **Not measured**: whether the trigger is multi-statement (`;`), the pipeline, or both. Two probes
-would separate them — `cd X && grep … file; echo hi` versus `cd X && grep … file | head -3` — and
-were deliberately not run, to stop consuming the maintainer's attention mid-implementation.
-
-### ▶ The discriminating experiment — the maintainer's, and it cannot be run from a session
-
-**Rebuild the image and restart the session**, then work normally and watch for the dialogs.
-
-- **They disappear** ⇒ the cause was something stale or session-local, and this entry can be closed
-  with the date the rebuild happened.
-- **They persist** ⇒ the cause is structural and this entry stays open with a second dated
-  observation. At that point run the two probes above, which is the cheapest next measurement.
-
-⚠ **Confounder to state rather than discover later**: the session that produced these observations
-was **unusually agent-heavy**. A quieter session may show no dialogs for that reason alone, which
-would *look* like the rebuild fixed it. To make the experiment discriminate, the post-rebuild session
-must also run agents that compose multi-stage commands — or the result is not evidence.
-
-### If it turns out to be real, where a fix would land
+#### Where a fix was thought to land
 
 ⚠ Deliberately not decided, and the first draft of this section had to be withdrawn once already —
 it recommended *"prefer absolute paths"*, which probe 2 then showed would have been the wrong advice.
+*(2026-09-03: the withdrawal was correct for the general claim it made. In the narrow form —
+absolute paths **inside pipelines** — it is what the table above supports.)*
 
-- The useful guidance, **if** the compound hypothesis holds, is *"keep Bash commands simple — one
-  command per call"*, which is better practice for other reasons.
-- ⭐ The channel matters as much as the wording: the lead is a fraction of the commands a session
-  runs. cco already owns a hook that provably reaches every subagent —
-  `config/hooks/subagent-context.sh` (`SubagentStart`). **Not verified**: whether the managed
-  `CLAUDE.md` is itself read by subagents; if it is, one line there covers both and no hook changes.
-- **Explicitly NOT proposed**: removing or narrowing the two deny rules. They protect SSH keys and
-  the Claude credential file, and the friction is on the command side.
+---
 
-**Effort**: zero so far (nothing changed). Unknown to diagnose. **Type**: agent-facing friction /
-open measurement.
+## FI-86 — `cco build` never says which source tree it is baking
+
+**Status**: 🔴 **Open, and it has already caused one measured regression** (2026-09-03). The remedy is
+**not decided** — it is user-facing and belongs to the maintainer.
+
+### What happened, measured
+
+The maintainer ran `cco build` on the host intending to rebuild the image from the checkout. It
+instead rebuilt the **published 0.6.0 package's own tree**, and moved the `claude-orchestrator:latest`
+tag **backwards**:
+
+| | before (host measurement, same day) | after |
+|---|---|---|
+| image | `a7d69bb…` | `d54c1a49a3b9` |
+| `cco.build-ref` label | `feat/devmode/dev-execution-mode@e0c93a8` | **`null`** — no labels at all |
+| baked cco | post-A4, post-A11 | **0.6.0**: 0 hits for `build-ref`, 0 for `_cco_dev_image`, no `lib/dev.sh` |
+| `Created` | — | **2026-08-26** (a complete cache hit on the 0.6.0 tree) |
+
+The previous image was not merely untagged — `docker image inspect a7d69bb` reports no such image and
+`docker images -a` lists nothing dangling. The session that followed silently ran an orchestrator
+three feature units behind its own checkout.
+
+### The mechanism, and why nothing caught it
+
+`bin/cco:27` sets `REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"`, and `lib/cmd-build.sh:163` runs
+`docker build … -t "$IMAGE_NAME" "$REPO_ROOT"`. ⇒ **`cco build` builds the tree of the `cco` that
+runs it.** With cco installed from npm, that is the package directory — never the checkout the
+maintainer is standing in.
+
+🔴 **And the build is silent about it.** `cmd-build.sh` computes `_cco_build_ref` and passes it as a
+build-arg, but prints only:
+
+```
+ℹ Building Docker image 'claude-orchestrator:latest'...
+✓ Image built successfully.
+```
+
+Neither the ref nor `$REPO_ROOT`. ⭐ **A11 gave the artifact an identity and left the act mute** — and
+the failure happens at the act. The label is a *post-hoc* oracle: correct, but it only answers a
+question you already thought to ask.
+
+⚠ **The oracles a user would reach for do not discriminate**, and `lib/cmd-whoami.sh:56-63` says so in
+a comment predating this incident: *"`cco --version` answers the same string from an npm install and
+from a clone, and `which cco` answers PATH order rather than the REPO_ROOT the readlink loop actually
+resolved."* Measured here: `package.json` is **0.6.0** in the checkout, **0.6.0** on `develop` and
+**0.6.0** in `/opt/cco` — `cco --version` is blind by construction. A11's host `whoami` block
+(`version` + `provenance` + **`REPO_ROOT`**) is the oracle that discriminates, and it is exactly what
+a pre-A11 install does not have. ⭐ **The instrument that identifies a stale cco cannot be read from
+the stale cco.**
+
+### Proposals — NOT decided, both user-facing
+
+1. **Announce the source.** `cco build` prints `Building '<image>' from <build-ref> (<REPO_ROOT>)`
+   before the `docker build`. One line, no new behaviour, and `_cco_build_ref` already exists.
+2. **Warn on a mismatched checkout.** When `$PWD` is inside a git repo that looks like a cco source
+   tree and differs from `$REPO_ROOT`, say so — that is literally this incident's shape (standing in
+   the repo, building the npm package). Bounded, but it is a new refusal-adjacent surface and needs a
+   ruling on wording and on whether it ever blocks.
+
+⚠ **Adjacent and already scheduled**: the `cco start` build-ref divergence warning
+([design §6.2](engineering/design/dev-execution-mode.md), inside **A10.2 wave 2**) would have caught
+this **at session start** rather than by inspection. This incident is field evidence for sequencing
+§6.2 **first** within wave 2 rather than among the six.
+
+⚠ **Not a substitute for either**: on a maintainer's own machine, installing cco from the clone
+(`_cco_install_provenance` already recognises a `clone` provenance) makes `REPO_ROOT` the checkout by
+construction. That fixes one machine, not the product.
+
+### ⭐ The lesson worth more than the fix
+
+[The roadmap had already predicted this exact failure](roadmap.md) — *"a session started without the
+rebuild silently runs the previous release. Block B exists to end this"* — and it happened anyway,
+because the prediction was **prose in a document** and there was **no mechanical gate**. This project
+has paid for that class repeatedly under the name *measure, never restate*; here it arrived as
+*predict, never gate*. §6.2 is the gate.
+
+**Effort**: proposal 1 is one line. Proposal 2 is small but user-facing. **Type**: correctness /
+operator-facing identity.
