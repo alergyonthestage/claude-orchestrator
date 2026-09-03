@@ -194,7 +194,7 @@ flowchart LR
 | **Never `~/.cco/.git`** | `cco config save` promises *"cco never auto-commits"*; and `_config_push` (`lib/cmd-config.sh:283`) operates on `$cfg/.git`, so this store is **structurally unpushable** |
 | **Trigger** | **the step is unconditional** — it runs at every `cco --dev` engage, before the verb, whatever the verb is. The **commit** happens only when `git status --porcelain` is non-empty (an empty commit records nothing). Never a list of verbs |
 | **Scope** | `git add -A` — **not** `_CONFIG_ALLOWLIST`, which omits `access.yml` and `claude-version`, the two members with no other recovery path |
-| **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`, so the user's own config repo is not recorded as a gitlink |
+| **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`. ⚠ **Correction, measured 2026-09-03**: the `.git/` entry's original rationale (*"so the user's own config repo is not recorded as a gitlink"*) is **wrong twice over**, and the entry is kept only as documentation of intent. Git refuses `.git` as an index path component at any depth, so `~/.cco/.git` is skipped **with or without** the pattern — the exclusion is unobservable, and a test asserting it would be vacuous. And it does **not** stop a *nested* repo (`~/.cco/foo/.git`) from becoming a gitlink, which was measured to still happen. What actually protects the user's config repo is that the store is a separate `GIT_DIR` that never commits into it (the row above) |
 | **Implementation constraint** | taken with **plain `git` invocations**, never through `cco config save`: the verb may itself be the code under test |
 | **Failure** | 🔴 **`die` — blocking, ruled by the maintainer 2026-09-01.** If the snapshot cannot be taken, the mode's safety property cannot be established, so the run must not proceed. This deliberately departs from `_cco_dev_sandbox_seed`'s `warn`: a partial seed is a convenience, a missing restore point is the protection itself |
 | **Message** | `dev snapshot before: cco <argv>` — so `cco dev list` reads as a log of what was about to run |
@@ -224,6 +224,22 @@ preview free.
 
 ⚠ It resolves the store from the dev root **without engaging dev mode**, so `cco dev restore` works
 from an ordinary shell.
+
+**Two orderings the first draft left open, closed 2026-09-03 when the tester found that each had a
+second reading:**
+
+- 🔴 **`<ref>` resolves BEFORE restore's own safety snapshot**, never after. §5.0b makes restore
+  snapshot first because a restore must itself be undoable — but if `HEAD` were then re-read, it
+  would name the snapshot just taken and `cco dev restore` would be a **guaranteed no-op that reports
+  success**. Resolve the ref against the store as it stood when the command was typed.
+- **`--dry-run` writes nothing at all, the safety snapshot included.** *"Makes the destructive preview
+  free"* is the whole point: a preview with a side effect is not free.
+
+⚠ **A defect class found in a reference implementation before any real code existed, and the reason a
+test pins it**: restoring by pointing the store's index at the restored ref leaves index and HEAD
+**diverged**. The damage is not local — the *next* dev run's snapshot commit comes out empty,
+`git commit` returns non-zero, and D4.4 turns that into a `die`. A recovery path that bricks the next
+run. **The store must stay usable after a restore.**
 
 ### 5.2 Project configuration — a guard, not a second store
 
@@ -286,6 +302,17 @@ is covered by construction.
 
 📝 **No escape flag.** Round 3 dropped `--allow-project-writes` and this does not bring it back: the
 fixture is the escape. Reopen only if the refusal is measured to block a real workflow.
+
+📝 **The 🔴 prohibition above is a STRUCTURAL requirement, not a behavioural one — measured
+2026-09-03, and recorded so nobody later mistakes it for something the suite enforces.** For a pure
+*predicate* the two spellings are behaviourally identical: git **pathspecs** are cwd-relative, so
+`git -C <unit> status -- .cco` resolves correctly even for a nested unit, and it is only git *output*
+paths that are top-level-relative — which this check never consumes, since it asks only whether the
+output is empty. Every *inconsistent* mix (gitroot + a bare spec, or unit + `$_PROJECT_SPEC`) **is**
+caught behaviourally. Write it the prescribed way regardless — the guard sits in the blast radius of
+the bug that committed a secret under `✓ saved`, and the next hand to touch it may well consume an
+output path — but if the prohibition is to be *enforced*, its home is a static lint in
+`tests/test_invariants.sh`, not a behavioural test.
 
 ## 6. Fail-loud points
 

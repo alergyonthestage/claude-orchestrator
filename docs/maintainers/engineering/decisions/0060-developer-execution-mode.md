@@ -284,7 +284,8 @@ only what was rejected and why, so it is not re-litigated.
 > the dev-root layout (design §5.0), the `<repo>/.cco` guard (**D4.8**), and the
 > clone-without-`--dev` note (**D7** / design §6.3). A5 below is the first amendment taken
 > **after** implementation began; it is recorded here rather than in place because it
-> corrects a premise the original text asserted.
+> corrects a premise the original text asserted. A6 came out of A10.2's implementation and
+> narrows **D5** where the original text was silent.
 
 ### A5 — 2026-09-01: the clone probe tests existence, not directory-ness — §6.3's note was blind in a worktree
 
@@ -331,3 +332,37 @@ fail-safe.
   a feature branch that has no upstream, that `pull` will fail. The hint is diagnostic and
   the silence it replaces was itself a symptom of the misclassification, so a hint that can
   be wrong beats advice withheld because the tool did not know what it was looking at.
+
+### A6 — 2026-09-03: D5's refusal covers `cco init` too, and dev mode cannot bootstrap a machine
+
+Raised while implementing A10.2's migration routing, and **the intuitive reading was measured
+wrong before the ruling** rather than after.
+
+**What the original text left open.** D5 names two call sites, `lib/update.sh:138` and
+`lib/cmd-init.sh:268`, and says migrations targeting the real CONFIG refuse under `--dev`. It never
+says what happens when there is **no configuration yet** — a developer bootstrapping a fresh machine.
+The tempting reading is that a fresh install has nothing to corrupt and should be exempt.
+
+**The measurement that inverts it.** `_cco_global_meta` resolves to
+`$(_cco_state_dir)/global/update/meta` — **STATE**, which `--dev` sandboxes; the configuration it
+records a schema for is **CONFIG**, which `--dev` shares. So under `cco --dev init` on a fresh machine
+the config is created in the **real** `~/.cco` while the marker says *"schema current"* only inside
+the sandbox. The published binary then sees schema **0** against an already-current config and
+re-runs the entire migration chain over it. The fresh case is therefore the **worst** instance of the
+divergence D5 describes, not an exception to it.
+
+**A second defect, in the placement D5's own text implies.** `:268` sits inside
+`_cco_init_ensure_global`, ~70 lines **after** `rm -rf "$gclaude"` (`lib/cmd-init.sh:196-199`, the
+`--force` reset hatch). A refusal at the named line would fire **after** the user's real global config
+had already been deleted — a guard that destroys what it exists to protect. ⇒ **The check belongs
+where the function decides to write, ahead of the delete**, not at the migration call.
+
+**Decision** (maintainer, 2026-09-03): refuse at **both** flows — fresh config and `--force` alike —
+with **no fresh-vs-force distinction in the condition**, and name **two** ways out: `cco init`
+**without** `--dev` for a real machine (a one-time act that belongs to the real binary), and
+`cco dev config new` + `CCO_CONFIG_HOME` for a throwaway environment.
+
+**Consequence, accepted and stated rather than hidden**: **dev mode cannot bootstrap a machine.**
+Recorded in `CONTRIBUTING.md`, not only in the refusal. The alternative that would lift it — writing
+the marker into the real STATE as well — was rejected: it would introduce the only dev-mode writer
+that touches real STATE, breaching the sandbox boundary at exactly the point D5 exists to defend.
