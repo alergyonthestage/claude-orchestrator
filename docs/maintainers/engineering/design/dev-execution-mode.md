@@ -385,6 +385,30 @@ one. No verb grows a `--dev` variant.
 
 Top-level surface goes 25 → 26.
 
+### 8.1 `cco dev seed` on a populated dev root — say it, do nothing
+
+**Ruled 2026-09-03 by the maintainer.** `_cco_dev_sandbox_seed` (`lib/paths.sh`) is gated by
+`[[ -d "$root/state" ]] && return 0` — a **silent** no-op, which is the shape this project keeps an
+audit of. As an implicit one-shot behind `--dev-sandbox-seed` that was tolerable; as an **explicit
+verb** it is not, because a developer who types `cco dev seed` and gets exit 0 with no output cannot
+tell a seed from a refusal.
+
+- **Behaviour**: exit **0**, and say both what happened and what unblocks it — the root already
+  carries a `state/`, so `cco dev reset` reclaims it and a seed then runs. **Nothing is overwritten**,
+  and no `--force` is added: `reset` + `seed` already compose, and a second destructive writer would
+  be one more thing §5.2's criterion has to classify.
+- **Where**: the message belongs to the **verb**, not to the helper. `_cco_dev_sandbox_seed`'s
+  contract as an implicit one-shot inside `_cco_apply_dev_sandbox` is unchanged, and its existing
+  tests with it.
+- ⚠ **Observed in the field, which is what raised it**: A10.1's host acceptance run
+  (`bin/cco --dev build`, 2026-09-03) created `~/.cco-devsandbox/state` as a side effect, so that
+  machine's dev root is **already past the guard** — a seed there is exactly the silent no-op above.
+- 📝 **A benign symptom of an unseeded root, measured the same run**: with STATE empty,
+  `_cco_first_run`'s legacy-vault safety net finds no marker and re-archives `user-config/` into the
+  sandbox's `state/backups/`. It is non-destructive by construction (the vault is preserved as-is) and
+  correct; it stops once the root is seeded, and stops at the root once
+  [FI-84](../../improvements.md) moves `user-config/` out of the checkout.
+
 ## 9. What does **not** change
 
 - `IMAGE_NAME`'s default, `~/.cco`, `<repo>/.cco`, `project.yml`, and every one of the 7 documented

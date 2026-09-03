@@ -4,11 +4,12 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-09-01** — **A11 and A10.1 are closed and merged**; both entries moved to
+> **Last updated: 2026-09-03** — **A11 and A10.1 are closed, merged and ACCEPTED**; both entries
+> moved to
 > [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
-> The dev execution mode's identity half is shipped, so a dev build can no longer overwrite the image
-> a real session uses. **A10.2 is next.** One gate is owed on A10.1 and is host-only: the
-> `docker image inspect` acceptance check. `develop` is **unpushed**.
+> The dev execution mode's identity half is shipped **and verified on a host**, so a dev build can no
+> longer overwrite the image a real session uses. ✅ **A10.1's acceptance gate is CLOSED** and
+> `develop` is **pushed** — both measured 2026-09-03. ▶ **A10.2 is in implementation.**
 >
 > **2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
@@ -313,8 +314,18 @@ into **A10.1** (identity) + **A10.2** (protection and tooling). Both units were 
 after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT, TESTED AND
 MERGED 2026-09-01** (suite 1812/7 of 1819; entry moved to
 [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01)).
-🔴 **One gate still owed on it**, and no session can close it: the host `docker image inspect`
-acceptance check. ▶ **Next is A10.2.**
+✅ **Its acceptance gate is CLOSED — measured on the host 2026-09-03**, and the check
+**discriminated**: `bin/cco --dev build` produced `claude-orchestrator-dev:latest`
+(`sha256:90d5dae…`, label `cco.build-ref: develop@1766f5b`, tagged 2026-09-03) while
+`claude-orchestrator:latest` was left untouched (`sha256:a7d69bb…`, label
+`feat/devmode/dev-execution-mode@e0c93a8`, `LastTagTime` still **2026-08-27**). ⭐ **The stale
+`LastTagTime` on the real tag is what makes it a measurement rather than an assertion** — a no-op
+`--dev` would have re-tagged it today. ▶ **Next is A10.2.**
+
+📝 **What the same evidence showed, and it is not new damage**: `claude-orchestrator:latest` **is the
+2026-08-27 incident's own artifact** — built from a pre-merge feature branch (`e0c93a8`, since merged
+into `develop`), which is why an in-session `cco` does not know `--dev`. Repairing it is one ordinary
+`cco build` from a clean `develop`, host-side, whenever convenient.
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -832,6 +843,20 @@ and `name:` is not overridable) · `clean` environment-scoping and `--images`.
 migration under `--dev` refuses and names the fixture, a project writer refuses on a dirty /
 never-committed / non-git `<repo>/.cco` **while `cco project save` still works**, and `cco dev reset`
 reclaims the sandbox root, the snapshot store **and** the dev image.
+
+**Two maintainer rulings taken 2026-09-03, at the gate that opened the implementation:**
+
+1. **`cco dev seed` on an already-populated dev root says so and does nothing** — exit 0 with a
+   message naming `cco dev reset`, never a silent `return 0` and **no `--force`**. The *how* is
+   [design §8.1](engineering/design/dev-execution-mode.md); the trigger was A10.1's own acceptance run,
+   which created `~/.cco-devsandbox/state` as a side effect and so put that machine past the one-shot
+   guard.
+2. **The documentation scope of this unit is widened**, deliberately: beyond `cli.md` §3.34 and
+   `changelog.yml` it now includes **rewriting `CONTRIBUTING.md`'s dev section** (its *"this is
+   today's shape, not the target one"* caveat expires with A10.2) and **a "dev vs distributed"
+   explanation** — which binary, which image, which buckets, what is protected and what is not. ⭐ The
+   reason it is scope and not a nice-to-have: the mode's whole safety property is a **user's mental
+   model of two environments**, and a mode nobody can tell they are in protects nothing.
 
 ⚠ **Both stages are baked** — each takes a real host `cco build` in its acceptance lane.
 ⚠ **Sequence the naming namespace, do not discover it late**: A10's image axis, **B1** (`cco build`
