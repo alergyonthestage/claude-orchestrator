@@ -1029,8 +1029,11 @@ test_dev_config_migrations_refuse_and_name_the_escape() {
     _dp_seed_pending_global_migration
     rc=0
     run_cco --dev update || rc=$?
-    [[ "$rc" -ne 0 ]] \
-        || bad+="  A: a CONFIG-targeting migration under --dev must refuse (D5), got rc=0"$'\n'
+    # Exit 2 — a policy refusal, by the repo's 0/2/1 convention (ruled for D5's
+    # routing and §5.2's guard alike). ⚠ Never spelled as "not 2": that idiom is
+    # banned here (RC-17) because it is also satisfied by a verb that dies rc=1.
+    [[ "$rc" -eq 2 ]] \
+        || bad+="  A: a CONFIG-targeting migration under --dev must REFUSE (exit 2, D5), got rc=$rc"$'\n'
     grep -q 'schema_version: 0' "$(state_global_meta)" \
         || bad+="  A: the migration RAN — schema_version moved off 0 under --dev (D5)"$'\n'
     # "The refusal names the escape" — the seam D5 builds and leaves disengaged.
