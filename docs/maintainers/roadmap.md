@@ -841,10 +841,12 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 `cco dev restore` (§5.1), the `<repo>/.cco` restorability guard (D4.8) wired at every classified
 writer, the D5 migration routing and the `CCO_CONFIG_HOME` seam. New files `lib/dev.sh` and
 `lib/cmd-dev.sh`. Tests were written **from the design before the code existed** and proven by
-mutation (37 mutations, 36 caught); `tests/test_dev_protection.sh` and `INV-CCOSPEC` are green on the
-impl branch. 🔴 **Two merges are owed and the first is the next command**: `a10-2-impl` into the unit
-branch — **three tests have never met the implementation**, because the impl branch merged the tests
-before the tester wrote the last three.
+mutation (**40 mutations run, 40 caught** — 39 behaviourally and the last by a lint, because for a
+pure predicate no behavioural test could). ✅ **Suite on the impl tree: 1836 passed / 7 failed / 1843
+total**, `Results:` line present, and the delta closes exactly — **+24 total and +24 passed**, failed
+unchanged at 7, so every added test passes and no pre-existing test changed state. **Two merges are
+owed**; the first, `a10-2-impl` into the unit branch, is a routine integration — the unit branch is
+ahead only by documentation.
 
 ⭐ **The enumeration lesson reached third order here.** §5.2 names 6 writers and says it is a lower
 bound; the mandated re-grep returned **113 hits** — and **two writers are invisible to that command

@@ -37,10 +37,10 @@ A5's class. It has nothing to do with permissions and nothing to do with dev mod
 | Claim | Measured |
 |---|---|
 | Working trees | **both clean.** `/workspace/claude-orchestrator` on `feat/devmode/a10-2-protection`; the worktree `/workspace/a102-impl` on `feat/devmode/a10-2-impl`. ⚠ Host and container share one tree — measure the branch again before writing |
-| 🔴 **impl → unit merge** | **NOT DONE.** `feat/devmode/a10-2-impl` is **10 commits ahead** of the unit branch, and the unit branch carries **3 commits the impl branch has never seen** (`9a0a1d4`, `a904bf8`, `6c4a524`). Measure: `git log --oneline feat/devmode/a10-2-protection..feat/devmode/a10-2-impl` |
-| 🔴 **three tests have never met the implementation** | The impl branch merged the tests at `92c7fdb`, **before** the tester wrote the last three. So the A6 init-placement test, the D5 exit-2 assertion and INV-CCOSPEC have **never run against the code**. ⭐ This is the single most valuable thing the next session can do, and it is cheap: merge, then run the suite |
-| Suite, unit branch | not run on the merged result — **it does not exist yet** |
-| Suite, impl branch | ⚠ **No full-suite figure exists for the final tree** — the run had not reached its `Results:` line when the session closed, and the implementer correctly declined to report one without it. What **is** measured, each with its `Results:` line: `1812 / 7 / 1819` on the pre-rulings tree (identical to baseline, so wave 1 introduced no regression) and, targeted on the final tree, `65 passed / 0 failed / 65` (`test_dev_protection` 23/23 + `test_invariants` 42/42). ▶ **Expect ≈1884 tests** after the merge |
+| **impl → unit merge** | **NOT DONE**, and it is a routine integration. `feat/devmode/a10-2-impl` is **10 commits ahead**; the unit branch is 7 ahead, and **all 7 are documentation** (this handoff, the FI-85 record, the design/ADR edits). No code diverges. Measure: `git log --oneline feat/devmode/a10-2-protection --not feat/devmode/a10-2-impl` |
+| ✅ **every test HAS met the implementation** | ⚠ **An earlier draft of this handoff claimed the opposite and it was wrong.** Verified: `git merge-base --is-ancestor 6c4a524 feat/devmode/a10-2-impl` succeeds — the tester's three later commits (the D5 exit-2 tightening, the A6 regression test, INV-CCOSPEC) are all **ancestors of the impl branch**. The final suite figure confirms it empirically |
+| Suite, unit branch | not run on the merged result — but the merge adds **only documentation** to the impl tree, so the figure below carries |
+| ✅ **Suite, impl branch** | **1836 passed / 7 failed / 1843 total**, `Results:` line **present**. ⭐ **The delta closes exactly**: 1819 → 1843 total (**+24** = 23 `test_dev_protection` + INV-CCOSPEC) and 1812 → 1836 passed (**+24**), with **failed unchanged at 7**. Every added test passes and no pre-existing test changed state — which is the strongest form this figure can take, because it accounts for the whole difference rather than just being larger |
 | The 7, and *why* the odd one out fails | the six `test_as_*` plus `test_paths_symlink_safe_tool_root`, which fails in-container with `mkdir: cannot stat '/home/claude/.cache/cco': Permission denied` — the ADR-0047 privilege boundary, not a defect |
 | 🔴 **bash 3.2 cover is PARTIAL** | `bash -n` on real bash 3.2 passed on **9 of 14** changed files, including both new ones and `bin/cco`. The other 5 were **not checked**: the docker proxy's 10-container limit stopped the run — and it refuses at **rc 125**, which is *docker's* code, so a naive check reads it as a pass. Those 5 took only flat insertions (no heredoc, no command substitution) and `test_invariant_no_heredoc_inside_command_substitution` passes tree-wide, but **that is an argument, not a measurement** |
 | Suite, hooks-fix branch | ✅ **1813 passed / 7 failed / 1820**, `Results:` line **present**, and the 7 are the documented host-only set **name for name** (6 `test_as_*` + `test_paths_symlink_safe_tool_root`). Baseline + the one new invariant. ⚠ **A trap paid on the way there**: an anchored `grep -E '^\[FAIL\]'` returned **6**, because one line carried an ANSI colour prefix. The count said 7 and the names said 6 — **the disagreement between the two is what caught it**, and it was a fact about the instrument, not about the suite. Read both, and treat a mismatch as a question about the grep first |
@@ -52,7 +52,7 @@ A5's class. It has nothing to do with permissions and nothing to do with dev mod
 
 | Gate | What unblocks it |
 |---|---|
-| 🔴 **merge `a10-2-impl` → `a10-2-protection`** | nothing blocks it — it is the next command. **Then re-run the suite**: three tests have never met the code |
+| **merge `a10-2-impl` → `a10-2-protection`** | nothing blocks it — it is the next command. Routine: the unit branch adds only documentation, and the suite is already green on the impl tree |
 | ⚠ **a textual conflict is PREDICTED, and its resolution is known** | `tests/test_invariants.sh` gains a lint at its **tail on both** lines of work — `INV-CCOSPEC` on the unit branch, `INV-WT` on `fix/hooks/worktree-git-probe`. They are **different lints** and both are self-contained blocks. ⇒ **resolve by keeping both**, and re-run the invariants file (expect 42/42 plus the other's test). Recorded now because a conflict met without this note invites picking a side |
 | **A10.2 wave 2** | `cco dev seed\|reset\|list\|config\|project` (the seams exist), `clean` environment-scoping + `--images`, the [§6.2](engineering/design/dev-execution-mode.md) `cco start` build-ref warn, fixtures, `project.dev.yml` |
 | **merge A10.2 → `develop`** | the maintainer's gate, after wave 2 |
@@ -87,14 +87,14 @@ working tree out from under a live process is worse than leaving a prunable regi
 
 **Then, in this order:**
 
-1. **Merge and verify** — the one thing that must happen before anything else:
+1. **Merge, then re-run the suite as a confirmation** (not as a first meeting — see the state table):
    ```
    git -C /workspace/claude-orchestrator merge feat/devmode/a10-2-impl
    bash /workspace/claude-orchestrator/bin/test
    ```
-   ⚠ **A missing `Results:` line is the signal** — an aborted suite reads green and prints no summary.
-   Expect the baseline 7 host-only failures and nothing else; anything more is one of the three tests
-   meeting the code for the first time, which is exactly what it is for.
+   Expect **1836 / 7 / 1843**. ⚠ **A missing `Results:` line is the signal** — an aborted suite reads
+   green and prints no summary. Anything other than the documented 7 is a regression from the merge
+   itself, which is the only thing this run can still discover.
 2. **Read [ADR-0060](engineering/decisions/0060-developer-execution-mode.md)** — the contract, now with
    **six** amendments. **A6 is new this session** and governs the `cco init` refusal.
 3. **Read [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md)** —
