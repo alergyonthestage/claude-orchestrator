@@ -134,6 +134,17 @@ _dev_restore() {
         _dev_snap_git "$store" "$cfg" clean -qfd \
             || die "Restored $cfg, but --clean could not remove the files created since the snapshot."
     fi
+    # 🔴 THE STORE MUST STAY USABLE AFTER A RESTORE. `read-tree` above left the index
+    # at <ref> while HEAD stayed at the newest snapshot; re-syncing the index to the
+    # work tree here makes that a plain "staged changes" state, which the next
+    # snapshot commits as the revert. Without it the store's usability after a
+    # restore would rest on _cco_dev_snapshot's INTERNAL ordering (its `add -A`
+    # before `status --porcelain`) — a distant invariant, and a recovery path that
+    # bricks the NEXT run is the worst failure this store can have. Measured both
+    # ways before adding it: the snapshot ordering does already save it today, which
+    # is exactly why the dependency deserves to be removed rather than documented.
+    _dev_snap_git "$store" "$cfg" add -A \
+        || die "Restored $cfg, but the snapshot store's index could not be re-synced — run 'cco dev restore $ref' again."
     ok "restored $cfg from snapshot $short"
 }
 

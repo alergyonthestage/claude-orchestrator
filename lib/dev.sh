@@ -137,6 +137,12 @@ _cco_dev_snapshot() {
     store=$(_cco_dev_snapshot_store)
     _cco_dev_snapshot_init "$store" "$cfg"
 
+    # ⚠ `add -A` BEFORE `status --porcelain`, and the order is load-bearing: it
+    # re-syncs the index from the work tree, so `status` answers "does the work tree
+    # differ from the last snapshot" rather than "does a possibly stale index".
+    # Asking `status` first would let an index left pointing elsewhere (as a restore
+    # does) report changes the commit then finds empty — and an empty commit returns
+    # non-zero, which D4.4 turns into a die. A recovery path that bricks the next run.
     _dev_snap_git "$store" "$cfg" add -A \
         || die "dev snapshot: could not stage $cfg into $store. Dev mode cannot establish a restore point, so it will not run the verb. Fix the store (or remove $store to start a fresh one) and retry."
     dirty=$(_dev_snap_git "$store" "$cfg" status --porcelain 2>/dev/null) \
@@ -284,4 +290,31 @@ _cco_dev_guard_config_migration() {
     _cco_dev_active || return 0
     _cco_config_isolated && return 0
     refuse "dev mode: refusing to run $scope migrations against $target. Configuration is SHARED with your real cco (ADR-0060 D4), but the schema marker that records a migration as done is not — it lives in the sandboxed buckets, so your published cco would run the same migration a second time, and the snapshot cannot repair that bookkeeping. Point cco at an isolated config first: CCO_CONFIG_HOME=<dir> cco --dev <verb>."
+}
+
+# The same ruling at `cco init`'s global seed — a SEPARATE entry point because the
+# refusal is placed where the seed DECIDES TO WRITE, never at its `_run_migrations`
+# call, and because it names a second way out the migration one cannot.
+#
+# 🔴 PLACEMENT, measured (2026-09-03): `_cco_init_ensure_global` does
+# `rm -rf "$gclaude"` on --force some seventy lines ABOVE its `_run_migrations`
+# call. A refusal at the call site would therefore fire AFTER the user's real global
+# config had already been deleted — a guard that destroys the thing it exists to
+# protect. It goes ahead of the delete, at the point the function commits to writing.
+#
+# ⭐ BOTH flows refuse — fresh seed and --force alike (maintainer's ruling
+# 2026-09-03) — and the fresh one is the WORSE divergence, which inverts the
+# intuitive reading: `_cco_global_meta` resolves under `_cco_state_dir`, which
+# `--dev` SANDBOXES. So a fresh dev init would create the config in the real, shared
+# ~/.cco while recording "schema current" only in the sandbox; the published binary
+# would then see schema 0 against an already-current config and re-run the entire
+# migration chain over it. Exempting the fresh case was rejected on that evidence.
+#
+# 📝 Accepted and stated rather than hidden: DEV MODE CANNOT BOOTSTRAP A MACHINE.
+# Usage: _cco_dev_guard_config_init <target dir>
+_cco_dev_guard_config_init() {
+    local target="$1"
+    _cco_dev_active || return 0
+    _cco_config_isolated && return 0
+    refuse "dev mode cannot bootstrap a machine: refusing to seed the global config at $target. Configuration is SHARED with your real cco (ADR-0060 D4), but the schema marker that records the seed as current is not — it lives in the sandboxed dev buckets, so your published cco would see an already-current config at schema 0 and re-run the whole migration chain over it. Two ways out: run 'cco init' WITHOUT --dev (bootstrapping a real machine is a one-time act and belongs to the real binary), or point cco at a throwaway config — CCO_CONFIG_HOME=<dir> cco --dev init (a 'cco dev config new' helper lands with A10.2 wave 2)."
 }

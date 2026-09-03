@@ -193,8 +193,21 @@ _cco_init_ensure_global() {
     # Already set up → one-time no-op (fresh users get it here; migrating users
     # get it from `cco update`, ADR-0025). An explicit --force re-seeds from the
     # framework defaults (the documented reset escape hatch; clobbers local edits).
+    local reseed=false
     if [[ -d "$gclaude" ]]; then
         [[ "$force" == "true" ]] || return 1
+        reseed=true
+    fi
+
+    # ADR-0060 D5. 🔴 HERE, at the point this function commits to WRITING, and NEVER
+    # at its `_run_migrations` call below: the `rm -rf` on the next line runs some
+    # seventy lines ahead of that call, so a refusal down there would fire AFTER the
+    # user's real global config had been deleted. Both flows reaching this line —
+    # a fresh seed and --force — are in scope (maintainer's ruling); the helper
+    # carries the measurement and the two ways out.
+    _cco_dev_guard_config_init "$gclaude"
+
+    if $reseed; then
         rm -rf "$gclaude"
     fi
 
@@ -264,12 +277,9 @@ _cco_init_ensure_global() {
     # Save base versions for future 3-way merge (STATE).
     _save_all_base_versions "$(_cco_global_base_dir)" "$DEFAULTS_DIR/global/.claude" "global"
 
-    # ADR-0060 D5, the second of the two call sites: a dev-run migration against the
-    # real CONFIG records that it ran in a sandboxed bucket the published binary never
-    # reads, so the published binary runs it again — the one class a restore cannot
-    # repair. ⚠ The refusal lands AFTER the seed above, deliberately: it is scoped to
-    # the migration, not to `init`, so it never fires on an init that would run none.
-    _cco_dev_guard_config_migration global "$gclaude"
+    # ADR-0060 D5 is enforced ABOVE, before the seed's `rm -rf` — not here. The
+    # design named this line; it is the wrong one, and the reason is in
+    # _cco_dev_guard_config_init's header.
     # Fresh install — nothing to migrate, just marks the schema current.
     if ! _run_migrations "global" "$gclaude" 0 "$meta_file"; then
         error "Migrations failed during init. Run 'cco update' to retry."
