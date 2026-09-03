@@ -541,3 +541,196 @@ test_dev_snapshot_noop_die_and_silent_success_rows() {
     [[ -z "$bad" ]] || fail "§5.0b's rows do not behave as ruled:"$'\n'"$bad"
 }
 
+# ── §5.1 — cco dev restore ───────────────────────────────────────────
+
+# §5.1: "checks out the tracked paths over ~/.cco", default `HEAD`.
+#
+# ⚠ An ordering trap this test pins by BEHAVIOUR rather than by mechanism: restore
+# takes its own snapshot first (see the test below), so an implementation that
+# resolves `HEAD` AFTER that snapshot would restore the state the user just asked
+# to undo — a perfect no-op that looks like success. The assertion is therefore on
+# the CONTENT: the file must hold what the pre-mutation snapshot held.
+test_dev_restore_defaults_to_head_and_puts_the_files_back() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    run_cco --dev whoami || true                       # snapshot the good state
+    [[ "$(_dp_commits)" -ge 1 ]] || fail "precondition: no snapshot was taken"
+
+    printf 'CLOBBERED\n' > "$HOME/.cco/access.yml"     # the bad dev write
+    printf 'CLOBBERED\n' > "$HOME/.cco/.claude/CLAUDE.md"
+    rm -f "$HOME/.cco/claude-version"                  # …and a deletion
+
+    local rc=0
+    run_cco dev restore || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "cco dev restore failed (rc=$rc): $CCO_OUTPUT"
+
+    assert_file_contains "$HOME/.cco/access.yml" "cco: read-project" \
+        "restore must put a clobbered tracked file back (§5.1)" || return 1
+    assert_file_contains "$HOME/.cco/.claude/CLAUDE.md" "# global" \
+        "restore must reach nested tracked paths too" || return 1
+    assert_file_exists "$HOME/.cco/claude-version" \
+        "restore must bring back a file the dev run DELETED (§5.1)" || return 1
+}
+
+# §5.1: "files CREATED SINCE the snapshot are REPORTED, not deleted, unless
+# --clean". Both halves, and the report, in one place — deleting by default and
+# reporting nothing are two different defects and each must be visible.
+test_dev_restore_reports_new_files_and_only_clean_removes_them() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local bad="" rc
+
+    # ⚠ The two halves run against SEPARATE dev environments, and that is not
+    # tidiness. A restore takes its own safety snapshot first (§5.0b), so after the
+    # default run below the store's HEAD is a commit that CONTAINS the new file — it
+    # is tracked from then on, and a chained `--clean` would have nothing "created
+    # since the snapshot" left to remove. Chaining them would measure that artefact
+    # instead of the contract.
+
+    # ── default: reported, not deleted ──
+    _dp_env "$tmpdir/keep"; setup_global_from_defaults "$tmpdir/keep"; _dp_seed_config
+    run_cco --dev whoami || true
+    printf 'new\n' > "$HOME/.cco/appeared-since.txt"
+    rc=0; run_cco dev restore || rc=$?
+    [[ "$rc" -eq 0 ]] || bad+="  default: cco dev restore failed (rc=$rc): $CCO_OUTPUT"$'\n'
+    [[ -f "$HOME/.cco/appeared-since.txt" ]] \
+        || bad+="  default: a file created since the snapshot must be REPORTED, not deleted (§5.1)"$'\n'
+    [[ "${CCO_OUTPUT:-}" == *"appeared-since.txt"* ]] \
+        || bad+="  default: restore must report the files it left behind (§5.1), got: $CCO_OUTPUT"$'\n'
+
+    # ── --clean: removed ──
+    _dp_env "$tmpdir/clean"; setup_global_from_defaults "$tmpdir/clean"; _dp_seed_config
+    run_cco --dev whoami || true
+    printf 'new\n' > "$HOME/.cco/appeared-since.txt"
+    rc=0; run_cco dev restore --clean || rc=$?
+    [[ "$rc" -eq 0 ]] || bad+="  --clean: cco dev restore --clean failed (rc=$rc): $CCO_OUTPUT"$'\n'
+    [[ ! -f "$HOME/.cco/appeared-since.txt" ]] \
+        || bad+="  --clean: it is what removes files created since the snapshot (§5.1)"$'\n'
+
+    [[ -z "$bad" ]] || fail "§5.1's created-since handling is wrong:"$'\n'"$bad"
+}
+
+# 🔴 A consequence of two rulings meeting, and the defect it caught in a throwaway
+# reference implementation before any real code existed: a restore mutates the
+# snapshot store (it must read a ref and write the tree back), and D4.4 makes the
+# NEXT run's snapshot FATAL if it cannot be taken. So a restore that leaves the
+# store in a state where the following `cco --dev <verb>` cannot commit turns a
+# recovery into a brick.
+#
+# Measured shape of that defect: restoring by pointing the store's index at the
+# restored ref leaves index and HEAD diverged, and the next snapshot's commit is
+# empty — `git commit` exits non-zero and D4.4 turns that into a die.
+test_dev_restore_leaves_the_store_usable_for_the_next_run() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    run_cco --dev whoami || true
+    printf 'CLOBBERED\n' > "$HOME/.cco/access.yml"
+    printf 'new\n' > "$HOME/.cco/appeared-since.txt"
+    local rc=0
+    run_cco dev restore || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "precondition: cco dev restore failed (rc=$rc): $CCO_OUTPUT"
+
+    local before; before=$(_dp_commits)
+    printf 'after-the-restore\n' > "$HOME/.cco/marker"
+    rc=0
+    run_cco --dev whoami || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || fail "a dev run AFTER a restore must still be able to snapshot (D4.4 makes failure fatal), rc=$rc: $CCO_OUTPUT"
+    [[ "$(_dp_commits)" -eq $(( before + 1 )) ]] \
+        || fail "the post-restore run must record its own snapshot, went $before -> $(_dp_commits)"
+    printf '%s\n' "$(_dp_tree)" | grep -qxF "marker" \
+        || fail "the post-restore snapshot must contain the change it was taken for"
+}
+
+# §5.1: "--dry-run is the project's existing idiom (`cco clean` has it) and makes
+# the destructive preview free." A preview writes NOTHING — the clobbered file is
+# still clobbered and the new file is still there — while naming what it would do.
+test_dev_restore_dry_run_previews_and_writes_nothing() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    run_cco --dev whoami || true
+    local before; before=$(_dp_commits)
+    printf 'CLOBBERED\n' > "$HOME/.cco/access.yml"
+    printf 'new\n' > "$HOME/.cco/appeared-since.txt"
+
+    local rc=0
+    run_cco dev restore --dry-run || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "cco dev restore --dry-run failed (rc=$rc): $CCO_OUTPUT"
+    assert_file_contains "$HOME/.cco/access.yml" "CLOBBERED" \
+        "--dry-run must not restore anything (§5.1)" || return 1
+    assert_file_exists "$HOME/.cco/appeared-since.txt" \
+        "--dry-run must not delete anything" || return 1
+    assert_output_contains "access.yml" \
+        "--dry-run must preview which files it would restore" || return 1
+    # A preview is not a mutation, so it must not push a snapshot either.
+    assert_equals "$before" "$(_dp_commits)" \
+        "--dry-run must not take a snapshot — it changes nothing (§5.1)" || return 1
+}
+
+# §5.1: "It resolves the store from the dev root WITHOUT ENGAGING DEV MODE, so
+# `cco dev restore` works from an ordinary shell", and §5.0b: the `cco dev <sub>`
+# verbs take no snapshot — EXCEPT restore, "which mutates ~/.cco and therefore takes
+# one first, so a restore is itself undoable".
+#
+# Both halves are load-bearing and both are asserted here because they constrain each
+# other: no `--dev` on the command line, yet a new commit whose content is the
+# PRE-restore (mutated) tree. Asserting only "a commit appeared" would pass on a
+# snapshot taken after the checkout, which would record the restored state and undo
+# nothing.
+test_dev_restore_needs_no_dev_flag_and_snapshots_itself_first() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    run_cco --dev whoami || true
+    local before; before=$(_dp_commits)
+    printf 'MUTATED-BY-THE-DEV-RUN\n' > "$HOME/.cco/access.yml"
+
+    local rc=0
+    run_cco dev restore || rc=$?          # ⚠ NO --dev anywhere on this line
+    [[ "$rc" -eq 0 ]] || fail "cco dev restore must work without engaging dev mode (§5.1), rc=$rc: $CCO_OUTPUT"
+    [[ "$(_dp_commits)" -eq $(( before + 1 )) ]] \
+        || fail "restore must take a snapshot FIRST — a restore is itself undoable (§5.0b), went $before -> $(_dp_commits)"
+
+    # The safety snapshot holds what restore was about to overwrite.
+    local saved; saved=$(_dp_git show "HEAD:access.yml")
+    [[ "$saved" == *"MUTATED-BY-THE-DEV-RUN"* ]] \
+        || fail "the pre-restore snapshot must record the state being undone, got: '$saved'"
+    # …and the restore still happened.
+    assert_file_contains "$HOME/.cco/access.yml" "cco: read-project" \
+        "the restore itself must still have taken effect" || return 1
+}
+
+# §5.1: `cco dev restore [<ref>]` — an explicit ref reaches an EARLIER snapshot, not
+# only the newest. Without this, "default HEAD" is indistinguishable from "HEAD only".
+test_dev_restore_accepts_an_explicit_ref() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    printf 'GENERATION-1\n' > "$HOME/.cco/access.yml"
+    run_cco --dev whoami || true
+    local first; first=$(_dp_root_commit)
+    [[ -n "$first" ]] || fail "precondition: no first snapshot to name"
+
+    printf 'GENERATION-2\n' > "$HOME/.cco/access.yml"
+    run_cco --dev whoami || true
+    printf 'GENERATION-3\n' > "$HOME/.cco/access.yml"
+
+    local rc=0
+    run_cco dev restore "$first" || rc=$?
+    [[ "$rc" -eq 0 ]] || fail "cco dev restore <ref> failed (rc=$rc): $CCO_OUTPUT"
+    assert_file_contains "$HOME/.cco/access.yml" "GENERATION-1" \
+        "an explicit ref must restore THAT snapshot, not HEAD (§5.1)" || return 1
+}
+
