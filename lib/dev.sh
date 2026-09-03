@@ -186,7 +186,10 @@ _cco_dev_snapshot_engage() {
 # halves below anchor on `_project_resolve_unit`'s $_PROJECT_GITROOT + $_PROJECT_SPEC.
 #
 # Echoes the REASON on failure (one line, nothing on success) so the caller renders
-# which of the three conditions fired.
+# which of the three conditions fired. ⚠ Every reason names the ABSOLUTE path it
+# judged — `$_PROJECT_GITROOT/$_PROJECT_SPEC`, never the `<repo>/.cco` display form
+# `cmd-project-save.sh` prints: a refusal is read outside the directory it is about,
+# and a bare basename does not tell the reader WHICH repo to go and commit.
 # Usage: _cco_dev_project_restorable <unit_dir>
 _cco_dev_project_restorable() {
     local unit="$1" dirty
@@ -203,13 +206,13 @@ _cco_dev_project_restorable() {
     # neither `status` (ignored files are hidden) nor `ls-files` — 2 is what catches
     # it. Either check alone leaves a hole.
     if ! git -C "$_PROJECT_GITROOT" ls-files --error-unmatch -- "$_PROJECT_SPEC" >/dev/null 2>&1; then
-        printf '%s/%s is not tracked by git — never committed, or gitignored\n' "$_PROJECT_REPO" "$_PROJECT_SPEC"
+        printf '%s/%s is not tracked by git — never committed, or gitignored\n' "$_PROJECT_GITROOT" "$_PROJECT_SPEC"
         return 1
     fi
     # 3. Tracked, but dirty — the delta is what would be lost.
     dirty=$(git -C "$_PROJECT_GITROOT" status --porcelain -- "$_PROJECT_SPEC" 2>/dev/null) || dirty=""
     if [[ -n "$dirty" ]]; then
-        printf '%s/%s has uncommitted changes\n' "$_PROJECT_REPO" "$_PROJECT_SPEC"
+        printf '%s/%s has uncommitted changes\n' "$_PROJECT_GITROOT" "$_PROJECT_SPEC"
         return 1
     fi
     return 0
@@ -230,7 +233,7 @@ _cco_dev_project_guard() {
     # Asked inside a command substitution on purpose: _project_resolve_unit's globals
     # then die with the subshell instead of being clobbered under the caller.
     why=$(_cco_dev_project_restorable "$unit") && return 0
-    refuse "dev mode: refusing '$verb' — it can destroy uncommitted content under <repo>/.cco, and $why. Dev mode snapshots ~/.cco only; your project config is protected by your own repo git (ADR-0060 D4.8). Commit or stash .cco/ in that repo, or run this against a throwaway git repo whose .cco/ is committed."
+    refuse "dev mode: refusing '$verb' — it can destroy uncommitted content under <repo>/.cco, and $why. Dev mode snapshots ~/.cco only; your project config is protected by your own repo git (ADR-0060 D4.8). Two ways out: commit or stash .cco/ in that repo, or work on a fixture project — a throwaway git repo whose .cco/ is committed, which 'cco dev project new' creates by construction (it lands with A10.2 wave 2)."
 }
 
 # Guard every RESOLVED member of <project>, in the PARENT shell.
