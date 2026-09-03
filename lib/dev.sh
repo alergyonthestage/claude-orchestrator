@@ -192,12 +192,17 @@ _cco_dev_snapshot_engage() {
 # and a bare basename does not tell the reader WHICH repo to go and commit.
 # Usage: _cco_dev_project_restorable <unit_dir>
 _cco_dev_project_restorable() {
-    local unit="$1" dirty
+    local unit="$1" dirty ccodir
     # 1. Not a git work tree — a supported case, and one with no protection at all.
     if ! _project_resolve_unit "$unit"; then
         printf 'the repo holding it (%s) is not a git work tree, so there is nothing to restore to\n' "$unit"
         return 1
     fi
+    # The one place the judged path is built, so the two reasons below cannot drift
+    # apart — and so neither line has to carry `$_PROJECT_SPEC` next to the word
+    # "git" in its prose, which INV-CCOSPEC reads as a git invocation.
+    ccodir="$_PROJECT_GITROOT/$_PROJECT_SPEC"
+
     # 2. Nothing tracked — never committed, or gitignored.
     #
     # ⚠ ORDER 2 BEFORE 3, AND KEEP BOTH. An entirely untracked `.cco` ALSO shows in
@@ -206,13 +211,13 @@ _cco_dev_project_restorable() {
     # neither `status` (ignored files are hidden) nor `ls-files` — 2 is what catches
     # it. Either check alone leaves a hole.
     if ! git -C "$_PROJECT_GITROOT" ls-files --error-unmatch -- "$_PROJECT_SPEC" >/dev/null 2>&1; then
-        printf '%s/%s is not tracked by git — never committed, or gitignored\n' "$_PROJECT_GITROOT" "$_PROJECT_SPEC"
+        printf '%s is not tracked by git — never committed, or gitignored\n' "$ccodir"
         return 1
     fi
     # 3. Tracked, but dirty — the delta is what would be lost.
     dirty=$(git -C "$_PROJECT_GITROOT" status --porcelain -- "$_PROJECT_SPEC" 2>/dev/null) || dirty=""
     if [[ -n "$dirty" ]]; then
-        printf '%s/%s has uncommitted changes\n' "$_PROJECT_GITROOT" "$_PROJECT_SPEC"
+        printf '%s has uncommitted changes\n' "$ccodir"
         return 1
     fi
     return 0
