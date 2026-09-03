@@ -988,3 +988,104 @@ test_dev_project_guard_refusal_is_a_policy_refusal() {
     assert_refused "$rc" "${CCO_OUTPUT:-}" "$unit" || return 1
 }
 
+# ── D5 — migrations that target the real CONFIG ──────────────────────
+
+# D5: "With CONFIG shared and STATE sandboxed, `_run_migrations` runs
+# target-shared / marker-sandboxed: a dev-run migration mutates the real
+# ~/.cco/.claude and records that it ran in a bucket the published binary never
+# reads, so the published binary RUNS IT AGAIN. A restore puts the files back and
+# leaves the bookkeeping wrong. ⇒ Under --dev, migrations whose target is the real
+# CONFIG REFUSE unless an isolated config dir is in use."
+#
+# Three rows, reported together, because the ruling is a difference between them:
+#   A  --dev, real CONFIG                → refuse, and the migration must NOT run
+#   B  --dev, CCO_CONFIG_HOME elsewhere  → proceeds (the named escape works)
+#   C  no --dev                          → proceeds (nothing changes for a user)
+# Row C is the control that keeps A from passing on a broken `cco update`; row B is
+# the control that keeps A from passing on "--dev refuses cco update outright".
+#
+# The oracle is the SCHEMA MARKER, not the message: `schema_version` stays 0 when the
+# migration did not run and reaches the newest MIGRATION_ID when it did. Derived
+# from migrations/global/, never hardcoded (the suite already does this).
+_dp_seed_pending_global_migration() {
+    create_cco_meta "$(state_global_meta)" "schema_version: 0
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+
+manifest:"
+}
+_dp_latest_global_migration() {
+    awk -F= '/^MIGRATION_ID=/ {if ($2+0 > m) m=$2+0} END {print m}' \
+        "$REPO_ROOT"/migrations/global/*.sh
+}
+
+test_dev_config_migrations_refuse_and_name_the_escape() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    local bad="" rc latest
+    latest=$(_dp_latest_global_migration)
+
+    # ── Row A: --dev against the real CONFIG ⇒ refuse, nothing migrated ──
+    _dp_env "$tmpdir/a"; setup_global_from_defaults "$tmpdir/a"; _dp_seed_config
+    _dp_seed_pending_global_migration
+    rc=0
+    run_cco --dev update || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || bad+="  A: a CONFIG-targeting migration under --dev must refuse (D5), got rc=0"$'\n'
+    grep -q 'schema_version: 0' "$(state_global_meta)" \
+        || bad+="  A: the migration RAN — schema_version moved off 0 under --dev (D5)"$'\n'
+    # "The refusal names the escape" — the seam D5 builds and leaves disengaged.
+    printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'CCO_CONFIG_HOME|cco dev config|fixture' \
+        || bad+="  A: the refusal must name the escape (D5), got: ${CCO_OUTPUT:-<empty>}"$'\n'
+
+    # ── Row B: --dev with an isolated config dir ⇒ proceeds ──
+    _dp_env "$tmpdir/b"; setup_global_from_defaults "$tmpdir/b"; _dp_seed_config
+    _dp_seed_pending_global_migration
+    local fixture="$tmpdir/b/fixture-config"
+    cp -a "$HOME/.cco" "$fixture"
+    export CCO_CONFIG_HOME="$fixture"
+    rc=0
+    run_cco --dev update || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || bad+="  B: with an isolated config dir the migration must run, got rc=$rc: $CCO_OUTPUT"$'\n'
+    grep -q "schema_version: $latest" "$(state_global_meta)" \
+        || bad+="  B: the escape must actually let the migration run (D5) — schema_version did not reach $latest"$'\n'
+    unset CCO_CONFIG_HOME
+
+    # ── Row C: no --dev ⇒ unchanged behaviour for a user ──
+    _dp_env "$tmpdir/c"; setup_global_from_defaults "$tmpdir/c"; _dp_seed_config
+    _dp_seed_pending_global_migration
+    rc=0
+    run_cco update || rc=$?
+    grep -q "schema_version: $latest" "$(state_global_meta)" \
+        || bad+="  C: CONTROL — outside dev mode the migration must still run (rc=$rc): $CCO_OUTPUT"$'\n'
+
+    [[ -z "$bad" ]] || fail "D5's migration routing does not hold:"$'\n'"$bad"
+}
+
+# D5 names TWO call sites — lib/update.sh:138 and lib/cmd-init.sh:268 — and the
+# second is a different entry point entirely: `cco init`'s fresh global setup. A
+# routing wired into the update engine alone passes the test above and fails here.
+#
+# ⚠ setup_global_from_defaults is deliberately NOT called: cmd-init.sh:268 is reached
+# only when the global config does not exist yet, which is exactly the fresh-install
+# path D5 names.
+test_dev_init_global_migrations_refuse_too() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+
+    local repo="$tmpdir/fresh-repo"; mkdir -p "$repo"
+    local rc=0
+    _dp_cco_in "$repo" --dev init --name dp-fresh || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || fail "cco init's global migrations target the real CONFIG — under --dev they must refuse (D5), got rc=0: $CCO_OUTPUT"
+    printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'CCO_CONFIG_HOME|cco dev config|fixture' \
+        || fail "the refusal must name the escape (D5), got: ${CCO_OUTPUT:-<empty>}"
+
+    # CONTROL: the same command outside dev mode still initialises. Without it, a
+    # `cco init` broken for an unrelated reason would make the assertion above green.
+    local repo2="$tmpdir/fresh-repo-2"; mkdir -p "$repo2"
+    rc=0
+    _dp_cco_in "$repo2" init --name dp-fresh-2 || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || fail "CONTROL: cco init must work outside dev mode, got rc=$rc: $CCO_OUTPUT"
+}
