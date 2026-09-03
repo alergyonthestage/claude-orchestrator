@@ -64,7 +64,23 @@ A5's class. It has nothing to do with permissions and nothing to do with dev mod
 
 ## How to resume
 
-**First command**: `git branch --show-current` — host and container share one working tree.
+🔴 **Step 0 — hygiene, before anything else.** This session left **two worktrees** under
+`/workspace/` root: `/workspace/a102-impl` (branch `feat/devmode/a10-2-impl`) and
+`/workspace/hooks-fix` (branch `fix/hooks/worktree-git-probe`). ⚠ **`/workspace/` root is
+container-only and is lost when the container exits**, while the worktree *registrations* live in the
+mounted repo's `.git/worktrees/` and persist. After a rebuild git will therefore believe both branches
+are checked out in directories that no longer exist, and refuse to check them out. **Nothing is lost**
+— both branch refs and all their objects live in the mounted repo's own store (verified before this
+was written). The fix is one harmless command:
+
+```
+git -C /workspace/claude-orchestrator worktree prune
+```
+
+They were not removed at closing time because an agent was still running in one, and yanking a
+working tree out from under a live process is worse than leaving a prunable registration.
+
+**First command after that**: `git branch --show-current` — host and container share one working tree.
 
 **Then, in this order:**
 
