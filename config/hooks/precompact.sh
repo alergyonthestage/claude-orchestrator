@@ -5,10 +5,13 @@
 
 PROJECT="${PROJECT_NAME:-unknown}"
 
-# List repos so the compaction summary preserves them
+# List repos so the compaction summary preserves them.
+# ⚠ `-e`, never `-d`: in a git WORKTREE `.git` is a regular FILE, so a `-d` probe drops
+# every worktree from the list a compaction is told to preserve — the moment context is
+# scarcest. Same correction as ADR-0060 Amendment A5 made in lib/.
 repos=""
 for dir in /workspace/*/; do
-    [ -d "${dir}.git" ] && repos="${repos}
+    [ -e "${dir}.git" ] && repos="${repos}
 - /workspace/$(basename "$dir")/"
 done
 
