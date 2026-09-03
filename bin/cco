@@ -302,12 +302,16 @@ _cco_apply_dev_sandbox
 
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
-# CACHE. CONFIG has no XDG override, so the plain $HOME form matches
-# _cco_config_dir without an eager resolver call at startup;
-# CACHE is XDG-overridable, so llms derives from the resolver. A CCO_* override
-# always wins (tests/dev seams). Grouped here (post-paths.sh) for the resolver.
-PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
-TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
+# CACHE. Both derive from a resolver: CONFIG grew the CCO_CONFIG_HOME seam
+# (ADR-0060 D5), and a literal `$HOME/.cco` here would have silently ignored it —
+# a fixture config with the real store's packs and templates.
+# `_cco_config_dir_path` (not `_cco_config_dir`) is deliberate: it neither guards
+# nor creates, so this startup line cannot die in a container-agent context nor
+# materialise ~/.cco before the first-run gate has decided to.
+# A CCO_* override always wins (tests/dev seams). Grouped here (post-paths.sh)
+# for the resolver.
+PACKS_DIR="${CCO_PACKS_DIR:-$(_cco_config_dir_path)/packs}"
+TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$(_cco_config_dir_path)/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 # B2: drop section headers left empty after the operator filter removed all their

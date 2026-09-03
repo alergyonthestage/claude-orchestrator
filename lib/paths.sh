@@ -455,12 +455,39 @@ _cco_ensure_dir() {
 }
 
 # CONFIG — ~/.cco (user-authored, git-versioned; deliberately not under XDG).
+#
+# Split in two on purpose (ADR-0060 D5 / design §7):
+#
+#   _cco_config_dir_path  RESOLVES the path and does nothing else — no guard, no
+#                         mkdir. Two callers need exactly that: a question about
+#                         whether ~/.cco EXISTS (design §5.0b's first row makes an
+#                         absent store a no-op, and a resolver that CREATES it makes
+#                         that row unreachable), and bin/cco's PACKS_DIR/TEMPLATES_DIR,
+#                         computed at startup where an eager _cco_resolver_guard would
+#                         die in a container-agent context.
+#   _cco_config_dir       the full resolver every command body uses: guard, ensure,
+#                         echo — unchanged behaviour.
+#
+# CCO_CONFIG_HOME is the FIXTURE SEAM (ADR-0060 D5), and it is deliberately left
+# DISENGAGED: `--dev` never sets it. It exists so a dev run that genuinely needs a
+# different global config — a migration, which mutates CONFIG and records that it ran
+# in a bucket the published binary never reads — has somewhere to point that is not
+# the user's real store. Absolute-only, like every other CCO_*_HOME.
+_cco_config_dir_path() {
+    _cco_first_abs "${CCO_CONFIG_HOME:-}" "$HOME/.cco"
+}
+
 _cco_config_dir() {
     _cco_resolver_guard
-    local base="$HOME/.cco"
+    local base; base=$(_cco_config_dir_path)
     _cco_ensure_dir "$base"
     printf '%s\n' "$base"
 }
+
+# True (0) when an ISOLATED config dir is in use — the escape ADR-0060 D5's migration
+# refusal names. Asked of the env, not of the resolver's output, so it stays true even
+# when CCO_CONFIG_HOME happens to name the real store's path.
+_cco_config_isolated() { [[ "${CCO_CONFIG_HOME:-}" == /* ]]; }
 
 # Global (user) Claude config home — ~/.cco/.claude (ADR-0028: flat under the
 # config home, no `global/` wrapper). Single source of truth for the global
@@ -673,11 +700,30 @@ _cco_dev_find_clone() {
 # buckets are one half of the dev identity, ADR-0060 D2).
 _cco_dev_sandbox_active() { [[ "${CCO_DEV_SANDBOX:-}" == "1" ]]; }
 
-# The sandbox root: an explicit absolute CCO_DEV_SANDBOX_ROOT wins, else
-# ~/.cco-devsandbox. Buckets nest as <root>/{state,data,cache}.
-_cco_dev_sandbox_root() {
-    _cco_first_abs "${CCO_DEV_SANDBOX_ROOT:-}" "$HOME/.cco-devsandbox"
+# The dev root: an explicit absolute CCO_DEV_ROOT wins, then the superseded
+# CCO_DEV_SANDBOX_ROOT, else ~/.cco-devsandbox.
+#
+# CCO_DEV_ROOT is the PREFERRED spelling (design §5.0) — the root is no longer only
+# the bucket sandbox: the snapshot store and (A10.2 wave 2) the fixtures are its
+# siblings, so a name that says "sandbox" now describes one of its four children.
+# CCO_DEV_SANDBOX_ROOT is kept as a superseded ALIAS, the same treatment the flags
+# get. ⚠ THE DEFAULT PATH DOES NOT MOVE: renaming ~/.cco-devsandbox would strand
+# every sandbox that already exists, which is precisely the orphan class this unit
+# exists not to create.
+#
+#   <dev-root>/state · data · cache      the three redirected XDG buckets
+#   <dev-root>/snapshots/config.git      the pre-run config snapshot store (§5)
+#
+# The snapshot store is a SIBLING of the buckets and never a child of state/: the
+# one-shot seed below does `cp -a "$real_state" "$root/state"` behind a
+# `[[ -d "$root/state" ]]` guard, so anything under state/ would be both
+# indistinguishable from copied real STATE and entangled with that guard.
+_cco_dev_root() {
+    _cco_first_abs "${CCO_DEV_ROOT:-}" "${CCO_DEV_SANDBOX_ROOT:-}" "$HOME/.cco-devsandbox"
 }
+
+# Superseded alias, kept because the bucket half's callers and tests name it.
+_cco_dev_sandbox_root() { _cco_dev_root; }
 
 # One-shot seed (opt-in, CCO_DEV_SANDBOX_SEED=1): copy the real STATE + DATA into a
 # fresh sandbox so a dev binary starts against realistic internal state (an existing
@@ -725,6 +771,9 @@ _cco_apply_dev_sandbox() {
     [[ "${CCO_DATA_HOME:-}"  == /* ]] || export CCO_DATA_HOME="$root/data"
     [[ "${CCO_STATE_HOME:-}" == /* ]] || export CCO_STATE_HOME="$root/state"
     [[ "${CCO_CACHE_HOME:-}" == /* ]] || export CCO_CACHE_HOME="$root/cache"
+    # Both spellings are exported: CCO_DEV_ROOT because it is the name that survives,
+    # CCO_DEV_SANDBOX_ROOT because `cco whoami` and the existing tests read it.
+    export CCO_DEV_ROOT="$root"
     export CCO_DEV_SANDBOX_ROOT="$root"
     # 📌 The one judgement call of the ADR-0059 §3.3 audit, flagged and approved as
     # written: loud by intent, but the user typed --dev-sandbox themselves and
