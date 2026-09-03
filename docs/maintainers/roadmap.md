@@ -9,7 +9,9 @@
 > [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 > The dev execution mode's identity half is shipped **and verified on a host**, so a dev build can no
 > longer overwrite the image a real session uses. ✅ **A10.1's acceptance gate is CLOSED** and
-> `develop` is **pushed** — both measured 2026-09-03. ▶ **A10.2 is in implementation.**
+> `develop` is **pushed** — both measured 2026-09-03. ▶ **A10.2's wave 1 (protection) is built and
+> tested but NOT merged**; wave 2 (tooling) is not started. A new open observation,
+> **[FI-85](improvements.md)**, is recorded as *watch, not work*.
 >
 > **2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
@@ -833,7 +835,32 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 
 🔴 **One gate still owed, and it is host-only by construction**: a real `cco build` under `--dev` producing `claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified with `docker image inspect` on both tags** — never `docker run` (FI-82, empty stdout in-session), never `cco --version` (non-discriminating, ADR-0060 M3). `--dev` refuses in-container, so no session can close it. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 
-##### A10.2 — protection and tooling
+##### A10.2 — protection and tooling — ▶ **WAVE 1 BUILT AND TESTED 2026-09-03, NOT MERGED**
+
+✅ **Wave 1 (protection) is complete on `feat/devmode/a10-2-impl`**: the snapshot store (§5),
+`cco dev restore` (§5.1), the `<repo>/.cco` restorability guard (D4.8) wired at every classified
+writer, the D5 migration routing and the `CCO_CONFIG_HOME` seam. New files `lib/dev.sh` and
+`lib/cmd-dev.sh`. Tests were written **from the design before the code existed** and proven by
+mutation (37 mutations, 36 caught); `tests/test_dev_protection.sh` and `INV-CCOSPEC` are green on the
+impl branch. 🔴 **Two merges are owed and the first is the next command**: `a10-2-impl` into the unit
+branch — **three tests have never met the implementation**, because the impl branch merged the tests
+before the tester wrote the last three.
+
+⭐ **The enumeration lesson reached third order here.** §5.2 names 6 writers and says it is a lower
+bound; the mandated re-grep returned **113 hits** — and **two writers are invisible to that command
+entirely** (`cco llms rename`, `cco llms add --project`) because they reach `<repo>/.cco` through a
+*resolver* rather than a literal `"$var/.cco"`. ⇒ **the design's own prescribed enumeration command
+is itself a lower bound**; a future writer sweep must ask what *reaches* the path, not what *spells*
+it.
+
+🔴 **Two decisions are open for the maintainer**, both user-perceivable and both recorded rather than
+ruled by the lead: the fan-out guard is a **superset** (a dirty member repo can refuse a rename that
+would never have touched it), and the two rename guards sit on **opposite sides of their confirm
+prompts**. Detail in the handoff.
+
+▶ **Wave 2 (tooling) is not started**: `cco dev seed|reset|list|config|project` (the seams exist) ·
+`clean` environment-scoping and `--images` · the §6.2 `cco start` build-ref warn · the fixtures ·
+`project.dev.yml`.
 
 The snapshot store · the `<repo>/.cco` restorability guard (D4.8) · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
 (throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
