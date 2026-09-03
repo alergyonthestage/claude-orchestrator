@@ -5,11 +5,19 @@
 > analysis [`../analysis/dev-execution-mode.md`](../analysis/dev-execution-mode.md) and to the
 > decision clinic
 > [`../analysis/dev-execution-mode-decisions.md`](../analysis/dev-execution-mode-decisions.md).
-> **Status**: **A10.1 (identity) is built and green as of 2026-09-01** — §3, §4, §6.1 and §6.3 are
-> shipped behaviour; one post-implementation correction is
-> [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments). **A10.2 (protection and
-> tooling) is designed and NOT built**: §5, §6.2, §7 and §8 describe intended behaviour, not what
-> the code does today.
+> **Status**, as of 2026-09-03:
+> - **A10.1 (identity) is built, merged and ACCEPTED on a host** — §3, §4, §6.1 and §6.3 are shipped
+>   behaviour; the post-implementation correction is
+>   [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments).
+> - **A10.2 wave 1 (protection) is BUILT and TESTED but NOT MERGED** — §5 (snapshot store), §5.1
+>   (restore), §5.2 (the `<repo>/.cco` guard, wired at 11 sites) and the D5 migration routing are
+>   code on `feat/devmode/a10-2-impl`, governed additionally by
+>   [Amendment A6](../decisions/0060-developer-execution-mode.md#amendments). ⚠ **Not merged means
+>   not yet verified together**: three tests written after the branch last merged them have never run
+>   against this code.
+> - **A10.2 wave 2 (tooling) is designed and NOT built**: §6.2, §7 and §8 describe intended
+>   behaviour, not what the code does today. `cco dev`'s sub-verbs other than `restore` answer
+>   *"not implemented yet (wave 2)"*.
 >
 > **Acceptance criteria, agreed 2026-08-31** — the design is done when each is answered by a named
 > artifact: (1) a dev run cannot overwrite the image a real session uses; (2) a dev run's writes to
