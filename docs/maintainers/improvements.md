@@ -3664,3 +3664,109 @@ state, so nothing in the repo depends on where it lives.
 
 **Effort**: zero to relieve locally (move the directory). Low to change the call site, but **do not
 change it alone** — see the FI-16 coupling. **Type**: suite cost / design question.
+
+## FI-85 — permission dialogs on ordinary Bash reads, under bypassPermissions, in this project's sessions only
+
+**Status**: 🔴 **Observed 2026-09-03, cause NOT found, and the first diagnosis was REFUTED by
+measurement.** Recorded so that a recurrence has a date to be measured against. **Nothing was
+changed** — no code, no configuration, no permission rule. The only action taken was advisory
+(the lead told its agents to shape commands differently), which is a palliative, not a fix.
+
+⚠ **This is an open question, not a finding with a remedy.** Read §*What was refuted* before acting
+on any part of it.
+
+### The symptom
+
+With bypass permissions active, the maintainer was repeatedly interrupted by
+`Bash command … Do you want to proceed?` dialogs for read-only commands — from the lead and from
+spawned subagents alike. One dialog's explanation line, the only one captured verbatim:
+
+> `grep` on 'dev-execution-mode.md' after a `cd` would search a directory that cannot be determined
+> here, and a `Read()` deny rule is configured; only you can approve running it anyway.
+
+⭐ **The maintainer's own observation is the sharpest datum in the file**: *other projects' sessions
+do not do this.* That is what turned a nuisance into a question.
+
+### What was measured, and what it rules out
+
+| Measured | Result |
+|---|---|
+| the deny rules in force | `/etc/claude-code/managed-settings.json` → `deny: ["Read(~/.claude.json)", "Read(~/.ssh/*)"]`, and **nothing else anywhere** — project, repo and user settings carry `allow` lists only |
+| whether this session got a per-session overlay | **No.** `mountinfo` has **0** hits for `managed-settings.json`, so this session runs the **baked default** — the file every cco session gets |
+| whether another session could have fewer rules | **No.** `_emit_managed_settings_overlay` (`lib/cmd-start.sh:2533`) takes `defaults/managed/managed-settings.json` as its **base and adds**. Every session carries **at least** these two rules |
+
+⇒ **Configuration is eliminated as the differentiator.** Every cco session has the same deny rules or
+stricter. Whatever makes this project's sessions different is **behavioural**, not configurational.
+
+### 🔴 What was refuted
+
+The first diagnosis — *"the trigger is `cd <dir> && <cmd> <relative-file>`"* — was taken from the one
+dialog whose text was captured, and generalised. Three probes run from the lead, with the maintainer
+reporting which raised a dialog:
+
+| Probe | Command | Dialog |
+|---|---|---|
+| 1 | `grep -c . /workspace/claude-orchestrator/README.md` | **no** |
+| 2 | `grep -c . README.md` | **no** |
+| 3 | `grep -c . README.md` (cwd inherited) | **no** |
+
+**Probe 2 carries the exact shape that was blamed, and did not prompt.** The dialog's wording is a
+true statement about *that one command*, not a sufficient condition. ⭐ The class lesson is this
+project's most-repeated one, arriving from a new direction: **a single sample is a lower bound**, and
+a diagnostic message explains its own case, not the general rule.
+
+### The current hypothesis — UNVERIFIED, do not act on it as fact
+
+Tabulating every command known to have prompted against the three that did not, the discriminator
+appears to be **compound structure**, not the `cd`:
+
+| Command | Structure | Dialog |
+|---|---|---|
+| probes 1–3 | single simple command | no |
+| lead | `cd && grep …; echo …; awk …` — three statements | **yes** |
+| tester | `cd; grep … \| grep \| grep \| head` — 4-stage pipeline | **yes** |
+| tester | `cd; git diff … \| head -120` — `;` plus a pipe | **yes** |
+| implementer | `cd && grep -r … \| head` — pipe, recursive read | **yes** |
+| implementer | `cd && echo; grep -A 18 \| head; echo; sed` — four statements | **yes** |
+| implementer | `cd && grep -rn … \| grep -v \| head` — 3-stage pipeline | **yes** |
+
+**Speculated mechanism**: a simple command is matched against the existing `allow` rules
+(`Bash(grep *)`, `Bash(head *)`, … in the user settings) and passes; a complex compound reduces to no
+single rule, falls through to read-path analysis, and there the presence of *any* `Read()` deny makes
+it fail closed. This would also explain the cross-session difference with **no** config difference:
+this project's sessions are agent-heavy, and its agents compose long multi-stage commands.
+
+⚠ **Not measured**: whether the trigger is multi-statement (`;`), the pipeline, or both. Two probes
+would separate them — `cd X && grep … file; echo hi` versus `cd X && grep … file | head -3` — and
+were deliberately not run, to stop consuming the maintainer's attention mid-implementation.
+
+### ▶ The discriminating experiment — the maintainer's, and it cannot be run from a session
+
+**Rebuild the image and restart the session**, then work normally and watch for the dialogs.
+
+- **They disappear** ⇒ the cause was something stale or session-local, and this entry can be closed
+  with the date the rebuild happened.
+- **They persist** ⇒ the cause is structural and this entry stays open with a second dated
+  observation. At that point run the two probes above, which is the cheapest next measurement.
+
+⚠ **Confounder to state rather than discover later**: the session that produced these observations
+was **unusually agent-heavy**. A quieter session may show no dialogs for that reason alone, which
+would *look* like the rebuild fixed it. To make the experiment discriminate, the post-rebuild session
+must also run agents that compose multi-stage commands — or the result is not evidence.
+
+### If it turns out to be real, where a fix would land
+
+⚠ Deliberately not decided, and the first draft of this section had to be withdrawn once already —
+it recommended *"prefer absolute paths"*, which probe 2 then showed would have been the wrong advice.
+
+- The useful guidance, **if** the compound hypothesis holds, is *"keep Bash commands simple — one
+  command per call"*, which is better practice for other reasons.
+- ⭐ The channel matters as much as the wording: the lead is a fraction of the commands a session
+  runs. cco already owns a hook that provably reaches every subagent —
+  `config/hooks/subagent-context.sh` (`SubagentStart`). **Not verified**: whether the managed
+  `CLAUDE.md` is itself read by subagents; if it is, one line there covers both and no hook changes.
+- **Explicitly NOT proposed**: removing or narrowing the two deny rules. They protect SSH keys and
+  the Claude credential file, and the friction is on the command side.
+
+**Effort**: zero so far (nothing changed). Unknown to diagnose. **Type**: agent-facing friction /
+open measurement.
