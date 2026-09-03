@@ -734,3 +734,257 @@ test_dev_restore_accepts_an_explicit_ref() {
         "an explicit ref must restore THAT snapshot, not HEAD (§5.1)" || return 1
 }
 
+# ── §5.2 / D4.8 — the <repo>/.cco restorability guard ────────────────
+
+# §5.2's table plus its two controls, ⚠ REPORTED TOGETHER. The evidence wanted is
+# "these shapes refuse and those proceed"; a fail-fast test would stop at the first
+# row and never show that the guard is not simply refusing everything.
+#
+# The two controls are what make the five refusal rows mean anything:
+#   - `clean` under --dev must PROCEED (the guard is about restorability, not about
+#     dev mode forbidding project writes);
+#   - `dirty` WITHOUT --dev must PROCEED (the guard is dev-mode-only; D4.8 changes
+#     nothing for a user — ADR-0060 Consequences: "For a user: nothing changes").
+# Neutralise the guard and the five refusal rows move; widen it and the controls do.
+#
+# ⚠ The worktree row exists because a worktree's `.git` is a regular FILE
+# (ADR-0060 A5): a guard that probes `-d .git` instead of reusing
+# `_project_resolve_unit` calls a perfectly good repo "not a git work tree" — and
+# rules/git-practices.md makes worktree-per-agent the default here.
+# ⚠ The nested rows exist because §5.2's own 🔴 note says every git OUTPUT path is
+# reported relative to the TOP LEVEL, never to the unit dir: a guard written as
+# `git -C <unit> status --porcelain -- .cco` measures nothing when .cco sits in a
+# subdirectory, which is precisely how a secret once got committed under `✓ saved`.
+test_dev_project_guard_refuses_only_the_unrestorable_shapes() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local bad="" row shape expect unit rc
+
+    # The five flat shapes + the clean control.
+    for row in "nogit:refuse"  "never:refuse"  "ignored:refuse" \
+               "dirty:refuse"  "clean:proceed"; do
+        shape="${row%%:*}"; expect="${row#*:}"
+        unit="$tmpdir/units/$shape"
+        _dp_unit "$unit" "u-$shape" "$shape" || { bad+="  $shape: fixture failed"$'\n'; continue; }
+        rc=0; _dp_writer_add "$unit" || rc=$?
+        if [[ "$expect" == "refuse" ]]; then
+            [[ "$rc" -ne 0 ]] \
+                || bad+="  $shape: an unrestorable <repo>/.cco must refuse the writer (§5.2), got rc=0"$'\n'
+            # The rc is not the contract on its own — a refusal that still wrote is
+            # the failure this row exists to catch.
+            ! _dp_add_landed "$unit" \
+                || bad+="  $shape: <repo>/.cco was modified despite being unrestorable"$'\n'
+        else
+            [[ "$rc" -eq 0 ]] \
+                || bad+="  $shape: CONTROL — a committed, clean .cco must PROCEED, got rc=$rc: $CCO_OUTPUT"$'\n'
+            _dp_add_landed "$unit" \
+                || bad+="  $shape: CONTROL — the writer must have written, and did not"$'\n'
+        fi
+    done
+
+    # A real worktree: `.git` is a gitfile, and the unit is dirty ⇒ refuse.
+    local main="$tmpdir/wt-main" wt="$tmpdir/wt-linked"
+    _dp_unit "$main" "u-wtmain" "clean"
+    git -C "$main" worktree add -q -b dp-wt "$wt" >/dev/null 2>&1 \
+        || bad+="  worktree: fixture failed (git worktree add)"$'\n'
+    if [[ -f "$wt/.git" ]]; then
+        printf '# edited\n' >> "$wt/.cco/project.yml"
+        rc=0; _dp_writer_add "$wt" || rc=$?
+        [[ "$rc" -ne 0 ]] \
+            || bad+="  worktree: a dirty .cco in a WORKTREE must refuse — .git is a FILE there (A5), got rc=0"$'\n'
+        # …and the same worktree, clean, must proceed: the row must not simply be
+        # "worktrees are always refused".
+        git -C "$wt" checkout -q -- .cco 2>/dev/null
+        rc=0; _dp_writer_add "$wt" || rc=$?
+        [[ "$rc" -eq 0 ]] \
+            || bad+="  worktree: CONTROL — a clean worktree unit must PROCEED, got rc=$rc: $CCO_OUTPUT"$'\n'
+    else
+        bad+="  worktree: fixture is not a gitfile — the A5 shape was not built"$'\n'
+    fi
+
+    # .cco in a SUBDIRECTORY of the repo that versions it.
+    local top="$tmpdir/nested-top"
+    _dp_git_repo "$top"
+    printf 'code\n' > "$top/src.txt"
+    _dp_write_unit "$top/svc" "u-nested"
+    _dp_git_commit_all "$top" "nested config + code"
+    rc=0; _dp_writer_add "$top/svc" || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || bad+="  nested-clean: CONTROL — a committed, clean nested unit must PROCEED, got rc=$rc: $CCO_OUTPUT"$'\n'
+    _dp_git_commit_all "$top" "accept the write"
+    printf '# edited\n' >> "$top/svc/.cco/project.yml"
+    rc=0; _dp_writer_add "$top/svc" || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || bad+="  nested-dirty: a dirty nested .cco must refuse — status paths are TOP-LEVEL relative (§5.2)"$'\n'
+
+    # 🔴 The control that keeps the whole table honest: WITHOUT --dev the same
+    # unrestorable unit is untouched. D4.8 is a dev-mode guard; for a user nothing
+    # changes.
+    unit="$tmpdir/units/nodev"
+    _dp_unit "$unit" "u-nodev" "dirty"
+    rc=0
+    _dp_cco_in "$unit" project add repo probe --url https://ex.com/p.git || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || bad+="  no-dev: CONTROL — outside dev mode a dirty .cco must NOT be guarded, got rc=$rc: $CCO_OUTPUT"$'\n'
+    _dp_add_landed "$unit" \
+        || bad+="  no-dev: CONTROL — the writer must have written outside dev mode"$'\n'
+
+    [[ -z "$bad" ]] || fail "the <repo>/.cco guard does not match §5.2:"$'\n'"$bad"
+}
+
+# §5.2: "The refusal names WHICH OF THE THREE failed" — and ⚠ "Order 2 before 3, and
+# keep both": a .cco that is entirely untracked also shows in `status --porcelain`
+# (as `??`), so checking 3 first would blame "uncommitted changes" for what is really
+# "never committed"; and a GITIGNORED .cco shows in NEITHER status nor ls-files, so
+# condition 2 is the only thing that catches it.
+#
+# Asserted as PAIRWISE DISTINCTNESS of the three messages rather than by wording: an
+# implementation that collapsed conditions 2 and 3 into one message passes any
+# wording match on either, and fails this.
+test_dev_project_guard_names_which_condition_failed() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local bad="" shape unit msg
+    local m_nogit="" m_never="" m_dirty=""
+    for shape in nogit never dirty; do
+        unit="$tmpdir/why/$shape"
+        _dp_unit "$unit" "w-$shape" "$shape" || { bad+="  $shape: fixture failed"$'\n'; continue; }
+        _dp_writer_add "$unit" >/dev/null 2>&1 || true
+        # ⚠ Normalise the UNIT PATH out, not just $tmpdir. Each row lives at its own
+        # path, so a $tmpdir-only substitution leaves `<T>/why/never` vs
+        # `<T>/why/dirty` — three messages that differ by FIXTURE, and the
+        # distinctness below then passes on an implementation that gives all three
+        # the same REASON. Measured: it survived the "check condition 3 before 2"
+        # mutation, which is the exact defect §5.2's ordering note exists to prevent.
+        msg=$(printf '%s\n' "${CCO_OUTPUT:-}" | grep -viE '^(note|ok|info):' \
+              | sed "s|$unit|<UNIT>|g; s|$tmpdir|<T>|g")
+        [[ -n "$msg" ]] || bad+="  $shape: the refusal said nothing"$'\n'
+        [[ "${CCO_OUTPUT:-}" == *"$unit"* ]] \
+            || bad+="  $shape: the refusal must name the path it judged (§5.2)"$'\n'
+        case "$shape" in
+            nogit) m_nogit="$msg" ;; never) m_never="$msg" ;; dirty) m_dirty="$msg" ;;
+        esac
+    done
+    [[ "$m_nogit" != "$m_never" ]] \
+        || bad+="  'not a git work tree' and 'nothing tracked' must be told apart (condition 1 vs 2)"$'\n'
+    [[ "$m_never" != "$m_dirty" ]] \
+        || bad+="  'never committed' must not be reported as 'uncommitted changes' — order 2 before 3 (§5.2)"$'\n'
+    [[ "$m_nogit" != "$m_dirty" ]] \
+        || bad+="  'not a git work tree' and 'uncommitted changes' must be told apart (condition 1 vs 3)"$'\n'
+    [[ -z "$bad" ]] || fail "the refusal does not name which condition failed:"$'\n'"$bad"
+}
+
+# §5.2: "The refusal names ... the two ways out: commit or stash .cco, or work on a
+# fixture." Kept as its own test, and matched loosely (either spelling of either
+# way), so a wording change costs one test rather than the whole table above.
+test_dev_project_guard_refusal_names_the_two_ways_out() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local unit="$tmpdir/waysout"
+    _dp_unit "$unit" "w-out" "dirty"
+    _dp_writer_add "$unit" >/dev/null 2>&1 || true
+
+    printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'commit|stash' \
+        || fail "way out 1 (commit or stash .cco) is missing from the refusal: ${CCO_OUTPUT:-<empty>}"
+    printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'fixture|cco dev project' \
+        || fail "way out 2 (work on a fixture) is missing from the refusal: ${CCO_OUTPUT:-<empty>}"
+}
+
+# ⭐ D4.8's exemption, and it is "required, not cosmetic": `cco project save`'s only
+# effect is a COMMIT, which is revertable by construction, and the verb only does
+# anything when .cco is DIRTY — so a dirty-check would make it permanently untestable
+# in dev mode.
+#
+# The paired control is the whole test: the SAME repo, in the SAME dirty state, in
+# the SAME dev-mode run — refused for a destroying writer, allowed for `project
+# save`. Either half alone is satisfied by a guard that is simply absent or simply
+# universal.
+test_dev_project_save_is_exempt_from_the_guard() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local unit="$tmpdir/saveme"
+    _dp_unit "$unit" "u-save" "dirty"
+
+    # Control: a destroying writer IS refused on this exact tree.
+    local rc=0
+    _dp_writer_add "$unit" || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || fail "control: a destroying writer must be refused on this dirty unit, got rc=0: $CCO_OUTPUT"
+
+    # The exemption: the commit-only writer proceeds, and actually commits.
+    local head_before; head_before=$(git -C "$unit" rev-parse HEAD 2>/dev/null)
+    rc=0
+    _dp_cco_in "$unit" --dev project save -m "dev-mode save" || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || fail "cco project save must stay usable under --dev (D4.8), got rc=$rc: $CCO_OUTPUT"
+    local head_after; head_after=$(git -C "$unit" rev-parse HEAD 2>/dev/null)
+    [[ -n "$head_after" && "$head_after" != "$head_before" ]] \
+        || fail "the exemption must let the save actually COMMIT — HEAD did not move: $CCO_OUTPUT"
+    git -C "$unit" show --name-only --format= HEAD 2>/dev/null | grep -q '^\.cco/project\.yml$' \
+        || fail "the save must have committed .cco/project.yml: $(git -C "$unit" show --name-only --format= HEAD 2>/dev/null)"
+}
+
+# §5.2's writers table is explicitly "a LOWER BOUND and it has already been shown to
+# be one" (round 3 named four, a re-grep found a fifth). So the guard is asserted on
+# a SECOND writer of a different shape — `cco forget --purge`, whose effect is
+# `rm -rf "$p/.cco"` (lib/cmd-forget.sh:240) — with its own proceed control.
+# A guard wired into one command body instead of into the criterion fails here.
+test_dev_project_guard_covers_a_second_destroying_writer() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local bad="" rc
+
+    # Unrestorable (a plain, non-git directory) ⇒ the rm -rf must not happen.
+    create_project "$tmpdir" "purge-nogit" "$(minimal_project_yml purge-nogit)"
+    rc=0
+    run_cco --dev forget purge-nogit --purge -y || rc=$?
+    [[ "$rc" -ne 0 ]] \
+        || bad+="  forget --purge: an unrestorable <repo>/.cco must refuse the rm -rf (§5.2), got rc=0"$'\n'
+    [[ -f "$(host_cco_dir "$tmpdir" purge-nogit)/project.yml" ]] \
+        || bad+="  forget --purge: <repo>/.cco was DELETED despite being unrestorable"$'\n'
+
+    # Restorable (committed and clean) ⇒ proceeds, as it does today.
+    create_project "$tmpdir" "purge-clean" "$(minimal_project_yml purge-clean)"
+    local host="$tmpdir/repos/purge-clean"
+    _dp_git_repo "$host"; _dp_git_commit_all "$host" "config"
+    rc=0
+    run_cco --dev forget purge-clean --purge -y || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || bad+="  forget --purge: CONTROL — a committed, clean .cco must PROCEED, got rc=$rc: $CCO_OUTPUT"$'\n'
+
+    [[ -z "$bad" ]] || fail "the guard is bound to one command instead of to the criterion:"$'\n'"$bad"
+}
+
+# The repo's refusal-code convention (CLAUDE.md: "refusal exit codes follow 0/2/1 —
+# success-or-degrade / policy refusal / error"). Kept as ONE test, deliberately
+# separate from the tables above — which assert rc != 0 — so that if the
+# implementation lands the guard as a `die` (rc 1) instead of a `refuse` (rc 2), a
+# single row reports it rather than every row going red.
+test_dev_project_guard_refusal_is_a_policy_refusal() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+
+    local unit="$tmpdir/rc"
+    _dp_unit "$unit" "u-rc" "dirty"
+    local rc=0
+    _dp_writer_add "$unit" || rc=$?
+    assert_refused "$rc" "${CCO_OUTPUT:-}" "$unit" || return 1
+}
+
