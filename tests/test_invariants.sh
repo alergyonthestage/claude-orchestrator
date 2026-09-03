@@ -2243,3 +2243,193 @@ test_invariant_project_gitignore_floor_covered() {
         fi
     ) || return 1
 }
+
+# ── INV-CCOSPEC — the unit's git root and its pathspec travel together ─
+#
+# THE INVARIANT — in `lib/` and `bin/cco`, a git invocation that addresses a
+# project's `<repo>/.cco` addresses it as `-C "$_PROJECT_GITROOT" … -- "$_PROJECT_SPEC"`
+# (or locals assigned from those two). A literal `.cco` pathspec is forbidden, and so
+# is using one half without the other.
+#
+# WHY A LINT AND NOT A TEST. Asked as a PREDICATE — "is this path tracked / dirty" —
+# `git -C "$unit" … -- .cco` and the prescribed form give the SAME ANSWER, measured:
+# git pathspecs are resolved relative to the process's cwd, which `-C` sets, so a
+# `.cco` in a subdirectory resolves correctly either way. It is only git's OUTPUT that
+# is reported relative to the top level. So no behavioural test can discriminate the
+# two spellings — a mutation from the prescribed form to the bare one survived the
+# whole of tests/test_dev_protection.sh — while every INCONSISTENT mix (top-level
+# anchor + bare pathspec; unit anchor + top-level spec) is caught there. This lint
+# covers exactly the residue: the consistent-but-wrong spelling.
+#
+# WHY IT STILL MATTERS. The equivalence holds only while the call stays a predicate.
+# The moment a caller consumes what git PRINTS — `status --porcelain`, `ls-files`,
+# `diff --cached --name-only`, `check-ignore -v`'s source — the output is top-level
+# relative and joining it onto the unit dir fails SILENTLY. That is not hypothetical
+# here: it is how a secret under a nested `.cco/` was committed under `✓ saved`
+# (lib/cmd-project-save.sh's own header records it). A file that already reaches for
+# the bare spelling for its predicates is one edit away from doing it for its output.
+#
+# DELIBERATELY SCOPED to lib/ + bin/cco. `~/.cco` — the PERSONAL store — is a
+# different object with a different owner (`git -C "$cfg"` in cmd-config.sh), and it
+# has no unit dir and no prefix; those calls carry no `--` pathspec and are untouched
+# by both rules.
+#
+# A deliberate exception carries a same-line `# allow-bare-cco-pathspec: <why>`.
+#
+# ⚠ KNOWN LIMIT, stated rather than hidden: the comment stripper tracks quote state
+# but not `$'…'` or backslash escapes, so a `--  .cco` inside such a string would be
+# read as code. That direction is a false POSITIVE, which the marker resolves; it
+# never lets a real call through.
+_cco_spec_lint_prog() {
+    cat <<'AWK'
+function strip(s,   i, ch, inq, q, out) {
+    inq = 0; q = ""; out = ""
+    for (i = 1; i <= length(s); i++) {
+        ch = substr(s, i, 1)
+        if (inq) { out = out ch; if (ch == q) inq = 0; continue }
+        if (ch == "\"" || ch == "'") { inq = 1; q = ch; out = out ch; continue }
+        if (ch == "#" && (i == 1 || substr(s, i-1, 1) == " " || substr(s, i-1, 1) == "\t")) return out
+        out = out ch
+    }
+    return out
+}
+# Every NAME in `NAME="$VAR"` / `NAME=$VAR` on this line, recorded as an alias of VAR.
+function addalias(line, var, arr,    rest, re, m, name) {
+    re = "[A-Za-z_][A-Za-z_0-9]*=\"?[$]" var "([^A-Za-z_0-9]|$)"
+    rest = line
+    while (match(rest, re)) {
+        m = substr(rest, RSTART, RLENGTH)
+        name = m; sub(/=.*$/, "", name)
+        arr[name] = 1
+        rest = substr(rest, RSTART + RLENGTH)
+    }
+}
+function refs(line, name) { return (line ~ ("[$]" name "([^A-Za-z_0-9]|$)")) }
+
+BEGIN { ROOTS["_PROJECT_GITROOT"] = 1; SPECS["_PROJECT_SPEC"] = 1 }
+
+# ── pass 1: collect the local aliases of the two globals ──
+NR == FNR {
+    l = strip($0); gsub(/[{}]/, "", l)
+    addalias(l, "_PROJECT_GITROOT", ROOTS)
+    addalias(l, "_PROJECT_SPEC",    SPECS)
+    next
+}
+
+# ── pass 2: check, over LOGICAL lines (continuations joined) ──
+{
+    raw = $0
+    l = strip($0); gsub(/[{}]/, "", l)
+    rawbuf = rawbuf raw " "
+    if (l ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, " ", l); buf = buf l; start = start ? start : FNR; next }
+    buf = buf l
+    line = buf; rawline = rawbuf; ln = start ? start : FNR
+    buf = ""; rawbuf = ""; start = 0
+
+    if (rawline ~ /allow-bare-cco-pathspec/) next
+    if (line !~ /(^|[^A-Za-z_0-9])git[[:space:]]/) next
+
+    # Rule A — a LITERAL `.cco` pathspec after `--`.
+    if (line ~ /--[[:space:]]+"?\.cco\/?"?([[:space:]]|"|$)/)
+        printf "%s|%d|BARE-PATHSPEC|%s\n", FILENAME, ln, line
+
+    # Rule B — the spec is used, so every `-C` on the line must be a root alias.
+    spec = 0
+    for (n in SPECS) if (refs(line, n)) spec = 1
+    if (spec) {
+        rest = line; sawC = 0; anchored = 0; foreign = 0
+        while (match(rest, /-C[[:space:]]+"?[$][A-Za-z_][A-Za-z_0-9]*/)) {
+            m = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+            name = m; sub(/^-C[[:space:]]+"?[$]/, "", name)
+            sawC = 1
+            if (name in ROOTS) anchored = 1; else foreign = 1
+        }
+        if (!sawC || foreign || !anchored)
+            printf "%s|%d|UNANCHORED-SPEC|%s\n", FILENAME, ln, line
+    }
+}
+AWK
+}
+
+# Echo violating hits ("<file>|<line>|<kind>|<text>") under <root>. Empty = clean.
+# <root> is a PATH so the self-tests below can lint a STAGED copy of lib/.
+_cco_spec_lint_violations() {
+    local root="$1" f rel prog
+    prog=$(_cco_spec_lint_prog)
+    for f in "$root"/*.sh "$root"/cco; do
+        [[ -f "$f" ]] || continue
+        rel=$(basename "$f")
+        # ⚠ The file is passed TWICE on purpose — pass 1 collects the aliases, pass 2
+        # checks. Not a typo, and not `bash -n`'s first-argument trap: awk reads every
+        # file argument, which is exactly what the two-pass form needs.
+        awk "$prog" "$f" "$f" 2>/dev/null | while IFS='|' read -r _ ln kind text; do
+            [[ -z "$ln" ]] && continue
+            printf '%s|%s|%s|%s\n' "$rel" "$ln" "$kind" "$text"
+        done
+    done
+}
+
+test_invariant_cco_pathspec_travels_with_its_git_root() {
+    # 1. The live tree must be clean.
+    # ⚠ `return 1` on the live-tree arms, not a bare `fail`. Arm 2c below asserts the
+    # STAGED copy is clean apart from its own probe, so a real violation in lib/ would
+    # print a second, misleading "over-reaches" failure on top of the one that actually
+    # happened — measured while planting probes to prove this lint fires.
+    local v; v=$(_cco_spec_lint_violations "$REPO_ROOT/lib")
+    [[ -z "$v" ]] \
+        || { fail "INV-CCOSPEC: a git call addresses <repo>/.cco without anchoring on \$_PROJECT_GITROOT + \$_PROJECT_SPEC. Both halves must travel together (design §5.2); a deliberate exception carries '# allow-bare-cco-pathspec: <why>':"$'\n'"$v"; return 1; }
+    v=$(_cco_spec_lint_violations "$REPO_ROOT/bin")
+    [[ -z "$v" ]] || { fail "INV-CCOSPEC (bin/cco):"$'\n'"$v"; return 1; }
+
+    local tmp; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null \
+        || { fail "INV-CCOSPEC self-test: could not stage lib/"; return 1; }
+
+    # 2a. MUST FIRE — the bare pathspec. This is the shape no behavioural test can
+    #     see: it answers every predicate correctly, which is why it needs a lint.
+    {
+        printf '\n_lint_probe_bare() {\n'
+        printf '    local unit="$1"\n'
+        printf '    git -C "$unit" status --porcelain -- .cco 2>/dev/null\n'
+        printf '}\n'
+    } >> "$tmp/cmd-project-save.sh"
+    local planted; planted=$(_cco_spec_lint_violations "$tmp")
+    [[ "$planted" == *"BARE-PATHSPEC"* ]] \
+        || { fail "INV-CCOSPEC does NOT discriminate: a planted bare '.cco' pathspec went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2b. MUST FIRE — the other half of the same mistake: the top-level-relative spec
+    #     used against a UNIT dir. Behaviourally this one IS caught, but the lint must
+    #     close the family rather than one member of it.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null \
+        || { fail "INV-CCOSPEC self-test: could not re-stage lib/"; return 1; }
+    {
+        printf '\n_lint_probe_mixed() {\n'
+        printf '    local unit="$1"\n'
+        printf '    git -C "$unit" ls-files --error-unmatch -- "$_PROJECT_SPEC" >/dev/null 2>&1\n'
+        printf '}\n'
+    } >> "$tmp/cmd-project-save.sh"
+    planted=$(_cco_spec_lint_violations "$tmp")
+    [[ "$planted" == *"UNANCHORED-SPEC"* ]] \
+        || { fail "INV-CCOSPEC does NOT discriminate: a top-level spec used against a unit dir went uncaught:"$'\n'"${planted:-<no hits>}"; return 1; }
+
+    # 2c. MUST NOT FIRE — the SANCTIONED shape, including through locals assigned from
+    #     the two globals (which is how lib/cmd-project-save.sh actually spells it).
+    #     Without this arm the lint would flag the remedy as well as the defect, and a
+    #     lint that cannot be satisfied is one somebody deletes.
+    rm -rf "$tmp"; tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+    cp "$REPO_ROOT"/lib/*.sh "$tmp/" 2>/dev/null \
+        || { fail "INV-CCOSPEC self-test: could not re-stage lib/"; return 1; }
+    {
+        printf '\n_lint_probe_ok() {\n'
+        printf '    _project_resolve_unit "$1" || return 1\n'
+        printf '    git -C "$_PROJECT_GITROOT" ls-files --error-unmatch -- "$_PROJECT_SPEC" >/dev/null 2>&1 || return 1\n'
+        printf '    local root="$_PROJECT_GITROOT" spec="$_PROJECT_SPEC"\n'
+        printf '    [[ -z "$(git -C "$root" status --porcelain -- "$spec" 2>/dev/null)" ]]\n'
+        printf '}\n'
+    } >> "$tmp/cmd-project-save.sh"
+    planted=$(_cco_spec_lint_violations "$tmp")
+    [[ "$planted" != *"_lint_probe_ok"* && -z "$planted" ]] \
+        || { fail "INV-CCOSPEC over-reaches: the SANCTIONED shape was flagged:"$'\n'"$planted"; return 1; }
+    return 0
+}
