@@ -666,6 +666,12 @@ EOF
     _rename_preview_confirm "$yes" "Rename pack '$old' → '$new'" "${bullets[@]}" \
         || { info "Aborted — nothing changed."; return 0; }
 
+    # ADR-0060 D4.8: the packs[] fan-out below rewrites project.yml in every
+    # affected member repo. Pre-flight BEFORE the store re-key: unlike the
+    # fan-out's own failure path, this one can still refuse cleanly, because
+    # nothing has been moved yet.
+    _cco_dev_project_guard_fanout packs "$old" "cco pack rename"
+
     # ── Store re-key ────────────────────────────────────────────────────
     # CONFIG store dir first (claude-owned), then the DATA/STATE sidecar+tags cascade
     # through lib/store.sh (crossing #2, all-or-nothing behind the ADR-0047 boundary).

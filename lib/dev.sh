@@ -14,11 +14,14 @@
 #   Snapshot store: _cco_dev_snapshot_store, _cco_dev_snapshot_init,
 #                   _cco_dev_snapshot, _cco_dev_snapshot_engage,
 #                   _cco_dev_snapshot_has_commits, _dev_snap_git
-#   Project guard:  _cco_dev_project_restorable, _cco_dev_project_guard
+#   Project guard:  _cco_dev_project_restorable, _cco_dev_project_guard,
+#                   _cco_dev_project_guard_members, _cco_dev_project_guard_fanout
 #   Migration route:_cco_dev_guard_config_migration
 # Dependencies: colors.sh (note/die/refuse), paths.sh (_cco_dev_root/_cco_dev_active/
 #   _cco_config_dir_path/_cco_config_isolated), secrets.sh (_SECRET_FILENAME_PATTERNS),
-#   cmd-project-save.sh (_project_resolve_unit)
+#   cmd-project-save.sh (_project_resolve_unit), utils.sh (_peel_tab),
+#   index.sh (_project_iter_members), cmd-resolve.sh (_project_foreach),
+#   rename.sh (_yaml_list_has_ref) — all resolved at call time
 # Globals: none owned. _cco_dev_project_restorable calls _project_resolve_unit and so
 #   sets its _PROJECT_{GITROOT,SPEC,REPO}; _cco_dev_project_guard asks it inside a
 #   command substitution, so a guarded call site never has those clobbered under it.
@@ -222,6 +225,50 @@ _cco_dev_project_guard() {
     # then die with the subshell instead of being clobbered under the caller.
     why=$(_cco_dev_project_restorable "$unit") && return 0
     refuse "dev mode: refusing '$verb' — it can destroy uncommitted content under <repo>/.cco, and $why. Dev mode snapshots ~/.cco only; your project config is protected by your own repo git (ADR-0060 D4.8). Commit or stash .cco/ in that repo, or run this against a throwaway git repo whose .cco/ is committed."
+}
+
+# Guard every RESOLVED member of <project>, in the PARENT shell.
+#
+# ⚠ Why here and not inside the writer: both project.yml fan-outs
+# (`_rename_projectyml_current`, `_rename_fanout_projectyml`) are consumed through a
+# PROCESS SUBSTITUTION, where a `refuse` would exit only the subshell and the verb
+# would sail on. A `while … done < <(…)` body runs in the parent, so this pre-flight
+# refuses for real — the same fail-closed shape `_rename_assert_writable` already
+# uses, and for the same reason: a fan-out either wholly applies or wholly refuses.
+# Usage: _cco_dev_project_guard_members <project> <verb label>
+_cco_dev_project_guard_members() {
+    local project="$1" verb="$2" _ln name path status
+    _cco_dev_active || return 0
+    while IFS= read -r _ln; do
+        [[ -z "$_ln" ]] && continue
+        # Column 2 is EMPTY for an unresolved member and tab is IFS whitespace, so
+        # `IFS=$'\t' read` would fold the gap and mis-assign; peel by hand.
+        _peel_tab "$_ln" name path status
+        case "$status" in synced|divergent) ;; *) continue ;; esac
+        [[ -n "$path" ]] || continue
+        _cco_dev_project_guard "$path" "$verb"
+    done < <(_project_iter_members "$project")
+}
+
+# The cross-project variant: for every project whose primary project.yml references
+# <old> in <section>, guard its own unit dir AND every resolved member. Two writers
+# share it and each touches one of those halves — `cco llms rename` rewrites the
+# PRIMARY project.yml (`_project_foreach`), `cco pack rename` fans out over the
+# MEMBERS (`_rename_fanout_projectyml`) — so the union is the honest pre-flight.
+# ⚠ Accepted cost, stated rather than hidden: for the primary-only writer the member
+# half is a superset, so a dirty member repo can refuse a rename that would not have
+# touched it. The remedy is the same (commit it), and a guard that under-covers a
+# fan-out is the failure that actually loses work.
+# Usage: _cco_dev_project_guard_fanout <section> <old> <verb label>
+_cco_dev_project_guard_fanout() {
+    local section="$1" old="$2" verb="$3" proj unit yml
+    _cco_dev_active || return 0
+    while IFS=$'\t' read -r proj unit yml; do
+        [[ -n "$yml" ]] || continue
+        _yaml_list_has_ref "$yml" "$section" "$old" || continue
+        [[ -n "$unit" ]] && _cco_dev_project_guard "$unit" "$verb"
+        _cco_dev_project_guard_members "$proj" "$verb"
+    done < <(_project_foreach)
 }
 
 # ── Migration routing (ADR-0060 D5) ─────────────────────────────────

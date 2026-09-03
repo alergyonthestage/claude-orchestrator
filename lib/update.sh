@@ -437,6 +437,11 @@ _update_project() {
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations project migration(s) pending for '$pname'"
         else
+            # ADR-0060 D4.8: a project migration's target IS the repo working tree,
+            # so it can destroy uncommitted content under <repo>/.cco. The snapshot
+            # store covers ~/.cco only; here the user's own repo git is the
+            # protection, and this refuses when that git cannot help.
+            _cco_dev_project_guard "$(dirname "$project_dir")" "cco update (project migrations for '$pname')"
             if ! _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"; then
                 error "Project '$pname' migrations failed. Run 'cco update' again after resolving the issue."
                 return 1

@@ -98,6 +98,13 @@ EOF
         die "Cannot rename: member repo(s) not resolved on this machine: ${unresolved[*]}. Run 'cco resolve' to bring all members here first — a rename must rewrite project.yml in every member repo (ADR-0031)."
     fi
 
+    # ADR-0060 D4.8: the rewrite below edits project.yml in every member repo.
+    # Pre-flight, before the preview: refusing after a confirmation the user gave
+    # would ask them to approve work that never runs.
+    for p in ${resolved[@]+"${resolved[@]}"}; do
+        _cco_dev_project_guard "$p" "cco project rename"
+    done
+
     # ── Preview + confirm (ADR-0029 D2) ─────────────────────────────────
     echo -e "${BOLD}Rename project '$old' → '$new'${NC}"
     echo "  • index membership, per-user tags, and internal STATE/CACHE/DATA dirs"

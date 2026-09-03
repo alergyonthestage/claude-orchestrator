@@ -246,6 +246,14 @@ EOF
         return 0
     fi
 
+    # ADR-0060 D4.8: `_sync_copy` overwrites each target's .cco/ wholesale.
+    # Pre-flight over the WHOLE target set, so the broadcast either wholly applies
+    # or wholly refuses instead of stopping half way through the fan-out.
+    local _dgt
+    for _dgt in ${targets[@]+"${targets[@]}"}; do
+        _cco_dev_project_guard "$_dgt" "cco sync"
+    done
+
     # ── Per-target diff + (copy) ─────────────────────────────────────
     local src_cco="$src_root/.cco"
     local -a copied=()

@@ -295,6 +295,13 @@ _cco_init_scaffold_repo() {
     if [[ -d "$ccodir" ]] && [[ "$force" != "true" ]]; then
         die "$ccodir already exists — refusing to clobber. Use --force to overwrite, or 'cco join' to add this repo to an existing project."
     fi
+    # ADR-0060 D4.8: only the --force branch is a destructive writer (it `rm -rf`s
+    # the existing .cco/ below). A fresh scaffold CREATES, and guarding that would
+    # refuse `cco --dev init` in every new repo — nothing tracked is the normal
+    # state there, not a lost restore point.
+    if [[ -d "$ccodir" ]]; then
+        _cco_dev_project_guard "$target" "cco init --force"
+    fi
 
     # Resolve the project name: --name › prompt(basename) › basename.
     local name; name=$(_cco_init_resolve_name "$name_arg")

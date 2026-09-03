@@ -556,6 +556,13 @@ EOF
     [[ "$_STORE_PRESENT" == yes ]]  || die "LLMs '$old_name' not found."
     [[ "$_STORE_COLLISION" == no ]] || die "LLMs '$new_name' already exists."
 
+    # ADR-0060 D4.8: the reference rewrite below edits each project's committed
+    # project.yml in place. ⚠ Not in the design's writer table — it reaches
+    # <repo>/.cco through `_project_foreach`, a shape the mandated enumeration grep
+    # cannot see, which is one more measurement of "the list is a lower bound".
+    # Pre-flight before the store op, so the verb either wholly applies or refuses.
+    _cco_dev_project_guard_fanout llms "$old_name" "cco llms rename"
+
     # Move the CACHE content + carry the per-user tag binding (a no-op today — llms are
     # not taggable — kept for symmetry, ADR-0050 D6) as one all-or-nothing store op.
     _store_apply llms-rekey "$old_name" "$new_name"
@@ -842,6 +849,19 @@ _llms_add_to_yaml() {
         if [[ "$_st" != here ]]; then _env_unavailable_warn "$_st" project "$project"; return 0; fi
         proj_yml=$(_resolve_project_yml "$project")
         [[ -f "$proj_yml" ]] || { warn "Project '$project' has no readable project.yml — skipping YAML update."; return 0; }
+        # ADR-0060 D4.8: an in-place project.yml rewrite, the same class as
+        # `cco project add`. ⚠ A second writer the mandated enumeration cannot see —
+        # it reaches <repo>/.cco through a resolver, not through a "$var/.cco" literal.
+        # Guarded on the unit dir, which dev mode can always resolve host-side.
+        # ⚠ The unit dir is derived from the RESOLVED yml, never from
+        # _resolve_unit_dir_for_project: that one is host-only and INV-F.3 bans it
+        # from a shim-reachable module. The strip is exact for the <unit>/.cco/
+        # project.yml shape and is a no-op for the flat operator-mount shape, which
+        # dev mode (host-only) never sees.
+        local _dunit="${proj_yml%/.cco/project.yml}"
+        if [[ "$_dunit" != "$proj_yml" ]]; then
+            _cco_dev_project_guard "$_dunit" "cco llms add --project"
+        fi
         if yml_get_llms_names "$proj_yml" | grep -qxF "$name"; then
             info "LLMs '$name' already in project '$project'"
         else
