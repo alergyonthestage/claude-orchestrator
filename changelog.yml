@@ -1611,3 +1611,44 @@ entries:
       time, since that's the exact collision `--dev` exists to prevent. See
       `cco docs reference/cli` §3.34 for the full flag reference and
       `CONTRIBUTING.md` for the recommended local-development workflow.
+
+  - id: 70
+    date: "2026-09-03"
+    type: additive
+    title: "Dev mode now protects your configuration: an automatic snapshot, and 'cco dev restore'"
+    description: >
+      **For everyday use, nothing changes.** This only affects `cco --dev`.
+      Dev mode deliberately does **not** fork your configuration — `~/.cco` and
+      every repo's `<repo>/.cco` stay shared, because a dev run is meant to test
+      your actual configuration rather than a copy of it. What is new is that a
+      bad dev-mode write to it is now recoverable.
+      **`~/.cco` is snapshotted before every `cco --dev <verb>`.** The snapshot
+      is taken at every dev-mode run, before the verb, whatever the verb is —
+      never only for the commands that "look like" they write config. It lives
+      in its own git store under the dev root
+      (`~/.cco-devsandbox/snapshots/config.git`), so it never touches
+      `~/.cco/.git` and never appears in `cco config history`: `cco config save`
+      stays the only thing that commits there. `secrets.env` and the other
+      secret file classes are excluded, so no secret material is copied to a
+      second place on disk. If a snapshot cannot be taken, the run stops rather
+      than proceeding without a restore point; if `~/.cco` does not exist yet,
+      the step simply says so and does nothing.
+      **`cco dev restore [<ref>] [--clean] [--dry-run]`** puts `~/.cco` back.
+      It works from an ordinary shell (no `--dev` needed), takes its own
+      snapshot first so a restore is itself undoable, and **reports rather than
+      deletes** files created since the snapshot unless you pass `--clean`.
+      `--dry-run` previews everything and writes nothing.
+      **Your project config is guarded instead of snapshotted.** `<repo>/.cco`
+      is protected by your own repo git, so under `--dev` a command that could
+      destroy uncommitted content there now refuses when git cannot put it back
+      — the repo is not a git work tree, `.cco/` was never committed or is
+      gitignored, or it has uncommitted changes. The refusal names which of the
+      three it is; commit or stash `.cco/` and re-run. `cco project save` is
+      deliberately exempt: it only ever makes a commit, which is revertable.
+      **Migrations against your real config refuse under `--dev`.** A dev-run
+      migration would change the real `~/.cco/.claude` while recording that it
+      ran in the isolated dev buckets, so your normal `cco` would run it again —
+      the one case a restore cannot repair. Point cco at a throwaway config
+      first: `CCO_CONFIG_HOME=<dir> cco --dev <verb>`.
+      `CCO_DEV_ROOT` is now the preferred name for the dev root;
+      `CCO_DEV_SANDBOX_ROOT` still works. The default path is unchanged.
