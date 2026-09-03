@@ -53,6 +53,7 @@ A5's class. It has nothing to do with permissions and nothing to do with dev mod
 | Gate | What unblocks it |
 |---|---|
 | 🔴 **merge `a10-2-impl` → `a10-2-protection`** | nothing blocks it — it is the next command. **Then re-run the suite**: three tests have never met the code |
+| ⚠ **a textual conflict is PREDICTED, and its resolution is known** | `tests/test_invariants.sh` gains a lint at its **tail on both** lines of work — `INV-CCOSPEC` on the unit branch, `INV-WT` on `fix/hooks/worktree-git-probe`. They are **different lints** and both are self-contained blocks. ⇒ **resolve by keeping both**, and re-run the invariants file (expect 42/42 plus the other's test). Recorded now because a conflict met without this note invites picking a side |
 | **A10.2 wave 2** | `cco dev seed\|reset\|list\|config\|project` (the seams exist), `clean` environment-scoping + `--images`, the [§6.2](engineering/design/dev-execution-mode.md) `cco start` build-ref warn, fixtures, `project.dev.yml` |
 | **merge A10.2 → `develop`** | the maintainer's gate, after wave 2 |
 | **merge `fix/hooks/worktree-git-probe` → `develop`** | the maintainer's gate. **Independent of A10.2** — mergeable on its own today |
@@ -114,6 +115,7 @@ The [roadmap](roadmap.md) is the single source of truth for status; this list po
 - [ ] **Tests for wave 2** by an independent role, derived from the design. Each new guard shown to **fail when neutralised** before its pass is believed
 - [ ] **Living docs for A10.2** — `docs/users/reference/cli.md` §3.34 (`cco dev`, `clean --images`), `changelog.yml`, **rewrite `CONTRIBUTING.md`'s dev section** (its *"today's shape, not the target one"* caveat expires with A10.2) and **a "dev vs distributed" explanation**. ⭐ The widened docs scope is a **maintainer ruling of 2026-09-03**, recorded in the roadmap — not optional polish
 - [ ] **Fix the test-file env leak** — `tests/test_dev_mode.sh` and `tests/test_dev_sandbox.sh` unset `CCO_DEV_SANDBOX_ROOT` but **not** `CCO_DEV_ROOT`, now the preferred spelling. Harmless today, a leak the day it is set
+- [ ] **Cover the two untested guarded writers** — `cco project import` and `cco repo rename` are named in design §5.2's table and driven by **no test** (they need an archive / an index setup; `forget --purge` covers the second-writer *shape*). ⚠ The design records that table as a lower bound, so this is coverage of the named set, not of the class
 - [ ] **Finish the bash 3.2 cover** — 5 of 14 changed files were never parsed on the real interpreter (proxy container limit). ⚠ `docker run … bash:3.2 bash -n <file>`, one file per invocation: `bash -n` reads only the **first** file argument
 - [ ] **Update `docs/users/reference/cli.md`** — it does not document `cco dev` at all, and that is now shipped behaviour on the branch (the `changelog.yml` entry, id 70, is done)
 - [ ] **Tighten INV-CCOSPEC's Rule B** — it keys on the token `git ` and so fires on the *prose* of a message containing `$_PROJECT_SPEC`. Keying on an invocation *form* would be precise
