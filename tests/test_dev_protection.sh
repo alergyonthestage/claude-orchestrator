@@ -129,6 +129,16 @@ _dp_cco_err() {
 # rows run from different throwaway homes are comparable line by line.
 _dp_notes() { printf '%s\n' "$_DP_ERR" | grep -E '^note:' | sed "s|$HOME|~|g" | sort; }
 
+# A byte-level manifest of a directory tree: one `<cksum> <size> <path>` line per
+# file, sorted. The oracle for "this tree survived intact" — a directory that is
+# merely PRESENT proves nothing when the failure mode is `rm -rf` followed by a
+# partial re-seed. `<ABSENT>` when the tree is gone, so the two states are told
+# apart in the failure message rather than both rendering as empty.
+_dp_tree_manifest() {
+    [[ -d "$1" ]] || { printf '<ABSENT>\n'; return 0; }
+    (cd "$1" && find . -type f -exec cksum {} + 2>/dev/null | sort)
+}
+
 # Run bin/cco from a given cwd — cwd-first unit resolution is part of §5.2's
 # contract, so it cannot be faked. Sets CCO_OUTPUT; returns cco's rc.
 _dp_cco_in() {
@@ -1079,10 +1089,19 @@ test_dev_init_global_migrations_refuse_too() {
     local repo="$tmpdir/fresh-repo"; mkdir -p "$repo"
     local rc=0
     _dp_cco_in "$repo" --dev init --name dp-fresh || rc=$?
-    [[ "$rc" -ne 0 ]] \
-        || fail "cco init's global migrations target the real CONFIG — under --dev they must refuse (D5), got rc=0: $CCO_OUTPUT"
+    # ⚠ Not `assert_refused … "cco"`: every message this command can print contains
+    # "cco", so that reason substring would assert nothing. The rc and the
+    # non-silence are checked here; the two greps below are the content assertion.
+    [[ "$rc" -eq 2 ]] \
+        || fail "cco init's global migrations target the real CONFIG — under --dev they must REFUSE (exit 2, D5/A6), got rc=$rc: $CCO_OUTPUT"
+    [[ -n "${CCO_OUTPUT:-}" ]] || fail "an exit-2 refusal must never be silent (B6)"
+    # A6 names TWO ways out: run `cco init` without --dev, or make a fixture config.
+    # ⚠ A bare `--dev` is NOT accepted as the match: the run's own banners mention
+    # dev mode, so it would go green on a refusal that names no remedy at all.
+    printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'without .*--dev|drop .*--dev|cco init' \
+        || fail "way out 1 (run cco init without --dev) is missing: ${CCO_OUTPUT:-<empty>}"
     printf '%s\n' "${CCO_OUTPUT:-}" | grep -qiE 'CCO_CONFIG_HOME|cco dev config|fixture' \
-        || fail "the refusal must name the escape (D5), got: ${CCO_OUTPUT:-<empty>}"
+        || fail "way out 2 (an isolated config dir) is missing: ${CCO_OUTPUT:-<empty>}"
 
     # CONTROL: the same command outside dev mode still initialises. Without it, a
     # `cco init` broken for an unrelated reason would make the assertion above green.
@@ -1091,4 +1110,68 @@ test_dev_init_global_migrations_refuse_too() {
     _dp_cco_in "$repo2" init --name dp-fresh-2 || rc=$?
     [[ "$rc" -eq 0 ]] \
         || fail "CONTROL: cco init must work outside dev mode, got rc=$rc: $CCO_OUTPUT"
+}
+
+# 🔴 ADR-0060 Amendment A6, and the defect it closes — a guard that DESTROYS what it
+# exists to protect.
+#
+# `lib/cmd-init.sh:268`, the site D5 names, sits ~70 lines INSIDE
+# `_cco_init_ensure_global`, after the `--force` reset hatch has already run
+# `rm -rf "$gclaude"` (`:196-199`). An implementation that puts the refusal at the
+# named line refuses only once the user's real global config is gone. A6 rules the
+# check goes AHEAD of the delete.
+#
+# 🔴 THE ORACLE IS SURVIVAL, NOT THE REFUSAL. A test asserting rc 2 and a message
+# passes on the destroying implementation — the refusal is exactly what it does,
+# just too late. So the tree is compared byte for byte, before and after, and the
+# rc assertion comes last: when both fail, the reader sees the deletion first.
+#
+# ⚠ A6's premise, which inverts the intuitive reading: `_cco_global_meta` resolves
+# into STATE (sandboxed under --dev) while the config it describes is CONFIG
+# (shared), so a fresh dev init leaves the published binary seeing schema 0 against
+# an already-current config. The fresh case is the WORST instance of D5's
+# divergence, not an exception to it — which is why both flows refuse.
+test_dev_init_force_refuses_before_it_deletes_the_global_config() {
+    local tmpdir; tmpdir=$(mktemp -d); trap "rm -rf '$tmpdir'" EXIT
+    _dp_env "$tmpdir"
+    setup_global_from_defaults "$tmpdir"
+    _dp_seed_config
+    # A file the framework defaults do not carry, so a delete-and-re-seed is
+    # distinguishable from an untouched tree even if the re-seed is complete.
+    printf 'DO-NOT-LOSE-ME\n' > "$HOME/.cco/.claude/dp-user-edit.md"
+
+    # ⚠ The manifests go to FILES, and the comparison is `cmp`/`diff` over those.
+    # The process-substitution spelling of the same diff rendered EMPTY inside the
+    # runner's capture — measured — so the failure named a change it then could not
+    # show, which is the failure message equivalent of a silent pass.
+    local mf_before="$tmpdir/global.before" mf_after="$tmpdir/global.after"
+    _dp_tree_manifest "$HOME/.cco/.claude" > "$mf_before"
+    [[ -s "$mf_before" ]] && ! grep -q '<ABSENT>' "$mf_before" \
+        || { fail "precondition: the global config fixture must exist and be non-empty"; return 1; }
+
+    local repo="$tmpdir/forced-repo"; mkdir -p "$repo"
+    local rc=0
+    _dp_cco_in "$repo" --dev init --force --name dp-forced --lang English:English:English || rc=$?
+
+    _dp_tree_manifest "$HOME/.cco/.claude" > "$mf_after"
+    cmp -s "$mf_before" "$mf_after" \
+        || fail "the guard must refuse BEFORE the --force reset deletes ~/.cco/.claude (A6). What changed (< lost, > appeared):"$'\n'"$(diff "$mf_before" "$mf_after" | head -20)"
+    assert_file_contains "$HOME/.cco/.claude/dp-user-edit.md" "DO-NOT-LOSE-ME" \
+        "a refused dev init must leave the user's own global config edits in place (A6)" || return 1
+    [[ "$rc" -eq 2 ]] \
+        || fail "a refused dev init is a policy refusal (exit 2), got rc=$rc: $CCO_OUTPUT"
+    [[ -n "${CCO_OUTPUT:-}" ]] || fail "an exit-2 refusal must never be silent (B6)"
+
+    # CONTROL: outside dev mode `cco init --force` still does its documented job —
+    # otherwise "the config survived" would also be true of a command that is simply
+    # broken, and this test would measure nothing.
+    _dp_env "$tmpdir/ctl"
+    setup_global_from_defaults "$tmpdir/ctl"
+    local repo2="$tmpdir/ctl-repo"; mkdir -p "$repo2"
+    rc=0
+    _dp_cco_in "$repo2" init --force --name dp-ctl --lang English:English:English || rc=$?
+    [[ "$rc" -eq 0 ]] \
+        || fail "CONTROL: cco init --force must work outside dev mode, got rc=$rc: $CCO_OUTPUT"
+    assert_dir_exists "$HOME/.cco/.claude" \
+        "CONTROL: the re-seed must leave a global config behind" || return 1
 }
