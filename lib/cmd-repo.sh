@@ -175,6 +175,10 @@ _rename_index_keyed() {
     # its own write identity (de-elevated / elevated respectively) — see rename.sh.
     _rename_assert_writable "$unit/.cco" "cco $dash rename"
     _rename_assert_index_writable "cco $dash rename"
+    # ADR-0060 D4.8, the same fail-closed posture one line up: the fan-out below
+    # rewrites project.yml in EVERY resolved member, so every member is guarded —
+    # not just the cwd unit the writability probe covers.
+    _cco_dev_project_guard_members "$project" "cco $dash rename"
 
     # ── Apply: project.yml FIRST (members still keyed by <old>), then the index
     # re-key, then the host-only move. The reorder is a host NO-OP (the probe is the

@@ -172,6 +172,11 @@ EOF
         die "$target_cco already exists — refusing to clobber. Use --force, or 'cco join' to add this repo to an existing project."
     fi
 
+    # ADR-0060 D4.8: the `cp -R` below lands over the target .cco/ (after an
+    # rm -rf), so it destroys whatever was there. Guarded HERE rather than beside
+    # the copy so the refusal costs no extraction and leaks no temp dir.
+    _cco_dev_project_guard "$target_repo" "cco project import"
+
     # Extract to a temp dir, validate it carries a project .cco/.
     local tmpdir; tmpdir=$(mktemp -d)
     tar xzf "$archive" -C "$tmpdir" 2>/dev/null \

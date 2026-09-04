@@ -5,11 +5,19 @@
 > analysis [`../analysis/dev-execution-mode.md`](../analysis/dev-execution-mode.md) and to the
 > decision clinic
 > [`../analysis/dev-execution-mode-decisions.md`](../analysis/dev-execution-mode-decisions.md).
-> **Status**: **A10.1 (identity) is built and green as of 2026-09-01** — §3, §4, §6.1 and §6.3 are
-> shipped behaviour; one post-implementation correction is
-> [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments). **A10.2 (protection and
-> tooling) is designed and NOT built**: §5, §6.2, §7 and §8 describe intended behaviour, not what
-> the code does today.
+> **Status**, as of 2026-09-03:
+> - **A10.1 (identity) is built, merged and ACCEPTED on a host** — §3, §4, §6.1 and §6.3 are shipped
+>   behaviour; the post-implementation correction is
+>   [Amendment A5](../decisions/0060-developer-execution-mode.md#amendments).
+> - **A10.2 wave 1 (protection) is BUILT and TESTED but NOT MERGED** — §5 (snapshot store), §5.1
+>   (restore), §5.2 (the `<repo>/.cco` guard, wired at 11 sites) and the D5 migration routing are
+>   code on `feat/devmode/a10-2-impl`, governed additionally by
+>   [Amendment A6](../decisions/0060-developer-execution-mode.md#amendments). ⚠ **Not merged means
+>   not yet verified together**: three tests written after the branch last merged them have never run
+>   against this code.
+> - **A10.2 wave 2 (tooling) is designed and NOT built**: §6.2, §7 and §8 describe intended
+>   behaviour, not what the code does today. `cco dev`'s sub-verbs other than `restore` answer
+>   *"not implemented yet (wave 2)"*.
 >
 > **Acceptance criteria, agreed 2026-08-31** — the design is done when each is answered by a named
 > artifact: (1) a dev run cannot overwrite the image a real session uses; (2) a dev run's writes to
@@ -194,7 +202,7 @@ flowchart LR
 | **Never `~/.cco/.git`** | `cco config save` promises *"cco never auto-commits"*; and `_config_push` (`lib/cmd-config.sh:283`) operates on `$cfg/.git`, so this store is **structurally unpushable** |
 | **Trigger** | **the step is unconditional** — it runs at every `cco --dev` engage, before the verb, whatever the verb is. The **commit** happens only when `git status --porcelain` is non-empty (an empty commit records nothing). Never a list of verbs |
 | **Scope** | `git add -A` — **not** `_CONFIG_ALLOWLIST`, which omits `access.yml` and `claude-version`, the two members with no other recovery path |
-| **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`, so the user's own config repo is not recorded as a gitlink |
+| **Exclusions** (`$GIT_DIR/info/exclude`) | `secrets.env`, `*.env`, `*.key`, `*.pem` — the same patterns `lib/secrets.sh` already matches, reused rather than restated — plus `.git/`. ⚠ **Correction, measured 2026-09-03**: the `.git/` entry's original rationale (*"so the user's own config repo is not recorded as a gitlink"*) is **wrong twice over**, and the entry is kept only as documentation of intent. Git refuses `.git` as an index path component at any depth, so `~/.cco/.git` is skipped **with or without** the pattern — the exclusion is unobservable, and a test asserting it would be vacuous. And it does **not** stop a *nested* repo (`~/.cco/foo/.git`) from becoming a gitlink, which was measured to still happen. What actually protects the user's config repo is that the store is a separate `GIT_DIR` that never commits into it (the row above) |
 | **Implementation constraint** | taken with **plain `git` invocations**, never through `cco config save`: the verb may itself be the code under test |
 | **Failure** | 🔴 **`die` — blocking, ruled by the maintainer 2026-09-01.** If the snapshot cannot be taken, the mode's safety property cannot be established, so the run must not proceed. This deliberately departs from `_cco_dev_sandbox_seed`'s `warn`: a partial seed is a convenience, a missing restore point is the protection itself |
 | **Message** | `dev snapshot before: cco <argv>` — so `cco dev list` reads as a log of what was about to run |
@@ -224,6 +232,22 @@ preview free.
 
 ⚠ It resolves the store from the dev root **without engaging dev mode**, so `cco dev restore` works
 from an ordinary shell.
+
+**Two orderings the first draft left open, closed 2026-09-03 when the tester found that each had a
+second reading:**
+
+- 🔴 **`<ref>` resolves BEFORE restore's own safety snapshot**, never after. §5.0b makes restore
+  snapshot first because a restore must itself be undoable — but if `HEAD` were then re-read, it
+  would name the snapshot just taken and `cco dev restore` would be a **guaranteed no-op that reports
+  success**. Resolve the ref against the store as it stood when the command was typed.
+- **`--dry-run` writes nothing at all, the safety snapshot included.** *"Makes the destructive preview
+  free"* is the whole point: a preview with a side effect is not free.
+
+⚠ **A defect class found in a reference implementation before any real code existed, and the reason a
+test pins it**: restoring by pointing the store's index at the restored ref leaves index and HEAD
+**diverged**. The damage is not local — the *next* dev run's snapshot commit comes out empty,
+`git commit` returns non-zero, and D4.4 turns that into a `die`. A recovery path that bricks the next
+run. **The store must stay usable after a restore.**
 
 ### 5.2 Project configuration — a guard, not a second store
 
@@ -286,6 +310,17 @@ is covered by construction.
 
 📝 **No escape flag.** Round 3 dropped `--allow-project-writes` and this does not bring it back: the
 fixture is the escape. Reopen only if the refusal is measured to block a real workflow.
+
+📝 **The 🔴 prohibition above is a STRUCTURAL requirement, not a behavioural one — measured
+2026-09-03, and recorded so nobody later mistakes it for something the suite enforces.** For a pure
+*predicate* the two spellings are behaviourally identical: git **pathspecs** are cwd-relative, so
+`git -C <unit> status -- .cco` resolves correctly even for a nested unit, and it is only git *output*
+paths that are top-level-relative — which this check never consumes, since it asks only whether the
+output is empty. Every *inconsistent* mix (gitroot + a bare spec, or unit + `$_PROJECT_SPEC`) **is**
+caught behaviourally. Write it the prescribed way regardless — the guard sits in the blast radius of
+the bug that committed a secret under `✓ saved`, and the next hand to touch it may well consume an
+output path — but if the prohibition is to be *enforced*, its home is a static lint in
+`tests/test_invariants.sh`, not a behavioural test.
 
 ## 6. Fail-loud points
 
@@ -384,6 +419,30 @@ one. No verb grows a `--dev` variant.
 | `doctor` | ⛔ **not here** — its own roadmap entry |
 
 Top-level surface goes 25 → 26.
+
+### 8.1 `cco dev seed` on a populated dev root — say it, do nothing
+
+**Ruled 2026-09-03 by the maintainer.** `_cco_dev_sandbox_seed` (`lib/paths.sh`) is gated by
+`[[ -d "$root/state" ]] && return 0` — a **silent** no-op, which is the shape this project keeps an
+audit of. As an implicit one-shot behind `--dev-sandbox-seed` that was tolerable; as an **explicit
+verb** it is not, because a developer who types `cco dev seed` and gets exit 0 with no output cannot
+tell a seed from a refusal.
+
+- **Behaviour**: exit **0**, and say both what happened and what unblocks it — the root already
+  carries a `state/`, so `cco dev reset` reclaims it and a seed then runs. **Nothing is overwritten**,
+  and no `--force` is added: `reset` + `seed` already compose, and a second destructive writer would
+  be one more thing §5.2's criterion has to classify.
+- **Where**: the message belongs to the **verb**, not to the helper. `_cco_dev_sandbox_seed`'s
+  contract as an implicit one-shot inside `_cco_apply_dev_sandbox` is unchanged, and its existing
+  tests with it.
+- ⚠ **Observed in the field, which is what raised it**: A10.1's host acceptance run
+  (`bin/cco --dev build`, 2026-09-03) created `~/.cco-devsandbox/state` as a side effect, so that
+  machine's dev root is **already past the guard** — a seed there is exactly the silent no-op above.
+- 📝 **A benign symptom of an unseeded root, measured the same run**: with STATE empty,
+  `_cco_first_run`'s legacy-vault safety net finds no marker and re-archives `user-config/` into the
+  sandbox's `state/backups/`. It is non-destructive by construction (the vault is preserved as-is) and
+  correct; it stops once the root is seeded, and stops at the root once
+  [FI-84](../../improvements.md) moves `user-config/` out of the checkout.
 
 ## 9. What does **not** change
 

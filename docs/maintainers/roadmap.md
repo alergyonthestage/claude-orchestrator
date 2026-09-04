@@ -4,11 +4,24 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-09-01** — **A11 and A10.1 are closed and merged**; both entries moved to
+> **Last updated: 2026-09-03 (second session)** — 🔴 **A host `cco build` moved
+> `claude-orchestrator:latest` BACKWARDS to the published 0.6.0 tree** (label gone, baked cco three
+> units behind the checkout); the repair is a host `./bin/cco build` from `develop` and the incident
+> is [FI-86](improvements.md). ✅ **[FI-85](improvements.md) is no longer open against cco** — the
+> cause is a **Claude Code auto-update** (2.1.259), measured, and the deny rules were identical on
+> both images. ⭐ Both findings are field evidence for sequencing **[design §6.2](engineering/design/dev-execution-mode.md)**
+> — the `cco start` build-ref divergence warning — **first** inside A10.2 wave 2: it would have
+> caught the regression at session start. A10.2's own status is unchanged (wave 1 built, **not
+> merged**).
+>
+> **2026-09-03** — **A11 and A10.1 are closed, merged and ACCEPTED**; both entries
+> moved to
 > [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
-> The dev execution mode's identity half is shipped, so a dev build can no longer overwrite the image
-> a real session uses. **A10.2 is next.** One gate is owed on A10.1 and is host-only: the
-> `docker image inspect` acceptance check. `develop` is **unpushed**.
+> The dev execution mode's identity half is shipped **and verified on a host**, so a dev build can no
+> longer overwrite the image a real session uses. ✅ **A10.1's acceptance gate is CLOSED** and
+> `develop` is **pushed** — both measured 2026-09-03. ▶ **A10.2's wave 1 (protection) is built and
+> tested but NOT merged**; wave 2 (tooling) is not started. A new open observation,
+> **[FI-85](improvements.md)**, is recorded as *watch, not work*.
 >
 > **2026-08-21** — **A4** was added to Block A on 2026-08-05, implemented the same day,
 > **accepted on 2026-08-06 after a re-run** (5 pass · 1 measured-and-amended), and its
@@ -313,8 +326,18 @@ into **A10.1** (identity) + **A10.2** (protection and tooling). Both units were 
 after the `cco build` incident, with the analysis approved the same day. ✅ **A10.1 IS BUILT, TESTED AND
 MERGED 2026-09-01** (suite 1812/7 of 1819; entry moved to
 [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01)).
-🔴 **One gate still owed on it**, and no session can close it: the host `docker image inspect`
-acceptance check. ▶ **Next is A10.2.**
+✅ **Its acceptance gate is CLOSED — measured on the host 2026-09-03**, and the check
+**discriminated**: `bin/cco --dev build` produced `claude-orchestrator-dev:latest`
+(`sha256:90d5dae…`, label `cco.build-ref: develop@1766f5b`, tagged 2026-09-03) while
+`claude-orchestrator:latest` was left untouched (`sha256:a7d69bb…`, label
+`feat/devmode/dev-execution-mode@e0c93a8`, `LastTagTime` still **2026-08-27**). ⭐ **The stale
+`LastTagTime` on the real tag is what makes it a measurement rather than an assertion** — a no-op
+`--dev` would have re-tagged it today. ▶ **Next is A10.2.**
+
+📝 **What the same evidence showed, and it is not new damage**: `claude-orchestrator:latest` **is the
+2026-08-27 incident's own artifact** — built from a pre-merge feature branch (`e0c93a8`, since merged
+into `develop`), which is why an in-session `cco` does not know `--dev`. Repairing it is one ordinary
+`cco build` from a clean `develop`, host-side, whenever convenient.
 
 📝 **A1's entry below is ~450 lines of a ~1260-line roadmap and is CLOSED**, but its branch was
 deleted on 2026-08-26, so `rules/documentation.md`'s trigger for moving it into
@@ -822,7 +845,41 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 
 🔴 **One gate still owed, and it is host-only by construction**: a real `cco build` under `--dev` producing `claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified with `docker image inspect` on both tags** — never `docker run` (FI-82, empty stdout in-session), never `cco --version` (non-discriminating, ADR-0060 M3). `--dev` refuses in-container, so no session can close it. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 
-##### A10.2 — protection and tooling
+##### A10.2 — protection and tooling — ▶ **WAVE 1 BUILT AND TESTED 2026-09-03, NOT MERGED**
+
+✅ **Wave 1 (protection) is complete on `feat/devmode/a10-2-impl`**: the snapshot store (§5),
+`cco dev restore` (§5.1), the `<repo>/.cco` restorability guard (D4.8) wired at every classified
+writer, the D5 migration routing and the `CCO_CONFIG_HOME` seam. New files `lib/dev.sh` and
+`lib/cmd-dev.sh`. Tests were written **from the design before the code existed** and proven by
+mutation (**40 mutations run, 40 caught** — 39 behaviourally and the last by a lint, because for a
+pure predicate no behavioural test could). ✅ **Suite on the impl tree: 1836 passed / 7 failed / 1843
+total**, `Results:` line present, and the delta closes exactly — **+24 total and +24 passed**, failed
+unchanged at 7, so every added test passes and no pre-existing test changed state. **Two merges are
+owed**; the first, `a10-2-impl` into the unit branch, is a routine integration — the unit branch is
+ahead only by documentation.
+
+⭐ **The enumeration lesson reached third order here.** §5.2 names 6 writers and says it is a lower
+bound; the mandated re-grep returned **113 hits** — and **two writers are invisible to that command
+entirely** (`cco llms rename`, `cco llms add --project`) because they reach `<repo>/.cco` through a
+*resolver* rather than a literal `"$var/.cco"`. ⇒ **the design's own prescribed enumeration command
+is itself a lower bound**; a future writer sweep must ask what *reaches* the path, not what *spells*
+it.
+
+🔴 **Two decisions are open for the maintainer**, both user-perceivable and both recorded rather than
+ruled by the lead: the fan-out guard is a **superset** (a dirty member repo can refuse a rename that
+would never have touched it), and the two rename guards sit on **opposite sides of their confirm
+prompts**. Detail in the handoff.
+
+▶ **Wave 2 (tooling) is not started**: `cco dev seed|reset|list|config|project` (the seams exist) ·
+`clean` environment-scoping and `--images` · the §6.2 `cco start` build-ref warn · the fixtures ·
+`project.dev.yml`.
+
+⭐ **Sequencing evidence, 2026-09-03**: a host `cco build` silently rebuilt the **published 0.6.0**
+tree and moved `claude-orchestrator:latest` backwards ([FI-86](improvements.md)); the next session
+opened on an orchestrator three units behind its own checkout and found it only by inspection. **The
+§6.2 build-ref divergence warning would have caught it at `cco start`.** ⇒ a proposal for the
+maintainer: make §6.2 the **first** item of wave 2 rather than one of six. It is also the item that
+protects every *later* wave-2 acceptance run, since both stages are baked.
 
 The snapshot store · the `<repo>/.cco` restorability guard (D4.8) · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
 (throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
@@ -832,6 +889,20 @@ and `name:` is not overridable) · `clean` environment-scoping and `--images`.
 migration under `--dev` refuses and names the fixture, a project writer refuses on a dirty /
 never-committed / non-git `<repo>/.cco` **while `cco project save` still works**, and `cco dev reset`
 reclaims the sandbox root, the snapshot store **and** the dev image.
+
+**Two maintainer rulings taken 2026-09-03, at the gate that opened the implementation:**
+
+1. **`cco dev seed` on an already-populated dev root says so and does nothing** — exit 0 with a
+   message naming `cco dev reset`, never a silent `return 0` and **no `--force`**. The *how* is
+   [design §8.1](engineering/design/dev-execution-mode.md); the trigger was A10.1's own acceptance run,
+   which created `~/.cco-devsandbox/state` as a side effect and so put that machine past the one-shot
+   guard.
+2. **The documentation scope of this unit is widened**, deliberately: beyond `cli.md` §3.34 and
+   `changelog.yml` it now includes **rewriting `CONTRIBUTING.md`'s dev section** (its *"this is
+   today's shape, not the target one"* caveat expires with A10.2) and **a "dev vs distributed"
+   explanation** — which binary, which image, which buckets, what is protected and what is not. ⭐ The
+   reason it is scope and not a nice-to-have: the mode's whole safety property is a **user's mental
+   model of two environments**, and a mode nobody can tell they are in protects nothing.
 
 ⚠ **Both stages are baked** — each takes a real host `cco build` in its acceptance lane.
 ⚠ **Sequence the naming namespace, do not discover it late**: A10's image axis, **B1** (`cco build`
@@ -1191,6 +1262,7 @@ Each is independent and rides the shipped substrate. None blocks anything in A�
 | FI-4 — per-project `model:` · `cco project edit` | Quick wins: `model:` in `project.yml` → `claude --model`; open `project.yml` in `$EDITOR` and regenerate compose |
 | **Developer-mode residue** | ⏹ **PROMOTED 2026-08-27 out of this list** → **[A10](#a10--the-dev-execution-mode-fi-79)** ([FI-79](improvements.md)), with **[A11](#a11--no-verb-answers-which-cco-am-i-running-from-where-fi-80)** ([FI-80](improvements.md)) ahead of it. 🔴 **This row scoped the remainder as *ergonomics* and that was wrong** — the analysis measured the image tag, the CLI↔image handshake and a migration target/marker split, all **correctness**. Kept as a pointer only; the entry is in Block A |
 | [FI-61](improvements.md) — bypass-permissions mode vanished mid-session, once | 📝 **Watch, not work.** One occurrence, no reproduction, cause unknown. Recorded so a second one is a pattern rather than a rediscovery. If it recurs: A4 now writes a **per-session** `managed-settings.json` overlay (ADR-0057 D9) where there used to be a baked constant — that is the surface deciding permission mode, so rule it in or out first |
+| [FI-85](improvements.md) — permission dialogs on ordinary Bash reads, under bypass, in this project's sessions only | 📝 **Watch, not work — recorded 2026-09-03 so a recurrence has a date to be measured against.** 🔴 **Cause NOT found, and the first diagnosis was REFUTED**: the probe carrying the exact shape that had been blamed did not prompt. Nothing was changed — no code, no config, no permission rule. ⭐ **Configuration is eliminated as the differentiator**: this session runs the **baked** `managed-settings.json` (`mountinfo` → 0 hits, so no per-session overlay) and the emitter only ever **adds** to those defaults, so every cco session carries the same two `Read()` deny rules or stricter. That measurement also answers the first question [FI-61](improvements.md) says to ask — *rule the ADR-0057 D9 overlay in or out* — for this session: **out**. Whatever differs is behavioural. ▶ **The discriminating experiment is the maintainer's and cannot be run from a session**: rebuild + restart, then work normally. ⚠ **Confounder to respect**: the session that produced the observations was unusually agent-heavy, so a quieter post-rebuild session may show nothing for that reason alone — it must also run agents composing multi-stage commands, or the result is not evidence |
 | [FI-83](improvements.md) — an interactive trust prompt stalls a delegated run, and the lead cannot even say so | 🔴 **Live cost, and it has a reproduction path** — unlike its sibling FI-61. Two spawned subagents were held at a *"do you trust this folder"* dialog while the lead reported them as *running*; the delegated work had not started. ⚠ **Not the gate cco already governs**: workspace trust is directory-scoped and `--dangerously-skip-permissions` does **not** cover it — measured, the session was already running with the flag. ▶ **Trigger measured the same day** and it was **not** the obvious one: a teammate is a separate `claude` process whose `cwd` is the repo (`/workspace/claude-orchestrator`) while the lead's is `/workspace` — and workspace trust is directory-scoped. ⇒ the cheapest candidate fix is now **start teammate panes in the lead's cwd**, which touches **no** security surface at all. ⚠ The blunt fix (pre-accept trust at `cco start`) is an **ADR on a security surface**: trust also gates shell-executing settings the *repo* supplies, which `:ro` mounts stop the agent from editing and do nothing to stop Claude Code from executing |
 | Name/id validation hardening · `cco config protect` · `cco project internalize` (Case-C) · `cco clean` redesign · the deferred doc splits | Post-v1 backlog, unchanged. Detail in [roadmap-history.md](roadmap-history.md) |
 

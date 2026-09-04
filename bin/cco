@@ -121,6 +121,11 @@ source "$LIB_DIR/cmd-forget.sh"
 source "$LIB_DIR/cmd-join.sh"
 source "$LIB_DIR/cmd-docs.sh"
 source "$LIB_DIR/cmd-whoami.sh"
+# Dev-mode machinery, LAST of the pair that must load before the dev block below:
+# dev.sh reads _project_resolve_unit (cmd-project-save.sh) and the secret patterns
+# (secrets.sh) at call time, and bin/cco's dev block calls _cco_dev_snapshot_engage.
+source "$LIB_DIR/dev.sh"
+source "$LIB_DIR/cmd-dev.sh"
 
 # R6 — explicit `none` contract (must precede the store-dir resolvers below, whose
 # in-container path resolution would otherwise emit a spurious ADR-0007 warning).
@@ -300,14 +305,29 @@ unset _cco_dev_requested _cco_dev_target_flag _cco_dev_alias_sandbox _cco_dev_al
 
 _cco_apply_dev_sandbox
 
+# ADR-0060 D4: the pre-run configuration snapshot. 🔴 THE STEP IS UNCONDITIONAL —
+# it runs at every `--dev` engage, before the verb, whatever the verb is, and it is
+# never keyed on a list of config-writing verbs (a named list is a lower bound, a
+# class this repo has paid for four times). Only the COMMIT is conditional, on the
+# tree having changed. A failure DIES: the mode's safety property could not be
+# established, so the run must not proceed. Placed after _cco_apply_dev_sandbox so
+# the dev root the store lives under is already resolved and exported, and before
+# the first-run gate so nothing has written to ~/.cco yet on this invocation.
+# The argv it is handed is the post-strip one — the verb line it precedes.
+_cco_dev_snapshot_engage ${@+"$@"}
+
 # Personal flat stores in their decentralized homes (F1; design §2.2/§2.3,
 # ADR-0016 D7/D8): packs/templates → CONFIG (~/.cco), llms content+cache-state →
-# CACHE. CONFIG has no XDG override, so the plain $HOME form matches
-# _cco_config_dir without an eager resolver call at startup;
-# CACHE is XDG-overridable, so llms derives from the resolver. A CCO_* override
-# always wins (tests/dev seams). Grouped here (post-paths.sh) for the resolver.
-PACKS_DIR="${CCO_PACKS_DIR:-$HOME/.cco/packs}"
-TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$HOME/.cco/templates}"
+# CACHE. Both derive from a resolver: CONFIG grew the CCO_CONFIG_HOME seam
+# (ADR-0060 D5), and a literal `$HOME/.cco` here would have silently ignored it —
+# a fixture config with the real store's packs and templates.
+# `_cco_config_dir_path` (not `_cco_config_dir`) is deliberate: it neither guards
+# nor creates, so this startup line cannot die in a container-agent context nor
+# materialise ~/.cco before the first-run gate has decided to.
+# A CCO_* override always wins (tests/dev seams). Grouped here (post-paths.sh)
+# for the resolver.
+PACKS_DIR="${CCO_PACKS_DIR:-$(_cco_config_dir_path)/packs}"
+TEMPLATES_DIR="${CCO_TEMPLATES_DIR:-$(_cco_config_dir_path)/templates}"
 LLMS_DIR="${CCO_LLMS_DIR:-$(_cco_llms_dir)}"
 
 # B2: drop section headers left empty after the operator filter removed all their
@@ -349,6 +369,7 @@ Setup & maintenance:
   update                 Run migrations + discover updates (--sync, --diff, --news)
   docs [<topic>]         Browse the bundled user documentation offline
   clean                  Clean up .bak, .tmp/, docker-compose.yml
+  dev <cmd>              Manage developer execution environments (restore)
 
 Sessions:
   start [project]        Start a session (cwd-first, or a named project)
@@ -414,7 +435,7 @@ usage() {
         [[ -n "$_cav" ]] && printf 'At this scope: %s.\n' "$_cav"
         # Fully host-only top-level verbs (mirror the shim blocklist) + `tag` when
         # this session cannot write (no edit level) — those are above-scope here.
-        local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome'
+        local _hostonly='init|join|forget|build|start|new|stop|resolve|sync|update|clean|chrome|dev'
         local _filter="$_hostonly"
         [[ "$_ws" == "none" ]] && _filter="${_filter}|tag"   # tag is write-only → above a read level
         if $_want_host; then
@@ -556,7 +577,7 @@ _cco_operator_shim() {
     case "$cmd" in
         # Host-only: container-spawning, path-resolving / non-transactional
         # lifecycle, and host-side tooling → policy refusal (exit 2).
-        start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|path)
+        start|stop|build|new|resolve|sync|init|join|forget|update|clean|chrome|dev|path)
             if [[ "$cmd" == "path" && "$sub" == "list" ]]; then return 0; fi   # read-only listing OK
             _op_hostonly "$cmd${sub:+ $sub}" ;;
         # Read-only, always available under operator mode. `whoami` is the F4
@@ -903,6 +924,7 @@ EOF
     docs)     cmd_docs "$@"     || _cco_rc=$? ;;
     whoami)   cmd_whoami "$@"   || _cco_rc=$? ;;
     clean)    cmd_clean "$@"    || _cco_rc=$? ;;
+    dev)      cmd_dev "$@"      || _cco_rc=$? ;;
     stop)     cmd_stop "$@"     || _cco_rc=$? ;;
     help)     usage "$@" ;;
     *)        die "Unknown command: $cmd. Run 'cco help' for usage." ;;

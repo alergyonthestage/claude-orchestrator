@@ -657,6 +657,13 @@ EOF
         die "Cannot rename pack '$old' in this session: $_STORE_REFS project(s) on this machine are not mounted here, so a packs[] reference they may carry cannot be updated (it would drift). Run 'cco pack rename $old $new' on your host, or start a session that mounts them."
     fi
 
+    # ADR-0060 D4.8, part of the same Phase 0: the packs[] fan-out below rewrites
+    # project.yml in every affected member repo. It belongs BEFORE the confirm —
+    # asking the user to approve a rename that then refuses is a gate on work that
+    # never runs — and before the store re-key, which the fan-out's own failure path
+    # can no longer undo.
+    _cco_dev_project_guard_fanout packs "$old" "cco pack rename"
+
     # ── Preview + confirm (ADR-0029 D2) ─────────────────────────────────
     local -a bullets=(
         "packs/$old/ → packs/$new/ (+ pack.yml name:)"

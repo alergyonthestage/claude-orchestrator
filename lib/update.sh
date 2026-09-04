@@ -135,6 +135,14 @@ _update_global() {
             # No pre-migration vault snapshot (the vault is removed, P3): the
             # universal raw-tar backup (J0) already protects the legacy config, and
             # ~/.cco is versioned via explicit `cco config save` (ADR-0008).
+            #
+            # ADR-0060 D5 — the one class the dev-mode snapshot cannot repair. With
+            # CONFIG shared and STATE sandboxed this runs target-shared /
+            # marker-sandboxed: the files change in the REAL ~/.cco while the
+            # "already ran" marker lands in a bucket the published binary never
+            # reads, so that binary runs the same migration again. A restore puts
+            # the files back and leaves the bookkeeping wrong. Refuse instead.
+            _cco_dev_guard_config_migration global "$installed_dir"
             if ! _run_migrations "global" "$installed_dir" "$current_schema" "$meta_file"; then
                 error "Global migrations failed. Run 'cco update' again after resolving the issue."
                 return 1
@@ -429,6 +437,11 @@ _update_project() {
         if [[ "$dry_run" == "true" ]]; then
             info "$pending_migrations project migration(s) pending for '$pname'"
         else
+            # ADR-0060 D4.8: a project migration's target IS the repo working tree,
+            # so it can destroy uncommitted content under <repo>/.cco. The snapshot
+            # store covers ~/.cco only; here the user's own repo git is the
+            # protection, and this refuses when that git cannot help.
+            _cco_dev_project_guard "$(dirname "$project_dir")" "cco update (project migrations for '$pname')"
             if ! _run_migrations "project" "$project_dir" "$current_schema" "$meta_file"; then
                 error "Project '$pname' migrations failed. Run 'cco update' again after resolving the issue."
                 return 1

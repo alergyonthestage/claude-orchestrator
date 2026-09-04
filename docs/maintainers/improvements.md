@@ -3664,3 +3664,457 @@ state, so nothing in the repo depends on where it lives.
 
 **Effort**: zero to relieve locally (move the directory). Low to change the call site, but **do not
 change it alone** — see the FI-16 coupling. **Type**: suite cost / design question.
+
+## FI-85 — permission dialogs on ordinary Bash reads, under bypassPermissions
+
+**Status**: ⏹ **SYMPTOM GONE 2026-09-04 (E1). Cause LOCATED, not isolated.** The dialogs stop when
+the session is restarted on a current image via the clone's `cco start`; **this project's
+configuration is exonerated by measurement**. Three candidates remain inside the old session's setup
+and E1 could not separate them — see *E1's result*. Three earlier hypotheses were refuted, **including
+one this file asserted as identified**.
+
+🔴 **RETRACTION, 2026-09-04.** This entry said *"CAUSE IDENTIFIED … the differentiator is a Claude
+Code auto-update"*. **That was wrong, and it was overstated when written**: the evidence was a
+temporal correlation (2.1.259 landed the night before) plus an exclusion (the deny rules were
+identical across images). Neither establishes a cause. **Measured 2026-09-04**: the dialogs reproduce
+under **2.1.260**, in the *same container* and the *same image* that produced them under 2.1.259 —
+only the harness version moved. ⇒ **the version is not the differentiator.**
+
+⭐ **The class lesson, and it is this file's third**: the first hypothesis generalised from one
+dialog's wording; the second from one probe set; the third from a timestamp that happened to line up.
+**An exclusion plus a correlation is still not a cause** — and writing *"identified"* over it made a
+document assert something no measurement supported.
+
+The elimination table below is what is actually established. The first session's record is preserved
+at the end: its measurements were correct and both of its refutations still hold.
+
+### 2026-09-03, second session — the discrimination table
+
+Eleven observations. Six arrived unsought (the lead's own commands, **with zero subagents running**),
+three are the probes the first session deferred, and two are earlier probes repeated for continuity.
+
+| # | Command | `cd` | path | pipeline | reader | Dialog |
+|---|---|---|---|---|---|---|
+| 1 | `grep -c . /workspace/…/README.md` | no | abs | no | grep | no |
+| 2 | `grep -c . README.md` | no | rel | no | grep | no |
+| 3 | `grep -c . README.md` (cwd inherited) | no | rel | no | grep | no |
+| 4 | `cd <abs>` ⏎ `sed -n '110,180p' F` | **yes** | rel | no | sed | no |
+| 5 | `cd <abs>` ⏎ `sed …F; echo …; sed …F` | **yes** | rel | no | sed | no |
+| 6 | `sed -n … /abs/F; git -C … \| tail -1` | no | abs | **yes** | sed | no |
+| 7 | **PROBE A** `cd <abs>` ⏎ `grep -c X README.md` | **yes** | rel | no | grep | **no** |
+| 8 | **PROBE B** `cd <abs>` ⏎ `grep -c X README.md \| cat` | **yes** | rel | **yes** | grep | **YES** |
+| 9 | **PROBE C** `cd <abs>` ⏎ `sed -n '1,2p' README.md \| cat` | **yes** | rel | **yes** | sed | **no** |
+| 10–11 | six natural commands, each `cd` + relative `grep` inside a pipeline | **yes** | rel | **yes** | grep | **YES** |
+
+⇒ **The trigger is the conjunction of four conditions**: a `cd`, a **relative** path, a **pipeline**,
+and **`grep`** as the reader. Remove any one and the dialog does not appear — rows 7, 9, 6 and 4
+each remove exactly one.
+
+🔴 **This refutes the first session's surviving hypothesis.** *Compound structure* was the best
+reading of the evidence then; row 5 has **four statements**, a `cd`, and two relative reads, and does
+not prompt. Multi-statement is not the discriminator. ⭐ Same class as the refutation before it: the
+hypothesis was built from the shapes that *did* prompt, and the shape that separates them was one
+nobody had run.
+
+⭐ **The dialog's own explanation is false, and that is a datum.** It says the `grep` *"would search a
+directory that cannot be determined here"*. In every probe the `cd` target is a **literal absolute
+path** — `/workspace/claude-orchestrator`. Nothing is undeterminable. The message describes the
+analyzer's limit, not the command's.
+
+### The elimination table — what is actually established, 2026-09-04
+
+| Candidate | Verdict | The measurement that decided it |
+|---|---|---|
+| **Claude Code version** | 🔴 **ELIMINATED** | PROBE B prompts under **2.1.259** (09-03 18:xx) **and again under 2.1.260** (09-04 08:xx) in the *same container, same image, same project*. `ps` shows the session's process restarted 09-04 04:51, seven minutes after 2.1.260 landed at 04:44 ⇒ only the harness binary moved, and the symptom did not |
+| **The cco image / baked cco version** | 🔴 **ELIMINATED as the differentiator** | `/etc/claude-code/managed-settings.json` is **byte-identical** (`66db6380…`) between the 0.6.0 image and `defaults/managed/managed-settings.json` in the tree that built the replacement ⇒ **both** sessions carry the same two `Read()` denies |
+| **A session overlay dropping the deny rules** | 🔴 **ELIMINATED** | `_emit_managed_settings_overlay` (`lib/cmd-start.sh:621`) merges with `((.deny // []) + $den) \| unique` — it **extends and never replaces**. A session with `ask` gates carries the denies *plus* the gates, never fewer |
+| **The working directory / this repo** | 🔴 **ELIMINATED** | the same shape prompts from **`/etc`**, outside `/workspace` entirely. The trigger is session-wide, not path-bound |
+| **Bypass mode being off** | 🔴 **ELIMINATED** | `ps`: pid 99 is `claude --dangerously-skip-permissions`. ⭐ **The mode IS measurable from inside a session** — a report had recorded that it was not |
+| **`Read(//usr/local/bin/**)` being malformed** | 🔴 **ELIMINATED** | the doubled slash is cco's **own convention** for an absolute path in a rule — this very emitter writes `Edit(//workspace/**/CLAUDE.md)`. Correct syntax, not a typo |
+| **The repo-native `.claude/settings.local.json`** | ⚠ **NOT eliminated — the test was INCONCLUSIVE** | removing it **mid-session** did not stop the dialog. But settings are read at startup, so that measures nothing either way. ⭐ Recorded as inconclusive rather than as a refutation, which is what the previous three hypotheses each got wrong |
+
+⇒ **What remains is a difference between two sessions, and exactly two candidates have never been
+separated**: **how the session was started** (this one by the **npm 0.6.0** host cco on 2026-09-03;
+every comparison session by the **clone** cco on a newer image) and **this project's own
+configuration** (`CCO_CLAUDE_ACCESS=all` — the FI-25 mask, unique to this project — plus the
+repo-native `.claude/` tree).
+
+### E1's result — 2026-09-04, and what it does and does not settle
+
+The session was restarted on the rebuilt image (`078fe704`, `feat/devmode/a10-2-protection@74b6164`)
+via the clone's `cco start`, **changing nothing else**. Four probes — the two light shapes and the two
+heaviest ones that had prompted the day before, replayed verbatim — **none prompted**.
+
+✅ **Held constant across E1, and therefore ELIMINATED:**
+
+| Held constant | Evidence it was constant |
+|---|---|
+| Claude Code **2.1.260** | `claude --version` + `ps` on both sides |
+| the two `Read()` deny rules | `sha256 66db6380…`, **0** `mountinfo` overlay hits, both sides |
+| `CCO_CLAUDE_ACCESS=all` — the **FI-25 mask** | `env`, both sides |
+| the repo-native `.claude/settings.local.json` | `sha256 2aa89e22…`, present both sides |
+| repo, branch, working tree, cwd | `git status` clean, same branch |
+
+⇒ ⭐ **This project's own configuration is exonerated.** It was the leading candidate and it fell.
+
+🔴 **What E1 changed — two things together, plus one property of the old session it could not hold:**
+
+| | old session | new session |
+|---|---|---|
+| **a · image** | `d54c1a49`, built **2026-08-26** from a pre-A11 tree, **no `cco.build-ref` label** | `078fe704`, labelled |
+| **b · `cco start` path** | the **npm 0.6.0** CLI — predates ADR-0057's emitter entirely | the clone's cco |
+| **c · process state** | container up **09-03 15:23**; `claude` process restarted **09-04 04:51** onto a binary installed at **04:44** — the running binary changed under a live container | container and process coeval (08:28:25 / 08:28:26) |
+
+⇒ **The cause is located in the old session's setup and is NOT isolated to one of the three.** That is
+what the measurements support, and the file stops there — ⭐ **this is exactly the point at which two
+earlier hypotheses were overstated.**
+
+📝 **Reasoning, not measurement**: **(c)** is the only one of the three that also explains the reported
+timeline (*"fine until a day or two ago, then after a `/clear` and a session start"*). A long-lived
+container that re-execs `claude` against a **shared, mutating** install directory yields a process of
+version N over on-disk state written by N−1. See [FI-88](#fi-88--the-claude-code-install-is-a-shared-mutable-pruned-mount-and-a-sessions-harness-identity-is-neither-recorded-nor-stable).
+
+▶ **What would separate them**, if the question is worth closing: start a session with the **npm
+0.6.0** CLI on the **new** image. Prompt returns ⇒ **(b)**. No prompt ⇒ **(a)** or **(c)**. ⚠ **(c)
+cannot be run as an experiment** — it needs a harness update to land under a live session, so it is a
+**watch**, not a test.
+
+### The trigger shape — stable, and the one thing that has never moved
+
+`cd` **+** relative path **+** pipeline **+** `grep`. Remove any one of the four and no dialog
+appears. Fourteen observations, under 2.1.259 and 2.1.260 alike, inside and outside the repo.
+
+⚠ **It is not "keep Bash commands simple"** — four-statement commands and `sed` pipelines are both
+clean.
+
+⚠ **The dialog's own explanation is false and must not be reasoned from.** It says the directory
+*"cannot be determined"* when the `cd` target is a **literal absolute path**. Two of the three dead
+hypotheses were built on that one sentence.
+
+### ▶ The experiments that discriminate, in order
+
+**E1 — restart this project's session, changing nothing else.** The image is already rebuilt
+(`078fe704`, label `feat/devmode/a10-2-protection@74b6164`), so a plain restart swaps *both* the
+image and the `cco start` path that set the session up. Then run the probe.
+
+- **No dialog** ⇒ the cause was in the session setup produced by the **0.6.0** start path or the old
+  image, and this project's config is exonerated. E2 becomes unnecessary.
+- **Dialog** ⇒ the cause is **this project's configuration**, and E2 is next.
+
+**E2 — restart again with the repo-native `.claude/settings.local.json` moved aside.** Only run this
+*after* E1 has prompted, or the two changes confound each other.
+
+**E3 — the missing symmetric measurement.** Every comparison so far has come from a different
+project *and* a different session setup. One command inside a session that does **not** prompt closes
+the gap:
+
+```
+sha256sum /etc/claude-code/managed-settings.json ; grep -c managed-settings /proc/self/mountinfo
+env | grep -E '^CCO_(CLAUDE_ACCESS|CLAUDE_TRIPLE|ACCESS_TRIPLE)='
+ls -la <repo>/.claude/settings.local.json 2>&1 ; ps -o args -p $(pgrep -f '^claude ' | head -1)
+```
+
+**E4 — pin the version boundary**, only if E1/E2 point back at the harness:
+`cco build --claude-version 2.1.257`, then the probe. ⚠ 2.1.258 was never observed.
+
+### What to do meanwhile
+
+**The workaround is narrow, and the narrowness is what makes it usable**: in a command containing a
+**pipeline**, give `grep` an **absolute** path, or drop the `cd`. Measured to work; it is a
+palliative, not a fix, and it is not evidence about the cause.
+
+⚠ **Explicitly NOT proposed**, and each was a live option at some point:
+
+- **Touching the two deny rules.** They protect SSH keys and the Claude credential file.
+- **A cco hook or rule to instruct agents.** The dialogs come from the **lead**, with zero subagents
+  running — that channel is not where the friction is, and a baked hook would make the remedy depend
+  on a working `cco build` ([FI-86](#fi-86--cco-build-never-says-which-source-tree-it-is-baking)).
+- **Any code change at all.** No cause is established; a fix now would be a guess with a commit
+  attached.
+
+**Effort**: zero so far. **Type**: open measurement — cause unknown, trigger characterised, workaround
+in hand.
+### The first session's record — 2026-09-03, morning
+
+> Preserved as written. Its measurements stand; its *"current hypothesis"* is **superseded** by the
+> table above, and is kept because the reasoning that produced it was sound on the evidence it had.
+
+**Original status**: 🔴 Observed 2026-09-03, cause NOT found, first diagnosis REFUTED by measurement.
+Nothing was changed — no code, no configuration, no permission rule.
+
+#### The symptom
+
+With bypass permissions active, the maintainer was repeatedly interrupted by
+`Bash command … Do you want to proceed?` dialogs for read-only commands — from the lead and from
+spawned subagents alike. One dialog's explanation line, the only one captured verbatim:
+
+> `grep` on 'dev-execution-mode.md' after a `cd` would search a directory that cannot be determined
+> here, and a `Read()` deny rule is configured; only you can approve running it anyway.
+
+⭐ **The maintainer's own observation is the sharpest datum in the file**: *other projects' sessions
+do not do this.* That is what turned a nuisance into a question. *(2026-09-03, second session: it was
+sharp and it was decisive — but it pointed at the project axis, and the answer was on the version
+axis. See above.)*
+
+#### What was measured, and what it rules out
+
+| Measured | Result |
+|---|---|
+| the deny rules in force | `/etc/claude-code/managed-settings.json` → `deny: ["Read(~/.claude.json)", "Read(~/.ssh/*)"]`, and **nothing else anywhere** — project, repo and user settings carry `allow` lists only |
+| whether this session got a per-session overlay | **No.** `mountinfo` has **0** hits for `managed-settings.json`, so this session runs the **baked default** — the file every cco session gets |
+| whether another session could have fewer rules | **No.** `_emit_managed_settings_overlay` (`lib/cmd-start.sh:2533`) takes `defaults/managed/managed-settings.json` as its **base and adds**. Every session carries **at least** these two rules |
+
+⇒ **Configuration is eliminated as the differentiator.** *(Re-measured on the replacement image
+2026-09-03 and still exact — which is what let the second session cross cco off entirely.)*
+
+#### 🔴 What was refuted
+
+The first diagnosis — *"the trigger is `cd <dir> && <cmd> <relative-file>`"* — was taken from the one
+dialog whose text was captured, and generalised. Three probes, with the maintainer reporting which
+raised a dialog:
+
+| Probe | Command | Dialog |
+|---|---|---|
+| 1 | `grep -c . /workspace/claude-orchestrator/README.md` | **no** |
+| 2 | `grep -c . README.md` | **no** |
+| 3 | `grep -c . README.md` (cwd inherited) | **no** |
+
+**Probe 2 carries the exact shape that was blamed, and did not prompt.** The dialog's wording is a
+true statement about *that one command*, not a sufficient condition. ⭐ The class lesson is this
+project's most-repeated one, arriving from a new direction: **a single sample is a lower bound**, and
+a diagnostic message explains its own case, not the general rule.
+
+#### The hypothesis this section reached — SUPERSEDED
+
+Tabulating every command known to have prompted against the three that did not, the discriminator
+appeared to be **compound structure**, not the `cd`: single simple commands never prompted, while
+every multi-statement or piped command did. **Speculated mechanism**: a simple command matches an
+existing `allow` rule (`Bash(grep *)`, …) and passes; a complex compound reduces to no single rule,
+falls through to read-path analysis, and there the presence of any `Read()` deny makes it fail closed.
+
+🔴 **Refuted 2026-09-03 by PROBE A/B/C and by row 5** — a four-statement command with two relative
+reads does not prompt, and a two-statement one with a pipe does. The structure axis was real but it
+was the *pipeline*, and only in conjunction with `grep` and a relative path.
+
+⚠ The section closed by naming two probes that would separate multi-statement from pipeline, and said
+they were *"deliberately not run, to stop consuming the maintainer's attention mid-implementation"*.
+⭐ **Running them cost three dialogs and closed the question** — the deferral was the more expensive
+choice, and that is the lesson worth carrying rather than the hypothesis.
+
+#### Where a fix was thought to land
+
+⚠ Deliberately not decided, and the first draft of this section had to be withdrawn once already —
+it recommended *"prefer absolute paths"*, which probe 2 then showed would have been the wrong advice.
+*(2026-09-03: the withdrawal was correct for the general claim it made. In the narrow form —
+absolute paths **inside pipelines** — it is what the table above supports.)*
+
+---
+
+## FI-86 — `cco build` never says which source tree it is baking
+
+**Status**: 🔴 **Open, and it has already caused one measured regression** (2026-09-03). The remedy is
+**not decided** — it is user-facing and belongs to the maintainer.
+
+### What happened, measured
+
+The maintainer ran `cco build` on the host intending to rebuild the image from the checkout. It
+instead rebuilt the **published 0.6.0 package's own tree**, and moved the `claude-orchestrator:latest`
+tag **backwards**:
+
+| | before (host measurement, same day) | after |
+|---|---|---|
+| image | `a7d69bb…` | `d54c1a49a3b9` |
+| `cco.build-ref` label | `feat/devmode/dev-execution-mode@e0c93a8` | **`null`** — no labels at all |
+| baked cco | post-A4, post-A11 | **0.6.0**: 0 hits for `build-ref`, 0 for `_cco_dev_image`, no `lib/dev.sh` |
+| `Created` | — | **2026-08-26** (a complete cache hit on the 0.6.0 tree) |
+
+The previous image was not merely untagged — `docker image inspect a7d69bb` reports no such image and
+`docker images -a` lists nothing dangling. The session that followed silently ran an orchestrator
+three feature units behind its own checkout.
+
+### The mechanism, and why nothing caught it
+
+`bin/cco:27` sets `REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"`, and `lib/cmd-build.sh:163` runs
+`docker build … -t "$IMAGE_NAME" "$REPO_ROOT"`. ⇒ **`cco build` builds the tree of the `cco` that
+runs it.** With cco installed from npm, that is the package directory — never the checkout the
+maintainer is standing in.
+
+🔴 **And the build is silent about it.** `cmd-build.sh` computes `_cco_build_ref` and passes it as a
+build-arg, but prints only:
+
+```
+ℹ Building Docker image 'claude-orchestrator:latest'...
+✓ Image built successfully.
+```
+
+Neither the ref nor `$REPO_ROOT`. ⭐ **A11 gave the artifact an identity and left the act mute** — and
+the failure happens at the act. The label is a *post-hoc* oracle: correct, but it only answers a
+question you already thought to ask.
+
+⚠ **The oracles a user would reach for do not discriminate**, and `lib/cmd-whoami.sh:56-63` says so in
+a comment predating this incident: *"`cco --version` answers the same string from an npm install and
+from a clone, and `which cco` answers PATH order rather than the REPO_ROOT the readlink loop actually
+resolved."* Measured here: `package.json` is **0.6.0** in the checkout, **0.6.0** on `develop` and
+**0.6.0** in `/opt/cco` — `cco --version` is blind by construction. A11's host `whoami` block
+(`version` + `provenance` + **`REPO_ROOT`**) is the oracle that discriminates, and it is exactly what
+a pre-A11 install does not have. ⭐ **The instrument that identifies a stale cco cannot be read from
+the stale cco.**
+
+### Proposals — NOT decided, both user-facing
+
+1. **Announce the source.** `cco build` prints `Building '<image>' from <build-ref> (<REPO_ROOT>)`
+   before the `docker build`. One line, no new behaviour, and `_cco_build_ref` already exists.
+2. **Warn on a mismatched checkout.** When `$PWD` is inside a git repo that looks like a cco source
+   tree and differs from `$REPO_ROOT`, say so — that is literally this incident's shape (standing in
+   the repo, building the npm package). Bounded, but it is a new refusal-adjacent surface and needs a
+   ruling on wording and on whether it ever blocks.
+
+⚠ **Adjacent and already scheduled**: the `cco start` build-ref divergence warning
+([design §6.2](engineering/design/dev-execution-mode.md), inside **A10.2 wave 2**) would have caught
+this **at session start** rather than by inspection. This incident is field evidence for sequencing
+§6.2 **first** within wave 2 rather than among the six.
+
+⚠ **Not a substitute for either**: on a maintainer's own machine, installing cco from the clone
+(`_cco_install_provenance` already recognises a `clone` provenance) makes `REPO_ROOT` the checkout by
+construction. That fixes one machine, not the product.
+
+### ⭐ The lesson worth more than the fix
+
+[The roadmap had already predicted this exact failure](roadmap.md) — *"a session started without the
+rebuild silently runs the previous release. Block B exists to end this"* — and it happened anyway,
+because the prediction was **prose in a document** and there was **no mechanical gate**. This project
+has paid for that class repeatedly under the name *measure, never restate*; here it arrived as
+*predict, never gate*. §6.2 is the gate.
+
+**Effort**: proposal 1 is one line. Proposal 2 is small but user-facing. **Type**: correctness /
+operator-facing identity.
+
+---
+
+## FI-87 — the `clone without --dev` notice is a `note`, and on `cco build` nothing gates it
+
+**Status**: 🔴 **Open, observed 2026-09-04 by the maintainer.** One **design decision** must be ruled
+before any fix: *is a mixed CLI↔image combination ever legitimate?* The answer chooses the remedy.
+
+### Observed
+
+```
+$ <clone>/bin/cco build
+note: running a cco CLONE without --dev: this acts on your REAL cco environment and would tag
+      'claude-orchestrator:latest', the image your real sessions use. …
+ℹ Building Docker image 'claude-orchestrator:latest'...
+[+] Building 1.9s
+```
+
+The build proceeds. Same for `cco start`. ⇒ **the one combination the dev-mode sandbox exists to
+prevent is announced and then performed**, with nothing to stop a mistake.
+
+### Why this is a classification defect, by ADR-0059's own rule
+
+The notice is emitted as `note` (`bin/cco:295`). [ADR-0059](cli/decisions/0059-message-classification-and-the-start-warning-gate.md)
+A2/D20 states the corollary directly: **"if a message must not ask the user to decide, it must not be
+a `warn`"** — and its contrapositive is what applies here. This message *must* ask: its subject is
+overwriting the image **every real session on the machine uses**.
+
+Two distinct gaps, and they are not the same gap:
+
+1. **`cco start`** — the launch pause exists, but `note` only earns `Press Enter to start`. ⚠ In the
+   observed run the prompt escalated to `Start the session anyway? [S/a]` — **because of two unrelated
+   config-hygiene warnings**. ⭐ The clone notice rode on someone else's escalation; with a clean
+   config it would have been a bare Enter. A gate that only fires when something *else* is wrong is
+   not a gate.
+2. **`cco build`** — 🔴 **there is no pause mechanism at all.** ADR-0059's gate covers `start`/`new`.
+   So on the verb that actually rewrites the shared tag, the notice is pure text with zero friction.
+
+### The decision to rule first — it is not a wording question
+
+**Is a mixed combination (distributed CLI ↔ dev/branch image, or clone CLI ↔ real image) ever
+legitimate?** Two candidate answers, and they select different remedies:
+
+- **Never legitimate** ⇒ refuse outright; `--dev` or nothing. Simplest, and it makes the sandbox an
+  actual boundary rather than an announcement.
+- **Legitimate for deliberate cross-testing** (verifying a CLI against an older image, reproducing a
+  user's combination) ⇒ keep it reachable but make it **deliberate**: an interactive confirmation,
+  and `--force` for the non-interactive path.
+
+⚠ **Do not decide this from the notice's wording.** The question is whether a real workflow needs the
+mixed combination; if one does, it needs naming, because that workflow is the reason the refusal
+cannot be absolute.
+
+### Relationship to the neighbours — same subject, opposite direction
+
+- [FI-86](#fi-86--cco-build-never-says-which-source-tree-it-is-baking) is the **other** direction of
+  the same confusion: the **npm** CLI rebuilding the published tree over a checkout the user was
+  standing in. FI-87 is the **clone** CLI writing the real tag. ⇒ **one subject — which binary writes
+  which image — with a gap at each end.** They should be ruled together.
+- **[design §6.2](engineering/design/dev-execution-mode.md)** (A10.2 wave 2) covers the *consumption*
+  side: warning at `cco start` when the image's `cco.build-ref` diverges from the CLI. FI-87 covers
+  the *production* side. §6.2 does not subsume this: it fires after a bad image already exists.
+
+⚠ Any fix here is a change to `bin/cco`'s dev-mode preamble and is **user-facing** — an ADR-0060
+amendment, not an implementation detail.
+
+**Effort**: small once the decision is made. **Type**: correctness / operator-facing safety.
+
+---
+
+## FI-88 — the Claude Code install is a shared, mutable, pruned mount, and a session's harness identity is neither recorded nor stable
+
+**Status**: 🔴 **Open, measured 2026-09-04.** Surfaced by [FI-85](#fi-85--permission-dialogs-on-ordinary-bash-reads-under-bypasspermissions), whose
+investigation cost two sessions largely because **no artefact records which Claude Code a session
+actually ran**.
+
+### Measured
+
+```
+/home/claude/.local/bin           <-  ~/.cache/cco/claude-install/bin     rw, virtiofs
+/home/claude/.local/share/claude  <-  ~/.cache/cco/claude-install/share   rw, virtiofs
+
+versions/  2.1.258 (Sep 2 08:55) · 2.1.259 (Sep 2 22:58) · 2.1.260 (Sep 4 04:44)
+```
+
+Three properties, each measured, and it is their **conjunction** that bites:
+
+1. **Shared.** One host directory backs **every** cco session on the machine. A session does not own
+   its interpreter.
+2. **Mutable while sessions are live.** 2.1.260 landed at **04:44**; a container that had been running
+   since **the previous day at 15:23** had its `claude` process restart at **04:51** onto it. ⇒ the
+   running binary changed under a live container, and the on-disk state it reads was laid down by the
+   version before.
+3. 🔴 **Pruned while sessions are live.** **2.1.257 was present on 2026-09-03 and gone on 2026-09-04.**
+   A session's own binary can be deleted underneath it.
+
+⚠ This is by design (ADR-0039: Claude Code is not baked; the entrypoint installs it into a persistent
+CACHE mount that auto-updates in place). The defect is **not** the auto-update — it is that the
+resulting identity is invisible.
+
+### What already exists, and what is missing
+
+- ✅ **The control exists**: `cco build --claude-version x.y.z`, and the `~/.cco/claude-version` knob
+  that `cco start` re-forwards (`lib/cmd-build.sh:48`, `lib/cmd-start.sh:2018`).
+- 🔴 **The identity does not.** `cco whoami` reports the harness version **zero** times — measured,
+  `grep -c` on `lib/cmd-whoami.sh` returns 0. Nothing records the version a session started with,
+  nothing notices it changed mid-session, and nothing warns that the version tree was pruned.
+
+⭐ **This is the same class A11 closed for the cco identity and left open for the harness identity.**
+A11's own framing — *"which cco is this, and where does it run from"* — has an exact twin nobody
+asked: **which Claude Code is this session running, and is it still the one it started with?**
+[FI-86](#fi-86--cco-build-never-says-which-source-tree-it-is-baking) is the third face of the same
+subject: an identity that exists but is never announced.
+
+### Proposals — NOT decided
+
+1. **Record it.** Capture the resolved version at session start (it is already resolved to install
+   it) and surface it — the cheapest home is the session context every session already carries.
+2. **Report it.** A `Claude Code` block in `cco whoami`: version, install dir, and **whether it
+   differs from the version this session started with**. That one comparison is what turns an
+   investigation like FI-85's into a lookup.
+3. **Consider pinning by default for long sessions** — or, far cheaper and probably enough, warn when
+   a mid-session change is detected. ⚠ Do **not** pin globally as a reflex: auto-update is a
+   deliberate ADR-0039 decision and unpinning users from security fixes is a real cost. The question
+   to rule is *awareness vs stability*, not *update vs no update*.
+
+⚠ Any of these is **user-facing** and touches ADR-0039's territory. Ruled by the maintainer, not
+implemented on this note.
+
+**Effort**: proposals 1–2 are small. **Type**: correctness / operator-facing identity.

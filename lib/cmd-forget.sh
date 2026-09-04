@@ -233,6 +233,11 @@ EOF
             for _i in "${!purge_paths[@]}"; do
                 p="${purge_paths[$_i]}"
                 [[ -d "$p/.cco" ]] || continue
+                # ADR-0060 D4.8: this rm -rf is the writer the criterion was written
+                # for. The archive below is a backup, not a restore POINT — it is not
+                # the repo's own history — so dev mode still refuses where git cannot
+                # put the tree back.
+                _cco_dev_project_guard "$p" "cco forget --purge"
                 if _reminder_git_dirty "$p" ".cco"; then
                     warn "$(basename "$p"): .cco/ has uncommitted changes — backing up before delete"
                 fi
