@@ -2433,3 +2433,51 @@ test_invariant_cco_pathspec_travels_with_its_git_root() {
         || { fail "INV-CCOSPEC over-reaches: the SANCTIONED shape was flagged:"$'\n'"$planted"; return 1; }
     return 0
 }
+
+# ── INV-WT: a workspace repo scan must probe `.git` with -e, never -d ──
+#
+# In a git WORKTREE, `.git` is a regular FILE (a gitfile holding `gitdir: <path>`),
+# not a directory. So `[ -d "${dir}.git" ]` silently classifies every worktree as
+# "not a repo". ADR-0060 Amendment A5 ruled this for lib/'s clone probe; the same
+# mechanism reached the hooks independently and was measured there on 2026-09-03:
+# `/workspace/a102-impl` (a worktree of the main checkout) was omitted from the
+# repo list injected into every subagent, and from the list a compaction is told
+# to preserve.
+#
+# ⚠ Why this is a LINT and not a behavioural test: the hooks scan the literal
+# `/workspace/*/` with no root override, so there is no fixture seam to point them
+# at. Adding one purely to test a one-character predicate would be the tail wagging
+# the dog. The lint is scoped to the shape that actually carries the defect — a
+# file that scans the workspace for repos — so it has no false positives on the
+# many CORRECT `-d` probes elsewhere (`$cfg/.git`, `$vault/.git`): those name
+# cco-owned directories that are never worktrees.
+#
+# ⭐ The enumeration is derived, never named. The worktree workstream's own design
+# doc carries an unticked TODO naming ONE file (`session-context.sh`) — which was
+# since fixed by a different route, while the two files that still carried the bug
+# were not on that list. A named list is a lower bound; this asks instead which
+# files perform the scan.
+test_invariant_workspace_scan_uses_existence_probe() {
+    local scanners offenders="" f hits
+    # Every non-test, non-doc file that scans the workspace for repos.
+    scanners=$(grep -rl 'in /workspace/\*/' \
+                    "$REPO_ROOT/config" "$REPO_ROOT/lib" "$REPO_ROOT/bin" "$REPO_ROOT/scripts" \
+                    2>/dev/null | sort)
+
+    # A scan must exist, or the lint is measuring nothing (an unreachable guard is
+    # an unmeasured guard).
+    [[ -n "$scanners" ]] || { echo "ASSERTION FAILED: INV-WT found no /workspace/*/ scan at all — the lint has lost its subject and would pass vacuously"; return 1; }
+
+    for f in $scanners; do
+        # Report EVERY offending line, not the first: the evidence wanted is which
+        # files carry it and which do not.
+        hits=$(grep -n -- '-d "\${\?[A-Za-z_]*}\?\.git"' "$f" || true)
+        [[ -n "$hits" ]] && offenders="${offenders}${offenders:+$'\n'}${f#$REPO_ROOT/}: ${hits}"
+    done
+
+    [[ -z "$offenders" ]] || {
+        echo "ASSERTION FAILED: a /workspace/*/ repo scan probes .git with -d, which omits every git worktree (ADR-0060 Amendment A5's class). Use -e:"
+        echo "$offenders"
+        return 1
+    }
+}

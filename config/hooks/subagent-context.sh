@@ -6,10 +6,14 @@
 PROJECT="${PROJECT_NAME:-unknown}"
 TMODE="${TEAMMATE_MODE:-tmux}"
 
-# Condensed repo list (names only — subagent knows /workspace/<name> convention)
+# Condensed repo list (names only — subagent knows /workspace/<name> convention).
+# ⚠ `-e`, never `-d`: in a git WORKTREE `.git` is a regular FILE (a gitfile holding
+# `gitdir: <path>`), so a `-d` probe omits every worktree — and rules/git-practices.md
+# makes one worktree per agent the default for concurrent work, i.e. exactly the case a
+# subagent is spawned into. Same correction as ADR-0060 Amendment A5 made in lib/.
 repos=""
 for dir in /workspace/*/; do
-    [ -d "${dir}.git" ] && repos="${repos} $(basename "$dir")"
+    [ -e "${dir}.git" ] && repos="${repos} $(basename "$dir")"
 done
 
 # Build condensed context (smaller than SessionStart — subagents need key facts only)
