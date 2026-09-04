@@ -7,7 +7,7 @@
 > **Last updated: 2026-09-04** — ✅ **A10.2 wave 1 is MERGED into `develop`** (`471ab4c`, `--no-ff`),
 > and so is the hooks worktree-probe fix (`d0de776`) — the predicted `test_invariants.sh` conflict
 > arrived in the predicted shape and was resolved by **keeping both lints** (43/0/43 on that file).
-> 🔴 **`develop` is 38 commits ahead of `origin/develop` and the push is a HOST step** — measured:
+> 🔴 **`develop` is AHEAD of `origin/develop` and the push is a HOST step** — measured:
 > SSH remote, no credential helper, no token, `gh` not authenticated.
 >
 > 🔴 **Wave 2 is now PRECEDED by a cross-cutting analysis** — the maintainer's ruling of 2026-09-04.
@@ -147,11 +147,13 @@ narrative, the lessons, and the per-stage records live in
   `--no-ff` merges in that order: `6208228` (the five A5/A8 units) and `90c1391` (ADR-0038 + design).
   Both feature branches were deleted locally with `-d` — it did not refuse, and `git log develop..<b>`
   was **0 for both** before the deletion.
-  🔴 **`develop` is 38 AHEAD of `origin/develop`, 0 behind — the push is OPEN and is a HOST step.**
+  🔴 **`develop` is AHEAD of `origin/develop`, 0 behind — the push is OPEN and is a HOST step.**
   Measured 2026-09-04: SSH remote (`git@github.com:…`), **no** credential helper, **no** `GITHUB_TOKEN`,
   `gh` not authenticated ⇒ this session cannot push, detected rather than assumed
-  (`rules/git-practices.md`). The 38 are A10.2 wave 1 (`471ab4c`) + the hooks worktree-probe fix
-  (`d0de776`) + the session's documentation.
+  (`rules/git-practices.md`). They are A10.2 wave 1 (`471ab4c`) + the hooks worktree-probe fix
+  (`d0de776`) + the session's documentation. ⚠ **No count is written here on purpose** — measure it with
+  `git rev-list --count origin/develop..develop`. A stated count is invalidated by the commit that
+  states it, and it happened again on 2026-09-04: the roadmap and handoff commits saying *38* made it *40*.
   *(Superseded: `develop` was LEVEL with `origin/develop` — measured 2026-08-22 (`git rev-list --count
   origin/develop..develop` = 0). That push happened host-side and that gate was closed;)*
   `origin/feat/cli/start-warning-gate` is gone too. The only remote feature branch left is

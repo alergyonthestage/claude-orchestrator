@@ -30,7 +30,7 @@ flowchart TB
 | ✅ **A10.2 wave 1 merged** | `471ab4c` (`--no-ff`), preceded by `a10-2-impl` → the unit branch (`d49d689`, clean). `lib/dev.sh` + `lib/cmd-dev.sh` + the guards + `tests/test_dev_protection.sh` are on `develop` |
 | ✅ **hooks fix merged** | `d0de776` (`--no-ff`). ⚠ The **predicted conflict arrived in the predicted shape** — two independent lints appended at the tail of `tests/test_invariants.sh` — and was resolved by **keeping both**, reconstructed from the two parents after verifying this branch's version is a pure 48-line append. `bin/test --file test_invariants` → **43 passed / 0 failed / 43** |
 | ✅ **Suite on `develop`, after both merges** | **1837 passed / 7 failed / 1844 total**, `Results:` line **present**. ⭐ **The delta closes exactly** against the unit-tree run (1836/7/1843): **+1 passed, +1 total, failed unchanged at 7** — that +1 is `INV-WT`, the lint the hooks fix brought in. So every added test passes and no pre-existing test changed state, which is the strongest form this figure can take. The 7 verified **name for name** (6 × `test_as_*` + `test_paths_symlink_safe_tool_root`), and count and names **agree** |
-| 🔴 **`develop` is 38 ahead of `origin/develop`, 0 behind — the push is a HOST step** | detected, not assumed (`rules/git-practices.md`): SSH remote, **no** credential helper, **no** `GITHUB_TOKEN`, `gh` not authenticated |
+| 🔴 **`develop` is AHEAD of `origin/develop`, 0 behind — the push is a HOST step** | detected, not assumed (`rules/git-practices.md`): SSH remote, **no** credential helper, **no** `GITHUB_TOKEN`, `gh` not authenticated. ⚠ **The count is deliberately not written here** — `git rev-list --count origin/develop..develop` is the answer, because a stated count is invalidated by the commit that states it (this handoff's own commit did exactly that, turning 38 into 40) |
 | 🔴 **Neither merge is ACTIVE yet** | `lib/` and `config/hooks/` are **baked**. Wave 1's protections and the hooks fix are inert until a host `./bin/cco build` from `develop` |
 | Image in use | `078fe704`, label `cco.build-ref: feat/devmode/a10-2-protection@74b6164` — built **before** the merges, so it carries A10.1 but **not** wave 1 |
 | 🔴 **git needs an env prefix here** | `dubious ownership` fires **intermittently**; `~/.gitconfig` is a read-only host mount so `git config --global` is not a route. Use `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` |
@@ -40,7 +40,7 @@ flowchart TB
 
 | Gate | What unblocks it |
 |---|---|
-| 🔴 **push `develop`** (38 commits) | **host only** — this session cannot push. Step 1 of `scratchpad/RUNBOOK-2026-09-04.md` |
+| 🔴 **push `develop`** | **host only** — this session cannot push. Step 1 of `scratchpad/RUNBOOK-2026-09-04.md` |
 | 🔴 **rebuild from `develop`** | **host only**. Until it runs, wave 1 and the hooks fix are inert. Oracle = the `cco.build-ref` label reads `develop@<sha>`; **empty means 0.6.0 was rebuilt again** ([FI-86](improvements.md)) |
 | 📝 **[FI-85](improvements.md) attribution** | one throwaway session started with the **npm 0.6.0** cco on the current image, then the probe. Prompt returns ⇒ the 0.6.0 `cco start` path, which is the **published** release. No prompt ⇒ closes as *resolved, mechanism not isolable* |
 | 🔴 **launching the analysis** | the maintainer's gate — the strongest one in `rules/workflow.md`. Scope, questions and the requirement to carry verbatim are in the roadmap entry. Home: `environment/analysis/` |
@@ -80,7 +80,7 @@ is **historical** — read it only to see *why* an alternative was rejected.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] 🔴 **Host: push `develop`** (38 commits) — this session cannot
+- [ ] 🔴 **Host: push `develop`** — this session cannot (measure the count, never quote one)
 - [ ] 🔴 **Host: `./bin/cco build` from `develop`**, verify by the `cco.build-ref` label — [FI-86](improvements.md)
 - [ ] 📝 **Run the [FI-85](improvements.md) experiment** — npm 0.6.0 `cco start` + the probe; record the outcome with its date
 - [ ] 🔴 **Launch the analysis** (human gate) — execution identity + concurrency, [roadmap](roadmap.md#before-wave-2--session-execution-identity--concurrency-analysis)
