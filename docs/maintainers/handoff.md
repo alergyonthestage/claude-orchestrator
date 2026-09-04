@@ -1,23 +1,4 @@
-# Handoff — 2026-09-03 (second session) · ⚠ PARTIALLY SUPERSEDED — read the status update first
-
-> 🔴 **STATUS UPDATE, 2026-09-04.** Three things this document says are **no longer true**. It is
-> patched rather than rewritten because a full consolidation is owed at the end of the current
-> session; where the two disagree, **this block wins**.
->
-> - ✅ **The host repair is DONE.** `claude-orchestrator:latest` = `078fe704`, label
->   `feat/devmode/a10-2-protection@74b6164`. The *"Do this on the HOST first"* block below is closed.
->   Ignore it.
-> - ✅ **`a10-2-impl` is MERGED into `a10-2-protection`** (`d49d689`, no conflict — the predicted
->   `test_invariants.sh` conflict belongs to the *hooks-fix* merge, not this one). Wave 1's code is on
->   the unit branch; `rev-list a10-2-protection..a10-2-impl` = **0**. ✅ **Suite re-run on the merged
->   tree: 1836 passed / 7 failed / 1843 total**, `Results:` line present, the 7 verified **name for
->   name** as the documented host-only set. Both oracles (count and names) agree.
-> - ⚠ **[FI-85](improvements.md) has moved twice.** Its "cause identified" was **retracted**; then E1
->   removed the symptom and **exonerated this project's configuration by measurement**. Cause
->   located, not isolated. **[FI-87](improvements.md)** and **[FI-88](improvements.md)** are new.
->
-> ▶ **Still open and unchanged**: the two merges into `develop` (wave 1, and the hooks fix), the two
-> wave-1 decisions, and wave 2 — which the maintainer's divergence/concurrency analysis now precedes.
+# Handoff — 2026-09-04 · A10.2 wave 1 is MERGED. Wave 2 is gated behind a new analysis. Two host steps are owed.
 
 > **Ephemeral.** The previous handoff was deleted before this was written. It links **out** to the
 > roadmap, ADRs, design and analysis — nothing links back to it.
@@ -27,146 +8,69 @@
 
 ## Where we are
 
-**Phase: Implementation + Test of [A10.2](roadmap.md) — wave 1 COMPLETE and COMMITTED, NOT MERGED.
-Wave 2 not started.** The unit did not move this session: it was spent on two defects that surfaced
-at session start, and **both are now closed as diagnoses**. This session changed **documentation
-only** — no code, no config, no branch position.
+**Phase: between Implementation and Analysis.** [A10.2](roadmap.md) wave 1 (protection) is **merged
+into `develop`**; wave 2 is **not** next. It is gated behind a cross-cutting analysis the maintainer
+ruled on 2026-09-04 — see [*Before wave 2*](roadmap.md#before-wave-2--session-execution-identity--concurrency-analysis).
 
 ```mermaid
 flowchart TB
-    subgraph L1["1 · A10.2 dev sandbox — the actual unit, UNCHANGED"]
-      I["feat/devmode/a10-2-impl<br/>10 commits · wave 1 code"] -->|"🔴 MERGE OWED"| U["feat/devmode/a10-2-protection<br/>docs only ahead"]
-      U --> W2["wave 2 — not started"]
-    end
-    subgraph L2["2 · FI-85 — permission dialogs"]
-      F["✅ CAUSE FOUND: Claude Code 2.1.259<br/>NOT cco · nothing to fix here"]
-    end
-    subgraph L3["3 · FI-86 — the image regression"]
-      G["🔴 host repair OWED<br/>blocks every acceptance lane"]
-    end
-    subgraph L4["4 · hooks -d→-e"]
-      H["fix/hooks/worktree-git-probe<br/>committed · unmerged · independent"]
-    end
+    W1["A10.2 wave 1 · protection<br/>✅ MERGED 471ab4c"] --> HOST["🔴 host: push + rebuild<br/>makes it REAL — both baked"]
+    HK["hooks -d→-e<br/>✅ MERGED d0de776"] --> HOST
+    HOST --> EXP["FI-85 experiment<br/>one throwaway session"]
+    EXP --> AN["🔴 ANALYSIS<br/>execution identity + concurrency<br/>launch = human gate"]
+    AN --> W2["A10.2 wave 2<br/>§6.2 leads it"]
+    W2 --> OV["file-overlay branch<br/>rares' work — verify, then integrate"]
 ```
 
----
-
-## 🔴 Do this on the HOST first — nothing acceptance-shaped works until it is done
-
-`claude-orchestrator:latest` was rebuilt **from the published 0.6.0 package**, not from the checkout,
-and the tag moved **backwards**. Full record: [FI-86](improvements.md). The session that found it was
-running an orchestrator three feature units behind its own working tree.
-
-⚠ **Host and container share ONE working tree**, so the checkout below moves the branch under any
-running session. Do it with no session mid-edit, and check the branch back out afterwards.
-
-```
-cd /Users/alessandro/Projects/CaveResistance/Software/claude-orchestrator
-git status --short                      # must be clean
-git checkout develop
-./bin/cco build                         # ./bin/cco — NOT the npm-global cco
-docker image inspect claude-orchestrator:latest --format '{{index .Config.Labels "cco.build-ref"}}'
-git checkout feat/devmode/a10-2-protection
-./bin/cco start claude-orchestrator
-```
-
-🔑 **The oracle is the label**: it must come back **non-empty** and name the ref you built
-(`develop@<sha>`). **Empty means you rebuilt 0.6.0 again** — that is the exact failure being repaired,
-and it is silent otherwise.
-
-⚠ **`cco --version` does NOT discriminate** — measured: `package.json` is `0.6.0` in the checkout, on
-`develop`, and in the image's `/opt/cco`. `lib/cmd-whoami.sh:56-63` documents this in a comment that
-predates the incident. The fields that discriminate are `provenance` + `REPO_ROOT`, printed by A11's
-host `whoami` block — which a pre-A11 install does not have.
-
-📝 **Durable fix for this machine, not yet done**: installing cco from the clone (`npm link`, or PATH
-precedence for `<repo>/bin`) makes `REPO_ROOT` the checkout **by construction**;
-`_cco_install_provenance` already recognises a `clone` provenance. Otherwise every plain `cco build`
-on this host keeps rebuilding 0.6.0.
-
-⚠ Building from `develop` deliberately leaves **two** things out of the image: A10.2 wave 1 (unmerged,
-unreviewed — it should not be in the image every session uses) and the hooks `-e` fix (unmerged).
-
----
-
-## State, measured
+### State, measured
 
 | Claim | Measured |
 |---|---|
-| Working tree | **clean**, on `feat/devmode/a10-2-protection`. ⚠ Host and container share it — run `git branch --show-current` before any write, not only at session start |
-| ✅ **Worktrees pruned** | The two stale registrations (`/workspace/a102-impl`, `/workspace/hooks-fix`) were **pruned this session**. `git worktree list` now shows the main tree only. Both branch refs and all objects survive — nothing was lost |
-| 🔴 **git needs an env prefix here** | `git` in this container throws `dubious ownership` **intermittently** — reads succeeded, then failed on the same path at matching uid. `~/.gitconfig` is a read-only host mount, so `git config --global` is not a route. Use `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` |
-| **impl → unit merge** | **STILL NOT DONE**, and still routine. `feat/devmode/a10-2-impl` is **10 commits ahead**; the unit branch is ahead **only by documentation**. Measure: `git log --oneline feat/devmode/a10-2-protection --not feat/devmode/a10-2-impl` |
-| Suite, impl branch | **1836 passed / 7 failed / 1843 total**, `Results:` line **present**, delta closing exactly (+24 / +24, failed unchanged at 7). Measured last session; **not re-run this session** |
-| The 7 | the six `test_as_*` plus `test_paths_symlink_safe_tool_root` — the ADR-0047 privilege boundary, not a defect |
-| 🔴 **bash 3.2 cover is PARTIAL** | 9 of 14 changed files parsed on real bash 3.2; the other 5 were **not checked** (the docker proxy's container limit refuses at **rc 125**, which is *docker's* code and reads as a pass) |
-| Image, before the repair | `claude-orchestrator:latest` = `d54c1a49a3b9`, `Labels = null`, `Created` **2026-08-26**, baked cco **0.6.0** (0 hits for `build-ref`, 0 for `_cco_dev_image`, no `lib/dev.sh`) |
-| ✅ **The dev image is the healthy one** | `claude-orchestrator-dev:latest` = `90d5dae`, label `cco.build-ref: develop@1766f5b`, built 2026-09-03 07:14. **The dev axis took no damage** — A10.1's isolation held exactly as designed |
-| `develop` | **level** with `origin/develop` (0/0). None of the three feature branches is pushed |
-| Docs changed this session | `improvements.md` (FI-85 rewritten, **FI-86 new**), `roadmap.md` (header + an A10.2 sequencing note), this handoff. **No code, no config** |
-
-## ✅ FI-85 is closed as a diagnosis — and the answer is not cco
-
-The dialogs are a **Claude Code auto-update**, measured: `~/.local/share/claude/versions/` holds
-2.1.257 (Sep 1), 2.1.258 (Sep 2 08:55), **2.1.259 (Sep 2 22:58 — the version running)**, on a host
-mount shared by every session. Both observations are dated the first day after 2.1.259 landed, and a
-session already running keeps its own binary — which is why other projects' long-lived sessions were
-unaffected. ⭐ *"Other projects don't do this"* was a **version** difference, not a project one.
-
-**The trigger is a conjunction of four conditions** — `cd` **+** relative path **+** pipeline **+**
-`grep`. Remove any one and no dialog appears (PROBE A/B/C, plus eight natural observations; full
-table in [FI-85](improvements.md)).
-
-🔑 **Operational rule for any agent working here**: *in a command containing a pipeline, give `grep`
-an **absolute** path — or drop the `cd`.* It is **not** "keep commands simple": four-statement
-commands and `sed` pipelines were both measured clean.
-
-⚠ **Do not "fix" this in cco.** The deny rules were identical on both images and the symptom survived
-a complete image change across two different permission emitters. A cco hook or rule was considered
-and **rejected on measurement** — this session's dialogs came from the **lead alone, with zero
-subagents running**.
-
-📝 **Unpinned**: which release introduced it. 2.1.258 was never observed. The experiment is
-`cco build --claude-version 2.1.257`, then PROBE B — recorded in the FI.
+| Branch / tree | on **`develop`**, working tree **clean**. ⚠ Host and container share one tree — `git branch --show-current` before any write |
+| ✅ **A10.2 wave 1 merged** | `471ab4c` (`--no-ff`), preceded by `a10-2-impl` → the unit branch (`d49d689`, clean). `lib/dev.sh` + `lib/cmd-dev.sh` + the guards + `tests/test_dev_protection.sh` are on `develop` |
+| ✅ **hooks fix merged** | `d0de776` (`--no-ff`). ⚠ The **predicted conflict arrived in the predicted shape** — two independent lints appended at the tail of `tests/test_invariants.sh` — and was resolved by **keeping both**, reconstructed from the two parents after verifying this branch's version is a pure 48-line append. `bin/test --file test_invariants` → **43 passed / 0 failed / 43** |
+| ✅ **Suite on `develop`, after both merges** | **1837 passed / 7 failed / 1844 total**, `Results:` line **present**. ⭐ **The delta closes exactly** against the unit-tree run (1836/7/1843): **+1 passed, +1 total, failed unchanged at 7** — that +1 is `INV-WT`, the lint the hooks fix brought in. So every added test passes and no pre-existing test changed state, which is the strongest form this figure can take. The 7 verified **name for name** (6 × `test_as_*` + `test_paths_symlink_safe_tool_root`), and count and names **agree** |
+| 🔴 **`develop` is 38 ahead of `origin/develop`, 0 behind — the push is a HOST step** | detected, not assumed (`rules/git-practices.md`): SSH remote, **no** credential helper, **no** `GITHUB_TOKEN`, `gh` not authenticated |
+| 🔴 **Neither merge is ACTIVE yet** | `lib/` and `config/hooks/` are **baked**. Wave 1's protections and the hooks fix are inert until a host `./bin/cco build` from `develop` |
+| Image in use | `078fe704`, label `cco.build-ref: feat/devmode/a10-2-protection@74b6164` — built **before** the merges, so it carries A10.1 but **not** wave 1 |
+| 🔴 **git needs an env prefix here** | `dubious ownership` fires **intermittently**; `~/.gitconfig` is a read-only host mount so `git config --global` is not a route. Use `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'` |
+| 🔴 **bash 3.2 cover is PARTIAL** | 5 of 14 changed files were never parsed on the real interpreter — the docker proxy's container limit refuses at **rc 125**, which is *docker's* code and reads as a pass |
 
 ## Gates still open
 
 | Gate | What unblocks it |
 |---|---|
-| 🔴 **the host image repair** | the block at the top. **Everything acceptance-shaped waits on it** |
-| **merge `a10-2-impl` → `a10-2-protection`** | nothing blocks it — it is the next command in-session, and independent of the image |
-| ⚠ **a textual conflict is PREDICTED, and its resolution is known** | `tests/test_invariants.sh` gains a lint at its **tail on both** lines of work — `INV-CCOSPEC` on the unit branch, `INV-WT` on `fix/hooks/worktree-git-probe`. **Different** lints, both self-contained ⇒ **resolve by keeping both**, then re-run the invariants file |
-| 🔴 **2 decisions the lead declined to rule** | the fan-out guard **superset**, and the **two rename guard placements** — both in *Context*, both user-perceivable |
-| 📝 **[FI-86](improvements.md)'s remedy** | proposal 1 (announce the build source) is one line; proposal 2 (warn on a mismatched checkout) is user-facing. **Neither is decided** |
-| 📝 **§6.2 first in wave 2?** | a proposal recorded in the roadmap this session, not a ruling |
-| **A10.2 wave 2** | `cco dev seed\|reset\|list\|config\|project` · `clean` scoping + `--images` · the [§6.2](engineering/design/dev-execution-mode.md) build-ref warn · fixtures · `project.dev.yml` |
-| **merge A10.2 → `develop`** | the maintainer's gate, after wave 2 |
-| **merge + accept `fix/hooks/worktree-git-probe`** | independent of A10.2 and mergeable today. Acceptance is **host-only** (`config/hooks/` is baked) and needs the repaired build |
+| 🔴 **push `develop`** (38 commits) | **host only** — this session cannot push. Step 1 of `scratchpad/RUNBOOK-2026-09-04.md` |
+| 🔴 **rebuild from `develop`** | **host only**. Until it runs, wave 1 and the hooks fix are inert. Oracle = the `cco.build-ref` label reads `develop@<sha>`; **empty means 0.6.0 was rebuilt again** ([FI-86](improvements.md)) |
+| 📝 **[FI-85](improvements.md) attribution** | one throwaway session started with the **npm 0.6.0** cco on the current image, then the probe. Prompt returns ⇒ the 0.6.0 `cco start` path, which is the **published** release. No prompt ⇒ closes as *resolved, mechanism not isolable* |
+| 🔴 **launching the analysis** | the maintainer's gate — the strongest one in `rules/workflow.md`. Scope, questions and the requirement to carry verbatim are in the roadmap entry. Home: `environment/analysis/` |
+| 🔴 **2 decisions the lead declined to rule** | the fan-out guard **superset**, and the **two rename guard placements** — both below in *Context*, both user-perceivable, both wave-2 material |
+| 📝 **[FI-86](improvements.md) · [FI-87](improvements.md) · [FI-88](improvements.md)** | FI-86 **proposal 1** (announce the build's ref + `REPO_ROOT`) is one line and **independent** — shippable without the analysis. Everything else in the three is **downstream of it** |
+| **acceptance of wave 1 and of the hooks fix** | host-side, after the rebuild. For the hooks fix: spawn a subagent in a session that has a worktree under `/workspace/` and check the worktree appears in its repo list |
+| **the file-overlay branch** | `feat/claude-view-file-overlays` — **rares' work, scheduled as the unit after A10.2**. Verify his analysis and design, then integrate or correct. ⚠ **144 commits behind `develop`**; ⚠ **out of every cleanup sweep**, local and remote |
 | 📝 **the `_secret_scan_staged` pipefail contract** | raised by A2's review, **still never ruled** |
 | **A1's roadmap entry → [roadmap-history.md](roadmap-history.md)** | ~450 lines of a closed unit; its branch is gone, so the automatic trigger can never fire again |
-| **[A2](roadmap.md) · [A3](roadmap.md) · [A6](roadmap.md) · [A7](roadmap.md) · [A12](roadmap.md)** · FI-58 leftovers (D3, D7, D8-as-amended) · [FI-72](improvements.md) · FI-73 · FI-74 · FI-76 · FI-78 · FI-81 · FI-82 · FI-83 · FI-84 | the rest of Block A |
+| **[A9](roadmap.md) · [A2](roadmap.md) · [A3](roadmap.md) · [A6](roadmap.md) · [A7](roadmap.md) · [A12](roadmap.md)** · FI-58 leftovers · [FI-72](improvements.md) · FI-73 · FI-74 · FI-76 · FI-78 · FI-81 · FI-82 · FI-83 · FI-84 | the rest of Block A |
 
 ## How to resume
 
-**Step 0 — the host repair block at the top.** Then, in the session:
-
-1. `git branch --show-current` — host and container share one working tree.
-2. **Confirm the repair from inside**: `cco whoami` should now print an
-   `image built from: develop@<sha>` line. **A missing line means the old image is still in use** —
-   that line does not exist in 0.6.0's `whoami` at all.
-3. **Merge, then re-run the suite as a confirmation** (not as a first meeting):
+1. `git branch --show-current` — host and container share one working tree. Expect **`develop`**.
+2. **Read `scratchpad/RUNBOOK-2026-09-04.md`** — it is the maintainer's, gitignored, and holds the
+   four host steps (push · rebuild · the FI-85 experiment · back to normal) with the oracle for each.
+   ⚠ If it is gone, the maintainer deleted it after use; the same steps are recoverable from the
+   gates table above.
+3. **Confirm the rebuild landed** before trusting anything about wave 1:
    ```
-   git -C /workspace/claude-orchestrator merge feat/devmode/a10-2-impl
-   bash /workspace/claude-orchestrator/bin/test
+   cco whoami        # must print:  image built from: develop@<sha>
    ```
-   Expect **1836 / 7 / 1843**. ⚠ **A missing `Results:` line is the signal** — an aborted suite reads
-   green and prints no summary. Anything but the documented 7 is a regression from the merge itself,
-   which is the only thing this run can still discover.
-4. **Read [ADR-0060](engineering/decisions/0060-developer-execution-mode.md)** — the contract, six
-   amendments; **A6** governs the `cco init` refusal and rules that dev mode **cannot bootstrap a
-   machine**.
-5. **Read [`engineering/design/dev-execution-mode.md`](engineering/design/dev-execution-mode.md)** —
-   §5.0 (dev-root layout), §6.2, §7, §8.1 for wave 2.
+   ⚠ That line **does not exist at all** in 0.6.0's `whoami` — its absence means the old image is
+   still in use, not that the field is empty.
+4. **The next unit of work is the analysis, not wave 2.** Read the roadmap entry
+   [*Before wave 2*](roadmap.md#before-wave-2--session-execution-identity--concurrency-analysis)
+   first; it carries the two questions and the maintainer's requirement verbatim.
+5. Background for it: [FI-86](improvements.md), [FI-87](improvements.md), [FI-88](improvements.md),
+   [ADR-0060](engineering/decisions/0060-developer-execution-mode.md) and
+   [design §6.2](engineering/design/dev-execution-mode.md).
 
 ⚠ **Do NOT read the decision clinic to find out what to build.**
 [`engineering/analysis/dev-execution-mode-decisions.md`](engineering/analysis/dev-execution-mode-decisions.md)
@@ -176,33 +80,38 @@ is **historical** — read it only to see *why* an alternative was rejected.
 
 The [roadmap](roadmap.md) is the single source of truth for status; this list points at it.
 
-- [ ] 🔴 **Host: repair `claude-orchestrator:latest`** and verify by label — [FI-86](improvements.md)
-- [ ] 🔴 **Merge `a10-2-impl` into `a10-2-protection`, then run the full suite** — [A10.2](roadmap.md)
-- [ ] 🔴 **Rule the two decisions the lead declined** (fan-out superset · rename guard placement) — *Context*
-- [ ] 📝 **Rule [FI-86](improvements.md)'s remedy**, and whether **§6.2 leads wave 2**
-- [ ] ▶ **Build [A10.2](roadmap.md) wave 2** — `cco dev seed|reset|list|config|project` · `clean` scoping + `--images` · the §6.2 build-ref warn · fixtures · `project.dev.yml`
+- [ ] 🔴 **Host: push `develop`** (38 commits) — this session cannot
+- [ ] 🔴 **Host: `./bin/cco build` from `develop`**, verify by the `cco.build-ref` label — [FI-86](improvements.md)
+- [ ] 📝 **Run the [FI-85](improvements.md) experiment** — npm 0.6.0 `cco start` + the probe; record the outcome with its date
+- [ ] 🔴 **Launch the analysis** (human gate) — execution identity + concurrency, [roadmap](roadmap.md#before-wave-2--session-execution-identity--concurrency-analysis)
+- [ ] 🔴 **Rule the two wave-1 decisions** (fan-out superset · rename guard placement) — see *Context*
+- [ ] 📝 **Ship [FI-86](improvements.md) proposal 1** — `cco build` prints its ref and `REPO_ROOT`. One line, independent of the analysis
+- [ ] ▶ **A10.2 wave 2**, respecified by the analysis — §6.2 leads it, then `cco dev seed|reset|list|config|project` · `clean` scoping + `--images` · fixtures · `project.dev.yml`
 - [ ] **Tests for wave 2** by an independent role, derived from the design. Each new guard shown to **fail when neutralised** before its pass is believed
-- [ ] **Living docs for A10.2** — `docs/users/reference/cli.md` §3.34 (`cco dev`, `clean --images`), `changelog.yml`, **rewrite `CONTRIBUTING.md`'s dev section** and **a "dev vs distributed" explanation**. ⭐ The widened docs scope is a **maintainer ruling of 2026-09-03**, not optional polish
-- [ ] **Fix the test-file env leak** — `tests/test_dev_mode.sh` and `tests/test_dev_sandbox.sh` unset `CCO_DEV_SANDBOX_ROOT` but **not** `CCO_DEV_ROOT`, now the preferred spelling
+- [ ] **Living docs for A10.2** — `docs/users/reference/cli.md` §3.34, `changelog.yml`, **rewrite `CONTRIBUTING.md`'s dev section**, and **a "dev vs distributed" explanation**. ⭐ A maintainer ruling, not optional polish
+- [ ] **Accept wave 1 and the hooks fix** after the rebuild
+- [ ] **Fix the test-file env leak** — `tests/test_dev_mode.sh` and `tests/test_dev_sandbox.sh` unset `CCO_DEV_SANDBOX_ROOT` but **not** `CCO_DEV_ROOT`
 - [ ] **Cover the two untested guarded writers** — `cco project import` and `cco repo rename`, named in design §5.2's table and driven by **no test**
-- [ ] **Finish the bash 3.2 cover** — 5 of 14 changed files never parsed on the real interpreter. ⚠ `docker run … bash:3.2 bash -n <file>`, **one file per invocation**: `bash -n` reads only the first file argument
+- [ ] **Finish the bash 3.2 cover** — 5 of 14 files. ⚠ One file per invocation: `bash -n` reads only the **first** file argument
 - [ ] **Tighten INV-CCOSPEC's Rule B** — it keys on the token `git ` and fires on the *prose* of a message containing `$_PROJECT_SPEC`
-- [ ] **Merge and accept `fix/hooks/worktree-git-probe`** — needs the repaired build
-- [ ] 📝 **[FI-85](improvements.md)** — optionally pin the version boundary with `--claude-version 2.1.257`
+- [ ] **The file-overlay branch** — verify rares' analysis and design, then integrate or correct
 - [ ] **Decide**: move A1's ~450-line closed entry into [roadmap-history.md](roadmap-history.md)
 - [ ] **Rule the `_secret_scan_staged` pipefail contract**
 - [ ] the rest of Block A
 
 ## Context
 
-### What wave 1 shipped
+### The analysis, and why it is not a detour
 
-The protection half of the developer execution mode: the pre-run **snapshot store** (§5), **`cco dev
-restore`** (§5.1), the **`<repo>/.cco` restorability guard** (§5.2 / D4.8) wired at every classified
-writer, and the **D5 migration routing** plus the `CCO_CONFIG_HOME` seam. New files: `lib/dev.sh`,
-`lib/cmd-dev.sh`. The rulings are in the ADR and are **not restated here**.
+⭐ **Wave 2 contains §6.2, and §6.2 *is* the divergence policy applied at `cco start`.** Specifying it
+before deciding which combinations are legitimate would build the wrong thing. Two questions that
+cannot be answered apart — a policy without enforcement cannot be imposed at runtime; locking rules
+without a policy do not know what they protect. The roadmap entry holds both, plus **the maintainer's
+requirement, to be carried verbatim**: *a system that stops working is wrong; one that requires a
+restart, says so explicitly and keeps working on the stale version — or forces the restart when
+divergence is dangerous — is correct, if explicit and designed.*
 
-### 🔴 Two decisions the lead deliberately did NOT rule — they are the maintainer's
+### 🔴 Two decisions the lead deliberately did NOT rule
 
 - **The fan-out guard is a superset.** `_cco_dev_project_guard_fanout` guards the unit dir **and** the
   members, over-covering `cco llms rename` (which touches only the primary `project.yml`). The
@@ -211,65 +120,76 @@ writer, and the **D5 migration routing** plus the `CCO_CONFIG_HOME` seam. New fi
   would never have touched.
 - **The two rename guards sit in different places** — `pack rename` in Phase 0 (before the confirm),
   `repo rename` after it. The lead's view is uniformity (*never ask someone to confirm an action you
-  are then going to refuse*); it is one line per file and user-perceivable.
+  are then going to refuse*); one line per file, user-perceivable.
 
-### Decisions taken previously — do not re-open them
+### Decisions already taken — do not re-open them
 
 1. **[ADR-0060 Amendment A6](engineering/decisions/0060-developer-execution-mode.md#amendments)** —
-   D5's refusal covers `cco init` at **both** flows; **dev mode cannot bootstrap a machine**. ⭐ The
-   intuitive reading (a fresh install has nothing to corrupt) was **measured wrong**: the schema
+   **dev mode cannot bootstrap a machine**. ⭐ The intuitive reading was **measured wrong**: the schema
    marker lives in **STATE** (sandboxed) while the config it describes lives in **CONFIG** (shared).
 2. **`cco dev seed` on a populated dev root says so and does nothing** — exit 0 naming `cco dev
-   reset`, no silent `return 0`, **no `--force`**. Design §8.1.
+   reset`, **no `--force`**. Design §8.1.
 3. **The documentation scope of A10.2 is widened** — see Tasks.
-4. **Four implementer judgements ratified**: `cco clean` exempt · `cco init --migrate` exempt · the
-   store's **local git identity** · refusals naming wave-2 verbs with the dispatcher answering *"not
-   implemented yet"*.
+4. **Wave 1 stands alone**: refusals name wave-2 verbs with *"not implemented yet"* rather than
+   *"unknown command"*. ⭐ **This is what made merging wave 1 without wave 2 anticipated rather than a
+   shortcut.**
 
-### ⭐ The enumeration lesson, third order
+### 🔴 [FI-85](improvements.md) — what was learned, and what was got wrong three times
 
-Design §5.2 names 6 writers and **says it is a lower bound**. The mandated re-grep returned **113
-hits**. 🔴 **And two writers are invisible to that command entirely** — `cco llms rename`
-(`lib/cmd-llms.sh:591`) and `cco llms add --project` (`:850+`) reach `<repo>/.cco` through a
-**resolver**, not a literal `"$var/.cco"`. ⇒ **The design's own prescribed enumeration command is
-itself a lower bound.** Any future writer sweep must ask *what reaches the path*, not *what spells it*.
+The symptom is **gone**; the cause is **located, not isolated**. What matters for the next session is
+the epistemic record, because the same error was made three times in two sessions:
 
-### Measurement traps paid so far
+1. blamed cco config + a hook remedy — refuted;
+2. blamed a Claude Code auto-update and **wrote "CAUSE IDENTIFIED" into a document** — refuted the next
+   day (the dialogs reproduced under 2.1.260 in the same container and image);
+3. blamed the repo-native `.claude/settings.local.json` — the test was **inconclusive**, and this time
+   it was recorded as inconclusive rather than as a refutation.
 
-- 🔴 **A file-count oracle does not discriminate the A6 guard** — the `--force` branch re-seeds the
-  same 24 files. Use a **sentinel file**: guard in place → `SURVIVED`, neutralised → `DESTROYED`.
-  ⭐ When the remedy re-creates what it destroyed, count the *identity*, never the number.
-- 🔴 **An rc-and-wording oracle does not discriminate it either.** With the guard misplaced, the
-  refusal was entirely correct — exit 2, right message, both ways out named — while the config had
-  already been deleted. ⭐ **Only survival caught it.** ⚠ Corollary: `assert_refused … "cco"` asserts
-  **nothing**, because every message that command prints contains *"cco"*.
-- ⚠ **Process substitution renders EMPTY inside the runner's capture** — a failure message built as
-  `diff <(…) <(…)` names a difference it cannot show. Write manifests to files and compare files.
-- 🔴 **A restore that leaves index and HEAD diverged bricks the NEXT run** — the following snapshot
-  commit comes out empty and D4.4 turns that into a `die`. `tests/test_dev_protection.sh` #11.
-- 🔴 **NEW: an image's `Created` timestamp is not a build time.** A fully cached `docker build`
-  re-tags an identical image and leaves `Created` at the original build's date — which is why the
-  regression looked like "nothing happened today". The **label** is the oracle, never the timestamp.
-- 🔴 **NEW: `cco --version` is blind across install provenances** — same string from an npm install
-  and from a clone. `provenance` + `REPO_ROOT` discriminate; `which cco` answers PATH order.
-- 🔴 **NEW: a diagnostic message describes the analyzer's limit, not the command's.** FI-85's dialog
-  claimed a directory *"cannot be determined"* when it was a literal absolute path. Two hypotheses
-  were built on that wording and both were refuted.
+⭐ **An exclusion plus a correlation is not a cause.** E1 exonerated this project's configuration by
+measurement; three candidates remain and only one is still testable. Full elimination table in the FI.
 
-### On the tester's method, worth repeating
+🔑 **The workaround, still in force**: in a command containing a **pipeline**, give `grep` an
+**absolute** path, or drop the `cd`. It is **not** "keep commands simple" — four-statement commands
+and `sed` pipelines both measured clean.
 
-Wave 1's tests were written **from the design, before the implementation existed**, and proven by a
-throwaway reference implementation — **40 mutations, 40 caught** (39 behaviourally, 1 by a lint). That
-process found **three defects in the tests themselves** and one real defect class. The single
-behavioural survivor was correctly analysed as **structural**, and became `INV-CCOSPEC`.
+### Measurement traps paid, and the new ones
+
+- 🔴 **A silent no-op replace reports success.** A `python` string replace that matched **nothing**
+  still wrote the file and printed *"updated"*. Use a tool that **fails on no-match**, or assert the
+  content changed — never that the write happened.
+- 🔴 **The exit code of `grep … | sed` is `sed`'s.** Fallen into a third time this session: a
+  `grep -q … | sed` guard read as success on an empty match. Test with `grep -q` alone.
+- 🔴 **An image's `Created` is not a build time** — a fully cached `docker build` re-tags an identical
+  image and leaves the timestamp. The **label** is the oracle.
+- 🔴 **`cco --version` is blind across install provenances** — same string from npm and from a clone.
+  `provenance` + `REPO_ROOT` discriminate; `which cco` answers PATH order.
+- 🔴 **A diagnostic message describes the analyzer's limit, not the command.** Two FI-85 hypotheses
+  were built on one dialog's wording and both died.
+- 🔴 **A file-count oracle does not discriminate a destroying guard** when the remedy re-creates what
+  it destroyed — use a **sentinel**, i.e. identity, never the number. And an **rc-and-wording oracle
+  does not either**: the refusal was entirely correct while the config had already been deleted.
+  **Only survival caught it.**
+- ⚠ `assert_refused … "cco"` asserts **nothing** — every message that command prints contains *"cco"*.
+- ⚠ **Process substitution renders EMPTY inside the runner's capture** — write manifests to files.
+- ⚠ **A named list is a lower bound**, including **a design's own prescribed enumeration command**:
+  two writers reach `<repo>/.cco` through a *resolver*, invisible to the mandated grep.
+
+### Non-obvious things the next session would otherwise rediscover
+
+- ⭐ **In a git worktree `.git` is a FILE, not a directory** — proven again in isolation 2026-09-04
+  (116 bytes, `gitdir: …`), so `-d` is FALSE and `-e` TRUE. That is the whole content of the hooks
+  fix, and its correctness rests on that git fact — **not** on any FI-85 diagnosis, despite having
+  been found during that investigation.
+- ⭐ **This project's sessions mount ~30 individual per-file binds** under `/workspace/.claude/`.
+  That is the live subject of the file-overlay branch.
+- `isolation: worktree` on the Agent tool is **refused** in this repo — create the worktree by hand.
 
 ## Reference documents
 
-- [roadmap.md](roadmap.md) — the SSOT. **A10.2** is the open entry
-- [improvements.md](improvements.md) — **FI-86 new**; **FI-85 rewritten with its cause**
-- [engineering/decisions/0060-developer-execution-mode.md](engineering/decisions/0060-developer-execution-mode.md)
-  — **the contract**, six amendments
-- [engineering/design/dev-execution-mode.md](engineering/design/dev-execution-mode.md) — the *how*;
-  §5/§5.1 ruled orderings, §5.2's structural note, §6.2, §8.1
+- [roadmap.md](roadmap.md) — the SSOT. **A10.2** and **[Before wave 2](roadmap.md#before-wave-2--session-execution-identity--concurrency-analysis)** are the open entries
+- [improvements.md](improvements.md) — **FI-86 · FI-87 · FI-88 new**; **FI-85 rewritten twice**
+- [engineering/decisions/0060-developer-execution-mode.md](engineering/decisions/0060-developer-execution-mode.md) — the contract, six amendments
+- [engineering/design/dev-execution-mode.md](engineering/design/dev-execution-mode.md) — the *how*; **§6.2** is wave 2's first item and the analysis's subject
 - [engineering/analysis/dev-execution-mode.md](engineering/analysis/dev-execution-mode.md) — the approved analysis
 - [engineering/analysis/dev-execution-mode-decisions.md](engineering/analysis/dev-execution-mode-decisions.md) — the clinic, **historical**
+- `scratchpad/RUNBOOK-2026-09-04.md` — the host steps, **the maintainer's and gitignored**; deleted after use
