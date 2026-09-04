@@ -3667,7 +3667,10 @@ change it alone** — see the FI-16 coupling. **Type**: suite cost / design ques
 
 ## FI-85 — permission dialogs on ordinary Bash reads, under bypassPermissions
 
-**Status**: 🔴 **OPEN — cause NOT established.** Three hypotheses have now been refuted, **including
+**Status**: ⏹ **SYMPTOM GONE 2026-09-04 (E1). Cause LOCATED, not isolated.** The dialogs stop when
+the session is restarted on a current image via the clone's `cco start`; **this project's
+configuration is exonerated by measurement**. Three candidates remain inside the old session's setup
+and E1 could not separate them — see *E1's result*. Three earlier hypotheses were refuted, **including
 one this file asserted as identified**.
 
 🔴 **RETRACTION, 2026-09-04.** This entry said *"CAUSE IDENTIFIED … the differentiator is a Claude
@@ -3735,6 +3738,46 @@ separated**: **how the session was started** (this one by the **npm 0.6.0** host
 every comparison session by the **clone** cco on a newer image) and **this project's own
 configuration** (`CCO_CLAUDE_ACCESS=all` — the FI-25 mask, unique to this project — plus the
 repo-native `.claude/` tree).
+
+### E1's result — 2026-09-04, and what it does and does not settle
+
+The session was restarted on the rebuilt image (`078fe704`, `feat/devmode/a10-2-protection@74b6164`)
+via the clone's `cco start`, **changing nothing else**. Four probes — the two light shapes and the two
+heaviest ones that had prompted the day before, replayed verbatim — **none prompted**.
+
+✅ **Held constant across E1, and therefore ELIMINATED:**
+
+| Held constant | Evidence it was constant |
+|---|---|
+| Claude Code **2.1.260** | `claude --version` + `ps` on both sides |
+| the two `Read()` deny rules | `sha256 66db6380…`, **0** `mountinfo` overlay hits, both sides |
+| `CCO_CLAUDE_ACCESS=all` — the **FI-25 mask** | `env`, both sides |
+| the repo-native `.claude/settings.local.json` | `sha256 2aa89e22…`, present both sides |
+| repo, branch, working tree, cwd | `git status` clean, same branch |
+
+⇒ ⭐ **This project's own configuration is exonerated.** It was the leading candidate and it fell.
+
+🔴 **What E1 changed — two things together, plus one property of the old session it could not hold:**
+
+| | old session | new session |
+|---|---|---|
+| **a · image** | `d54c1a49`, built **2026-08-26** from a pre-A11 tree, **no `cco.build-ref` label** | `078fe704`, labelled |
+| **b · `cco start` path** | the **npm 0.6.0** CLI — predates ADR-0057's emitter entirely | the clone's cco |
+| **c · process state** | container up **09-03 15:23**; `claude` process restarted **09-04 04:51** onto a binary installed at **04:44** — the running binary changed under a live container | container and process coeval (08:28:25 / 08:28:26) |
+
+⇒ **The cause is located in the old session's setup and is NOT isolated to one of the three.** That is
+what the measurements support, and the file stops there — ⭐ **this is exactly the point at which two
+earlier hypotheses were overstated.**
+
+📝 **Reasoning, not measurement**: **(c)** is the only one of the three that also explains the reported
+timeline (*"fine until a day or two ago, then after a `/clear` and a session start"*). A long-lived
+container that re-execs `claude` against a **shared, mutating** install directory yields a process of
+version N over on-disk state written by N−1. See [FI-88](#fi-88--the-claude-code-install-is-a-shared-mutable-pruned-mount-and-a-sessions-harness-identity-is-neither-recorded-nor-stable).
+
+▶ **What would separate them**, if the question is worth closing: start a session with the **npm
+0.6.0** CLI on the **new** image. Prompt returns ⇒ **(b)**. No prompt ⇒ **(a)** or **(c)**. ⚠ **(c)
+cannot be run as an experiment** — it needs a harness update to land under a live session, so it is a
+**watch**, not a test.
 
 ### The trigger shape — stable, and the one thing that has never moved
 
@@ -4012,3 +4055,66 @@ cannot be absolute.
 amendment, not an implementation detail.
 
 **Effort**: small once the decision is made. **Type**: correctness / operator-facing safety.
+
+---
+
+## FI-88 — the Claude Code install is a shared, mutable, pruned mount, and a session's harness identity is neither recorded nor stable
+
+**Status**: 🔴 **Open, measured 2026-09-04.** Surfaced by [FI-85](#fi-85--permission-dialogs-on-ordinary-bash-reads-under-bypasspermissions), whose
+investigation cost two sessions largely because **no artefact records which Claude Code a session
+actually ran**.
+
+### Measured
+
+```
+/home/claude/.local/bin           <-  ~/.cache/cco/claude-install/bin     rw, virtiofs
+/home/claude/.local/share/claude  <-  ~/.cache/cco/claude-install/share   rw, virtiofs
+
+versions/  2.1.258 (Sep 2 08:55) · 2.1.259 (Sep 2 22:58) · 2.1.260 (Sep 4 04:44)
+```
+
+Three properties, each measured, and it is their **conjunction** that bites:
+
+1. **Shared.** One host directory backs **every** cco session on the machine. A session does not own
+   its interpreter.
+2. **Mutable while sessions are live.** 2.1.260 landed at **04:44**; a container that had been running
+   since **the previous day at 15:23** had its `claude` process restart at **04:51** onto it. ⇒ the
+   running binary changed under a live container, and the on-disk state it reads was laid down by the
+   version before.
+3. 🔴 **Pruned while sessions are live.** **2.1.257 was present on 2026-09-03 and gone on 2026-09-04.**
+   A session's own binary can be deleted underneath it.
+
+⚠ This is by design (ADR-0039: Claude Code is not baked; the entrypoint installs it into a persistent
+CACHE mount that auto-updates in place). The defect is **not** the auto-update — it is that the
+resulting identity is invisible.
+
+### What already exists, and what is missing
+
+- ✅ **The control exists**: `cco build --claude-version x.y.z`, and the `~/.cco/claude-version` knob
+  that `cco start` re-forwards (`lib/cmd-build.sh:48`, `lib/cmd-start.sh:2018`).
+- 🔴 **The identity does not.** `cco whoami` reports the harness version **zero** times — measured,
+  `grep -c` on `lib/cmd-whoami.sh` returns 0. Nothing records the version a session started with,
+  nothing notices it changed mid-session, and nothing warns that the version tree was pruned.
+
+⭐ **This is the same class A11 closed for the cco identity and left open for the harness identity.**
+A11's own framing — *"which cco is this, and where does it run from"* — has an exact twin nobody
+asked: **which Claude Code is this session running, and is it still the one it started with?**
+[FI-86](#fi-86--cco-build-never-says-which-source-tree-it-is-baking) is the third face of the same
+subject: an identity that exists but is never announced.
+
+### Proposals — NOT decided
+
+1. **Record it.** Capture the resolved version at session start (it is already resolved to install
+   it) and surface it — the cheapest home is the session context every session already carries.
+2. **Report it.** A `Claude Code` block in `cco whoami`: version, install dir, and **whether it
+   differs from the version this session started with**. That one comparison is what turns an
+   investigation like FI-85's into a lookup.
+3. **Consider pinning by default for long sessions** — or, far cheaper and probably enough, warn when
+   a mid-session change is detected. ⚠ Do **not** pin globally as a reflex: auto-update is a
+   deliberate ADR-0039 decision and unpinning users from security fixes is a real cost. The question
+   to rule is *awareness vs stability*, not *update vs no update*.
+
+⚠ Any of these is **user-facing** and touches ADR-0039's territory. Ruled by the maintainer, not
+implemented on this note.
+
+**Effort**: proposals 1–2 are small. **Type**: correctness / operator-facing identity.
