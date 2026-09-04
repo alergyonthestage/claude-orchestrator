@@ -1,4 +1,23 @@
-# Handoff — 2026-09-03 (second session) · 🔴 A host repair is owed BEFORE work resumes. A10.2 wave 1 still unmerged.
+# Handoff — 2026-09-03 (second session) · ⚠ PARTIALLY SUPERSEDED — read the status update first
+
+> 🔴 **STATUS UPDATE, 2026-09-04.** Three things this document says are **no longer true**. It is
+> patched rather than rewritten because a full consolidation is owed at the end of the current
+> session; where the two disagree, **this block wins**.
+>
+> - ✅ **The host repair is DONE.** `claude-orchestrator:latest` = `078fe704`, label
+>   `feat/devmode/a10-2-protection@74b6164`. The *"Do this on the HOST first"* block below is closed.
+>   Ignore it.
+> - ✅ **`a10-2-impl` is MERGED into `a10-2-protection`** (`d49d689`, no conflict — the predicted
+>   `test_invariants.sh` conflict belongs to the *hooks-fix* merge, not this one). Wave 1's code is on
+>   the unit branch; `rev-list a10-2-protection..a10-2-impl` = **0**. ✅ **Suite re-run on the merged
+>   tree: 1836 passed / 7 failed / 1843 total**, `Results:` line present, the 7 verified **name for
+>   name** as the documented host-only set. Both oracles (count and names) agree.
+> - ⚠ **[FI-85](improvements.md) has moved twice.** Its "cause identified" was **retracted**; then E1
+>   removed the symptom and **exonerated this project's configuration by measurement**. Cause
+>   located, not isolated. **[FI-87](improvements.md)** and **[FI-88](improvements.md)** are new.
+>
+> ▶ **Still open and unchanged**: the two merges into `develop` (wave 1, and the hooks fix), the two
+> wave-1 decisions, and wave 2 — which the maintainer's divergence/concurrency analysis now precedes.
 
 > **Ephemeral.** The previous handoff was deleted before this was written. It links **out** to the
 > roadmap, ADRs, design and analysis — nothing links back to it.
