@@ -4,15 +4,27 @@
 > every domain — and kept current: updated at `/plan`, when `/implement` closes a unit, at
 > `/review-docs`, and at `/handoff`.
 >
-> **Last updated: 2026-09-03 (second session)** — 🔴 **A host `cco build` moved
-> `claude-orchestrator:latest` BACKWARDS to the published 0.6.0 tree** (label gone, baked cco three
-> units behind the checkout); the repair is a host `./bin/cco build` from `develop` and the incident
-> is [FI-86](improvements.md). ✅ **[FI-85](improvements.md) is no longer open against cco** — the
-> cause is a **Claude Code auto-update** (2.1.259), measured, and the deny rules were identical on
-> both images. ⭐ Both findings are field evidence for sequencing **[design §6.2](engineering/design/dev-execution-mode.md)**
-> — the `cco start` build-ref divergence warning — **first** inside A10.2 wave 2: it would have
-> caught the regression at session start. A10.2's own status is unchanged (wave 1 built, **not
-> merged**).
+> **Last updated: 2026-09-04** — ✅ **A10.2 wave 1 is MERGED into `develop`** (`471ab4c`, `--no-ff`),
+> and so is the hooks worktree-probe fix (`d0de776`) — the predicted `test_invariants.sh` conflict
+> arrived in the predicted shape and was resolved by **keeping both lints** (43/0/43 on that file).
+> 🔴 **`develop` is 38 commits ahead of `origin/develop` and the push is a HOST step** — measured:
+> SSH remote, no credential helper, no token, `gh` not authenticated.
+>
+> 🔴 **Wave 2 is now PRECEDED by a cross-cutting analysis** — the maintainer's ruling of 2026-09-04.
+> Two questions that cannot be answered apart: **which CLI↔image↔harness combinations are legitimate**
+> (for a user: probably none — a block; for a developer: possibly some, behind `--force` or a prompt),
+> and **what protects a live session from another session's update** of the shared image or the shared
+> Claude Code install. ⭐ **[design §6.2](engineering/design/dev-execution-mode.md) is that policy
+> applied at `cco start`**, so specifying it before the analysis would build the wrong thing. See
+> *[Before wave 2](#before-wave-2--session-execution-identity--concurrency-analysis)*.
+>
+> 📝 **[FI-85](improvements.md) — cause LOCATED, not isolated, and one earlier claim RETRACTED.** This
+> block previously said the cause was a Claude Code auto-update; that was **refuted** (the dialogs
+> reproduced under 2.1.260 in the same container). E1 removed the symptom and **exonerated this
+> project's configuration by measurement**. Three new entries: **[FI-86](improvements.md)** (`cco build`
+> never says which tree it bakes), **[FI-87](improvements.md)** (a clone without `--dev` announces it
+> will overwrite the real image, then does), **[FI-88](improvements.md)** (the Claude Code install is a
+> shared, mutable, pruned mount and a session's harness identity is never recorded).
 >
 > **2026-09-03** — **A11 and A10.1 are closed, merged and ACCEPTED**; both entries
 > moved to
@@ -135,8 +147,13 @@ narrative, the lessons, and the per-stage records live in
   `--no-ff` merges in that order: `6208228` (the five A5/A8 units) and `90c1391` (ADR-0038 + design).
   Both feature branches were deleted locally with `-d` — it did not refuse, and `git log develop..<b>`
   was **0 for both** before the deletion.
-  ✅ **`develop` is LEVEL with `origin/develop`** — measured 2026-08-22 (`git rev-list --count
-  origin/develop..develop` = 0). The push happened host-side and that gate is closed;
+  🔴 **`develop` is 38 AHEAD of `origin/develop`, 0 behind — the push is OPEN and is a HOST step.**
+  Measured 2026-09-04: SSH remote (`git@github.com:…`), **no** credential helper, **no** `GITHUB_TOKEN`,
+  `gh` not authenticated ⇒ this session cannot push, detected rather than assumed
+  (`rules/git-practices.md`). The 38 are A10.2 wave 1 (`471ab4c`) + the hooks worktree-probe fix
+  (`d0de776`) + the session's documentation.
+  *(Superseded: `develop` was LEVEL with `origin/develop` — measured 2026-08-22 (`git rev-list --count
+  origin/develop..develop` = 0). That push happened host-side and that gate was closed;)*
   `origin/feat/cli/start-warning-gate` is gone too. The only remote feature branch left is
   `origin/feat/claude-view-file-overlays`, which is rares' and stays.
   ✅ **`origin/feat/cli/start-warning-gate` is GONE** — measured 2026-08-27, `git branch -r` lists
@@ -307,8 +324,12 @@ ordered units, U1 → U2 → U3**, listed under A5 (U4 and U5 were added by the 
 run and D19 produced). ✅ **All of them have landed — U1 + U2 on 2026-08-14 (closing A5), U4, U3
 (= all of A8) and U5 (= D19 + Amendment A2) on 2026-08-18. The pair owes nothing before it merges.**
 
-▶ **Order inside the block, as of 2026-08-31**: **A1 → A11 → A10.1 → A10.2 → A9**, then A2 · A3 ·
-A6 · A7, with **A12** (`cco doctor`, split out of A10 at its design gate) schedulable independently.
+▶ **Order inside the block, as of 2026-09-04**: **A1 → A11 → A10.1 → A10.2 wave 1 → [the
+analysis](#before-wave-2--session-execution-identity--concurrency-analysis) → A10.2 wave 2 →
+[the file-overlay branch](#the-file-overlay-branch--rares-work-next-unit-after-a102) → A9**, then
+A2 · A3 · A6 · A7, with **A12** (`cco doctor`, split out of A10 at its design gate) schedulable
+independently. *(Superseded ordering, 2026-08-31: A1 → A11 → A10.1 → A10.2 → A9 — the analysis and
+the file-overlay branch were inserted on 2026-09-04.)*
 ⚠ **The numbers are identifiers, not the order** — every position here is a decision of the
 maintainer's, not a dependency. A11 precedes A10 because it is A10's measuring instrument; A9 was
 scheduled immediately after A1 and now follows the pair.
@@ -845,7 +866,18 @@ gave**, and it is why the pinned `tests/test_dev_sandbox.sh:75-86` stays green *
 
 🔴 **One gate still owed, and it is host-only by construction**: a real `cco build` under `--dev` producing `claude-orchestrator-dev:latest` while leaving `claude-orchestrator:latest` untouched, **verified with `docker image inspect` on both tags** — never `docker run` (FI-82, empty stdout in-session), never `cco --version` (non-discriminating, ADR-0060 M3). `--dev` refuses in-container, so no session can close it. The full entry is in [roadmap-history.md](roadmap-history.md#block-a--the-dev-mode-identity-cycle-a11-and-a101-merged-2026-09-01).
 
-##### A10.2 — protection and tooling — ▶ **WAVE 1 BUILT AND TESTED 2026-09-03, NOT MERGED**
+##### A10.2 — protection and tooling — ✅ **WAVE 1 MERGED INTO `develop` 2026-09-04** · ▶ wave 2 gated behind an analysis
+
+✅ **Wave 1 is MERGED** (`471ab4c`, `--no-ff`) after `a10-2-impl` → the unit branch (`d49d689`, clean).
+Suite on the merged unit tree: **1836 passed / 7 failed / 1843 total**, `Results:` line present, the 7
+verified **name for name**; both oracles (count and names) agree. ⚠ **Acceptance is still owed** — the
+image in use was built from the unit branch *before* the merge, and `config/hooks/` plus `lib/` are
+baked, so wave 1's protections and the hooks fix are inert until a host `./bin/cco build` from
+`develop`.
+
+🔴 **Wave 2 does NOT start next.** It is gated behind
+*[Before wave 2](#before-wave-2--session-execution-identity--concurrency-analysis)* — the maintainer's
+ruling of 2026-09-04.
 
 ✅ **Wave 1 (protection) is complete on `feat/devmode/a10-2-impl`**: the snapshot store (§5),
 `cco dev restore` (§5.1), the `<repo>/.cco` restorability guard (D4.8) wired at every classified
@@ -877,9 +909,60 @@ prompts**. Detail in the handoff.
 ⭐ **Sequencing evidence, 2026-09-03**: a host `cco build` silently rebuilt the **published 0.6.0**
 tree and moved `claude-orchestrator:latest` backwards ([FI-86](improvements.md)); the next session
 opened on an orchestrator three units behind its own checkout and found it only by inspection. **The
-§6.2 build-ref divergence warning would have caught it at `cco start`.** ⇒ a proposal for the
-maintainer: make §6.2 the **first** item of wave 2 rather than one of six. It is also the item that
-protects every *later* wave-2 acceptance run, since both stages are baked.
+§6.2 build-ref divergence warning would have caught it at `cco start`.** ⇒ §6.2 leads wave 2. It is
+also the item that protects every *later* wave-2 acceptance run, since both stages are baked.
+⚠ **Superseded in part 2026-09-04**: §6.2 still leads, but it is no longer specifiable on its own —
+its *content* is the policy the analysis below must decide.
+
+#### The file-overlay branch — rares' work, next unit after A10.2
+
+▶ **Scheduled 2026-09-04**, and it is **work to verify, not a branch to sweep**. `feat/claude-view-file-overlays`
+(`43c2c33`, 2 commits, 2026-08-19/20): *materialise content copies in file mountpoints — gRPC-FUSE
+drops per-file binds* and *tolerate Docker Desktop's deny-delete ACL when rebuilding the view*.
+Touches `lib/cmd-start.sh` (+51), `tests/test_start_claude_view.sh`, ADR-0054, `changelog.yml`.
+
+⭐ **Its subject is live and measurable right now**: a session of this project mounts **~30 individual
+per-file binds** under `/workspace/.claude/` — every `agents/*.md`, every `rules/*.md`,
+`settings.json`, `CLAUDE.md` — which is exactly the mechanism these commits address.
+
+**The unit is**: verify rares' analysis and design, decide whether the fix is correct, then integrate
+into `develop` or correct it. ⚠ It is **144 commits behind `develop`**, so integration is not a
+fast-forward. ⚠ Until that unit runs, the branch stays **out of every cleanup sweep** — local and
+remote alike.
+
+#### Before wave 2 — session execution identity & concurrency (analysis)
+
+🔴 **Ruled by the maintainer 2026-09-04: this analysis precedes A10.2 wave 2.** Not a detour — wave 2
+contains §6.2, and §6.2 *is* this policy applied at `cco start`. Specifying it first would build the
+wrong thing and pay for it twice.
+
+**One subject, two questions that cannot be answered apart** — a policy without enforcement cannot be
+imposed at runtime; locking rules without a policy do not know what they protect:
+
+1. **Which combinations of CLI ↔ image ↔ harness are legitimate?** For an end user, probably **none**:
+   a divergent session should be **blocked**, not merely warned. For a developer there may be real
+   cross-testing needs — those must be *named*, because a named workflow is the only thing that stops
+   the refusal being absolute. Remedy shape follows the answer: block · `--force` · explicit prompt.
+2. **What protects a live session from another session's update?** *n* containers share one image; dev
+   images and containers coexist; the **Claude Code install is a single host directory shared by every
+   session, mutated and pruned while they run** ([FI-88](improvements.md)) — measured: a session's
+   process restarted onto a binary installed seven minutes earlier, and a version present one day was
+   gone the next.
+
+⭐ **The maintainer's requirement, to be carried into the analysis verbatim**: *a system that stops
+working is wrong; a system that requires a restart, says so explicitly and keeps working on the stale
+version — or forces the restart when divergence is dangerous — is correct, if explicit and designed.*
+Auto-propagating updates without a rebuild are a real benefit; the goal is to keep them **and** stop
+one session pulling the binary out from under another.
+
+**In scope**: [FI-86](improvements.md) proposal 2 · [FI-87](improvements.md) · **§6.2** — the same
+policy at production, at start, and at consumption. **Out of scope**: FI-86 proposal 1 (`cco build`
+announcing its ref and `REPO_ROOT`), which is one line and independent of every decision here.
+
+⚠ **Preceded by**: closing [FI-85](improvements.md)'s attribution, so the analysis opens on a fact
+rather than three candidates. ⚠ **Touches** ADR-0039 (Claude Code is not baked; it auto-updates in a
+CACHE mount), ADR-0060 (dev mode), and B1/B2's naming namespace — so it is genuinely cross-cutting and
+its home is `environment/analysis/`.
 
 The snapshot store · the `<repo>/.cco` restorability guard (D4.8) · `cco dev restore|list|reset|seed` · the migration routing · the fixtures
 (throwaway config dir, throwaway test project) · optional `project.dev.yml` (**`project.yml`-only**,
