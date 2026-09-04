@@ -204,6 +204,8 @@ EOF
             || die "No .cco/project.yml in the current directory or its parents. Run from a configured repo or pass --project <name>."
     fi
     local manifest="$unit_dir/.cco/project.yml"
+    # ADR-0060 D4.8: this verb rewrites the committed project.yml in place.
+    _cco_dev_project_guard "$unit_dir" "cco project add"
 
     local section
     case "$restype" in
